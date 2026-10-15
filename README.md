@@ -36,6 +36,11 @@ An explicitly reviewed local plan can be applied with `--apply`. Backups and own
 are device-local. A successful repeated apply must leave content and receipt timestamps unchanged.
 Inspect a reported blocker before retrying. Do not reset a checkout or delete a receipt to bypass it.
 
+Claude's validated root `.in_use` leases and `.orphaned_at` timestamp are native cache state, not
+plugin content. This distinction applies only to installed Claude plugins. Unknown entries, malformed
+markers, and links still block reconciliation. A populated lease directory blocks replacement of that
+same cache path. Source builds and staged replacements remain strict raw trees.
+
 ## Review source changes
 
 The entry in `setup` describes the intended source, selection, policy, and host placement. Its lock

@@ -16,7 +16,7 @@ from host_observation import Observer, Unread
 from host_state import (Approved, DeviceRoots, EngineMarketplace, FactKey, FileValue, Host, InstallDetail,
                         Platform, PluginValue, Released, SkillMode, Surface, TreeValue, Unknown, bytes_digest)
 from sync_files import ConcurrentEdit
-from sync_sources import Builder, Sources
+from sync_sources import BuildError, Builder, Sources
 
 
 class DiskHost:
@@ -470,22 +470,25 @@ class InstallationTest(unittest.TestCase):
 
         def native_command(operation, host, *args):
             self.calls.append((host, args))
-            if args[:2] == ('plugin', 'install'):
+            if args[:2] in (('plugin', 'install'), ('plugin', 'update')):
                 release = operation.claude[plugin]
-                destination = self.roots.claude_home / 'plugins/cache' / marketplace_name / 'kit/1.0.0'
+                destination = self.roots.claude_home / 'plugins/cache' / marketplace_name / 'kit' / release.version
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copytree(release.root, destination)
                 inventory[:] = [{'id': plugin, 'scope': 'user', 'enabled': True,
-                                 'version': '1.0.0', 'installPath': str(destination)}]
+                                 'version': release.version, 'installPath': str(destination)}]
+                if self.interrupt:
+                    self.interrupt(destination)
             return ''
 
         def build_claude(builder, package, codex, *, verify=True):
-            release = marketplace / 'plugins/kit/1.0.0'
+            version = builder.setup.lock['kit'].trees[Host.CLAUDE].version
+            release = marketplace / 'plugins/kit' / version
             release.parent.mkdir(parents=True, exist_ok=True)
             if release.exists():
                 shutil.rmtree(release)
             shutil.copytree(codex.root, release)
-            return {plugin: Built('kit', release, '1.0.0', builder.roots.tree_digest(release))}
+            return {plugin: Built('kit', release, version, builder.roots.tree_digest(release))}
 
         rename = Path.rename
         failed = False
@@ -516,6 +519,268 @@ class InstallationTest(unittest.TestCase):
     def _pending_claude_receipt(self):
         return next(path for path in self.receipt_paths()
                     if json.loads(path.read_bytes())['identity'] == 'plugin:claude:kit@personal-collections')
+
+    def _installed_claude(self):
+        destination = self._interrupted_claude_install()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.calls.clear()
+        return destination
+
+    def test_claude_runtime_metadata_is_not_owned_and_exact_adoption_preserves_it(self):
+        destination = self._installed_claude()
+        leases = destination / '.in_use'
+        leases.mkdir()
+        (leases / '17').write_text('{"pid":17,"procStart":"Thu Oct 15 12:30:00 2026"}')
+        (leases / '29.tmp.0123abcd').write_text('{"pid":29,"procStartFt":"134044866000000000"}')
+        (destination / '.orphaned_at').write_text('1792091304500')
+        before = self.snapshot()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(self.calls, [])
+        receipt = self._pending_claude_receipt()
+        receipt.unlink()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        accepted = json.loads(receipt.read_bytes())['accepted']['image']['entries']
+        self.assertNotIn('.in_use', accepted)
+        self.assertNotIn('.orphaned_at', accepted)
+        self.assertEqual((leases / '17').read_text(), '{"pid":17,"procStart":"Thu Oct 15 12:30:00 2026"}')
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
+        self.assertEqual(self.calls, [])
+
+    def test_claude_malformed_runtime_metadata_blocks_without_writes(self):
+        destination = self._installed_claude()
+        cases = [
+            ('.in_use', b'17'),
+            ('.orphaned_at', None),
+            ('.orphaned_at', b''),
+            ('.orphaned_at', b'1792091304500\n'),
+            ('.orphaned_at', b'8640000000000001'),
+            ('.in_use/notes.txt', b'{"pid":17}'),
+            ('.in_use/17/child', b'{"pid":17}'),
+            ('.in_use/17', b'not json'),
+            ('.in_use/17', '{"pid":17}'.encode('utf-16')),
+            ('.in_use/17', b'{}'),
+            ('.in_use/17', b'{"pid":18}'),
+            ('.in_use/17', b'{"pid":true}'),
+            ('.in_use/17', b'{"pid":17,"procStart":17}'),
+            ('.in_use/17', b'{"pid":17,"procStartFt":null}'),
+            ('.in_use/17', b'{"pid":17,"other":"user content"}'),
+            ('.in_use/17', b'{"pid":18,"pid":17}'),
+            ('.in_use/2147483648', b'{"pid":2147483648}'),
+            ('.in_use/17.tmp.1234ABCD', b'{"pid":17}'),
+            ('.in_use/17.tmp.1234abcd', b''),
+            ('.in_use/17.tmp.1234abcd', b'{"pid":17,"procStart":"' + b'0' * 4096 + b'"}'),
+        ]
+        for name, data in cases:
+            with self.subTest(name=name, data=data[:80] if data else data):
+                entry = destination / name
+                entry.parent.mkdir(parents=True, exist_ok=True)
+                entry.mkdir() if data is None else entry.write_bytes(data)
+                before = self.snapshot()
+                current = plan(self.setup, self.device)
+                self.assertEqual(current.exit_code, 2)
+                with self.assertRaisesRegex(RuntimeError, 'blocked'):
+                    self.run_apply(current)
+                self.assertEqual(self.snapshot(), before)
+                top = destination / Path(name).parts[0]
+                shutil.rmtree(top) if top.is_dir() else top.unlink()
+
+    def test_claude_runtime_links_are_rejected(self):
+        destination = self._installed_claude()
+        external = self.root / 'external-marker'
+        external.write_text('{"pid":17}')
+        external_directory = self.root / 'external-leases'
+        external_directory.mkdir()
+        for name, target, hardlink in [('.in_use', external_directory, False),
+                                       ('.in_use/17', external, False),
+                                       ('.in_use/17', external, True),
+                                       ('.orphaned_at', external, False)]:
+            with self.subTest(name=name, hardlink=hardlink):
+                entry = destination / name
+                entry.parent.mkdir(parents=True, exist_ok=True)
+                entry.hardlink_to(target) if hardlink else entry.symlink_to(target, target_is_directory=target.is_dir())
+                self.assertEqual(plan(self.setup, self.device).exit_code, 2)
+                self.assertEqual(external.read_text(), '{"pid":17}')
+                entry.unlink()
+                if entry.parent.name == '.in_use':
+                    entry.parent.rmdir()
+
+    def test_claude_lease_disappearing_during_read_is_a_noop(self):
+        destination = self._installed_claude()
+        lease = destination / '.in_use/17'
+        lease.parent.mkdir()
+        lease.write_text('{"pid":17,"procStart":"42"}')
+        read_bytes = Path.read_bytes
+
+        def released(path):
+            if path == lease:
+                path.unlink()
+            return read_bytes(path)
+
+        with patch.object(Path, 'read_bytes', released):
+            self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
+        self.assertEqual(tuple(lease.parent.iterdir()), ())
+        self.assertEqual(self.calls, [])
+
+    def test_claude_same_path_replacement_preserves_populated_lease(self):
+        destination = self._installed_claude()
+        lease = destination / '.in_use/17'
+        lease.parent.mkdir()
+        lease.write_text('{"pid":17,"procStart":"42"}')
+        before = (destination / 'skills/one/SKILL.md').read_bytes()
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        with self.assertRaisesRegex(ConcurrentEdit, 'lease markers'):
+            self.run_apply()
+        self.assertEqual((destination / 'skills/one/SKILL.md').read_bytes(), before)
+        self.assertEqual(lease.read_text(), '{"pid":17,"procStart":"42"}')
+        lease.unlink()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(self.calls, [])
+
+    def test_claude_lease_replaced_during_disappearance_check_is_not_ignored(self):
+        destination = self._installed_claude()
+        lease = destination / '.in_use/17'
+        lease.parent.mkdir()
+        lease.write_text('{"pid":17}')
+        read_bytes = Path.read_bytes
+
+        def replaced_marker(path):
+            if path == lease:
+                path.write_text('replacement bytes')
+                raise FileNotFoundError(path)
+            return read_bytes(path)
+
+        with patch.object(Path, 'read_bytes', replaced_marker):
+            self.assertEqual(plan(self.setup, self.device).exit_code, 2)
+        self.assertEqual(lease.read_text(), 'replacement bytes')
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
+
+    def test_claude_pending_displaced_runtime_metadata_recovers_but_stage_metadata_does_not(self):
+        destination = self._interrupted_claude_install()
+        pending = json.loads(self._pending_claude_receipt().read_bytes())['pending']
+        displaced = Path(pending['displaced'])
+        (displaced / '.in_use').mkdir()
+        (displaced / '.orphaned_at').write_text('1792091304500')
+        staged_marker = Path(pending['staged']) / '.in_use'
+        staged_marker.mkdir()
+        self.assertEqual(plan(self.setup, self.device).exit_code, 3)
+        staged_marker.rmdir()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
+        self.assertFalse((destination / '.orphaned_at').exists())
+        self.assertEqual((displaced / '.orphaned_at').read_text(), '1792091304500')
+
+    def test_claude_source_runtime_metadata_is_not_adopted_as_content(self):
+        destination = self._installed_claude()
+        builder = Builder(self.setup, self.roots, self.roots.engine)
+        source = builder.codex(self.setup.packages['kit']).root
+        (source / '.in_use').mkdir()
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        before = (destination / 'skills/one/SKILL.md').read_bytes()
+        with self.assertRaisesRegex(BuildError, 'runtime metadata is not source content'):
+            self.run_apply()
+        self.assertEqual((destination / 'skills/one/SKILL.md').read_bytes(), before)
+        self.assertEqual(self.calls, [])
+
+    def test_claude_version_update_pending_retry_tolerates_old_native_bookkeeping_only(self):
+        destination = self._installed_claude()
+        old_lease = destination / '.in_use/17'
+        old_lease.parent.mkdir()
+        old_lease.write_text('{"pid":17,"procStart":"42"}')
+        (self.source / '.codex-plugin/plugin.json').write_text('{"name":"kit","version":"2.0.0"}')
+        (self.source / 'ordinary.txt').write_text('second release bytes\n')
+        digest = self.roots.tree_digest(self.source)
+        package = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
+        lock = replace(self.setup.lock['kit'], intent=intent(package, {}),
+                       trees={Host.CLAUDE: LockedTree('2.0.0', digest)})
+        self.setup = replace(self.setup, packages={'kit': package}, lock={'kit': lock})
+
+        def native_bookkeeping(new):
+            (destination / '.orphaned_at').write_text('1792091304500')
+            (new / '.in_use').mkdir()
+
+        self.interrupt = native_bookkeeping
+        rename = Path.rename
+
+        def crash(path, target):
+            if path.name == 'staged':
+                raise RuntimeError('between version tree renames')
+            return rename(path, target)
+
+        with patch.object(Path, 'rename', crash), self.assertRaisesRegex(RuntimeError, 'between version tree renames'):
+            self.run_apply()
+        self.assertEqual((destination / '.orphaned_at').read_text(), '1792091304500')
+        self.assertEqual(old_lease.read_text(), '{"pid":17,"procStart":"42"}')
+        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
+        (destination / 'ordinary.txt').write_text('user edit in old cache\n')
+        edited = plan(self.setup, self.device)
+        self.assertEqual(edited.exit_code, 3)
+        self.assertTrue(any('Previous installation changed' in difference.detail for difference in edited.blocked))
+        (destination / 'ordinary.txt').write_text('ordinary release bytes\n')
+        self.calls.clear()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        current = destination.with_name('2.0.0')
+        self.assertEqual((current / 'ordinary.txt').read_text(), 'second release bytes\n')
+        self.assertFalse((current / '.orphaned_at').exists())
+        self.assertEqual(old_lease.read_text(), '{"pid":17,"procStart":"42"}')
+        self.assertEqual(self.calls, [])
+
+    def test_claude_lease_created_after_swap_receipt_stops_the_rename(self):
+        from accepted_installations import AcceptedInstallations
+
+        destination = self._installed_claude()
+        before = (destination / 'skills/one/SKILL.md').read_bytes()
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        save = AcceptedInstallations._save
+        writes = 0
+
+        def concurrent_lease(owner, artifact, accepted, pending=None):
+            nonlocal writes
+            save(owner, artifact, accepted, pending)
+            if pending:
+                writes += 1
+                if writes == 2:
+                    lease = destination / '.in_use/17'
+                    lease.parent.mkdir()
+                    lease.write_text('{"pid":17}')
+
+        with patch.object(AcceptedInstallations, '_save', concurrent_lease), self.assertRaisesRegex(ConcurrentEdit, 'lease markers'):
+            self.run_apply()
+        self.assertEqual((destination / 'skills/one/SKILL.md').read_bytes(), before)
+        self.assertEqual((destination / '.in_use/17').read_text(), '{"pid":17}')
+        (destination / '.in_use/17').unlink()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
+
+    def test_claude_historical_receipt_metadata_is_not_silently_normalized(self):
+        destination = self._installed_claude()
+        (destination / '.in_use').mkdir()
+        receipt = self._pending_claude_receipt()
+        value = json.loads(receipt.read_bytes())
+        value['accepted']['image']['entries']['.in_use'] = {'kind': 'directory'}
+        receipt.write_text(json.dumps(value))
+        before = receipt.read_bytes()
+        self.assertEqual(plan(self.setup, self.device).exit_code, 2)
+        self.assertEqual(receipt.read_bytes(), before)
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
+
+    def test_runtime_marker_names_outside_claude_cache_root_remain_owned_content(self):
+        self.run_apply()
+        for root in (self.installed(), self.roots.codex_home / 'skills/loose'):
+            marker = root / '.in_use'
+            marker.mkdir()
+            self.assertEqual(plan(self.setup, self.device).exit_code, 2)
+            marker.rmdir()
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+        destination = self._installed_claude()
+        for name in ('skills/.in_use', 'skills/.orphaned_at', '.last_used'):
+            marker = destination / name
+            marker.write_text('1792091304500')
+            self.assertEqual(plan(self.setup, self.device).exit_code, 2)
+            marker.unlink()
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
 
     def test_claude_skill_unread_during_verified_pending_swap_recovers(self):
         destination = self._interrupted_claude_install()

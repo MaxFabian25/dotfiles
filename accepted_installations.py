@@ -4,6 +4,7 @@ from dataclasses import dataclass, replace
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
+import re
 import shutil
 import stat
 import subprocess
@@ -67,6 +68,72 @@ def image(path: Path, fields=None):
     return {'kind': 'tree', 'entries': entries}
 
 
+def _claude_runtime(path):
+    try:
+        info = path.lstat()
+        if _linked(path):
+            raise ConcurrentEdit(f'Refusing linked Claude runtime metadata: {path}')
+        if path.name == '.orphaned_at':
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > 16:
+                raise ConcurrentEdit(f'Invalid Claude orphan marker: {path}')
+            data = path.read_bytes()
+            if not re.fullmatch(rb'[1-9][0-9]{0,15}', data) or int(data) > 8640000000000000:
+                raise ConcurrentEdit(f'Invalid Claude orphan marker: {path}')
+            return False
+        if not stat.S_ISDIR(info.st_mode):
+            raise ConcurrentEdit(f'Claude lease path is not a directory: {path}')
+        leases = tuple(path.iterdir())
+    except FileNotFoundError:
+        if path.exists() or _linked(path):
+            raise ConcurrentEdit(f'Claude runtime metadata changed during read: {path}')
+        return False
+    present = False
+    for lease in leases:
+        try:
+            info = lease.lstat()
+            if _linked(lease) or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise ConcurrentEdit(f'Invalid Claude lease entry: {lease}')
+            name = re.fullmatch(r'([1-9][0-9]{0,9})(?:\.tmp\.[0-9a-f]{8})?', lease.name)
+            if name is None or info.st_size > 4096:
+                raise ConcurrentEdit(f'Invalid Claude lease entry: {lease}')
+            data = lease.read_bytes()
+        except FileNotFoundError:
+            if lease.exists() or _linked(lease):
+                raise ConcurrentEdit(f'Claude lease changed during read: {lease}')
+            continue
+        try:
+            pairs = json.loads(data.decode('utf-8'), object_pairs_hook=tuple)
+            marker = dict(pairs) if isinstance(pairs, tuple) else {}
+        except (ValueError, UnicodeError) as error:
+            raise ConcurrentEdit(f'Invalid Claude lease marker: {lease}') from error
+        if (len(data) > 4096 or not isinstance(pairs, tuple) or len(marker) != len(pairs)
+                or set(marker) - {'pid', 'procStart', 'procStartFt'}
+                or type(marker.get('pid')) is not int or not 0 < marker['pid'] < 2 ** 31
+                or marker['pid'] != int(name[1])
+                or any(not isinstance(value, str) for key, value in marker.items() if key != 'pid')):
+            raise ConcurrentEdit(f'Invalid Claude lease marker: {lease}')
+        present = True
+    return present
+
+
+def _claude_cache_image(path, *, replacing=False):
+    if _linked(path) or not path.is_dir():
+        return image(path)
+    entries = {}
+    for entry in sorted(path.iterdir()):
+        if entry.name in {'.in_use', '.orphaned_at'}:
+            if _claude_runtime(entry) and replacing:
+                raise ConcurrentEdit(f'Claude cache has lease markers; let Claude release them before replacement: {path}')
+            continue
+        child = image(entry)
+        if child['kind'] == 'tree':
+            entries[entry.name] = {'kind': 'directory'}
+            entries.update({f'{entry.name}/{name}': value for name, value in child['entries'].items()})
+        elif child != _ABSENT:
+            entries[entry.name] = child
+    return {'kind': 'tree', 'entries': entries}
+
+
 def _missing(value):
     return value == _ABSENT or (value['kind'] == 'toml-fields' and
                                 all(not field['present'] for field in value['fields']))
@@ -93,6 +160,10 @@ class _Artifact:
     fields: object = None
     native: bool = False
     provenance: object = None
+
+    @property
+    def claude_cache(self):
+        return self.kind == 'plugin' and self.key.host == Host.CLAUDE
 
 
 @dataclass(frozen=True)
@@ -219,7 +290,9 @@ class AcceptedInstallations:
                                    'fields' if fields is not None else 'file', data=data, fields=fields))
         return tuple(units)
 
-    def _read(self, artifact, path=None):
+    def _read(self, artifact, path=None, *, replacing=False):
+        if artifact.claude_cache:
+            return _claude_cache_image(path or artifact.current, replacing=replacing)
         return image(path or artifact.current, artifact.fields)
 
     def _known_pending(self, artifact, pending):
@@ -234,7 +307,7 @@ class AcceptedInstallations:
         displaced_known = False
         if actual == _ABSENT and pending.get('displaced'):
             displaced = Path(pending['displaced'])
-            if displaced.exists() and _same(image(displaced), pending['swap_before']):
+            if displaced.exists() and _same(self._read(artifact, displaced), pending['swap_before']):
                 displaced_known = True
         if not displaced_known and not any(candidate is not None and _same(actual, candidate) for candidate in known):
             raise ConcurrentEdit(f'Unknown partial installation preserved: {artifact.identity}')
@@ -319,7 +392,7 @@ class AcceptedInstallations:
                         or _linked(work) or image(destination) != _ABSENT
                         or not _same(image(staged), target['image'])
                         or pending['swap_before']['kind'] != 'tree'
-                        or not _same(image(displaced), pending['swap_before'])
+                        or not _same(self._read(artifact, displaced), pending['swap_before'])
                         or not any(_same(pending['swap_before'], known) for known in
                                    (pending['before'], pending['destination_before'], pending.get('pristine')) if known)
                         or (before_path != destination and not _same(self._read(artifact, before_path), pending['before']))):
@@ -397,6 +470,8 @@ class AcceptedInstallations:
                                                           for k, v in sorted(artifact.fields.items())]}
             elif source is not None:
                 target = image(source)
+                if artifact.claude_cache and {'.in_use', '.orphaned_at'} & target.get('entries', {}).keys():
+                    raise BuildError(f'Claude runtime metadata is not source content: {artifact.identity}')
                 if any(part in {'.git', 'node_modules'} for path in target.get('entries', {}) for part in Path(path).parts):
                     raise BuildError(f'Excluded source content is not ownership evidence: {artifact.identity}')
             else:
@@ -534,11 +609,11 @@ class AcceptedInstallations:
             shutil.copytree(prepared.source, staged)
         if not _same(image(staged), prepared.target):
             raise ConcurrentEdit(f'Prepared stage failed verification: {staged}')
-        if not _same(self._read(artifact, destination), actual):
+        if not _same(self._read(artifact, destination, replacing=True), actual):
             raise ConcurrentEdit(f'Tree changed before replacement: {destination}')
         pending['swap_before'] = actual if actual != _ABSENT else pending['swap_before']
         self._save(artifact, accepted, pending)
-        if not _same(self._read(artifact, destination), actual):
+        if not _same(self._read(artifact, destination, replacing=True), actual):
             raise ConcurrentEdit(f'Tree changed before replacement: {destination}')
         destination.parent.mkdir(parents=True, exist_ok=True)
         if destination.exists():
