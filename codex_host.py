@@ -9,8 +9,10 @@ from collections import Counter, defaultdict
 from dataclasses import replace
 import json
 from pathlib import Path
+from queue import Empty, Queue
 import re
 import subprocess
+from threading import Thread
 import tomllib
 from typing import Sequence
 
@@ -64,6 +66,100 @@ def _hook_keys(plugin_id: str, root: Path) -> set[str]:
     return {f'{plugin_id}:hooks/hooks.json:{re.sub(r"(?<!^)(?=[A-Z])", "_", event).lower()}:{group}:{index}'
             for event, groups in events.items() for group, entry in enumerate(groups)
             for index, _ in enumerate(entry['hooks'])}
+
+
+def _approved_hooks(cli: Sequence[str], home: Path, timeout: float = 30) -> frozenset[str]:
+    try:
+        process = subprocess.Popen([*cli, 'app-server', '--stdio'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.DEVNULL, text=True, encoding='utf-8',
+                                   env=portable.native_cli_environment())
+    except (OSError, subprocess.SubprocessError) as error:
+        raise Unread(f'Native hook state is unreadable: {error}') from error
+    result: Queue[frozenset[str] | Unread] = Queue()
+
+    def exchange():
+        def send(message):
+            process.stdin.write(json.dumps(message) + '\n')
+            process.stdin.flush()
+
+        def request(identifier, method, params):
+            send({'id': identifier, 'method': method, 'params': params})
+            for line in process.stdout:
+                message = json.loads(line)
+                if not isinstance(message, dict):
+                    raise ValueError('App server returned a non-object message')
+                if message.get('id') != identifier:
+                    continue
+                if 'error' in message:
+                    raise ValueError(f'{method} failed: {message["error"]}')
+                return message['result']
+            raise ValueError(f'App server ended before replying to {method}')
+
+        try:
+            request(1, 'initialize', {'clientInfo': {'name': 'dotfiles_observer', 'version': '1.0.0'},
+                                      'capabilities': {'experimentalApi': True}})
+            send({'method': 'initialized'})
+            response = request(2, 'hooks/list', {'cwds': [str(home)]})
+            entries = response['data']
+            if (not isinstance(entries, list) or len(entries) != 1
+                    or not isinstance(entries[0]['cwd'], str) or Path(entries[0]['cwd']) != home):
+                raise ValueError('hooks/list did not return the requested home')
+            entry = entries[0]
+            if not isinstance(entry['errors'], list) or not isinstance(entry['warnings'], list):
+                raise ValueError('hooks/list returned invalid hook loading diagnostics')
+            if entry['errors'] or entry['warnings']:
+                raise ValueError('hooks/list reported hook loading errors or warnings')
+            if not isinstance(entry['hooks'], list):
+                raise ValueError('hooks/list returned an invalid hook list')
+            approved, keys = set(), set()
+            for hook in entry['hooks']:
+                key = hook['key']
+                if not isinstance(key, str) or not key or key in keys:
+                    raise ValueError('hooks/list returned an invalid or duplicate hook key')
+                keys.add(key)
+                if (not isinstance(hook['enabled'], bool)
+                        or hook['trustStatus'] not in ('trusted', 'untrusted', 'modified', 'managed')):
+                    raise ValueError('hooks/list returned an invalid hook state')
+                if hook['source'] != 'plugin':
+                    continue
+                plugin = hook['pluginId']
+                if not isinstance(plugin, str) or not plugin or not key.startswith(plugin + ':'):
+                    raise ValueError('hooks/list returned an invalid plugin hook identity')
+                if hook['enabled'] and hook['trustStatus'] == 'trusted':
+                    approved.add(key)
+            result.put(frozenset(approved))
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            result.put(Unread(f'Native hook state is unreadable: {error}'))
+        finally:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
+            process.stdout.close()
+
+    reader = Thread(target=exchange, daemon=True)
+    reader.start()
+    try:
+        try:
+            approved = result.get(timeout=timeout)
+        except Empty as error:
+            raise Unread('Native hooks/list timed out') from error
+        if isinstance(approved, Unread):
+            raise approved
+        return approved
+    finally:
+        try:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=2)
+        except (OSError, subprocess.SubprocessError) as error:
+            raise Unread(f'Native hook reader cleanup failed: {error}') from error
+        finally:
+            reader.join(timeout=2)
 
 
 class CodexState:
@@ -208,31 +304,50 @@ class CodexState:
 
         local_sources = {entry['name']: entry['source'] for entry in catalog.get('plugins', [])
                          if catalog.get('name') == ENGINE and isinstance(entry.get('source'), dict)}
+        catalog_names = Counter(entry['name'] for entry in catalog.get('plugins', []))
         releases: dict[str, Path | Unread] = {}
+        local_releases: set[str] = set()
         for plugin in inventory:
             source = plugin.get('source') or {}
             if source.get('source') != 'local':
                 continue
-            path = Path(source.get('path', ''))
-            if path.is_relative_to(roots.engine) or (path / '.codex-plugin/upstream.json').is_file():
-                releases[plugin['pluginId']] = path
+            identity = plugin['pluginId']
+            if (set(source) != {'source', 'path'} or not isinstance(source['path'], str)
+                    or not Path(source['path']).is_absolute()):
+                if plugin['marketplaceName'] == ENGINE:
+                    releases[identity] = Unread('Codex reports malformed or contradictory local source metadata')
                 continue
+            path = Path(source['path'])
             registered = local_sources.get(plugin['name'], {})
-            if (plugin['marketplaceName'] == ENGINE and registered.get('source') == 'local'
-                    and path == roots.agents_home.parent / registered.get('path', '')
-                    and path.parent == roots.agents_home / 'plugins/sources' / plugin['name']
-                    and re.fullmatch(r'[0-9a-f]{64}', path.name)):
+            exact = (plugin['marketplaceName'] == ENGINE and catalog_names[plugin['name']] == 1
+                     and config.get('marketplaces', {}).get(ENGINE, {}).get('source_type') != 'git'
+                     and set(registered) == {'source', 'path'} and registered['source'] == 'local'
+                     and isinstance(registered['path'], str) and bool(registered['path'])
+                     and path == roots.agents_home.parent / registered['path'])
+            protected = roots.agents_home / 'plugins/sources'
+            try:
+                staged = path.is_relative_to(protected) or path.resolve().is_relative_to(protected.resolve())
+            except (OSError, RuntimeError) as error:
+                releases[identity] = Unread(f'The local source path is unreadable: {error}')
+                continue
+            if staged:
+                releases[identity] = Unread('The staged engine source does not match its registered package and content address')
                 try:
-                    if roots.tree_digest(path) == 'sha256:' + path.name:
-                        releases[plugin['pluginId']] = path
+                    if (exact and path.parent == protected / plugin['name']
+                            and re.fullmatch(r'[0-9a-f]{64}', path.name)
+                            and roots.tree_digest(path) == 'sha256:' + path.name):
+                        releases[identity] = path
                 except OSError as error:
-                    releases[plugin['pluginId']] = Unread(f'The staged engine source is unreadable: {error}')
+                    releases[identity] = Unread(f'The staged engine source is unreadable: {error}')
+            elif path.is_relative_to(roots.engine) or (path / '.codex-plugin/upstream.json').is_file():
+                releases[identity] = path
+            elif exact:
+                local_releases.add(identity)
 
         fetched: dict[Path, Commit] = {}
 
         def pin(plugin) -> Pinned | Released | Unpinned:
             marketplace, source = plugin['marketplaceName'], plugin.get('source') or {}
-            path = Path(source.get('path', ''))
             if marketplace in CATALOGS:
                 return Unpinned()
             release = releases.get(plugin['pluginId'])
@@ -240,9 +355,12 @@ class CodexState:
                 raise release
             if release is not None:
                 return Released(plugin['version'])
+            if plugin['pluginId'] in local_releases:
+                return Released(plugin['version'])
             if source.get('source') in ('git', 'git-subdir') and (commit := _commit_or_none(source.get('ref'))):
                 return Pinned(commit)
             if source.get('source') == 'local' and marketplace not in checkouts:
+                path = Path(source.get('path', ''))
                 record = next((folder / _FETCHED for folder in (path, *path.parents)
                                if (folder / _FETCHED).is_file() and folder.is_relative_to(roots.codex_home)), None)
                 if record is None:
@@ -271,7 +389,7 @@ class CodexState:
             if plugin['marketplaceName'] not in CATALOGS:
                 try:
                     hooks[plugin['pluginId']] = _hook_keys(plugin['pluginId'], self._cache(plugin))
-                except (OSError, ValueError, TypeError, AttributeError) as error:
+                except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
                     seen.unread(self._cache(plugin) / 'hooks/hooks.json', error, {Surface.HOOK}, {plugin['pluginId']})
         for plugin in inventory:
             source = plugin.get('source') or {}
@@ -373,16 +491,17 @@ class CodexState:
         except OSError as error:
             seen.unread(agents, error, {Surface.AGENT})
         state = config.get('hooks', {}).get('state', {})
-        approved = defaultdict(set)
-        for name, value in state.items():
-            if value.get('enabled') and value.get('trusted_hash'):
-                approved[name.split(':', 1)[0]].add(name)
-        stray = 0
-        for plugin_id, names in approved.items():
-            defined = hooks.get(plugin_id, set())
-            stray += len(names - defined)
-            if names & defined:
-                seen.add(Surface.HOOK, plugin_id, Approved(len(names & defined)), seen.key(Surface.PLUGIN, plugin_id))
+        if any(hooks.values()):
+            try:
+                approved = _approved_hooks(self.cli, roots.home)
+                for plugin_id, defined in hooks.items():
+                    if approved & defined and installed[plugin_id]['enabled']:
+                        seen.add(Surface.HOOK, plugin_id, Approved(len(approved & defined)), seen.key(Surface.PLUGIN, plugin_id))
+            except Unread as error:
+                seen.unread('codex hooks/list', error, {Surface.HOOK}, {plugin for plugin, keys in hooks.items() if keys})
+        defined = set().union(*hooks.values())
+        stray = sum(name not in defined for name, value in state.items()
+                    if value.get('enabled', True) and value.get('trusted_hash'))
         if stray:
             seen.note(NoteKind.RESIDUE, 'hooks.state', f'{stray} approvals of hooks no installed plugin defines')
         for folder in (roots.codex_home / 'skills', roots.agents_home / 'skills'):

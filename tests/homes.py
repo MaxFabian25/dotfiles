@@ -14,6 +14,17 @@ answers = json.loads(pathlib.Path(__file__).with_name(sys.argv[1]).read_text())
 key = " ".join(sys.argv[2:])
 with pathlib.Path(__file__).with_name(sys.argv[1] + ".log").open("a") as log:
     log.write(key + "\\n")
+if key == "app-server --stdio" and "hooks/list" in answers:
+    for expected in ("initialize", "initialized", "hooks/list"):
+        message = json.loads(sys.stdin.readline())
+        assert message["method"] == expected, message
+        with pathlib.Path(__file__).with_name(sys.argv[1] + ".log").open("a") as log:
+            log.write(json.dumps(message) + "\\n")
+        if "id" in message:
+            result = answers[expected] if expected == "hooks/list" else {}
+            print(json.dumps({"id": message["id"], "result": result}), flush=True)
+    sys.stdin.read()
+    sys.exit(0)
 if key not in answers:
     sys.exit("unrecorded: " + key)
 sys.stdout.write(answers[key])

@@ -1,9 +1,11 @@
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import unittest
+from unittest.mock import patch
 
 TESTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TESTS.parent))
@@ -199,10 +201,15 @@ trust_level = "trusted"
         self.write(r.codex_home / '.tmp/marketplaces/skills/.codex-marketplace-install.json', json.dumps(
             {'source_type': 'git', 'source': 'https://github.com/example/skills.git', 'ref_name': C2, 'revision': C2}))
         self.available = []
+        self.hooks = [{'key': 'impeccable@personal:hooks/hooks.json:stop:0:0', 'source': 'plugin',
+                       'pluginId': 'impeccable@personal', 'enabled': True, 'trustStatus': 'trusted'}]
         return self
 
-    def state(self, list_answer=None):
+    def state(self, list_answer=None, hook_answer=None):
         answers = {'--version': 'codex-cli 0.0.0\n'}
+        if hook_answer is not False:
+            answers['hooks/list'] = hook_answer if hook_answer is not None else {
+                'data': [{'cwd': str(self.roots.home), 'hooks': self.hooks, 'warnings': [], 'errors': []}]}
         if list_answer is not False:
             answers['plugin list --available --json'] = list_answer or json.dumps(
                 {'installed': self.inventory, 'available': self.available})
@@ -230,16 +237,70 @@ trust_level = "trusted"
 
 class ObserveTest(unittest.TestCase):
     maxDiff = None
+    def test_native_registered_local_sources_are_versions_not_owned_releases(self):
+        scenarios = ('exact', 'unregistered', 'different-path', 'different-marketplace', 'duplicate',
+                     'catalog-git', 'configured-git', 'configured-git-fetched', 'configured-git-invalid',
+                     'native-git-claim', 'catalog-git-claim', 'missing-path', 'null-path')
+        for scenario in scenarios:
+            with self.subTest(scenario=scenario), Device() as device:
+                roots = device.roots
+                source = roots.codex_home / 'plugins/cache/personal/kit/1.0'
+                native = {'source': 'local', 'path': str(source)}
+                registered = {'source': 'local', 'path': './' + source.relative_to(roots.home).as_posix()}
+                if scenario == 'different-path':
+                    registered['path'] += '/other'
+                elif scenario == 'catalog-git':
+                    registered['source'] = 'git'
+                elif scenario == 'native-git-claim':
+                    native['ref'] = C1
+                elif scenario == 'catalog-git-claim':
+                    registered['ref'] = C1
+                elif scenario == 'missing-path':
+                    del native['path']
+                elif scenario == 'null-path':
+                    native['path'] = None
+                elif scenario.startswith('configured-git'):
+                    config = roots.codex_home / 'config.toml'
+                    config.write_text(config.read_text() + '\n[marketplaces.personal]\nsource_type = "git"\nsource = "url"\n')
+                    if scenario != 'configured-git':
+                        device.write(source / '.codex-marketplace-install.json', json.dumps({
+                            'revision': C2 if scenario == 'configured-git-fetched' else 'not-a-commit'}))
+                device.inventory[0]['source'] = native
+                if scenario == 'different-marketplace':
+                    device.inventory[0].update(marketplaceName='other', pluginId='kit@other')
+                    device.skill(roots.codex_home / 'plugins/cache/other/kit/1.0', 'kit')
+                catalog = roots.agents_home / 'plugins/marketplace.json'
+                data = json.loads(catalog.read_text())
+                if scenario != 'unregistered':
+                    data['plugins'][0]['source'] = registered
+                if scenario == 'duplicate':
+                    data['plugins'].append(data['plugins'][0])
+                catalog.write_text(json.dumps(data))
+                observed = device.state().observe(hs.Request())
+                identity = device.inventory[0]['pluginId']
+                plugin_key = key(S.PLUGIN, identity)
+                if scenario in ('exact', 'configured-git-fetched'):
+                    expected = hs.Released('1.0') if scenario == 'exact' else hs.Pinned(C2)
+                    self.assertEqual(observed.facts[plugin_key].value, hs.PluginValue(True, expected))
+                    self.assertIsNone(observed.details[plugin_key].release)
+                    self.assertEqual(observed.unknown, ())
+                else:
+                    self.assertNotIn(plugin_key, observed.facts)
+                    self.assertEqual([(u.surfaces, u.subjects) for u in observed.unknown],
+                                     [(frozenset({S.PLUGIN}), frozenset({identity}))])
+
     def test_staged_engine_releases_require_the_exact_registered_package_and_content_address(self):
-        for scenario in ('exact', 'unregistered', 'wrong-package', 'wrong-digest'):
+        for scenario in ('exact', 'unregistered', 'wrong-package', 'wrong-digest', 'builder-marker'):
             with self.subTest(scenario=scenario), Device() as device:
                 roots = device.roots
                 source = roots.codex_home / 'plugins/cache/personal/kit/1.0'
                 digest = str(roots.tree_digest(source)).removeprefix('sha256:')
                 staged = roots.agents_home / 'plugins/sources' / ('other' if scenario == 'wrong-package' else 'kit') / (
-                    '0' * 64 if scenario == 'wrong-digest' else digest)
+                    '0' * 64 if scenario in ('wrong-digest', 'builder-marker') else digest)
                 staged.parent.mkdir(parents=True)
                 shutil.copytree(source, staged)
+                if scenario == 'builder-marker':
+                    device.write(staged / '.codex-plugin/upstream.json', '{}')
                 device.inventory[0]['source'] = {'source': 'local', 'path': str(staged)}
                 catalog = roots.agents_home / 'plugins/marketplace.json'
                 data = json.loads(catalog.read_text())
@@ -304,11 +365,86 @@ class ObserveTest(unittest.TestCase):
             config = device.roots.codex_home / 'config.toml'
             config.write_text(config.read_text() + '\n[hooks.state."impeccable@personal:hooks/hooks.json:post_tool_use:0:1"]\n'
                               'enabled = true\ntrusted_hash = "sha256:y"\n')
+            device.hooks.append(device.hooks[0] | {'key': 'impeccable@personal:hooks/hooks.json:post_tool_use:0:1'})
             observation = device.state().observe(hs.Request())
         self.assertEqual(observation.facts[key(S.HOOK, 'impeccable@personal')].value, hs.Approved(1))
         self.assertEqual(observation.details[key(S.PLUGIN, 'impeccable@personal')].hooks, 3)
         self.assertIn(('residue', 'hooks.state', '1 approvals of hooks no installed plugin defines'),
                       [(n.kind.value, n.subject, n.detail) for n in observation.notes])
+
+    def test_hook_approvals_use_current_native_trust_and_enablement(self):
+        for scenario in ('omitted-enabled', 'omitted-trust', 'disabled', 'untrusted', 'modified', 'absent',
+                         'unknown-key', 'other-plugin', 'disabled-plugin'):
+            with self.subTest(scenario=scenario), Device() as device:
+                config = device.roots.codex_home / 'config.toml'
+                text = config.read_text()
+                if scenario == 'omitted-enabled':
+                    text = text.replace('enabled = true\ntrusted_hash', 'trusted_hash')
+                elif scenario == 'omitted-trust':
+                    text = text.replace('trusted_hash = "sha256:x"', '')
+                elif scenario == 'disabled':
+                    device.hooks[0]['enabled'] = False
+                elif scenario in ('untrusted', 'modified'):
+                    device.hooks[0]['trustStatus'] = scenario
+                elif scenario == 'absent':
+                    device.hooks = []
+                elif scenario == 'unknown-key':
+                    device.hooks[0]['key'] = 'impeccable@personal:hooks/hooks.json:stop:9:9'
+                elif scenario == 'other-plugin':
+                    device.hooks[0].update(pluginId='other@personal', key='other@personal:hooks/hooks.json:stop:0:0')
+                elif scenario == 'disabled-plugin':
+                    device.inventory[1]['enabled'] = False
+                config.write_text(text)
+                observed = device.state().observe(hs.Request())
+                if scenario in ('omitted-enabled', 'omitted-trust'):
+                    self.assertEqual(observed.facts[key(S.HOOK, 'impeccable@personal')].value, hs.Approved(1))
+                else:
+                    self.assertNotIn(key(S.HOOK, 'impeccable@personal'), observed.facts)
+                self.assertEqual(observed.details[key(S.PLUGIN, 'impeccable@personal')].hooks, 1)
+                self.assertEqual(observed.unknown, ())
+
+    def test_failed_or_malformed_native_hooks_are_incomplete_not_unapproved(self):
+        scenarios = ('read-failure', 'missing-data', 'wrong-cwd', 'errors', 'duplicate', 'enabled-not-bool',
+                     'missing-enabled', 'unknown-trust', 'wrong-identity', 'invalid-diagnostics')
+        for scenario in scenarios:
+            with self.subTest(scenario=scenario), Device() as device:
+                entry = {'cwd': str(device.roots.home), 'hooks': device.hooks, 'warnings': [], 'errors': []}
+                answer = {'data': [entry]}
+                if scenario == 'read-failure':
+                    answer = False
+                elif scenario == 'missing-data':
+                    answer = {}
+                elif scenario == 'wrong-cwd':
+                    entry['cwd'] = '/other'
+                elif scenario == 'errors':
+                    entry['errors'] = [{'path': 'hooks.json', 'message': 'unreadable'}]
+                elif scenario == 'duplicate':
+                    device.hooks.append(device.hooks[0] | {'enabled': False})
+                elif scenario == 'enabled-not-bool':
+                    device.hooks[0]['enabled'] = 'true'
+                elif scenario == 'missing-enabled':
+                    del device.hooks[0]['enabled']
+                elif scenario == 'unknown-trust':
+                    device.hooks[0]['trustStatus'] = 'maybe'
+                elif scenario == 'wrong-identity':
+                    device.hooks[0]['pluginId'] = 'other@personal'
+                elif scenario == 'invalid-diagnostics':
+                    entry['errors'] = None
+                observed = device.state(hook_answer=answer).observe(hs.Request())
+                self.assertNotIn(key(S.HOOK, 'impeccable@personal'), observed.facts)
+                self.assertEqual(observed.facts[key(S.PLUGIN, 'impeccable@personal')].value,
+                                 hs.PluginValue(True, hs.Pinned(C1)))
+                self.assertEqual([(u.source, u.surfaces, u.subjects) for u in observed.unknown],
+                                 [('codex hooks/list', frozenset({S.HOOK}), frozenset({'impeccable@personal'}))])
+
+    def test_unreadable_hook_definitions_remain_incomplete(self):
+        with Device() as device:
+            device.write(device.roots.codex_home / 'plugins/cache/personal/impeccable/4.5.2/hooks/hooks.json', '{}')
+            observed = device.state().observe(hs.Request())
+            self.assertEqual([(u.surfaces, u.subjects) for u in observed.unknown],
+                             [(frozenset({S.HOOK}), frozenset({'impeccable@personal'}))])
+            self.assertNotIn(key(S.HOOK, 'impeccable@personal'), observed.facts)
+            self.assertNotIn('app-server --stdio', device.calls('codex'))
 
     def test_a_disabled_install_never_lends_its_flags_and_alone_is_read_only_where_named(self):
         with Device() as device:
@@ -432,6 +568,93 @@ class ObserveTest(unittest.TestCase):
                            frozenset({S.PLUGIN, S.TREE, S.OVERLAY, S.HOOK, S.SKILL}), None)])
         self.assertTrue(observation.unknown[0].reason.startswith('Command'), observation.unknown[0].reason)
         self.assertEqual(observation.offered, frozenset())
+
+
+HOOK_SERVER = '''
+import json
+from pathlib import Path
+import signal
+import sys
+import time
+
+mode, log = sys.argv[1:3]
+if mode == 'ignore-terminate':
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+for expected in ('initialize', 'initialized', 'hooks/list'):
+    message = json.loads(sys.stdin.readline())
+    assert message['method'] == expected
+    with Path(log).open('a') as file:
+        file.write(json.dumps(message) + '\\n')
+    if expected == 'initialized':
+        continue
+    if expected == 'hooks/list':
+        if mode in ('timeout', 'ignore-terminate'):
+            time.sleep(60)
+        if mode == 'malformed':
+            print('not json', flush=True)
+            continue
+        if mode == 'exit':
+            sys.exit(0)
+        if mode == 'rpc-error':
+            print(json.dumps({'id': 2, 'error': {'code': -1, 'message': 'no hooks'}}), flush=True)
+            continue
+        result = {'data': [{'cwd': message['params']['cwds'][0], 'hooks': [
+            {'key': 'kit@personal:hooks/hooks.json:stop:0:0', 'source': 'plugin',
+             'pluginId': 'kit@personal', 'enabled': True, 'trustStatus': 'trusted'}],
+            'warnings': [], 'errors': []}]}
+    else:
+        print(json.dumps({'method': 'notification', 'params': {}}), flush=True)
+        print(json.dumps({'id': 99, 'result': {}}), flush=True)
+        result = {}
+    print(json.dumps({'id': message['id'], 'result': result}), flush=True)
+sys.stdin.read()
+'''
+
+
+class NativeHookReadTest(unittest.TestCase):
+    def test_an_unstartable_cli_is_unreadable(self):
+        with homes.Home() as home:
+            with self.assertRaisesRegex(codex_host.Unread, 'Native hook state is unreadable'):
+                codex_host._approved_hooks([str(home.roots.home / 'missing-cli')], home.roots.home)
+
+    def test_one_shot_protocol_order_failures_and_timeout_cleanup(self):
+        modes = ['success', 'malformed', 'exit', 'rpc-error', 'timeout']
+        if os.name != 'nt':
+            modes.append('ignore-terminate')
+        for mode in modes:
+            with self.subTest(mode=mode), homes.Home() as home:
+                log = home.roots.home / 'requests.jsonl'
+                processes, readers = [], []
+                popen, thread = subprocess.Popen, codex_host.Thread
+
+                def spawn(*args, **kwargs):
+                    process = popen(*args, **kwargs)
+                    processes.append(process)
+                    return process
+
+                def reader(*args, **kwargs):
+                    worker = thread(*args, **kwargs)
+                    readers.append(worker)
+                    return worker
+
+                cli = [sys.executable, '-c', HOOK_SERVER, mode, str(log)]
+                with patch('codex_host.subprocess.Popen', side_effect=spawn), patch('codex_host.Thread', side_effect=reader):
+                    if mode == 'success':
+                        self.assertEqual(codex_host._approved_hooks(cli, home.roots.home),
+                                         frozenset({'kit@personal:hooks/hooks.json:stop:0:0'}))
+                    else:
+                        reason = 'timed out' if mode in ('timeout', 'ignore-terminate') else 'unreadable'
+                        with self.assertRaisesRegex(codex_host.Unread, reason):
+                            codex_host._approved_hooks(cli, home.roots.home, timeout=1)
+                self.assertEqual([json.loads(line) for line in log.read_text().splitlines()], [
+                    {'id': 1, 'method': 'initialize', 'params': {
+                        'clientInfo': {'name': 'dotfiles_observer', 'version': '1.0.0'},
+                        'capabilities': {'experimentalApi': True}}},
+                    {'method': 'initialized'},
+                    {'id': 2, 'method': 'hooks/list', 'params': {'cwds': [str(home.roots.home)]}},
+                ])
+                self.assertIsNotNone(processes[0].poll())
+                self.assertFalse(readers[0].is_alive())
 
 
 class TreeTest(unittest.TestCase):
