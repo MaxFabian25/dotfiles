@@ -5,6 +5,41 @@ from configuration import patch_fields, read_fields
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_runtime_patch_preserves_out_of_order_array_tables(self):
+        before = b'''[[root.config]]
+value = 1
+
+[unrelated]
+value = 2
+
+[[root.config]]
+value = 3
+
+[[root.config]]
+value = 4
+
+[features.multi_agent_v2]
+expose_spawn_agent_model_overrides = false # managed
+'''
+        expected = b'''[[root.config]]
+value = 1
+
+[unrelated]
+value = 2
+
+[[root.config]]
+value = 3
+
+[[root.config]]
+value = 4
+
+[features.multi_agent_v2]
+expose_spawn_agent_model_overrides = true # managed
+'''
+        fields = {('features', 'multi_agent_v2', 'expose_spawn_agent_model_overrides'): True}
+        self.assertEqual(patch_fields(before, fields), expected)
+        self.assertEqual(patch_fields(expected, fields), expected)
+
     def test_managed_fields_preserve_local_secrets_comments_and_line_endings(self):
         before = b'\xef\xbb\xbf# local settings\r\n[tools]\r\nnode = "22" # pinned\r\n[env]\r\nLOCAL_ONLY = "not-a-real-secret"\r\n'
         fields = {('tools', 'node'): '24'}
