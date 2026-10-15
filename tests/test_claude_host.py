@@ -26,6 +26,15 @@ def key(surface, subject):
 class ProjectTest(unittest.TestCase):
     maxDiff = None
 
+    def test_explicit_checkout_mode_is_not_projected_as_git_registration(self):
+        repo = d.Repo('interfaces', d.Visibility.PUBLIC, '', 'https://github.com/example/interfaces.git', NEW,
+                      None, d.HostMarketplace('interfaces', d.MarketplaceMode.CHECKOUT))
+        setup = d.Setup(roots=d.Roots(Path('/p'), None), packages={}, repos={'interfaces': repo}, loose={},
+                        host_skills={}, rules=None, note_rules=(), public_repositories=frozenset(), lock={})
+        facts = claude_host.ClaudeState(hs.DeviceRoots.current(), 'claude').project(setup)
+        self.assertEqual(facts[key(S.MARKETPLACE, 'interfaces')].value,
+                         hs.CheckoutMarketplace('https://github.com/example/interfaces.git', NEW))
+
     def test_aligned_expectations_come_from_the_codex_placement(self):
         interfaces = d.Package('interfaces', d.Visibility.PUBLIC, '', d.RepoSource('interfaces'),
                                {'Better Interface': M.EXPLICIT, 'variant': M.OFF}, d.ToolNotes.AUDIT,
@@ -150,16 +159,75 @@ class Device(homes.Home):
         settings.write_text(json.dumps(data))
         return directory, commit
 
+    def native_git_marketplace(self):
+        directory, commit = self.git_marketplace()
+        native = self.roots.claude_home / 'plugins/marketplaces/interfaces'
+        native.parent.mkdir(parents=True, exist_ok=True)
+        directory.rename(native)
+        subprocess.run(['git', '-C', str(native), 'checkout', '--detach', commit], capture_output=True, check=True)
+        source = {'source': 'git', 'url': 'https://github.com/example/interfaces.git', 'ref': commit}
+        settings = self.roots.claude_home / 'settings.json'
+        data = json.loads(settings.read_text())
+        data['extraKnownMarketplaces']['interfaces'] = {'source': source, 'autoUpdate': False}
+        settings.write_text(json.dumps(data))
+        registry = self.roots.claude_home / 'plugins/known_marketplaces.json'
+        registry.write_text(json.dumps({'interfaces': {'source': source, 'autoUpdate': False, 'installLocation': str(native)}}))
+        return native, commit
+
 
 class ObserveTest(unittest.TestCase):
     maxDiff = None
+
+    def test_native_git_pin_comes_from_the_detached_checkout_and_update_policy(self):
+        with Device() as device:
+            _, commit = device.native_git_marketplace()
+            observation = device.state().observe(hs.Request())
+        self.assertEqual(observation.facts[key(S.MARKETPLACE, 'interfaces')].value,
+                         hs.GitMarketplace('https://github.com/example/interfaces.git', commit))
+        self.assertEqual(observation.facts[key(S.PLUGIN, 'interfaces@interfaces')].value,
+                         hs.PluginValue(False, hs.Pinned(OLD)))
+
+    def test_native_git_with_auto_updates_cannot_claim_an_exact_pin(self):
+        for filename, nested in (('settings.json', True), ('plugins/known_marketplaces.json', False)):
+            with self.subTest(filename=filename), Device() as device:
+                device.native_git_marketplace()
+                path = device.roots.claude_home / filename
+                data = json.loads(path.read_text())
+                entries = data['extraKnownMarketplaces'] if nested else data
+                entries['interfaces']['autoUpdate'] = True
+                path.write_text(json.dumps(data))
+                observation = device.state().observe(hs.Request())
+                self.assertEqual(observation.facts[key(S.MARKETPLACE, 'interfaces')].value,
+                                 hs.GitMarketplace('https://github.com/example/interfaces.git', None))
+
+    def test_native_detached_head_with_a_moving_ref_is_not_an_exact_pin(self):
+        with Device() as device:
+            device.native_git_marketplace()
+            for filename, nested in (('settings.json', True), ('plugins/known_marketplaces.json', False)):
+                path = device.roots.claude_home / filename
+                data = json.loads(path.read_text())
+                entries = data['extraKnownMarketplaces'] if nested else data
+                entries['interfaces']['source']['ref'] = 'main'
+                path.write_text(json.dumps(data))
+            observation = device.state().observe(hs.Request())
+        self.assertEqual(observation.facts[key(S.MARKETPLACE, 'interfaces')].value,
+                         hs.GitMarketplace('https://github.com/example/interfaces.git', None))
+
+    def test_dirty_native_git_cache_is_unknown_instead_of_pinned(self):
+        with Device() as device:
+            native, _ = device.native_git_marketplace()
+            (native / 'unreviewed').write_text('Local change')
+            observation = device.state().observe(hs.Request())
+        self.assertNotIn(key(S.MARKETPLACE, 'interfaces'), observation.facts)
+        self.assertTrue(any(u.subjects == frozenset({'interfaces'}) and 'local changes' in u.reason
+                            for u in observation.unknown))
 
     def test_a_git_directory_preserves_its_origin_and_checkout_pin_separately_from_the_install_pin(self):
         with Device() as device:
             _, commit = device.git_marketplace()
             observation = device.state().observe(hs.Request())
         self.assertEqual(observation.facts[key(S.MARKETPLACE, 'interfaces')].value,
-                         hs.GitMarketplace('https://github.com/example/interfaces.git', commit))
+                         hs.CheckoutMarketplace('https://github.com/example/interfaces.git', commit))
         self.assertEqual(observation.facts[key(S.PLUGIN, 'interfaces@interfaces')].value,
                          hs.PluginValue(False, hs.Pinned(OLD)))
 

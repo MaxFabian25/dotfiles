@@ -7,6 +7,7 @@ An aligned copy keeps a skill the package has off when the package gives it a Cl
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 import re
 import stat
@@ -15,12 +16,12 @@ from typing import Sequence
 
 import yaml
 
-from description import (HOST_TOGGLES, RULES, AlignedInstall, BuildSource, EngineInstall, LocalSource, RepoSource, Setup, SkillRoot,
+from description import (HOST_TOGGLES, RULES, AlignedInstall, BuildSource, EngineInstall, LocalSource, MarketplaceMode, RepoSource, Setup, SkillRoot,
                          ToolNotes, plugin_id, via)
 from host_observation import Observer, Unread, checkout, observe_loose, observe_trees, run
 from invocation_overrides import frontmatter, read_text, skill_paths
 from host_state import (ALIGNED_MARKETPLACE as ALIGNED_VIA, CATALOGS as ALL_CATALOGS, ENGINE_MARKETPLACE, DeviceRoots,
-                        EngineMarketplace, Fact, FactKey, FactSet, FileValue, GitMarketplace, Host, InstallDetail,
+                        CheckoutMarketplace, Commit, EngineMarketplace, Fact, FactKey, FactSet, FileValue, GitMarketplace, Host, InstallDetail,
                         MarketplaceDetail, NoteKind, Observation, OverlaySpec, Pinned, PluginValue, Released, Request,
                         SkillMode, Surface, TreeValue, Unpinned, bytes_digest, clone_url, parse_commit)
 import portable
@@ -43,6 +44,49 @@ def portable_name(skill: str) -> str:
     return re.sub(r'[^a-z0-9-]+', '-', skill.lower()).strip('-')
 
 
+@dataclass(frozen=True)
+class NativeMarketplace:
+    root: Path
+    url: str
+    commit: Commit
+    pinned: bool
+
+
+def native_marketplace(roots: DeviceRoots, name: str, configured: dict, registered: dict | None) -> NativeMarketplace | None:
+    if registered is None:
+        return None
+    source = configured.get('source', {})
+    if source != registered.get('source') or source.get('source') not in ('git', 'github'):
+        raise Unread(f'Native marketplace source disagrees with settings: {name}')
+    url = clone_url(source.get('url' if source['source'] == 'git' else 'repo', ''))
+    root = Path(registered.get('installLocation', ''))
+    expected = roots.claude_home / 'plugins/marketplaces' / name
+    if root != expected or root.resolve() != root.absolute():
+        raise Unread(f'Native marketplace has an unexpected cache path: {name}')
+    manifest_path = Path(source.get('path', '.claude-plugin/marketplace.json'))
+    if manifest_path.is_absolute() or '..' in manifest_path.parts:
+        raise Unread(f'Native marketplace manifest leaves its checkout: {name}')
+    manifest = root / manifest_path
+    if (not (root / '.git').is_dir() or (root / '.git').resolve() != (root / '.git').absolute()
+            or manifest.resolve() != manifest.absolute()):
+        raise Unread(f'Native marketplace has a linked Git directory or manifest: {name}')
+    try:
+        if json.loads(portable.read_utf8(manifest)).get('name') != name:
+            raise Unread(f'Native marketplace manifest has a different name: {name}')
+        found = checkout(root)
+        if found is None or found[0] != url:
+            raise Unread(f'Native marketplace checkout has a different origin: {name}')
+        origin, commit, clean = found
+        if not clean:
+            raise Unread(f'Native marketplace checkout has local changes: {name}')
+        detached = portable.read_utf8(root / '.git/HEAD').strip() == commit
+    except (OSError, ValueError) as error:
+        raise Unread(f'Cannot read native marketplace {name}: {error}') from error
+    pinned = (detached and source.get('ref') == commit
+              and configured.get('autoUpdate') is False and registered.get('autoUpdate') is False)
+    return NativeMarketplace(root, origin, commit, pinned)
+
+
 class ClaudeState:
     host = _HOST
 
@@ -63,7 +107,8 @@ class ClaudeState:
 
         for repo in setup.repos.values():
             if repo.claude:
-                add(Surface.MARKETPLACE, repo.claude.name, GitMarketplace(repo.url, repo.commit), repo.name)
+                kind = CheckoutMarketplace if repo.claude.mode == MarketplaceMode.CHECKOUT else GitMarketplace
+                add(Surface.MARKETPLACE, repo.claude.name, kind(repo.url, repo.commit), repo.name)
         for package in setup.packages.values():
             if package.claude is None:
                 continue
@@ -141,6 +186,8 @@ class ClaudeState:
         records_path = roots.claude_home / 'plugins/installed_plugins.json'
         records = read_json(records_path, {Surface.PLUGIN}, {}).get('plugins', {})
         settings = read_json(roots.claude_home / 'settings.json', {Surface.MARKETPLACE, Surface.SKILL}, {})
+        marketplaces_path = roots.claude_home / 'plugins/known_marketplaces.json'
+        marketplaces = read_json(marketplaces_path, {Surface.MARKETPLACE}, {})
 
         user = [plugin for plugin in inventory if plugin.get('scope') == 'user']
         scoped = len(inventory) - len(user)
@@ -181,11 +228,15 @@ class ClaudeState:
         for name, entry in settings.get('extraKnownMarketplaces', {}).items():
             source = entry.get('source', {})
             kind = source.get('source')
-            if kind == 'git':
-                seen.add(Surface.MARKETPLACE, name, GitMarketplace(clone_url(source.get('url', '')), None),
+            if kind in ('git', 'github'):
+                try:
+                    native = native_marketplace(roots, name, entry, marketplaces.get(name))
+                except Unread as error:
+                    seen.unread(marketplaces_path, error, {Surface.MARKETPLACE}, {name})
+                    continue
+                url = clone_url(source.get('url' if kind == 'git' else 'repo', ''))
+                seen.add(Surface.MARKETPLACE, name, GitMarketplace(url, native.commit if native and native.pinned else None),
                          detail=MarketplaceDetail(tuple(source.get('sparsePaths', ()))))
-            elif kind == 'github':
-                seen.add(Surface.MARKETPLACE, name, GitMarketplace(clone_url(source.get('repo', '')), None))
             elif kind == 'directory':
                 directory = Path(source.get('path', ''))
                 manifest = directory / '.claude-plugin/marketplace.json'
@@ -205,7 +256,7 @@ class ClaudeState:
                     if found:
                         url, head, clean = found
                         if clean:
-                            seen.add(Surface.MARKETPLACE, name, GitMarketplace(url, head))
+                            seen.add(Surface.MARKETPLACE, name, CheckoutMarketplace(url, head))
                         else:
                             seen.unread(directory, 'marketplace checkout has local changes', {Surface.MARKETPLACE}, {name})
                         continue

@@ -173,7 +173,7 @@ class NativeCatalogTest(unittest.TestCase):
             self.assertEqual(commands, [(Host.CODEX, 'plugin', 'marketplace', 'add', str(root), '--json')])
 
     def test_claude_registers_an_exact_checkout_without_treating_the_pin_as_a_branch(self):
-        from description import HostMarketplace
+        from description import HostMarketplace, MarketplaceMode
         from host_state import DeviceRoots, FactKey, GitMarketplace, Host, Surface
         from sync_hosts import Apply
         from sync_sources import Sources
@@ -195,7 +195,7 @@ class NativeCatalogTest(unittest.TestCase):
             operation.roots = DeviceRoots.current(root)
             operation.builder = SimpleNamespace(sources=Sources(root / 'sources', seeds=(upstream,)))
             repo = SimpleNamespace(name='skills', url='https://github.com/example/skills.git', commit=commit,
-                                   marketplace=lambda host: HostMarketplace('skills'))
+                                   marketplace=lambda host: HostMarketplace('skills', MarketplaceMode.CHECKOUT))
             operation.setup = SimpleNamespace(repos={'skills': repo})
             operation.current = SimpleNamespace(changes=[SimpleNamespace(
                 key=FactKey(Host.CLAUDE, Surface.MARKETPLACE, 'skills'),
@@ -208,6 +208,135 @@ class NativeCatalogTest(unittest.TestCase):
             self.assertEqual(git(checkout, 'rev-parse', 'HEAD'), commit)
             self.assertEqual(git(checkout, 'remote', 'get-url', 'origin'), 'https://github.com/example/skills.git')
             self.assertEqual((checkout / 'source').read_text(), 'Pinned bytes')
+
+
+class NativeGitMarketplaceTest(unittest.TestCase):
+    def setUp(self):
+        from description import HostMarketplace
+        from host_state import DeviceRoots, FactKey, GitMarketplace, Host, Surface
+        from sync_files import Files
+        from sync_hosts import Apply
+        from sync_sources import Sources
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.upstream = self.root / 'upstream'
+        self.upstream.mkdir()
+        git(self.upstream, 'init', '-b', 'main')
+        git(self.upstream, 'config', 'user.name', 'Test')
+        git(self.upstream, 'config', 'user.email', 'test@example.invalid')
+        self.url = 'https://github.com/example/skills.git'
+        git(self.upstream, 'remote', 'add', 'origin', self.url)
+        (self.upstream / '.claude-plugin').mkdir()
+        (self.upstream / '.claude-plugin/marketplace.json').write_text(json.dumps({'name': 'skills', 'plugins': []}))
+        (self.upstream / 'source').write_text('Pinned bytes')
+        git(self.upstream, 'add', '.')
+        git(self.upstream, 'commit', '-m', 'Pinned source')
+        self.pin = git(self.upstream, 'rev-parse', 'HEAD')
+        (self.upstream / 'source').write_text('Upstream moved')
+        git(self.upstream, 'commit', '-am', 'Upstream moved')
+        self.operation = Apply.__new__(Apply)
+        self.operation.roots = DeviceRoots.current(self.root)
+        self.operation.builder = SimpleNamespace(sources=Sources(self.root / 'sources', seeds=(self.upstream,)))
+        self.operation.files = Files(self.root / 'backups')
+        self.spec = HostMarketplace('skills')
+        self.repo = SimpleNamespace(name='skills', url=self.url, commit=self.pin, marketplace=lambda host: self.spec)
+        self.operation.setup = SimpleNamespace(repos={'skills': self.repo})
+        self.operation.current = SimpleNamespace(changes=[SimpleNamespace(
+            key=FactKey(Host.CLAUDE, Surface.MARKETPLACE, 'skills'),
+            expected=GitMarketplace(self.url, self.pin), entry=SimpleNamespace(name='skills'))])
+        self.settings = self.operation.roots.claude_home / 'settings.json'
+        self.registry = self.operation.roots.claude_home / 'plugins/known_marketplaces.json'
+        self.cache = self.operation.roots.claude_home / 'plugins/marketplaces/skills'
+        self.commands = []
+
+        def command(*args):
+            self.commands.append(args)
+            self.register()
+
+        self.operation.command = command
+
+    def register(self):
+        self.cache.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(['git', 'clone', str(self.upstream), str(self.cache)], capture_output=True, check=True)
+        git(self.cache, 'remote', 'set-url', 'origin', self.url)
+        source = {'source': 'git', 'url': self.url, 'ref': 'main'}
+        self.settings.write_text(json.dumps({'unmanaged': {'keep': True}, 'extraKnownMarketplaces': {
+            'skills': {'source': source, 'future-setting': 7}}}))
+        self.registry.write_text(json.dumps({'skills': {
+            'source': source, 'installLocation': str(self.cache), 'lastUpdated': 'native-time', 'future-record': 9}}))
+
+    def test_fresh_git_registration_pins_native_checkout_and_preserves_metadata(self):
+        from host_state import Host
+        self.operation._marketplaces()
+        self.assertEqual(self.commands, [(Host.CLAUDE, 'plugin', 'marketplace', 'add', self.url, '--scope', 'user', '--json')])
+        self.assertEqual(git(self.cache, 'rev-parse', 'HEAD'), self.pin)
+        self.assertEqual((self.cache / 'source').read_text(), 'Pinned bytes')
+        self.assertEqual(git(self.cache, 'status', '--porcelain'), '')
+        self.assertEqual((self.cache / '.git/HEAD').read_text().strip(), self.pin)
+        settings = json.loads(self.settings.read_bytes())
+        registered = json.loads(self.registry.read_bytes())['skills']
+        self.assertEqual(settings['unmanaged'], {'keep': True})
+        self.assertEqual(settings['extraKnownMarketplaces']['skills']['future-setting'], 7)
+        self.assertEqual(registered['future-record'], 9)
+        self.assertEqual(registered['lastUpdated'], 'native-time')
+        self.assertEqual(registered['source'], {'source': 'git', 'url': self.url, 'ref': self.pin})
+        self.assertIs(settings['extraKnownMarketplaces']['skills']['autoUpdate'], False)
+        self.assertIs(registered['autoUpdate'], False)
+        before = [path.stat().st_mtime_ns for path in (self.settings, self.registry, self.cache / '.git/HEAD')]
+        self.operation._marketplaces()
+        self.assertEqual(len(self.commands), 1)
+        self.assertEqual(before, [path.stat().st_mtime_ns for path in (self.settings, self.registry, self.cache / '.git/HEAD')])
+
+    def test_existing_dirty_native_checkout_is_preserved_before_any_write(self):
+        self.register()
+        (self.cache / 'source').write_text('User changed this')
+        before = self.settings.read_bytes(), self.registry.read_bytes(), git(self.cache, 'rev-parse', 'HEAD')
+        with self.assertRaisesRegex(RuntimeError, 'local changes'):
+            self.operation._marketplaces()
+        self.assertEqual(self.commands, [])
+        self.assertEqual((self.settings.read_bytes(), self.registry.read_bytes(), git(self.cache, 'rev-parse', 'HEAD')), before)
+        self.assertEqual((self.cache / 'source').read_text(), 'User changed this')
+
+    def test_existing_local_registration_is_not_relabelled_as_git(self):
+        self.register()
+        source = {'source': 'directory', 'path': str(self.cache)}
+        for path, nested in ((self.settings, True), (self.registry, False)):
+            data = json.loads(path.read_bytes())
+            entries = data['extraKnownMarketplaces'] if nested else data
+            entries['skills']['source'] = source
+            path.write_text(json.dumps(data))
+        before = self.settings.read_bytes(), self.registry.read_bytes(), git(self.cache, 'rev-parse', 'HEAD')
+        with self.assertRaisesRegex(RuntimeError, 'source disagrees'):
+            self.operation._marketplaces()
+        self.assertEqual(self.commands, [])
+        self.assertEqual((self.settings.read_bytes(), self.registry.read_bytes(), git(self.cache, 'rev-parse', 'HEAD')), before)
+
+    def test_existing_registration_origin_name_and_path_must_agree(self):
+        from unittest.mock import patch
+        self.register()
+        before = self.settings.read_bytes(), self.registry.read_bytes()
+        for change in ('origin', 'name', 'path', 'source'):
+            with self.subTest(change=change):
+                if change == 'origin':
+                    git(self.cache, 'remote', 'set-url', 'origin', 'https://github.com/elsewhere/skills.git')
+                elif change == 'name':
+                    (self.cache / '.claude-plugin/marketplace.json').write_text('{"name":"other"}')
+                else:
+                    record = json.loads(before[1])
+                    if change == 'path':
+                        record['skills']['installLocation'] = str(self.upstream)
+                    else:
+                        record['skills']['source']['ref'] = 'different'
+                    self.registry.write_text(json.dumps(record))
+                with patch.object(self.operation.builder.sources, 'checkout') as write:
+                    with self.assertRaises(RuntimeError):
+                        self.operation._marketplaces()
+                    write.assert_not_called()
+                self.assertEqual(self.commands, [])
+                git(self.cache, 'remote', 'set-url', 'origin', self.url)
+                (self.cache / '.claude-plugin/marketplace.json').write_bytes((self.upstream / '.claude-plugin/marketplace.json').read_bytes())
+                self.registry.write_bytes(before[1])
 
 
 if __name__ == '__main__':

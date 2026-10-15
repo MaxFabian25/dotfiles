@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import subprocess
 import shutil
 
 import portable
 from accepted_installations import AcceptedInstallations, image
+from claude_host import native_marketplace
 from description import EngineInstall, MarketplaceMode, plugin_id, via
 from device_sync import changed_packages
-from host_state import EngineMarketplace, FactKey, Host, SkillMode, Surface
+from host_observation import Unread
+from host_state import EngineMarketplace, FactKey, Host, SkillMode, Surface, clone_url
 from sync_files import Files, ConcurrentEdit, backup_directory
 from sync_sources import child
 
@@ -73,10 +76,58 @@ class Apply:
                     self.command(host, 'plugin', 'marketplace', 'add', str(checkout), '--json')
                 else:
                     self.command(host, 'plugin', 'marketplace', 'add', repo.url, '--ref', repo.commit, '--json')
-            else:
+            elif spec.mode == MarketplaceMode.CHECKOUT:
                 checkout = self.builder.sources.checkout(repo.url, repo.commit,
                                                          self.roots.engine / '.sync/checkouts' / repo.name)
                 self.command(host, 'plugin', 'marketplace', 'add', str(checkout), '--scope', 'user', '--json')
+            else:
+                self._claude_git_marketplace(repo, spec)
+
+    def _claude_git_marketplace(self, repo, spec):
+        settings_path = self.roots.claude_home / 'settings.json'
+        registry_path = self.roots.claude_home / 'plugins/known_marketplaces.json'
+
+        def registration():
+            settings = json.loads(settings_path.read_bytes()) if settings_path.exists() else {}
+            registry = json.loads(registry_path.read_bytes()) if registry_path.exists() else {}
+            configured = settings.get('extraKnownMarketplaces', {}).get(spec.name, {})
+            registered = registry.get(spec.name)
+            try:
+                native = native_marketplace(self.roots, spec.name, configured, registered)
+            except Unread as error:
+                raise ConcurrentEdit(str(error)) from error
+            if native and native.url != clone_url(repo.url):
+                raise ConcurrentEdit(f'Native marketplace has a different source: {spec.name}')
+            return configured, registered, native
+
+        configured, registered, native = registration()
+        if native and native.pinned and native.commit == repo.commit:
+            return
+        if native is None:
+            destination = self.roots.claude_home / 'plugins/marketplaces' / spec.name
+            if configured or destination.exists() or destination.is_symlink():
+                raise ConcurrentEdit(f'Unregistered native marketplace state preserved: {spec.name}')
+            sparse = ('--sparse', *spec.sparse) if spec.sparse else ()
+            self.command(Host.CLAUDE, 'plugin', 'marketplace', 'add', repo.url, '--scope', 'user', '--json', *sparse)
+            configured, registered, native = registration()
+            if native is None:
+                raise RuntimeError(f'Native marketplace registration is missing: {spec.name}')
+
+        def pin_source(data, *, settings):
+            entries = data.get('extraKnownMarketplaces', {}) if settings else data
+            expected = configured if settings else registered
+            if entries.get(spec.name) != expected:
+                raise ConcurrentEdit(f'Native marketplace registration changed: {spec.name}')
+            entries[spec.name]['source']['ref'] = repo.commit
+            entries[spec.name]['autoUpdate'] = False
+
+        self.files.json(settings_path, lambda data: pin_source(data, settings=True))
+        self.files.json(registry_path, lambda data: pin_source(data, settings=False))
+        _, _, native = registration()
+        self.builder.sources.checkout(repo.url, repo.commit, native.root)
+        _, _, actual = registration()
+        if not actual.pinned or actual.commit != repo.commit:
+            raise RuntimeError(f'Native marketplace did not retain its exact pin: {spec.name}')
 
     def _catalogs(self):
         entries = []

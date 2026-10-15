@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timedelta, timezone
 import getpass
 from pathlib import Path
 import plistlib
@@ -37,11 +38,13 @@ def render(platform, home, argv):
         return {home / 'Library/LaunchAgents' / f'{LABEL}.plist': plistlib.dumps(data)}
     if platform == 'win32':
         args = escape(subprocess.list2cmdline(argv[1:]))
+        start = (datetime.now(timezone.utc) + timedelta(minutes=1)).isoformat(timespec='seconds')
         xml = f'''<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
  <RegistrationInfo><Description>Pull verified dotfiles releases for this user</Description></RegistrationInfo>
- <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{escape(getpass.getuser())}</UserId>
- <Repetition><Interval>PT30M</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition></LogonTrigger></Triggers>
+ <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{escape(getpass.getuser())}</UserId></LogonTrigger>
+ <TimeTrigger><StartBoundary>{start}</StartBoundary><Enabled>true</Enabled>
+ <Repetition><Interval>PT30M</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition></TimeTrigger></Triggers>
  <Principals><Principal id="User"><UserId>{escape(getpass.getuser())}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
  <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><StartWhenAvailable>true</StartWhenAvailable><ExecutionTimeLimit>PT25M</ExecutionTimeLimit><Enabled>true</Enabled></Settings>
  <Actions Context="User"><Exec><Command>{escape(argv[0])}</Command><Arguments>{args}</Arguments></Exec></Actions>
@@ -65,9 +68,9 @@ def main():
     parser.add_argument('--install', action='store_true', help='install and enable the local schedule')
     args = parser.parse_args()
     root, private = args.root.resolve(), args.private.resolve()
-    files = render(sys.platform, Path.home(), command(root, private))
+    argv = command(root, private)
     if not args.install:
-        for path in files:
+        for path in render(sys.platform, Path.home(), argv):
             print(f'would install {path}')
         return 0
     paired(root, private)
@@ -75,6 +78,7 @@ def main():
                             '--private', str(private / 'setup'), '--check'], cwd=root)
     if check.returncode:
         raise RuntimeError('Resolve device drift before enabling its automatic pull schedule')
+    files = render(sys.platform, Path.home(), argv)
     state = Path.home() / '.local/state/dotfiles'
     state.mkdir(parents=True, exist_ok=True)
     writer = Files(backup_directory(DeviceRoots.current()))

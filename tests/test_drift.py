@@ -77,7 +77,7 @@ class Device(homes.Home):
                                {'better-interface': M.EXPLICIT}, d.ToolNotes.AUDIT, None,
                                d.ClaudePlacement((d.MarketplaceInstall('interfaces', False),)))
         repo = d.Repo('interfaces', d.Visibility.PUBLIC, '', 'https://github.com/example/interfaces.git', self.marketplace_pin,
-                      None, d.HostMarketplace('interfaces'))
+                      None, d.HostMarketplace('interfaces', d.MarketplaceMode.CHECKOUT))
         lock = {'kit': d.Lock(d.intent(kit, {}), {hs.Host.CODEX: d.LockedTree('1.0', self.codex_release),
                                               hs.Host.CLAUDE: d.LockedTree('1.0-codex-aligned.x', r.tree_digest(aligned))}),
                 'interfaces': d.Lock(d.intent(interfaces, {'interfaces': repo}))}
