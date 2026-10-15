@@ -1,0 +1,25 @@
+public = true
+
+[source]
+repo = "claude-for-financial-services"
+path = "plugins/vertical-plugins/private-equity"
+
+[skills]
+off = [
+  "ai-readiness",
+  "dd-checklist",
+  "dd-meeting-prep",
+  "deal-screening",
+  "deal-sourcing",
+  "ic-memo",
+  "portfolio-monitoring",
+  "returns-analysis",
+  "unit-economics",
+  "value-creation-plan",
+]
+
+[codex]
+install = [{ via = "personal", enabled = false }]
+
+[claude]
+install = [{ via = "claude-for-financial-services", enabled = false }]

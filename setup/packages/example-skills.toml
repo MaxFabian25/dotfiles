@@ -1,0 +1,10 @@
+public = true
+
+[source]
+repo = "anthropic-agent-skills"
+
+[codex]
+install = [{ via = "anthropic-agent-skills", enabled = false }]
+
+[claude]
+install = [{ via = "anthropic-agent-skills", enabled = false }]

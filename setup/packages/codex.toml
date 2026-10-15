@@ -1,0 +1,7 @@
+public = true
+
+[source]
+repo = "openai-codex"
+
+[claude]
+install = [{ via = "openai-codex", enabled = false }]

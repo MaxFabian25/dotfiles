@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local Playwright tuning fixture</title>
+<style>
+  body { max-width: 960px; margin: 32px auto; padding: 0 20px; font: 16px system-ui; }
+  form { display: grid; gap: 12px; max-width: 400px; }
+  label { display: grid; gap: 4px; }
+  label:has([type="checkbox"]) { display: block; }
+  input, select, button { font: inherit; padding: 6px; }
+  #result { margin-top: 16px; padding: 12px; border: 1px solid; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: 6px; text-align: left; border-bottom: 1px solid #ddd; }
+</style>
+<h1>Local Playwright tuning fixture</h1>
+<p id="fixture-identity">playwright-tuning-fixture-v1</p>
+<section id="editor" aria-label="Profile editor">
+  <h2>Profile editor</h2>
+  <form>
+    <label>Name <input name="name" autocomplete="off" required></label>
+    <label>Email <input name="email" type="email" autocomplete="off" required></label>
+    <label>Role <select name="role"><option value="reader">Reader</option><option value="editor">Editor</option></select></label>
+    <label><input name="agree" type="checkbox"> Agree</label>
+    <button type="submit">Save</button>
+  </form>
+  <output id="result" aria-live="polite" hidden></output>
+</section>
+<section aria-label="Unrelated fake records">
+  <h2>Unrelated fake records</h2>
+  <table>
+    <thead><tr><th scope="col">Record</th><th scope="col">Name</th><th scope="col">Category</th></tr></thead>
+    <tbody id="records"></tbody>
+  </table>
+</section>
+<script>
+  document.querySelector('#records').innerHTML = Array.from({ length: 150 }, (_, i) =>
+    `<tr><td>${i + 1}</td><td>Fake record ${String(i + 1).padStart(3, '0')}</td><td>Group ${i % 5 + 1}</td></tr>`
+  ).join('');
+  document.querySelector('form').addEventListener('submit', event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = new FormData(form);
+    const message = `Saved Name=${values.get('name')}; Email=${values.get('email')}; Role=${values.get('role')}; Agree=${form.elements.agree.checked}`;
+    const result = document.querySelector('#result');
+    result.hidden = true;
+    result.textContent = '';
+    setTimeout(() => { result.textContent = message; result.hidden = false; }, 350);
+  });
+</script>
+</html>

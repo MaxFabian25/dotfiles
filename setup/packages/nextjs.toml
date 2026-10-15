@@ -1,0 +1,28 @@
+public = true
+
+[source]
+build = "generic"
+repository = "https://github.com/vercel/next.js.git"
+commit = "2e559938ff9d3fae80594795dbba191f39537fb9"
+subdirectory = "skills"
+manifest = ".claude-plugin/plugin.json"
+packaging = 1
+display_name = "Next.js"
+select = [
+  "./next-bundle-optimizer",
+  "./next-cache-components-adoption",
+  "./next-cache-components-optimizer",
+  "./next-dev-loop",
+  "./next-partial-prefetching-adoption",
+  "./next-partial-prefetching-optimizer",
+]
+
+[source.metadata]
+url = "https://github.com/vercel/next.js/tree/canary/skills"
+branch = "canary"
+
+[codex]
+install = [{ via = "personal", enabled = true }]
+
+[claude]
+install = [{ via = "codex-aligned", enabled = true }]

@@ -1,0 +1,10 @@
+public = true
+
+[source]
+local = "skills/cli-creator"
+tree = "sha256:1fe42315901c7598c8c808f44a3bdafb52982fa1d045dd68e0e0d9dd7c7a2bf5"
+variants = { codex = "codex", claude = "claude" }
+
+[place]
+claude = false
+codex = false

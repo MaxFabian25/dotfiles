@@ -1,0 +1,6 @@
+public = true
+url = "https://github.com/anthropics/financial-services.git"
+commit = "574ed3624aebd0418c7e96cd101262f30210ab26"
+
+[claude]
+marketplace = "claude-for-financial-services"

@@ -1,0 +1,83 @@
+public = true
+
+[source]
+build = "generic"
+repository = "https://github.com/cursor/plugins.git"
+commit = "e5136d82418d2db3165ea1050d17577cd618cc05"
+subdirectory = "pstack"
+manifest = ".cursor-plugin/plugin.json"
+packaging = 1
+display_name = "pstack"
+
+[source.metadata]
+url = "https://github.com/cursor/plugins/tree/main/pstack"
+
+[skills]
+explicit = [
+  "Make Bot UI",
+  "Poteto Mode",
+  "architect",
+  "arena",
+  "automate-me",
+  "benchmark-checklist",
+  "blast-radius",
+  "bro",
+  "correct",
+  "create-verification-skill",
+  "figure-it-out",
+  "how",
+  "in-your-own-words",
+  "interrogate",
+  "ketchup",
+  "maintain-verification-skill",
+  "no-comments",
+  "poteto-help",
+  "principle-attack-the-premise",
+  "principle-boundary-discipline",
+  "principle-build-the-lever",
+  "principle-encode-lessons-in-structure",
+  "principle-exhaust-the-design-space",
+  "principle-experience-first",
+  "principle-explain-the-number",
+  "principle-fix-root-causes",
+  "principle-foundational-thinking",
+  "principle-guard-the-context-window",
+  "principle-laziness-protocol",
+  "principle-make-operations-idempotent",
+  "principle-migrate-callers-then-delete-legacy-apis",
+  "principle-minimize-reader-load",
+  "principle-model-the-domain",
+  "principle-never-block-on-the-human",
+  "principle-outcome-oriented-execution",
+  "principle-prove-it-works",
+  "principle-redesign-from-first-principles",
+  "principle-separate-before-serializing-shared-state",
+  "principle-sequence-verifiable-units",
+  "principle-subtract-before-you-add",
+  "principle-test-behavior-not-implementation",
+  "principle-type-system-discipline",
+  "recall",
+  "reflect",
+  "setup-pstack",
+  "sharpen",
+  "show-me-your-work",
+  "swarm",
+  "tdd",
+  "teach",
+  "technical-writing",
+  "typescript-best-practices",
+  "unslop",
+  "why",
+]
+tool_notes = "exempt"
+
+[codex]
+install = [{ via = "personal", enabled = true }]
+adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "7424d7af2f0426c5c6e010e54c27b76a57106922", adapted = "79abc87dff9a63e5315c2005498e95fe3c0ef646" }
+
+[codex.roles]
+from = "plugin"
+directory = "agents/codex"
+
+[claude]
+install = [{ via = "codex-aligned", enabled = true }]

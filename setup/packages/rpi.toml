@@ -1,0 +1,18 @@
+public = true
+
+[source]
+repo = "skills"
+
+[skills]
+explicit = ["rpi"]
+tool_notes = "apply"
+
+[codex]
+install = [{ via = "skills", enabled = true }]
+
+[codex.roles]
+from = "generated"
+directory = "agents"
+
+[claude]
+install = [{ via = "skills", enabled = true }]

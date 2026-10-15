@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""Install Codex agent roles for plugins whose Codex package ships agents Codex does not load.
+
+Codex loads custom agents from ~/.codex/agents/, not from a plugin's Claude-format `agents/` folder.
+Impeccable publishes Codex roles as TOML outside the `plugin/` folder both hosts install; they are
+copied from the commit pinned in the personal marketplace, with paths that assume a project-local
+install pointed at the installed skill. RPI publishes only Claude-format agents; their Codex roles are
+generated from the installed release, read-only unless the agent may edit files or fetch pages. Files are tracked in a
+receipt; unmanaged files are never overwritten. Safe to run on every maintenance run.
+"""
+import argparse
+import fnmatch
+import hashlib
+import json
+from pathlib import Path
+import re
+import subprocess
+import tomllib
+import urllib.request
+
+from invocation_overrides import ADAPTATIONS, add_tool_notes, noted_here, read_json
+from portable import agents_home, codex_cli, codex_home, read_utf8, replace, write_utf8
+
+HOME = Path.home()
+PROFILES = {
+    'impeccable@personal': {
+        'kind': 'upstream-toml',
+        'repository': 'pbakaus/impeccable',
+        'manifest': 'plugin/.claude-plugin/plugin.json',
+        'directory': '.agents/skills/impeccable/agents',
+        'pattern': 'impeccable_*.toml',
+        'skill': 'skills/impeccable',
+        # Upstream writes these for a project-local `.agents/skills/impeccable` install.
+        'rewrites': [('.agents/skills/impeccable/', '{skill}/'), ('](../reference/', ']({skill}/reference/')],
+    },
+    'rpi@skills': {'kind': 'claude-agents', 'directory': 'agents'},
+}
+EDITING_TOOLS = {'Edit', 'Write', 'MultiEdit', 'NotebookEdit'}
+# Codex's read-only sandbox also blocks network access from shell commands, which page fetching needs.
+NETWORK_TOOLS = {'WebFetch'}
+
+
+def fetch(url):
+    request = urllib.request.Request(url, headers={'User-Agent': 'codex-agents-sync'})
+    with urllib.request.urlopen(request, timeout=60) as response:
+        return response.read().decode()
+
+
+def rewrite(text, rules, skill):
+    for old, new in rules:
+        text = text.replace(old, new.format(skill=skill))
+    for old, _ in rules:
+        if old in text:
+            raise ValueError(f'Unrewritten install path: {old}')
+    for path in re.findall(re.escape(str(skill)) + r'/[^\s`)\'"]+', text):
+        if not Path(path).exists():
+            raise ValueError(f'Rewritten path does not exist: {path}')
+    return text
+
+
+def installed(plugin):
+    listing = json.loads(subprocess.run([codex_cli(), 'plugin', 'list', '--json'], check=True, capture_output=True, text=True).stdout)
+    entry = next((p for p in listing['installed'] if p['pluginId'] == plugin), None)
+    if not entry or not entry.get('enabled'):
+        return None
+    name, marketplace = plugin.split('@')
+    return codex_home(HOME)/'plugins/cache'/marketplace/name/entry['version']
+
+
+def pinned_ref(plugin):
+    marketplace = json.loads(read_utf8(agents_home(HOME)/'plugins/marketplace.json'))
+    entry = next(e for e in marketplace['plugins'] if e['name'] == plugin.split('@')[0])
+    ref = entry['source'].get('ref', '')
+    if not re.fullmatch(r'[0-9a-f]{40}', ref):
+        raise ValueError(f'{plugin} is not pinned to a full commit: {ref!r}')
+    return ref
+
+
+def frontmatter(text):
+    match = re.match(r'---\n(.*?)\n---\n', text, re.S)
+    if not match:
+        raise ValueError('Agent file has no frontmatter')
+    fields = {}
+    for line in match.group(1).splitlines():
+        key, _, value = line.partition(':')
+        value = value.strip()
+        fields[key.strip()] = json.loads(value) if value.startswith('"') else value
+    return fields, text[match.end():].strip() + '\n'
+
+
+def toml_role(fields, body, sandbox):
+    lines = [f'name = {json.dumps(fields["name"])}', f'description = {json.dumps(fields["description"])}']
+    if sandbox:
+        lines.append(f'sandbox_mode = {json.dumps(sandbox)}')
+    if "'''" in body:
+        raise ValueError(f'{fields["name"]} body cannot be a TOML literal string')
+    text = '\n'.join(lines) + "\ndeveloper_instructions = '''\n" + body + "'''\n"
+    role = tomllib.loads(text)
+    if role['developer_instructions'] != body or role['name'] != fields['name']:
+        raise ValueError(f'{fields["name"]} did not round-trip through TOML')
+    return text
+
+
+def generated(plugin, profile, cache):
+    out = {}
+    for source in sorted((cache/profile['directory']).glob('*.md')):
+        fields, body = frontmatter(read_utf8(source))
+        # Generated roles carry the same tool notes as the plugin's skills.
+        body = add_tool_notes(body, noted_here(read_json(ADAPTATIONS, {}), plugin) or [])
+        tools = {tool.strip() for tool in fields.get('tools', '').split(',') if tool.strip()}
+        sandbox = None if not tools or tools & (EDITING_TOOLS | NETWORK_TOOLS) else 'read-only'
+        header = f'# Generated by {Path(__file__).resolve()} from {source}. Do not edit.\n'
+        out[f'{fields["name"]}.toml'] = header + toml_role(fields, body, sandbox)
+    if not out:
+        raise ValueError(f'No agents found for {plugin} in {cache}')
+    return out, f'{plugin}:{cache.name}'
+
+
+def desired(plugin, profile, cache):
+    """Return {filename: content} for the agent roles that match the installed release."""
+    if cache is None:
+        return {}, None
+    if profile['kind'] == 'claude-agents':
+        return generated(plugin, profile, cache)
+    ref = pinned_ref(plugin)
+    raw = f'https://raw.githubusercontent.com/{profile["repository"]}/{ref}/'
+    upstream_version = json.loads(fetch(raw + profile['manifest']))['version']
+    if upstream_version != cache.name:
+        raise ValueError(f'Pinned commit is {upstream_version} but Codex has {cache.name} installed; reinstall first')
+    listing = json.loads(fetch(f'https://api.github.com/repos/{profile["repository"]}/contents/{profile["directory"]}?ref={ref}'))
+    skill = cache/profile['skill']
+    out = {}
+    for item in listing:
+        if item['type'] != 'file' or not fnmatch.fnmatch(item['name'], profile['pattern']):
+            continue
+        text = rewrite(fetch(raw + f'{profile["directory"]}/{item["name"]}'), profile['rewrites'], skill)
+        role = tomllib.loads(text)
+        if role.get('name') != item['name'][:-5] or not role.get('developer_instructions'):
+            raise ValueError(f'Unexpected agent role in {item["name"]}')
+        header = f'# Generated by {Path(__file__).resolve()} from {profile["repository"]}@{ref}. Do not edit.\n'
+        out[item['name']] = header + text
+    if not out:
+        raise ValueError(f'No agent roles found for {plugin} at {ref}')
+    return out, ref
+
+
+def sync(check=False):
+    agents = codex_home(HOME)/'agents'
+    receipts = codex_home(HOME)/'skill-updates/codex-agents'
+    report = {}
+    for plugin, profile in PROFILES.items():
+        receipt_path = receipts/f'{plugin.split("@")[0]}.json'
+        receipt = json.loads(read_utf8(receipt_path)) if receipt_path.is_file() else {'files': {}}
+        wanted, ref = desired(plugin, profile, installed(plugin))
+        writes, removals = [], [name for name in receipt['files'] if name not in wanted]
+        for name, text in wanted.items():
+            target = agents/name
+            current = read_utf8(target) if target.is_file() else None
+            if current == text:
+                continue
+            if current is not None and name not in receipt['files']:
+                raise ValueError(f'Refusing to overwrite unmanaged agent role: {target}')
+            if current is not None and hashlib.sha256(current.encode()).hexdigest() != receipt['files'][name]:
+                raise ValueError(f'Managed agent role was edited locally: {target}')
+            writes.append(name)
+        report[plugin] = {'ref': ref, 'roles': sorted(wanted), 'writes': writes, 'removals': removals}
+        if check or not (writes or removals or receipt.get('ref') != ref):
+            continue
+        agents.mkdir(parents=True, exist_ok=True)
+        for name in writes:
+            temporary = agents/f'.{name}.tmp'
+            write_utf8(temporary, wanted[name])
+            replace(temporary, agents/name)
+        for name in removals:
+            (agents/name).unlink(missing_ok=True)
+        receipts.mkdir(parents=True, exist_ok=True)
+        write_utf8(receipt_path, json.dumps({'plugin': plugin, 'ref': ref, 'files': {
+            name: hashlib.sha256(text.encode()).hexdigest() for name, text in wanted.items()}}, indent=2) + '\n')
+    return report
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--check', action='store_true', help='Report changes without writing')
+    args = parser.parse_args()
+    print(json.dumps({'action': 'check' if args.check else 'sync', 'plugins': sync(args.check)}, indent=2))

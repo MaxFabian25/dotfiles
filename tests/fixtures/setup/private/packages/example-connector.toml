@@ -1,0 +1,4 @@
+note = "A connector from the ChatGPT account."
+
+[codex]
+install = [{ via = "openai-curated-remote", enabled = true }]

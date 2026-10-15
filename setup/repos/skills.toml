@@ -1,0 +1,9 @@
+public = true
+url = "https://github.com/humanlayer/skills.git"
+commit = "653b6411c1f70c275a18e37673b042ff99f67ceb"
+
+[codex]
+marketplace = "skills"
+
+[claude]
+marketplace = "skills"

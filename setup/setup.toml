@@ -1,0 +1,51 @@
+schema = 1
+public = true
+public_repositories = [
+  "https://github.com/MaxFabian25/pstack-harness-adaptations.git",
+  "https://github.com/anthropics/financial-services.git",
+  "https://github.com/anthropics/skills.git",
+  "https://github.com/cursor/plugins.git",
+  "https://github.com/emilkowalski/skills.git",
+  "https://github.com/humanlayer/skills.git",
+  "https://github.com/jakubkrehel/skills.git",
+  "https://github.com/mattpocock/skills.git",
+  "https://github.com/nateherkai/scroll-craft.git",
+  "https://github.com/openai/codex-plugin-cc.git",
+  "https://github.com/pbakaus/impeccable.git",
+  "https://github.com/shadcn/improve.git",
+  "https://github.com/vercel/next.js.git",
+  "https://github.com/warpdotdev/claude-code-warp.git",
+  "https://github.com/yha9806/academic-writing-toolkit.git",
+]
+
+[[tool_note]]
+match = "\\bAskUserQuestion tool\\b"
+note = " (Codex: `request_user_input`)"
+
+[[tool_note]]
+match = "\\bSkill tool\\b"
+note = " (Codex: open the named skill's `SKILL.md`)"
+
+[[tool_note]]
+match = "\\bTask tool\\b"
+note = " (Codex: `spawn_agent`)"
+
+[[tool_note]]
+match = "\\bAgent\\(\\) or Task\\(\\)"
+note = " (Codex: `spawn_agent`)"
+
+[[tool_note]]
+match = "\\bExplore agent(?:/tool)?"
+note = " (Codex: `spawn_agent` with `agent_type` `explorer`)"
+
+[[tool_note]]
+match = "\\bTodoWrite\\b"
+note = " (Codex: `update_plan`)"
+
+[[tool_note]]
+match = "\\bWebSearch\\b"
+note = " (Codex: the web tool's `search_query`)"
+
+[[tool_note]]
+match = "\\bWebFetch\\b"
+note = " (Codex: the web tool's `open`)"

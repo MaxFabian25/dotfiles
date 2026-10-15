@@ -1,0 +1,12 @@
+# setup/lock.toml. Written by agent_setup.py export and the maintainer's build. Do not edit.
+[cursor-team-kit]
+intent = "sha256:b4c59dac4e1af6036e70156815b3be7434ed787f7e4b81490a368c5e1f69b358"
+codex = { version = "1.2.0+upstream.1e5c90a4b6f2.codex2", tree = "sha256:681957e1e0ef56d52dff37f6f7697406bc633d5ecb517e1991ec2db5f0241401" }
+claude = { version = "1.2.0+codex-aligned.9b8d80064182", tree = "sha256:0ab3d94889b2f3db3ea25fc146338b2e4833e71e6ae503bca61f4ff264fe59b8" }
+
+[impeccable]
+intent = "sha256:3ebeaf74d97bcd84eccda6f1b9852db914ebdce0e95e523405c32dfdb22a3dcf"
+codex = { version = "4.5.2", tree = "sha256:36a74890cbddb9737fc5bfc987ba84076026edee38f5c234653bcd3ed6c67aad" }
+claude = { version = "4.5.2", tree = "sha256:36a74890cbddb9737fc5bfc987ba84076026edee38f5c234653bcd3ed6c67aad" }
+roles = { "impeccable_asset_producer.toml" = "sha256:537c9be986ca5b50f1dac79582ad18052366f3eef5f3f151a8a2b49d798b68e1", "impeccable_documenter.toml" = "sha256:2ee0c18cfef24b33a014f57961b248a5d1039ab671dcf0544480f7a27ba4188d", "impeccable_finish_reviewer.toml" = "sha256:28e5b4cebf6eaedf3afa628fb0f5f3c832bb7a61755040b8e71e1fadbdcea235", "impeccable_manual_edit_applier.toml" = "sha256:f47fef07ebaf611e6ef74408ca892a4b40405a0b10307a624e560cfe276ee1f2" }
+hooks = 3

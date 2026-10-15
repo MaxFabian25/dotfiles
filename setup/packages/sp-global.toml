@@ -1,0 +1,14 @@
+public = true
+
+[source]
+repo = "claude-for-financial-services"
+path = "plugins/partner-built/spglobal"
+
+[skills]
+off = ["earnings-preview-single", "funding-digest", "tear-sheet"]
+
+[codex]
+install = [{ via = "personal", enabled = false }]
+
+[claude]
+install = [{ via = "claude-for-financial-services", enabled = false }]

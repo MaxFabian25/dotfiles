@@ -1,0 +1,38 @@
+{
+  "name": "prose",
+  "version": "0.2.1+dotfiles.20261015",
+  "description": "Scoped English and Danish prose guidance for editorial, academic, technical, interface, citation, and terminology work.",
+  "author": {
+    "name": "MaxFabian25",
+    "url": "https://github.com/MaxFabian25"
+  },
+  "repository": "https://github.com/MaxFabian25/dotfiles",
+  "keywords": [
+    "prose",
+    "editing",
+    "technical-writing",
+    "academic-writing",
+    "interface-copy",
+    "citations",
+    "terminology"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Prose",
+    "shortDescription": "Edit prose, documentation, UI copy, and citations",
+    "longDescription": "Select and apply English or Danish prose guidance for the requested writing task.",
+    "developerName": "MaxFabian25",
+    "websiteURL": "https://github.com/MaxFabian25/dotfiles/tree/main/packages/prose",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Edit this report with Prose.",
+      "Rewrite this interface copy with Prose.",
+      "Check these citations and references with Prose."
+    ]
+  }
+}

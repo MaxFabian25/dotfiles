@@ -1,0 +1,24 @@
+public = true
+
+[source]
+repo = "claude-for-financial-services"
+path = "plugins/vertical-plugins/equity-research"
+
+[skills]
+off = [
+  "catalyst-calendar",
+  "earnings-analysis",
+  "earnings-preview",
+  "idea-generation",
+  "initiating-coverage",
+  "model-update",
+  "morning-note",
+  "sector-overview",
+  "thesis-tracker",
+]
+
+[codex]
+install = [{ via = "personal", enabled = false }]
+
+[claude]
+install = [{ via = "claude-for-financial-services", enabled = false }]

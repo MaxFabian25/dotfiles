@@ -1,0 +1,10 @@
+public = true
+
+[source]
+repo = "nateherk"
+
+[codex]
+install = [{ via = "nateherk", enabled = false }]
+
+[claude]
+install = [{ via = "nateherk", enabled = false }]

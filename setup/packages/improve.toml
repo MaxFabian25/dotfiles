@@ -1,0 +1,10 @@
+public = true
+
+[source]
+repo = "improve"
+
+[codex]
+install = [{ via = "personal", enabled = false }]
+
+[claude]
+install = [{ via = "improve", enabled = false }]

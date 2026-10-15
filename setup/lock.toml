@@ -1,0 +1,128 @@
+# Generated from the setup description and verified package builds. Do not edit.
+
+[academic-writing-toolkit]
+intent = "sha256:aad5072e49324cb0bdb7316bdf12084cb4e6ed47ae9e07e7e7058d64cdaf4a67"
+
+[browser-and-computer-use]
+intent = "sha256:480f8d92fe50191ab042b274ab2d2cdb375d3e298244300235a95fe66be6eca1"
+placements = { agents = "sha256:fc829a453c041cc7e45487885273896cfa8f7d7416d557d205ff7a47b4a08826", claude = "sha256:fc829a453c041cc7e45487885273896cfa8f7d7416d557d205ff7a47b4a08826" }
+
+[build-iterated-agentic-loop]
+intent = "sha256:5a5c900801815c2408c103fd71ee14ae6a2231bf9d6cbe2189139c9835872fa7"
+codex = { version = "1.0.0", tree = "sha256:5caa85c44063da3ed0ea688bc7d337ffe67340c6b7046b50e6255fc466536465" }
+claude = { version = "1.0.0", tree = "sha256:5caa85c44063da3ed0ea688bc7d337ffe67340c6b7046b50e6255fc466536465" }
+
+[cli-creator]
+intent = "sha256:f36b68f12ecbf6f2a91315a1560269ad7688c9173a9a69ebaeb1c8127198ec28"
+placements = { claude = "sha256:3eeebddff685b9ac62063a0dd93f698473c60ba93d8c0051cfa52e175737b504", codex = "sha256:883d8c49c89302f2189a310c76ec001b6f1236a85ed87cb197c8a22f039bb7c6" }
+
+[codex]
+intent = "sha256:31768ccdb8852caff58d0db5329109e7ed2d4f292e9a3024df2bad725c82f7f8"
+
+[cursor-team-kit]
+intent = "sha256:beb285d7c7a5adcdd6eb137b4956551c17d86adc9d8f8fbd0a11b6d2139f820b"
+codex = { version = "1.2.0+upstream.e5136d82418d.codex2", tree = "sha256:c1dcd188a91c62c1e89e37de0d8d612fd8028375191438b3ae95555c0cd93ea9" }
+claude = { version = "1.2.0+codex-aligned.4da14256d1e0", tree = "sha256:6cf42ad3ea3273adacaedd4cbc5906c4562550558d5945f05e0b884c7622abe9" }
+
+[design-control-loop]
+intent = "sha256:b025e09329ea2297d3e305d65db9d242761c0103b48f507d737bc371de550c82"
+codex = { version = "1.0.0", tree = "sha256:8eff7791a0b3efdec3ba926a64d727ef3ffde57f43f0a24f522c791f0ad8efd8" }
+claude = { version = "1.0.0", tree = "sha256:8eff7791a0b3efdec3ba926a64d727ef3ffde57f43f0a24f522c791f0ad8efd8" }
+
+[emil-public-skills]
+intent = "sha256:6120522424766852b7f81192a7130025e3aaa7c6509b8bb971c8bf3c3c441ebc"
+codex = { version = "0.1.0+upstream.2d228630ba14.codex1", tree = "sha256:8891883754e379d4dec8833b0f3f1f9c77a90f61329f583d98cb7fb69518c0f7" }
+claude = { version = "0.1.0+codex-aligned.412700152c59", tree = "sha256:f2e5f64f203e461a614dff8b7d5c65fe78a2cc384cdf8fcdbffd9566a3a2ae5b" }
+
+[equity-research]
+intent = "sha256:85ccbfe1f66b4f148f98c9c57b5c33bb184d09d9693d0ecf490142a59bd3015b"
+
+[example-skills]
+intent = "sha256:6f472bab5405540be5140cb16d982cc89f3ff3518b4fde3074e3a41ab0c8926a"
+
+[financial-analysis]
+intent = "sha256:c7c9fa4611a3202288e998f3ba6f129c1e69de7be44ce6b36df98599110bd7ea"
+
+[imagegen]
+intent = "sha256:463b16e0f11b4ce1b831fb5a4fe0824a3914ffcd5868451ad13acde08299be5e"
+placements = { claude = "sha256:8d06274921427a67b5df90791b12842aded871f4578bd3a236d5178b139fd693" }
+
+[impeccable]
+intent = "sha256:3ebeaf74d97bcd84eccda6f1b9852db914ebdce0e95e523405c32dfdb22a3dcf"
+codex = { version = "4.5.2", tree = "sha256:36a74890cbddb9737fc5bfc987ba84076026edee38f5c234653bcd3ed6c67aad" }
+claude = { version = "4.5.2", tree = "sha256:36a74890cbddb9737fc5bfc987ba84076026edee38f5c234653bcd3ed6c67aad" }
+roles = { "impeccable_asset_producer.toml" = "sha256:537c9be986ca5b50f1dac79582ad18052366f3eef5f3f151a8a2b49d798b68e1", "impeccable_documenter.toml" = "sha256:2ee0c18cfef24b33a014f57961b248a5d1039ab671dcf0544480f7a27ba4188d", "impeccable_finish_reviewer.toml" = "sha256:28e5b4cebf6eaedf3afa628fb0f5f3c832bb7a61755040b8e71e1fadbdcea235", "impeccable_manual_edit_applier.toml" = "sha256:f47fef07ebaf611e6ef74408ca892a4b40405a0b10307a624e560cfe276ee1f2" }
+hooks = 3
+
+[improve]
+intent = "sha256:ad44d6dcd85e8b9c17c26be5f3ed4ebd71c7a76edf8da3fce665cc6e30b704cb"
+
+[improve-claude-md]
+intent = "sha256:bf8a2c50006a8b28c171ed21c0cfc36d2526bb84e03f22248392fb2f32e803f8"
+codex = { version = "1.0.0", tree = "sha256:a5fed7c30445e6de4576f1e8815418880bad4cbf72f5fb3cea4a95718d43653a" }
+claude = { version = "1.0.0", tree = "sha256:a5fed7c30445e6de4576f1e8815418880bad4cbf72f5fb3cea4a95718d43653a" }
+
+[interfaces]
+intent = "sha256:8a08bdc8bc7c628af1a35842a52ca6f13c2b3e51b7ca07bf27d87466e7b5a08c"
+codex = { version = "1.13.2", tree = "sha256:03fd5e2593928ba77cd43be1b7edc263df06749b3b11a0884e2f6a95dcf80f5d" }
+claude = { version = "1.13.2+codex-aligned.0b496dab4c45", tree = "sha256:8526ed17f9e91627257d79e1e610a8dbcc085900c6406b0474914237b0da470a" }
+
+[investment-banking]
+intent = "sha256:f96e3fcb12086e815b17687cd745722cf9beefa5950c1cec3bfe45769a302ffa"
+
+[lseg]
+intent = "sha256:ee4aaa9f84683e296b8a98f79ca5ad19a7ba260a0024caeb5a9b889a7c86c19b"
+
+[mattpocock-skills]
+intent = "sha256:bc1b66621a79c1e0d75520c2d0c837ecdbfa547e87519ff400beb0c934472473"
+codex = { version = "1.3.1+upstream.49dd158d1076.codex2", tree = "sha256:8dbb093b9cd8bcdfa31fd7daf7a4a1869f4ec5be2570cb4ba45c386297c81422" }
+claude = { version = "1.3.1+codex-aligned.7b31e956eaca", tree = "sha256:c10f20e53d4d1226ae58aa1a9e11a861ef31895ece2f7aad806485321868633a" }
+
+[narrow-react-prop-types]
+intent = "sha256:3bff1fe58adad4228f235b57cd438844bcf1c9eaca0183cebc910556d3cdb1d7"
+codex = { version = "1.0.0", tree = "sha256:ec9b227e94e74f23d0dd710e92817b94bded1d23659fe6df918b980d2d0fbbe4" }
+claude = { version = "1.0.0", tree = "sha256:ec9b227e94e74f23d0dd710e92817b94bded1d23659fe6df918b980d2d0fbbe4" }
+
+[nateherk-design]
+intent = "sha256:245b3884eefc0e5aabe7a4cf49182d1ed1bd28ad571fe6db80b44552d7f19691"
+
+[nextjs]
+intent = "sha256:ff804be02422dbad5dda15035761454a1e83df8dd8f20b66fc38cc7167df518a"
+codex = { version = "0.1.0+upstream.2e559938ff9d.codex1", tree = "sha256:55522bc5b9c29c50a4862fe8e13e58b2a4b979cfc6baf3ba01423caae833db2c" }
+claude = { version = "0.1.0+codex-aligned.de3530765d0e", tree = "sha256:b3a05c0ac739451d30ced3fae4802c8e1ffba5fb2a9d7f2646495d3910be12be" }
+
+[private-equity]
+intent = "sha256:15c4ab6eb8970ddfb7089ef6a94b6bfbf14f09a36a992fa27fa28a546f918838"
+
+[prose]
+intent = "sha256:c1951bf81fa2d62732c11fc9b65bb67ca1f33252025505e25d1099146c6e9843"
+codex = { version = "0.2.1+dotfiles.20261015", tree = "sha256:61396dbb6d96ea85019a469d9f51066f86a9d9ba175ffabe4982b7fff0b7608d" }
+claude = { version = "0.2.1+codex-aligned.921c4a318ecc", tree = "sha256:caec9f309810dee95ca502fb8439bb7f42481b590216417f0e29476cb8b5c6c8" }
+
+[pstack-plugin]
+intent = "sha256:ec5c2fbf8fb8324cb375dad9dcdd3c49d7505042cfb69499b2f507b7b8825617"
+codex = { version = "0.15.25+upstream.e5136d82418d.codex1", tree = "sha256:eb41957f5cc9dcd5b19f962d626e6024a96e8929491b59ea6107da2cfa469be6" }
+claude = { version = "0.15.25+codex-aligned.40efe66c9de2", tree = "sha256:bcf3adeea0feaff1c76db70f08b40c87138f4cd46210bb0fb334c031a884972c" }
+roles = { "comment-sicko.toml" = "sha256:6f3ea8222b5e7abf65decd3712a9d32f5804953e0539e61b2a9f92e11148d56e", "poteto-agent.toml" = "sha256:e911c50fba3011de0a889bab5c84711b9648ebd20961ab3f7f58e7de80d81c22", "pstack-reader.toml" = "sha256:e1ce58630b65ea7ce264d6590d4209a525ae2df8ba422fafdc2a6fc3a55a885a" }
+
+[rpi]
+intent = "sha256:31e33d6ceb0dd887b8570afb5147576babe917ad70aaef56f52baedac4b5b4b0"
+codex = { version = "1.0.0", tree = "sha256:e5aa86674d76a4d9eecc1728041e1768a734c37861c13ce1d437be1f8e0331d1" }
+claude = { version = "1.0.0", tree = "sha256:e5aa86674d76a4d9eecc1728041e1768a734c37861c13ce1d437be1f8e0331d1" }
+roles = { "codebase-analyzer.toml" = "sha256:394adedf2a79148daf19fe931bf3d46f1991c9fb80508905b917c25d487d8711", "codebase-locator.toml" = "sha256:7c2391475a6f5fd4a64bda02a93e1ab3d9491ebfb28d1a4b4df7b032da826f96", "codebase-pattern-finder.toml" = "sha256:a9e4e113ffd5db25946a1bb7083d9cbe504ec296e97a37e92d4293a0a59fe3e5", "outline-implementer-agent.toml" = "sha256:b9d751b311d38e3b84415fcf8384cbc3090402da5a0a1f006477ea39ba21d90c", "web-search-researcher.toml" = "sha256:0ee98f90c603c4702b5f7f9d17ce374999da34246a879991c70562d44b2b7054" }
+
+[show-me]
+intent = "sha256:a2da7274ed5675b694dc0ac9440d9cec25318dcccce7a8df3e8453044963cab1"
+codex = { version = "1.0.1", tree = "sha256:c309b44dd0292b87989c1c9c3691e3c411151bdeead0527240ada2b4fa19b69f" }
+claude = { version = "1.0.1", tree = "sha256:c309b44dd0292b87989c1c9c3691e3c411151bdeead0527240ada2b4fa19b69f" }
+
+[sp-global]
+intent = "sha256:a93cf37edc4a445f22eb01c98edc53f29bf88b89e85bbe4055a297f2e56bf901"
+
+[visual-pr]
+intent = "sha256:b881b83b72da6087feb238c87763847da2f21acc8e81886e0300e38586ea30e7"
+codex = { version = "1.0.0", tree = "sha256:790b2564495eb4efa28adb87641534a2bdab8b9f6056e843fed54c4fb2ef0566" }
+claude = { version = "1.0.0", tree = "sha256:790b2564495eb4efa28adb87641534a2bdab8b9f6056e843fed54c4fb2ef0566" }
+
+[warp]
+intent = "sha256:03b038c5af5dc4d6bc6bb8c76eb7f17a8b183391f7baf48a95844d48e0564a26"

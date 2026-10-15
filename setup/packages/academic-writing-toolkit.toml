@@ -1,0 +1,47 @@
+public = true
+
+[source]
+build = "academic"
+repository = "https://github.com/yha9806/academic-writing-toolkit.git"
+commit = "488622a819a585d048cc61391357d7708fe68611"
+packaging = 2
+display_name = "Academic Writing Toolkit"
+installer = "sha256:693ce61773e85d3c1624090a94b80603481534b173c50f2c283a9ecb2bd0f062"
+requirements = "sha256:03ecd49bf78ef489bd118f43b94c4ab22536eb5a8b8c2f43ff7f298ae5857c49"
+select = [
+  "audit",
+  "export",
+  "integrate",
+  "map",
+  "note",
+  "read",
+  "review",
+  "verify-refs",
+]
+
+[source.metadata]
+url = "https://github.com/yha9806/academic-writing-toolkit"
+branch = "main"
+claudePackaging = 1
+
+[source.metadata.claudeDescriptions]
+academic-writing-toolkit = "Academic manuscript audit and review; upstream content with personal packaging."
+academic-writing-toolkit-extra = "Six additional academic workflows, independently switchable from audit and review."
+
+[skills]
+off = [
+  "audit",
+  "export",
+  "integrate",
+  "map",
+  "note",
+  "read",
+  "review",
+  "verify-refs",
+]
+
+[codex]
+install = [{ via = "personal", enabled = false }]
+
+[claude]
+install = [{ via = "personal-collections", name = "academic-writing-toolkit-extra", skills = ["export", "integrate", "map", "note", "read", "verify-refs"], enabled = false }, { via = "personal-collections", skills = ["audit", "review"], enabled = false }]

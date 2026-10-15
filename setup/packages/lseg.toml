@@ -1,0 +1,23 @@
+public = true
+
+[source]
+repo = "claude-for-financial-services"
+path = "plugins/partner-built/lseg"
+
+[skills]
+off = [
+  "bond-futures-basis",
+  "bond-relative-value",
+  "equity-research",
+  "fixed-income-portfolio",
+  "fx-carry-trade",
+  "macro-rates-monitor",
+  "option-vol-analysis",
+  "swap-curve-strategy",
+]
+
+[codex]
+install = [{ via = "personal", enabled = false }]
+
+[claude]
+install = [{ via = "claude-for-financial-services", enabled = false }]

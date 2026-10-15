@@ -1,0 +1,27 @@
+# packages/impeccable.toml
+public = true
+note = "Enabled on request on 2026-10-11. Upstream invocation is kept. The user approved its three hooks."
+
+[source]
+repo = "impeccable"
+path = "plugin"
+
+[skills]
+tool_notes = "apply"
+
+[codex]
+install = [{ via = "personal", enabled = true }]   # the engine writes a git-subdir entry at the repo's commit
+hooks = "trusted"
+
+[codex.roles]
+from = "repo"
+directory = ".agents/skills/impeccable/agents"
+pattern = "impeccable_*.toml"
+skill = "skills/impeccable"
+rewrite = [
+  [".agents/skills/impeccable/", "{skill}/"],
+  ["](../reference/", "]({skill}/reference/"],
+]
+
+[claude]
+install = [{ via = "impeccable", enabled = true }]

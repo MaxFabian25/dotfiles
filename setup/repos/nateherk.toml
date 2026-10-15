@@ -1,0 +1,9 @@
+public = true
+url = "https://github.com/nateherkai/scroll-craft.git"
+commit = "75d81f74e83692add18cd7a8a8e078b8a887a579"
+
+[codex]
+marketplace = "nateherk"
+
+[claude]
+marketplace = "nateherk"

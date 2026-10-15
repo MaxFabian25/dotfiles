@@ -1,0 +1,8 @@
+# skills/example-skill.toml
+note = "Shared skill from the user's skills repo; linked on macOS, copied where links need privileges."
+[source]
+repo = "example-skills"              # repos/example-skills.toml pins the skills repo
+path = "example-skill"
+[place]
+claude = true                        # {claude_home}/skills/example-skill, on
+agents = true                        # {agents_home}/skills/example-skill, which Codex reads

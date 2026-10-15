@@ -1,0 +1,8 @@
+public = true
+
+[source]
+local = "skills/imagegen"
+tree = "sha256:8d06274921427a67b5df90791b12842aded871f4578bd3a236d5178b139fd693"
+
+[place]
+claude = false

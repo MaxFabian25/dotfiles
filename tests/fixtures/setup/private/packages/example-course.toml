@@ -1,0 +1,23 @@
+note = "A course whose upstream was deleted; frozen at the installed commit and built from the private copy."
+
+[source]
+build = "course"
+repository = "https://github.com/example/course-copy.git"
+commit = "2222222222222222222222222222222222222222"
+packaging = 1
+display_name = "Example · A course"
+prefix = "coursedev-"
+select = [
+  ".codex/skills/animate", ".codex/skills/accessibility", ".codex/skills/performance",
+  ".codex/skills/motion-brief", ".codex/skills/prototype", ".codex/skills/review",
+]
+frozen = { since = "2026-10-13", upstream = "https://github.com/example/course", reason = "upstream deleted" }
+
+[skills]
+explicit = ["coursedev-motion-brief", "coursedev-prototype", "coursedev-review"]
+
+[codex]
+install = [{ via = "personal", enabled = true }]
+
+[claude]
+install = [{ via = "personal-collections", enabled = true }]

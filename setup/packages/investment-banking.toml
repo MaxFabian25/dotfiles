@@ -1,0 +1,32 @@
+public = true
+
+[source]
+repo = "claude-for-financial-services"
+path = "plugins/vertical-plugins/investment-banking"
+
+[skills]
+off = [
+  "buyer-investor-list",
+  "buyer-list",
+  "cim-builder",
+  "cim-teardown",
+  "datapack-builder",
+  "deal-process-tracker",
+  "deal-tracker",
+  "fsi-strip-profile",
+  "ib-deck-qc",
+  "lbo-model-build",
+  "meeting-prep",
+  "merger-model",
+  "merger-model-builder",
+  "pitch-deck",
+  "pitch-deck-builder",
+  "process-letter",
+  "teaser",
+]
+
+[codex]
+install = [{ via = "personal", enabled = false }]
+
+[claude]
+install = [{ via = "claude-for-financial-services", enabled = false }]

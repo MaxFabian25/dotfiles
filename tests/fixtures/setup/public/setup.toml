@@ -1,0 +1,15 @@
+schema = 1
+public = true
+public_repositories = [
+  "https://github.com/cursor/plugins.git",
+  "https://github.com/pbakaus/impeccable.git",
+]
+
+[[tool_note]]
+match = '\bAskUserQuestion tool\b'
+note = " (Codex: `request_user_input`)"
+
+[[tool_note]]
+match = '\bTodoWrite\b'
+note = " (Codex: `update_plan`)"
+# six more, moved verbatim from harness-adaptations.json toolNotes.rules

@@ -1,0 +1,6 @@
+public = true
+url = "https://github.com/openai/codex-plugin-cc.git"
+commit = "db52e28f4d9ded852ab3942cea316258ae4ef346"
+
+[claude]
+marketplace = "openai-codex"

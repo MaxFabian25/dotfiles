@@ -1,0 +1,22 @@
+public = true
+
+[source]
+repo = "impeccable"
+path = "plugin"
+
+[skills]
+tool_notes = "apply"
+
+[codex]
+install = [{ via = "personal", enabled = true }]
+hooks = "trusted"
+
+[codex.roles]
+from = "repo"
+directory = ".agents/skills/impeccable/agents"
+pattern = "impeccable_*.toml"
+skill = "skills/impeccable"
+rewrite = [[".agents/skills/impeccable/", "{skill}/"], ["](../reference/", "]({skill}/reference/"]]
+
+[claude]
+install = [{ via = "impeccable", enabled = true }]

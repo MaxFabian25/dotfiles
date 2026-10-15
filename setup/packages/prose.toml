@@ -1,0 +1,11 @@
+public = true
+
+[source]
+local = "packages/prose/plugin"
+tree = "sha256:61396dbb6d96ea85019a469d9f51066f86a9d9ba175ffabe4982b7fff0b7608d"
+
+[codex]
+install = [{ via = "personal", enabled = true }, { via = "local-codex", enabled = false }]
+
+[claude]
+install = [{ via = "codex-aligned", enabled = true }]

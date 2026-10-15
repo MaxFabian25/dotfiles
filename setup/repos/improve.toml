@@ -1,0 +1,6 @@
+public = true
+url = "https://github.com/shadcn/improve.git"
+commit = "cac56e1ebd3c279aa9153616cfeac7b174ab90f9"
+
+[claude]
+marketplace = "improve"

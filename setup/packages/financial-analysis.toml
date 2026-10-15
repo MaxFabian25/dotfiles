@@ -1,0 +1,28 @@
+public = true
+
+[source]
+repo = "claude-for-financial-services"
+path = "plugins/vertical-plugins/financial-analysis"
+
+[skills]
+off = [
+  "3-statement-model",
+  "audit-xls",
+  "clean-data-xls",
+  "competitive-analysis",
+  "comps-analysis",
+  "dcf-model",
+  "deck-refresh",
+  "ib-check-deck",
+  "lbo-model",
+  "ppt-template-creator",
+  "pptx-author",
+  "skill-creator",
+  "xlsx-author",
+]
+
+[codex]
+install = [{ via = "personal", enabled = false }]
+
+[claude]
+install = [{ via = "claude-for-financial-services", enabled = false }]

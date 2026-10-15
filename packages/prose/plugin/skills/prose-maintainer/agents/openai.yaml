@@ -1,0 +1,5 @@
+interface:
+  display_name: "Prose maintenance"
+  short_description: "Maintain Prose source and releases"
+policy:
+  allow_implicit_invocation: true

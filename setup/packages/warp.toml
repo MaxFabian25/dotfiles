@@ -1,0 +1,7 @@
+public = true
+
+[source]
+repo = "claude-code-warp"
+
+[claude]
+install = [{ via = "claude-code-warp", enabled = false }]

@@ -1,0 +1,5 @@
+# hosts/codex.toml: skills the Codex app ships, keyed as [[skills.config]] keys them
+[skills]
+plugin-creator = "off"
+skill-creator = "off"
+documents = "off"

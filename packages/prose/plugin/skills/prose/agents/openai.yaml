@@ -1,0 +1,6 @@
+interface:
+  display_name: "Prose"
+  short_description: "Draft and edit reader-facing prose"
+  default_prompt: "Use $prose to edit this reader-facing text."
+policy:
+  allow_implicit_invocation: true

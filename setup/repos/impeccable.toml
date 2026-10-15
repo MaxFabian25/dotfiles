@@ -1,0 +1,7 @@
+public = true
+url = "https://github.com/pbakaus/impeccable.git"
+commit = "d631a8827f99414d2b6daba4ef08b7f8701751d7"
+
+[claude]
+marketplace = "impeccable"
+sparse = [".claude-plugin", "plugin"]

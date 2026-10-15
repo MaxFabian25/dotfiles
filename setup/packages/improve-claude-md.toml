@@ -1,0 +1,13 @@
+public = true
+
+[source]
+repo = "skills"
+
+[skills]
+explicit = ["improve-claude-md"]
+
+[codex]
+install = [{ via = "skills", enabled = true }]
+
+[claude]
+install = [{ via = "skills", enabled = true }]

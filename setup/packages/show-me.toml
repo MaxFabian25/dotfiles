@@ -1,0 +1,13 @@
+public = true
+
+[source]
+repo = "skills"
+
+[skills]
+explicit = ["show-me"]
+
+[codex]
+install = [{ via = "skills", enabled = true }]
+
+[claude]
+install = [{ via = "skills", enabled = true }]

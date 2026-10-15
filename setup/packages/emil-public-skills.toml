@@ -1,0 +1,88 @@
+public = true
+
+[source]
+build = "public-emil"
+repository = "https://github.com/emilkowalski/skills.git"
+commit = "2d228630ba1446365f614a108cb8252f1feda202"
+packaging = 1
+display_name = "Emil Kowalski · Public Skills"
+select = [
+  "skills/animate",
+  "skills/animate-expo",
+  "skills/animation-vocabulary",
+  "skills/apple-design",
+  "skills/ask-sonner",
+  "skills/break-ui",
+  "skills/emil-design-eng",
+  "skills/find-animation-opportunities",
+  "skills/improve-animations",
+  "skills/mobile-native",
+  "skills/pick-ui-library",
+  "skills/review-animations",
+  "skills/prototype",
+  "skills/write-swift",
+]
+rename = { prototype = "ui-prototype" }
+
+[source.metadata]
+url = "https://github.com/emilkowalski/skills"
+description = "14 public design and engineering skills from emilkowalski/skills"
+repository = "emilkowalski/skills"
+branch = "main"
+
+[source.metadata.skillMetadata.animate]
+
+[source.metadata.skillMetadata.animate-expo]
+
+[source.metadata.skillMetadata.animation-vocabulary]
+openaiYaml = "policy:\n  allow_implicit_invocation: true\n"
+
+[source.metadata.skillMetadata.apple-design]
+openaiYaml = "policy:\n  allow_implicit_invocation: true\n"
+
+[source.metadata.skillMetadata.ask-sonner]
+
+[source.metadata.skillMetadata.break-ui]
+
+[source.metadata.skillMetadata.emil-design-eng]
+openaiYaml = "policy:\n  allow_implicit_invocation: true\n"
+
+[source.metadata.skillMetadata.find-animation-opportunities]
+
+[source.metadata.skillMetadata.improve-animations]
+openaiYaml = "policy:\n  allow_implicit_invocation: true\n"
+
+[source.metadata.skillMetadata.mobile-native]
+
+[source.metadata.skillMetadata.pick-ui-library]
+openaiYaml = "interface:\n  display_name: \"Pick UI Library\"\n  short_description: \"Choose the curated library for a frontend task\"\n  default_prompt: \"Use $pick-ui-library to recommend the curated frontend library that best fits this task.\"\npolicy:\n  allow_implicit_invocation: false\n"
+removeDisableModelInvocation = true
+legacyProvenance = true
+
+[source.metadata.skillMetadata.review-animations]
+openaiYaml = "policy:\n  allow_implicit_invocation: false\n"
+
+[source.metadata.skillMetadata.ui-prototype]
+openaiYaml = "interface:\n  display_name: \"UI Prototype\"\n  short_description: \"Compare distinct UI directions in a live picker\"\n  default_prompt: \"Use $ui-prototype to build several distinct versions of the requested UI behind a visual picker.\"\npolicy:\n  allow_implicit_invocation: false\n"
+removeDisableModelInvocation = true
+legacyProvenance = true
+
+[source.metadata.skillMetadata.write-swift]
+
+[skills]
+off = ["improve-animations"]
+explicit = [
+  "animate",
+  "animation-vocabulary",
+  "mobile-native",
+  "pick-ui-library",
+  "review-animations",
+  "ui-prototype",
+  "write-swift",
+]
+
+[codex]
+install = [{ via = "personal", enabled = true }]
+
+[claude]
+install = [{ via = "codex-aligned", enabled = true }]
