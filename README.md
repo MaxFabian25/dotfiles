@@ -73,6 +73,13 @@ selects the public commit named by the private release, even if a newer public c
 Dirty checkouts and non-fast-forward changes stop the pull. The two Git merges are not an atomic
 transaction, but installed reconciliation cannot start until the selected pair matches.
 
+Every commit a pull would add, in either repository, must carry an SSH signature from a key in this
+device's `~/.config/dotfiles/allowed_signers` (Git's allowed-signers format, restricted to
+`namespaces="git"`). The file lives outside both checkouts, so a pushed commit cannot add its own
+signer. A missing file, an unsigned commit, an OpenPGP or GitHub web signature, or a key the device
+does not pin stops the pull before either checkout moves. Sign release commits with
+`gpg.format = ssh`. Changing who may sign is a per-device edit, never a pushed change.
+
 ```sh
 uv run --locked python pull.py --root . --private ../dotfiles-private --update --apply
 ```

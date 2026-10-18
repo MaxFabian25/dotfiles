@@ -34,9 +34,23 @@ class WindowsScheduleTest(unittest.TestCase):
         self.assertIsNone(logon.find('t:Repetition', NS))
         self.assertEqual(task.findtext('t:Principals/t:Principal/t:LogonType', namespaces=NS), 'InteractiveToken')
 
+    def test_install_refuses_without_pinned_release_signers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            argv = ['schedule.py', '--root', str(home / 'repo'), '--private', str(home / 'private'), '--install']
+            with patch.object(sys, 'argv', argv), patch('schedule.Path.home', return_value=home), \
+                    patch('schedule.command', return_value=['python.exe', 'pull.py']), \
+                    patch('schedule.subprocess.run') as run, patch('schedule.Files') as writer:
+                with self.assertRaisesRegex(RuntimeError, 'pin trusted release signers'):
+                    schedule.main()
+            run.assert_not_called()
+            writer.assert_not_called()
+
     def test_install_anchors_the_timer_after_the_drift_check(self):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
+            (home / '.config/dotfiles').mkdir(parents=True)
+            (home / '.config/dotfiles/allowed_signers').write_text('')
             argv = ['schedule.py', '--root', str(home / 'repo'), '--private', str(home / 'private'), '--install']
             with patch('schedule.datetime') as clock:
                 clock.now.return_value = datetime(2026, 10, 15, 19, 0, tzinfo=timezone.utc)

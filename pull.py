@@ -19,7 +19,24 @@ def git(root, *args):
     return result.stdout.strip()
 
 
-def update(public, private):
+def signers():
+    """Release signers are pinned per device, so a pushed commit cannot vouch for itself."""
+    return Path.home() / '.config/dotfiles/allowed_signers'
+
+
+def unsigned(root, old, new, allowed):
+    """Return the first commit in old..new without an SSH signature from an allowed signer."""
+    for commit in git(root, 'rev-list', f'{old}..{new}').split():
+        header = git(root, 'cat-file', 'commit', commit).split('\n\n', 1)[0]
+        status = git(root, '-c', f'gpg.ssh.allowedSignersFile={allowed}', 'show', '-s', '--format=%G?', commit)
+        if '\ngpgsig -----BEGIN SSH SIGNATURE-----' not in header or status != 'G':
+            return commit
+    return None
+
+
+def update(public, private, allowed):
+    if not allowed.is_file():
+        raise RuntimeError(f'{allowed}: pin trusted release signers before pulling; no checkout was advanced')
     roots = [public, *([private] if private else [])]
     heads = {}
     for root in roots:
@@ -44,6 +61,9 @@ def update(public, private):
                                 capture_output=True, timeout=30)
         if result.returncode:
             raise RuntimeError(f'{root}: selected release would discard local commits; no checkout was advanced')
+    for root in roots:
+        if commit := unsigned(root, heads[root], selected[root], allowed):
+            raise RuntimeError(f'{root}: commit {commit} is not signed by a key in {allowed}; no checkout was advanced')
     for root in roots:
         if git(root, 'rev-parse', 'HEAD') != heads[root] or git(root, 'status', '--porcelain', '--untracked-files=normal'):
             raise RuntimeError(f'{root}: changed during pull; no device files changed')
@@ -72,7 +92,7 @@ def run(args):
     state = Path.home() / '.local/state/dotfiles'
     with exclusive_lock(state / 'pull.lock'):
         if args.update:
-            update(root, private)
+            update(root, private, signers())
         paired(root, private)
         command = [sys.executable, str(root / 'sync.py'), '--public', str(root / 'setup'),
                    '--apply' if args.apply else '--check']
