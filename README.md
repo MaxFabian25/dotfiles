@@ -11,6 +11,7 @@ Linux, including WSL. Source review happens centrally. Each device reconciles a 
 | `packages/prose/` | Owned Prose source and its release checks |
 | `skills/` | Owned portable skills |
 | `config/mise/config.toml` | Reviewed tool versions, without credentials or local environment settings |
+| `config/apt/packages.txt` | Ubuntu packages for Linux and WSL, installed by hand |
 | `*.py` | Build, inspect, reconcile, and delivery tools |
 | `tests/` | Synthetic behavior checks and an opt-in native-loader smoke test |
 
@@ -91,6 +92,18 @@ owner active until the corresponding device handoff is verified, then retire its
 
 Daily source review and local delivery are separate jobs. Creating these files does not install either
 schedule or authorise publishing private content.
+
+## Install Linux packages
+
+Pulls do not install system packages, because that needs `sudo`. On a new Linux or WSL installation,
+install the reviewed list from this checkout:
+
+```sh
+sudo apt-get update
+sed 's/#.*//' config/apt/packages.txt | xargs sudo apt-get install -y
+```
+
+Running it again is safe. apt skips packages that are already installed.
 
 ## Verify changes
 

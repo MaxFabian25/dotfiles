@@ -1,0 +1,5 @@
+# Ubuntu packages for Linux and WSL. The README's "Install Linux packages" section installs them.
+
+# SoX records the microphone for Claude Code voice mode through WSLg's PulseAudio server.
+sox
+libsox-fmt-pulse
