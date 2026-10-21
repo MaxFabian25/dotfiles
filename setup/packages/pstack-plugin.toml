@@ -73,7 +73,7 @@ tool_notes = "exempt"
 
 [codex]
 install = [{ via = "personal", enabled = true }]
-adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "7424d7af2f0426c5c6e010e54c27b76a57106922", adapted = "79abc87dff9a63e5315c2005498e95fe3c0ef646" }
+adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "7424d7af2f0426c5c6e010e54c27b76a57106922", adapted = "1adb68b82a58797f0803f9831d241c29c006d7ac" }
 
 [codex.roles]
 from = "plugin"
