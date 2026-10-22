@@ -31,6 +31,17 @@ class CodexAgentsTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'does not exist'):
                 module.rewrite('Run `.agents/skills/impeccable/scripts/impeccable`.', RULES, Path(directory))
 
+    def test_rewrite_checks_paths_in_a_local_copy_before_installation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            installed = Path(directory) / 'cache/impeccable/4.7.0/skills/impeccable'
+            local = Path(directory) / 'build/skills/impeccable'
+            (local / 'reference').mkdir(parents=True)
+            (local / 'reference/component-review.md').write_text('')
+            result = module.rewrite('See [review](../reference/component-review.md).', RULES, installed, local)
+            self.assertIn(f']({installed}/reference/component-review.md)', result)
+            with self.assertRaisesRegex(ValueError, 'does not exist'):
+                module.rewrite('See [review](../reference/missing.md).', RULES, installed, local)
+
     def test_claude_agents_become_codex_roles_with_sandbox_from_their_tools(self):
         with tempfile.TemporaryDirectory() as directory:
             cache = Path(directory) / 'rpi/1.0.0'
