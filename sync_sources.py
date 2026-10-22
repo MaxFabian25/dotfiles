@@ -108,7 +108,9 @@ class Sources:
             if history and run_git(destination, 'rev-parse', '--is-shallow-repository').strip() == b'true':
                 options.append('--unshallow')
             run_git(destination, 'fetch', *options, str(repository), commit)
-        run_git(destination, 'checkout', '--detach', commit)
+        # Quiet skips the warning about leaving the old commit, whose walk fails where a native shallow clone
+        # holds a pin fetched from the shallow source cache without its ancestry.
+        run_git(destination, 'checkout', '--quiet', '--detach', commit)
         return destination
 
 

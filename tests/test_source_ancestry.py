@@ -152,6 +152,15 @@ class AdaptationAncestryTest(unittest.TestCase):
         self.assertEqual(git(self.checkout, 'rev-parse', 'HEAD'), self.adapted)
         self.assertEqual((self.checkout / '.git/shallow').read_bytes(), shallow)
 
+    def test_checkout_moves_a_native_shallow_clone_between_pins_it_lacks_history_for(self):
+        native = self.root / 'native'
+        git(self.root, 'clone', '--depth', '1', self.url, str(native))
+        tip = git(native, 'rev-parse', 'HEAD')
+        self.sources.checkout(self.url, self.middle, native)
+        self.sources.checkout(self.url, tip, native)
+        self.assertEqual(git(native, 'rev-parse', 'HEAD'), tip)
+        self.assertEqual(git(native, 'status', '--porcelain'), '')
+
     def test_ordinary_pinned_source_still_uses_a_shallow_tree(self):
         destination = self.sources.tree(self.url, self.adapted, self.root / 'ordinary')
         self.assertEqual((destination / 'content.txt').read_bytes(), b'Adapted content.\n')
