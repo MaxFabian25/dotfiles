@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import posixpath
 import re
 import subprocess
 import sys
@@ -188,6 +189,38 @@ def merge_adaptation(current, base, adapted, label):
     if result.returncode:
         raise ValueError(f'Review harness adaptation conflict after an upstream change: {label}')
     return result.stdout.decode('utf-8')
+
+
+# Names only Cursor understands, as cursor/plugins' scripts/generate-pstack-harness-trees.mjs lists them.
+CURSOR_NAMES = re.compile('|'.join((
+    r'`Task`|\bTask (?:tool|subagent|call)', 'AskQuestion', r'(?i:\btodo ?list\b)', 'generalPurpose', 'poteto-agent',
+    'comment-sicko', r'readonly: (?:true|false)|readonly/Ask', r'environment: "(?:cloud|local)"', 'cloud_base_branch',
+    'run_in_background', '`resume`', 'file_attachments', r'\bclaude-[a-z]+-\d', r'\bgrok-\d', r'\bgpt-\d',
+    'inherit-parent', r'pstack-models\.mdc', r'\.cursor/skills', r'\.cursor/plugins|\.cursor-plugin',
+    r'\.cursor/rules|always-applied rule', r'agent-transcripts|\.cursor/projects',
+    r'Bugbot|Cursor [Aa]utomation|cursor\.(?:sh|com)/automations|[Cc]loud [Aa]gent|built-in PR tool')))
+MARKDOWN_LINK = re.compile(r'\]\(([^)\s]+)\)')
+
+
+def harness_gaps(root, harness):
+    # Skills that still use a Cursor name, or name another skill to run, without linking the harness reference
+    # that says what those mean in Codex and Claude Code.
+    root = Path(root)
+    skills = {path.parent.name: path for path in (root / 'skills').glob('*/SKILL.md')}
+    gaps = []
+    for name, skill in sorted(skills.items()):
+        others = '|'.join(re.escape(other) for other in skills if other != name)
+        route = re.compile(rf'the \*\*({others})\*\* skill|`/({others})`')
+        texts = [read_utf8(path) for path in skill.parent.rglob('*.md')]
+        if not any(CURSOR_NAMES.search(text) or any(f'(../{match.group(1) or match.group(2)}/' not in line
+                                                    for line in text.splitlines() for match in route.finditer(line))
+                   for text in texts):
+            continue
+        folder = skill.parent.relative_to(root).as_posix()
+        if harness not in {posixpath.normpath(posixpath.join(folder, href.split('#')[0]))
+                           for href in MARKDOWN_LINK.findall(read_utf8(skill))}:
+            gaps.append(name)
+    return gaps
 
 
 def noted_here(adaptations, identity):

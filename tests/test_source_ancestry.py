@@ -7,7 +7,7 @@ import unittest
 from description import Adaptation, CodexPlacement, EngineInstall, Package, Roots, Setup, ToolNotes, Visibility
 from host_state import DeviceRoots, Host
 from portable import GIT
-from sync_sources import BuildError, Builder, Sources
+from sync_sources import BuildError, Built, Builder, Sources
 
 
 def git(root, *arguments):
@@ -66,6 +66,19 @@ class AdaptationAncestryTest(unittest.TestCase):
         self.assertEqual(git(self.checkout, 'rev-parse', 'HEAD'), self.adapted)
         self.assertEqual(git(self.checkout, 'merge-base', self.base, self.adapted), self.base)
         self.assertEqual((self.plugin / 'content.txt').read_text(), 'Base content.\n')
+
+    def test_effective_tree_needs_the_harness_link_where_a_skill_uses_cursor_names(self):
+        skill = self.plugin / 'skills/kit/SKILL.md'
+        skill.parent.mkdir(parents=True)
+        skill.write_text('---\nname: kit\n---\n# Kit\n\nSpawn a `Task` subagent.\n')
+        adaptation = replace(self.package.codex.adaptation, harness='skills/kit/references/harnesses.md')
+        package = replace(self.package, codex=replace(self.package.codex, adaptation=adaptation))
+        builder = Builder(self.setup, self.roots, self.roots.engine, sources=self.sources)
+        built = Built('kit', self.plugin, '1.0.0', None)
+        with self.assertRaisesRegex(BuildError, 'kit use Cursor names without linking skills/kit/references/harnesses.md'):
+            builder.effective(package, built)
+        skill.write_text('---\nname: kit\n---\n# Kit\n\nSpawn a `Task` subagent per [harnesses.md](references/harnesses.md).\n')
+        self.assertEqual((builder.effective(package, built) / 'content.txt').read_text(), 'Adapted content.\n')
 
     def test_cold_cache_acquires_ancestry_of_exact_pins(self):
         self.assert_adapted()

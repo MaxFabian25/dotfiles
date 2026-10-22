@@ -216,6 +216,7 @@ class Adaptation:
     repository: str
     base: Commit
     adapted: Commit
+    harness: str | None = None   # the plugin's harness reference, which a skill using a Cursor name must link
 
 
 @dataclass(frozen=True)

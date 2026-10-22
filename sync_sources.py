@@ -297,6 +297,11 @@ class Builder:
                     path.unlink(missing_ok=True)
                 else:
                     path.write_bytes(after.encode('utf-8'))
+        adaptation = package.codex.adaptation
+        if adaptation and adaptation.harness:
+            from invocation_overrides import harness_gaps
+            if gaps := harness_gaps(destination, adaptation.harness):
+                raise BuildError(f'{package.name}: {", ".join(gaps)} use Cursor names without linking {adaptation.harness}')
         return destination
 
     def claude(self, package: Package, codex: Built, *, verify: bool = True) -> dict[str, Built]:

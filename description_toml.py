@@ -230,7 +230,7 @@ def _parse_package(path: Path, data: Mapping, visibility: Visibility, errors: li
         adaptation = None
         if adaptation_table:
             adaptation = Adaptation(adaptation_table.get('repository', str), _commit(adaptation_table, 'base'),
-                                    _commit(adaptation_table, 'adapted'))
+                                    _commit(adaptation_table, 'adapted'), adaptation_table.get('harness', str, None))
             adaptation_table.done()
         codex = CodexPlacement(_parse_installs(codex_table, Host.CODEX),
                                codex_table.parse('hooks', Hooks, codex_table.get('hooks', str, Hooks.OFF.value)),
@@ -580,7 +580,8 @@ def _dump_package(package: Package) -> dict:
         adaptation = package.codex.adaptation
         if adaptation:
             codex['adaptation'] = _Inline({'repository': adaptation.repository, 'base': adaptation.base,
-                                           'adapted': adaptation.adapted})
+                                           'adapted': adaptation.adapted,
+                                           **({'harness': adaptation.harness} if adaptation.harness else {})})
         roles = package.codex.roles
         if isinstance(roles, RepoRoles):
             codex['roles'] = {'from': 'repo', 'directory': roles.directory, 'pattern': roles.pattern,

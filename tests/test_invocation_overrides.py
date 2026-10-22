@@ -124,6 +124,23 @@ class InvocationOverridesTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             module.merge_adaptation('upstream added\n', None, 'new\n', 'x')
 
+    def test_harness_gaps_name_skills_that_use_cursor_names_without_the_harness_link(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            skills = {'mode': 'Spawn a `Task` subagent per [the map](references/harnesses.md#subagents).\n',
+                      'spawner': 'Spawn a `Task` subagent.\n',
+                      'router': 'Then run the **mode** skill.\n',
+                      'linked': 'Read [mode](../mode/SKILL.md), the **mode** skill.\n',
+                      'pointed': 'Run the **mode** skill per [harnesses.md](../mode/references/harnesses.md).\n',
+                      'deep': 'See the notes.\n',
+                      'plain': 'Write clearly.\n'}
+            for name, body in skills.items():
+                (root / 'skills' / name).mkdir(parents=True)
+                (root / 'skills' / name / 'SKILL.md').write_text(f'---\nname: {name}\n---\n# {name}\n\n{body}')
+            (root / 'skills/deep/references').mkdir()
+            (root / 'skills/deep/references/notes.md').write_text('Ask with AskQuestion.\n')
+            self.assertEqual(module.harness_gaps(root, 'skills/mode/references/harnesses.md'), ['deep', 'router', 'spawner'])
+
     def test_adaptation_and_invocation_overlays_compose_and_restore(self):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory).resolve()
