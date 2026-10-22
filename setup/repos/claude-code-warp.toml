@@ -1,6 +1,6 @@
 public = true
 url = "https://github.com/warpdotdev/claude-code-warp.git"
-commit = "e0e18e162aa5ec97a6d4cecdf66b08b75eb1e149"
+commit = "53ab8d63ef74d7653002444762812d2fb5639eee"
 
 [claude]
 marketplace = "claude-code-warp"
