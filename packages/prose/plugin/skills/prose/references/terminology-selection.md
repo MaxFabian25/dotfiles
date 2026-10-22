@@ -90,6 +90,9 @@ short forms.
 
 - Define an unfamiliar term of art at first use in the smallest unit a reader can enter
   independently. Use the same designation thereafter within that unit.
+- Leave a common word undefined. When the text needs a meaning that departs from ordinary usage,
+  choose a distinct designation instead of redefining the word.
+- Define only terms the text uses. Order a separate list of definitions alphabetically.
 - Write a definition as a phrase that can replace the term in a sentence. Keep requirements,
   recommendations, examples, and consequences outside the definition.
 - Define an unfamiliar concept through a broader known concept and its distinguishing
@@ -118,5 +121,6 @@ Keep exact-form requirements separate in `verbatim_form_required`. A local label
 official wording does not become an externally defined term. Record each additional authority and
 its actual concept; naming a source alone establishes neither a definition nor a designation.
 
-Complete the terminology task when the selected words identify the intended concepts, protected
-names and literals remain intact, and any requested term records contain their source evidence.
+Complete the terminology task when the selected words identify the intended concepts, every defined
+term appears in the text, protected names and literals remain intact, and any requested term
+records contain their source evidence.

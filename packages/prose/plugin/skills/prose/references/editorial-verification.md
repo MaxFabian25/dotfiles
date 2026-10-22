@@ -22,6 +22,7 @@ the edit affects:
 | Notes and citations | Markers reach notes; citations match their reference-list counterparts; each cited source, at any locator given, supports the claim attributed to it. |
 | Quotations | Wording and locators agree with the source. |
 | Abbreviations | Forms agree with definitions and any list. |
+| Definitions | Each defined term appears in the text and follows the [definition rules](terminology-selection.md#definitions). |
 | Cross-references | Links and references reach their current named targets. |
 | Contributors | Names and roles agree wherever the document records them. |
 

@@ -12,5 +12,8 @@ Register owns each standard's edition and maturity; the Terminology Register own
 
 ### Supporting plain-language literature
 
-These sources support independently worded rules about reader needs, information order, testing,
-uncertainty, visual explanation, and scientific communication.
+These sources support independently worded rules about reader needs, information order,
+definitions, testing, uncertainty, visual explanation, and scientific communication. Digital.gov's
+plain-language guide carries forward selected PlainLanguage.gov guidance. The archived
+[PlainLanguage.gov repository](https://github.com/GSA/plainlanguage.gov) retains the retired site's
+pages under the CC0 1.0 public domain dedication.
