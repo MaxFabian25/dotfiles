@@ -44,7 +44,6 @@ Interpret each source role under the [canonical role definitions](../source-mani
 | `AUTH-AU-NUMERALS-WORDS` | Numeral and word selection in Australian-government content |
 | `AUTH-NIST-SP330` | SI forms in United States federal output |
 | `AUTH-ISO-24896` | Visual notation for business reports, presentations, and dashboards |
-| `AUTH-IBCS-2` | Business-report composition and notation outside an explicitly selected ISO scope |
 
 ## Accessibility and human-centred design
 

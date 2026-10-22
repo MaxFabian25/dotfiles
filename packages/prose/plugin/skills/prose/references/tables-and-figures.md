@@ -4,8 +4,8 @@ Apply this branch when a table, figure, or chart is present.
 
 For an accessible analytical table, consult the UK Analysis Function table guidance
 (`AUTH-UKAF-DATA-TABLES` in [source provenance](source-manifest.md)) only for a choice that the
-rules below do not settle. Apply `AUTH-ISO-24896` or `AUTH-IBCS-2` only when the output explicitly
-selects its business-report notation. Registration alone creates no house notation.
+rules below do not settle. When the output explicitly selects IBCS notation, apply [IBCS
+notation](ibcs-notation.md) to the display's text.
 
 - **Data tables.** Use a data table only when row-and-column relationships carry meaning. Use a
   list for a sequence or one-dimensional set. Use the output format's layout and spacing controls

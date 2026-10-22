@@ -75,3 +75,5 @@ also apply.
   [Source forms](chicago-source-forms.md) links to the rules for books, periodicals, reviews,
   web and personal sources, AI output, unpublished and archival material, specialist and Indigenous
   sources, multimedia, and legal or public documents.
+- IBCS: [IBCS notation](ibcs-notation.md) for the text of business reports, presentations, and
+  dashboards.
