@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from codex_host import CodexState
+from configuration import desired
 from description import (Adaptation, AlignedInstall, ClaudePlacement, CodexPlacement, EngineInstall, Hooks, LocalSource, Lock, LockedTree,
                          LooseSkill, NoteRule, Package, PluginRoles, Repo, RepoSource, Roots, Rules, Setup, SkillRoot,
                          ToolNotes, Visibility, intent)
@@ -337,6 +338,33 @@ class InstallationTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.run_apply(current)
         self.assertIn('node = "20"', live.read_text())
+
+    def test_npmrc_fields_share_the_owner_and_preserve_unmanaged_lines(self):
+        config_source = self.public / 'config/npm/npmrc.toml'
+        config_source.parent.mkdir(parents=True)
+        config_source.write_text('min-release-age = 3\n')
+        live = self.roots.home / '.npmrc'
+        live.write_text('//registry.example.invalid/:_authToken=test-only-placeholder\nallow-scripts=@stripe/cli\n')
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(live.read_text(), '//registry.example.invalid/:_authToken=test-only-placeholder\n'
+                                           'allow-scripts=@stripe/cli\nmin-release-age=3\n')
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+        live.write_text(live.read_text().replace('min-release-age=3', 'min-release-age=0'))
+        current = plan(self.setup, self.device)
+        self.assertEqual(current.exit_code, 2)
+        with self.assertRaises(RuntimeError):
+            self.run_apply(current)
+        self.assertIn('min-release-age=0', live.read_text())
+
+    def test_npmrc_source_accepts_only_top_level_scalars(self):
+        config_source = self.public / 'config/npm/npmrc.toml'
+        config_source.parent.mkdir(parents=True)
+        config_source.write_text('[scope]\nmin-release-age = 3\n')
+        with self.assertRaises(ValueError):
+            desired(self.public, None, self.roots)
+        config_source.write_text('min-release-age = 3\nfund = false\n')
+        npm = next(item for item in desired(self.public, None, self.roots) if item.name == 'npm-user')
+        self.assertEqual(npm.fields, {('min-release-age',): '3', ('fund',): 'false'})
 
     def test_receiptless_mismatched_toml_field_is_not_overwritten(self):
         config_source = self.public / 'config/mise/config.toml'

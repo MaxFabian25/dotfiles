@@ -11,6 +11,7 @@ Linux, including WSL. Source review happens centrally. Each device reconciles a 
 | `packages/prose/` | Owned Prose source and its release checks |
 | `skills/` | Owned portable skills |
 | `config/mise/config.toml` | Reviewed tool versions, without credentials or local environment settings |
+| `config/npm/npmrc.toml` | Reviewed top-level keys for each device's `~/.npmrc`. Other lines, such as registry credentials, stay local |
 | `config/apt/packages.txt` | Ubuntu packages for Linux and WSL, installed by hand |
 | `*.py` | Build, inspect, reconcile, and delivery tools |
 | `tests/` | Synthetic behavior checks and an opt-in native-loader smoke test |

@@ -59,6 +59,27 @@ expose_spawn_agent_model_overrides = true # managed
         with self.assertRaises(ValueError):
             patch_fields(before, {('features', 'flag'): True})
 
+    def test_npmrc_insert_preserves_credentials_comments_sections_and_line_endings(self):
+        before = (b'\xef\xbb\xbf; local settings\r\n//registry.example.invalid/:_authToken=test-only-placeholder\r\n'
+                  b'allow-scripts=@stripe/cli\r\n[scope]\r\nmin-release-age=9\r\n')
+        fields = {('min-release-age',): '3'}
+        self.assertEqual(read_fields(before, fields, 'npmrc'), {('min-release-age',): {'present': False}})
+        after = patch_fields(before, fields, 'npmrc')
+        self.assertEqual(after, before.replace(b'[scope]', b'min-release-age=3\r\n[scope]'))
+        self.assertEqual(patch_fields(after, fields, 'npmrc'), after)
+        self.assertEqual(read_fields(after, fields, 'npmrc'), {('min-release-age',): {'present': True, 'value': '3'}})
+
+    def test_npmrc_patch_replaces_the_effective_assignment(self):
+        before = b'min-release-age=1\n# min-release-age=5\nmin-release-age = "7"'
+        fields = {('min-release-age',): '3'}
+        self.assertEqual(read_fields(before, fields, 'npmrc'), {('min-release-age',): {'present': True, 'value': '7'}})
+        self.assertEqual(patch_fields(before, fields, 'npmrc'), b'min-release-age=1\n# min-release-age=5\nmin-release-age=3')
+
+    def test_npmrc_insert_creates_or_terminates_the_file(self):
+        fields = {('min-release-age',): '3'}
+        self.assertEqual(patch_fields(None, fields, 'npmrc'), b'min-release-age=3\n')
+        self.assertEqual(patch_fields(b'fund=false', fields, 'npmrc'), b'fund=false\nmin-release-age=3\n')
+
 
 if __name__ == '__main__':
     unittest.main()

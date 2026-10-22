@@ -11,7 +11,8 @@ import subprocess
 import tempfile
 import uuid
 
-from configuration import FileConfiguration, TomlConfiguration, desired, patch_fields, read_fields, validate_runtime
+from configuration import (FileConfiguration, NpmrcConfiguration, TomlConfiguration, desired, patch_fields,
+                           read_fields, validate_runtime)
 from description import AlignedInstall, LocalSource, RepoSource, SkillRoot, SnapshotSource, _canonical, plugin_id
 from drift import Difference, EntryRef, Kind
 from host_state import FactKey, Host, InstallDetail, Surface, Unpinned, bytes_digest
@@ -36,15 +37,14 @@ def _linked(path):
     return path.is_symlink() or (hasattr(path, 'is_junction') and path.is_junction())
 
 
-def image(path: Path, fields=None):
+def image(path: Path, fields=None, syntax='toml'):
     """Raw path, entry-kind and byte evidence. Portable lock normalization is not ownership evidence."""
     if _linked(path):
         raise ConcurrentEdit(f'Refusing a linked working copy: {path}')
     if fields is not None:
         if path.exists() and not path.is_file():
-            raise ConcurrentEdit(f'Managed TOML path is not a file: {path}')
-        values = read_fields(contents(path), fields)
-        return {'kind': 'toml-fields', 'fields': [{'path': list(key), **value} for key, value in sorted(values.items())]}
+            raise ConcurrentEdit(f'Managed {syntax} path is not a file: {path}')
+        return _fields_image(read_fields(contents(path), fields, syntax), syntax)
     try:
         mode = path.lstat().st_mode
     except FileNotFoundError:
@@ -134,8 +134,12 @@ def _claude_cache_image(path, *, replacing=False):
     return {'kind': 'tree', 'entries': entries}
 
 
+def _fields_image(values, syntax):
+    return {'kind': f'{syntax}-fields', 'fields': [{'path': list(key), **value} for key, value in sorted(values.items())]}
+
+
 def _missing(value):
-    return value == _ABSENT or (value['kind'] == 'toml-fields' and
+    return value == _ABSENT or (value['kind'].endswith('-fields') and
                                 all(not field['present'] for field in value['fields']))
 
 
@@ -158,6 +162,7 @@ class _Artifact:
     expected: object = None
     data: bytes | None = None
     fields: object = None
+    syntax: str = 'toml'
     native: bool = False
     provenance: object = None
 
@@ -283,17 +288,18 @@ class AcceptedInstallations:
         units.extend(rules.values())
         for config in self.configurations:
             data = config.data if isinstance(config, FileConfiguration) else None
-            fields = config.fields if isinstance(config, TomlConfiguration) else None
+            fields = config.fields if isinstance(config, (TomlConfiguration, NpmrcConfiguration)) else None
+            syntax = 'npmrc' if isinstance(config, NpmrcConfiguration) else 'toml'
             fingerprint = data if data is not None else _encoded([[list(k), v] for k, v in sorted(fields.items())])
             units.append(_Artifact('configuration:' + config.name, None, None, config.destination, config.destination,
                                    (config.destination,), str(bytes_digest(fingerprint)),
-                                   'fields' if fields is not None else 'file', data=data, fields=fields))
+                                   'fields' if fields is not None else 'file', data=data, fields=fields, syntax=syntax))
         return tuple(units)
 
     def _read(self, artifact, path=None, *, replacing=False):
         if artifact.claude_cache:
             return _claude_cache_image(path or artifact.current, replacing=replacing)
-        return image(path or artifact.current, artifact.fields)
+        return image(path or artifact.current, artifact.fields, artifact.syntax)
 
     def _known_pending(self, artifact, pending):
         target = pending['target']
@@ -466,8 +472,8 @@ class AcceptedInstallations:
                 if self.roots.tree_digest(source) != artifact.expected.digest:
                     raise BuildError(f'{skill.name}: source bytes do not match the locked loose skill')
             if artifact.fields is not None:
-                target = {'kind': 'toml-fields', 'fields': [{'path': list(k), 'present': True, 'value': v}
-                                                          for k, v in sorted(artifact.fields.items())]}
+                target = _fields_image({k: {'present': True, 'value': v} for k, v in artifact.fields.items()},
+                                       artifact.syntax)
             elif source is not None:
                 target = image(source)
                 if artifact.claude_cache and {'.in_use', '.orphaned_at'} & target.get('entries', {}).keys():
@@ -585,9 +591,9 @@ class AcceptedInstallations:
                 if not _same(self._read(artifact, destination), actual):
                     raise ConcurrentEdit(f'Changed before write: {artifact.identity}')
                 before = contents(destination)
-                data = patch_fields(before, artifact.fields) if artifact.fields is not None else prepared.data
-                read = ({'kind': 'toml-fields', 'fields': [{'path': list(k), **v} for k, v in
-                                                         sorted(read_fields(before, artifact.fields).items())]}
+                data = (patch_fields(before, artifact.fields, artifact.syntax) if artifact.fields is not None
+                        else prepared.data)
+                read = (_fields_image(read_fields(before, artifact.fields, artifact.syntax), artifact.syntax)
                         if artifact.fields is not None else _ABSENT if before is None else
                         {'kind': 'file', 'sha256': str(bytes_digest(before))})
                 if not _same(read, actual):
