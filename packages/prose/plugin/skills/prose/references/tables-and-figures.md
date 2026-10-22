@@ -1,6 +1,7 @@
 # Tables and figures
 
-Apply this branch when a table, figure, or chart is present.
+Apply this branch when a table, figure, or chart is present. For a display's marks, layout, and
+building code, also use the [charts skill](../../charts/SKILL.md).
 
 For an accessible analytical table, consult the UK Analysis Function table guidance
 (`AUTH-UKAF-DATA-TABLES` in [source provenance](source-manifest.md)) only for a choice that the
