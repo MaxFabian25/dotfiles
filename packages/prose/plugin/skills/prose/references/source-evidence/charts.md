@@ -11,7 +11,10 @@ that no source sets, such as 300 dpi, are house choices.
 
 - **Contrast.** WCAG 2.2 success criteria 1.4.3 and 1.4.11 (`AUTH-W3C-WCAG22`) set the 4.5:1 and
   3:1 thresholds. The W3C Understanding document for 1.4.11 (`AUTH-W3C-NON-TEXT-CONTRAST`) supports
-  separating adjacent fills instead of requiring 3:1 between every pair. The Analysis Function
+  separating adjacent fills instead of requiring 3:1 between every pair. Measuring after opacity,
+  and naming bands and reference, event, and leader lines, are house choices. With the previous
+  text, writers drew context at 2.4:1 through opacity, range bands at 1.1:1 to 1.2:1, and event
+  and leader lines at 1.8:1. The Analysis Function
   colour guidance (`AUTH-UKAF-DATA-VIS-COLOURS`) asks 3:1 between all adjacent colours and
   corroborates the stricter case.
 - **Direct labels, labelled values, and one scale per measure.** The Analysis Function chart
@@ -24,17 +27,31 @@ that no source sets, such as 300 dpi, are house choices.
   zero when the break is clear on the chart and the text description mentions it. In the
   baseline and the first two rounds, line charts started at 2.0% and showed it on the chart in 1
   of 7 runs.
-- **Phone width.** The Analysis Function dashboard testing guidance (`AUTH-UKAF-DASHBOARD-TESTING`)
-  puts headline content first and avoids horizontal scrolling. WCAG 1.4.10 supports reflow.
+- **Page width.** The Analysis Function dashboard testing guidance (`AUTH-UKAF-DASHBOARD-TESTING`)
+  puts headline content first and avoids horizontal scrolling. WCAG 1.4.10 supports reflow and
+  exempts content, such as a data table, that needs two-dimensional layout. Measuring the scroll
+  width at 390 px and 1366 px is a house choice. In round 5, one dashboard was 756 px wide at a
+  390 px viewport although its writer had checked the phone layout by eye.
 - **Table totals.** The Analysis Function table guidance (`AUTH-UKAF-DATA-TABLES`) places totals at
   the bottom or right and sets them in bold. The handling of totals affected by suppression is a
-  house choice that follows Prose's blank-cell rule, and so is limiting totals to values that add
-  up. Writers already computed overall rates from counts and said so, so that has no rule.
+  house choice that follows Prose's blank-cell rule, and so are limiting totals to values that add
+  up and totalling each dimension that adds up. Writers already computed overall rates from counts
+  and said so, so that has no rule.
+- **Changes.** Signing every change is a house choice. Opus tables left positive changes unsigned
+  in 4 of 8 runs across the first four versions.
+- **Findings from the data.** Computing the figures and findings in titles, notes, and text
+  alternatives from the data is a house choice. In round 4 one build script hard-coded the figures
+  in its titles, and in round 5 one title dated a lead from the month before it began.
+- **Rounding.** The rounding rule applies Prose's [numerical precision](../quantitative-prose.md)
+  rule to build scripts. With the previous text, writers computed changes from supplied rounded
+  rates in 5 of 6 rate tables in round 7, and rounded dashboard chart data to four decimals before
+  rounding it again for display.
 - **Destination size and build script.** The 8 pt and 12 pt floors, 300 dpi, and keeping the build
   script with its output are house choices.
-- **Text alternative placement.** The W3C complex images tutorial (`AUTH-W3C-COMPLEX-IMAGES`)
-  supports a short alternative plus the values. The placement table records format behaviour
-  checked on 22 October 2026 with xlsxwriter 3.3.0, Vega 6.2.0, and vega-embed 7.0.2.
+- **Text alternative.** The W3C complex images tutorial (`AUTH-W3C-COMPLEX-IMAGES`) supports a
+  short alternative plus the values. Giving sparklines their own alternatives is a house choice.
+  The placement table records format behaviour checked on 22 October 2026 with xlsxwriter 3.3.0,
+  Vega 6.2.0, and vega-embed 7.0.2.
 - **IBCS branch.** The [IBCS charts](../../../charts/references/ibcs-charts.md) module adapts
   visual notation from `AUTH-IBCS-2`, as recorded under [IBCS Standards](ibcs.md#ibcs-standards).
 

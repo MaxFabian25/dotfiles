@@ -16,9 +16,11 @@ charts](references/ibcs-charts.md) before drawing.
 
 ## Marks
 
-- **Contrast.** Draw every mark a reader needs, greyed context series included, at 3:1 or more
-  against the background, and separate adjacent fills with a gap in the background colour. Set all
-  chart text, tick labels and notes included, at 4.5:1 or more.
+- **Contrast.** Draw every mark a reader needs at 3:1 or more against the background, measured on
+  the colour as drawn after any opacity. Greyed context series, range bands, and reference, event,
+  and leader lines all count, and a light band can meet the ratio with an edge line. Separate
+  adjacent fills with a gap in the background colour. Set all chart text, tick labels and notes
+  included, at 4.5:1 or more.
 - **Direct labels.** Name each series or stacked segment beside its marks: at the line end, inside
   or next to the segment, or above the stack. Use a legend only when direct labels would collide,
   and then give each series a second cue, such as a pattern, marker, or line style.
@@ -27,31 +29,43 @@ charts](references/ibcs-charts.md) before drawing.
 - **One scale per measure.** Draw small multiples, sparklines, and chart tiers that share a unit on
   one scale, or index them, and state which on the display. When panels or sparklines of different
   measures each have their own scale, say so on the display.
-- **Axis start.** When a line chart's value axis starts above zero, mark the break on the chart,
-  with an axis-break symbol or a short note, and mention it in the text alternative.
+- **Axis start.** When a line chart's value axis starts above zero, mark the break on the chart
+  with an axis-break symbol or a short note.
 
 ## Layout
 
 - **Destination size.** Build each figure at its final size, such as 16 cm wide for an A4 report
   column, with every text element at 8 pt or more at that size, or 12 pt on a slide. Save raster
   images at 300 dpi.
-- **Phone width.** Check web charts and dashboards at 390 px wide. Put what needs attention first at
-  every width, and keep tick labels horizontal by showing fewer of them.
-- **Table totals.** When an analytical table's values add up, give it totals: a total row below the
-  rows it sums and a total column after the columns it sums, set off by a rule and bold figures.
-  When suppressed cells leave a total incomplete, withhold it with the table's symbol or show it
-  with a note.
+- **Page width.** Load web charts, tables, and dashboards at 390 px and 1366 px wide, and measure
+  `document.documentElement.scrollWidth` at each. It equals the viewport width, and a wide table
+  scrolls inside its own container. Put what needs attention first at every width, and keep tick
+  labels horizontal by showing fewer of them.
+- **Table totals.** When an analytical table's values add up, total each dimension that adds up,
+  such as all sectors for each region and all regions for each sector. Place each total after the
+  rows or columns it sums, and set every total off with a rule and bold figures: total rows, total
+  columns, and each row of a block of totals such as all regions. When suppressed cells leave a
+  total incomplete, withhold that total with the table's symbol or show it with a note, and keep
+  the complete totals.
+- **Changes.** Sign every change and difference, as in +1.5 and −0.6.
 
 ## Delivery
 
-- **Title, source, and text alternative.** Give each display a title that states its finding, a
-  source line that names the producer or system and the data's date, and a text alternative that
-  names the chart type and finding and points to the values. On a dashboard, the headline states
-  the finding and each panel title names its measure. The producer is the organisation or system
-  that made the data. When the request does not name it, write a marked placeholder in its place,
-  such as `Source: [producer to confirm], September 2026`, keep any file name as an extra detail,
-  and ask the user for the producer in your reply.
-- **Text alternative placement.** Attach the text alternative where the output format carries it:
+- **Title and source.** Give each display a title that states its finding and a source line that
+  names the producer or system and the data's date. On a dashboard, the headline states the
+  finding and each panel title names its measure. The producer is the organisation or system that
+  made the data. When the request does not name it, write a marked placeholder in its place, such
+  as `Source: [producer to confirm], September 2026`, keep any file name as an extra detail, and
+  ask the user for the producer in your reply.
+- **Findings from the data.** Check each finding against the data, including when the pattern it
+  describes starts and ends. When a script writes a title, note, or text alternative, compute its
+  figures and findings from the data in that script, so a rerun keeps them true.
+- **Rounding.** Compute derived figures from unrounded values, such as counts rather than a
+  supplied rounded rate, and pass unrounded values to charts, tooltips, and tables. Round each
+  figure once, when you format it for display, to the precision the reader needs.
+- **Text alternative.** Give each chart, sparklines included, a text alternative that names the
+  chart type and finding, says where the value axis starts when it starts above zero, and points to
+  the values. Attach it where the output format carries it:
 
   | Output | Placement |
   | --- | --- |
