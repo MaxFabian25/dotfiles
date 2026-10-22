@@ -178,9 +178,9 @@ def _check_claude_modes(package: Package, path: Path, selected: tuple[str, ...],
         package_mode = package.modes.get(skill)
         if recipe is None or not (every or skill in selected):
             errors.append(f'{key}: {skill} is not a selected skill')
-        elif package_mode != SkillMode.OFF:
+        elif package_mode != SkillMode.OFF and (package_mode, mode) != (SkillMode.EXPLICIT, SkillMode.ON):
             errors.append(f'{key}: {skill} is {package_mode.value if package_mode else "auto"} for the package; '
-                          'only a skill the package has off takes a Claude mode')
+                          'a Claude mode needs an off skill, or is on for an explicit one')
 
 
 _SKILL_ROOTS = {Host.CODEX: (SkillRoot.CODEX, SkillRoot.AGENTS), Host.CLAUDE: (SkillRoot.CLAUDE,)}

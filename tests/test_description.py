@@ -265,10 +265,10 @@ class InvariantTest(unittest.TestCase):
                              '"control-cli", "control-ui", "deslop", "fix-ci"')
             self.assertEqual(roots.problems(), [f'{path}:skills.explicit: fix-ci already has mode off'])
 
-    def test_a_claude_mode_overrides_only_an_off_selected_skill_of_an_aligned_install(self):
+    def test_a_claude_mode_overrides_only_a_selected_skill_of_an_aligned_install(self):
         cases = {
             ('explicit = ["fix-ci"]', 'explicit = ["deslop"]'):
-                'claude.skills.explicit: deslop is explicit for the package; only a skill the package has off takes a Claude mode',
+                'claude.skills.explicit: deslop is explicit for the package; a Claude mode needs an off skill, or is on for an explicit one',
             ('explicit = ["fix-ci"]', 'on = ["control-tower"]'): 'claude.skills.on: control-tower is not a selected skill',
             ('explicit = ["fix-ci"]', 'off = ["fix-ci"]'): 'claude.skills.off: a Claude mode is explicit or on',
             ('via = "codex-aligned", enabled = true, agents = []', 'via = "personal-collections", enabled = true'):
@@ -278,6 +278,13 @@ class InvariantTest(unittest.TestCase):
             with Roots() as roots, self.subTest(new):
                 path = self.edit(roots, 'packages/cursor-team-kit.toml', old, new)
                 self.assertEqual(roots.problems(), [f'{path}:{problem}'])
+
+    def test_a_claude_on_mode_takes_a_package_explicit_skill(self):
+        with Roots() as roots:
+            self.edit(roots, 'packages/cursor-team-kit.toml', 'explicit = ["fix-ci"]', 'explicit = ["fix-ci"]\non = ["deslop"]')
+            kit = description_toml.load(roots.roots()).packages['cursor-team-kit']
+        self.assertEqual(kit.modes['deslop'], M.EXPLICIT)
+        self.assertEqual(kit.claude.modes, {'fix-ci': M.EXPLICIT, 'deslop': M.ON})
 
     def test_host_toggles_name_only_what_no_entry_owns(self):
         cases = {

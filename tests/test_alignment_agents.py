@@ -53,6 +53,28 @@ class ClaudeSkillTests(unittest.TestCase):
         self.assertEqual(alignment.excluded_skill_names(disabled, 'cursor-team-kit'), ['cursor-team-kit:fix-ci'])
 
 
+class InvocableSkillTests(unittest.TestCase):
+    def test_an_invocable_skill_loses_the_explicit_flag_that_codex_keeps(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'source'
+            (source / '.codex-plugin').mkdir(parents=True)
+            (source / '.codex-plugin/plugin.json').write_text(json.dumps({'name': 'example', 'version': '1.0.0'}))
+            for skill in ('mode', 'leaf'):
+                (source / 'skills' / skill / 'agents').mkdir(parents=True)
+                (source / 'skills' / skill / 'SKILL.md').write_text(
+                    f'---\nname: {skill}\ndescription: Test skill.\ndisable-model-invocation: true\n---\nBody\n')
+                (source / 'skills' / skill / 'agents/openai.yaml').write_text('policy:\n  allow_implicit_invocation: false\n')
+            plain = alignment.build_from('example', source, set(), root / 'catalog')
+            invocable = alignment.build_from('example', source, set(), root / 'catalog', invocable={'mode'})
+            self.assertNotEqual(plain['version'], invocable['version'])
+            built = root / 'catalog' / invocable['source']
+            self.assertIn('disable-model-invocation: false', (built / 'skills/mode/SKILL.md').read_text())
+            self.assertIn('disable-model-invocation: true', (built / 'skills/leaf/SKILL.md').read_text())
+            self.assertIn('disable-model-invocation: true', (root / 'catalog' / plain['source'] / 'skills/mode/SKILL.md').read_text())
+            self.assertIn('disable-model-invocation: true', (source / 'skills/mode/SKILL.md').read_text())
+
+
 class DevelopmentManifestTests(unittest.TestCase):
     def source(self, root):
         source = root / 'source'

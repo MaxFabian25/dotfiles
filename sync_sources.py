@@ -328,6 +328,7 @@ class Builder:
                     catalog = Path(tempfile.mkdtemp(prefix='claude-reviewed-', dir=catalog.parent))
                 entry = build_from(package.name, effective, disabled, catalog,
                                    kept_skills=set(package.claude.modes), agents=install.agents,
+                                   invocable={s for s, m in package.claude.modes.items() if m == SkillMode.ON},
                                    version=expected.version if expected and verify else None, roots=self.roots, source_label=source_label,
                                    development_manifests=package.source.metadata.get('claudeDevelopmentManifests', ())
                                    if isinstance(package.source, BuildSource) else ())

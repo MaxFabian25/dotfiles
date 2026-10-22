@@ -171,7 +171,7 @@ def build(name, marketplace, config):
     return build_from(name, source, disabled, CATALOG, validate=lambda path: command('plugin', 'validate', str(path)))
 
 
-def build_from(name, source, disabled, catalog_root, *, kept_skills=_LEGACY, agents=_LEGACY,
+def build_from(name, source, disabled, catalog_root, *, kept_skills=_LEGACY, agents=_LEGACY, invocable=frozenset(),
                validate=None, version=None, roots=None, source_label=None, development_manifests=()):
     relocations = []
     if development_manifests:
@@ -196,6 +196,8 @@ def build_from(name, source, disabled, catalog_root, *, kept_skills=_LEGACY, age
     digest.update(ADAPTATION.encode())
     if relocations:
         digest.update(json.dumps(relocations, sort_keys=True).encode())
+    if invocable:
+        digest.update(json.dumps(sorted(invocable)).encode())
     for path in sorted(source.rglob('*'), key=lambda path: path.parts):
         if path.is_file() and not any(part in ('.git', 'node_modules', '__pycache__') for part in path.relative_to(source).parts):
             digest.update(posix(path.relative_to(source)).encode())
@@ -235,7 +237,10 @@ def build_from(name, source, disabled, catalog_root, *, kept_skills=_LEGACY, age
                 changes = {}
                 if portable_name != front['name']:
                     changes['name'] = portable_name
-                if explicit and front.get('disable-model-invocation') is not True:
+                if relative.parent.name in invocable:
+                    if front.get('disable-model-invocation') is True:
+                        changes['disable-model-invocation'] = False
+                elif explicit and front.get('disable-model-invocation') is not True:
                     changes['disable-model-invocation'] = True
                 if changes:
                     front.update(changes)

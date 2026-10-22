@@ -230,7 +230,8 @@ class CodexPlacement:
 @dataclass(frozen=True)
 class ClaudePlacement:
     installs: tuple[Install, ...]
-    # Claude's own modes for skills the package has off, EXPLICIT or ON; absent means the package mode holds.
+    # Claude's own modes: EXPLICIT or ON for a skill the package has off, or ON for one it has explicit, which
+    # makes it model-invocable in Claude only. Absent means the package mode holds.
     modes: Mapping[str, SkillMode] = field(default_factory=dict, metadata={'intent': 'when-set'})
 
 
