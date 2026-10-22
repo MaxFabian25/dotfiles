@@ -504,7 +504,10 @@ class AcceptedInstallations:
             before = accepted['image']
         else:
             raise ConcurrentEdit(f'Unverified existing content preserved: {artifact.identity}; an independently pinned baseline is required')
-        if artifact.current != artifact.destination and not (_missing(at_target) or _same(at_target, target)):
+        # A native host can cache the pinned release before its installer registers it, as Claude Code's
+        # plugin listing does for a marketplace that moved to the new version.
+        native_copy = artifact.native and pristine is not None and _same(at_target, pristine)
+        if artifact.current != artifact.destination and not (_missing(at_target) or _same(at_target, target) or native_copy):
             raise ConcurrentEdit(f'Unverified destination preserved: {artifact.destination}')
         if target['kind'] == 'tree' and any(part in {'.git', 'node_modules'} for path in at_target.get('entries', {})
                                           for part in Path(path).parts) and not _same(at_target, target):
@@ -567,8 +570,8 @@ class AcceptedInstallations:
         self._check(prepared)
         actual = self._known_pending(artifact, pending)
         displaced = actual == _ABSENT and Path(pending['displaced']).exists()
-        if (artifact.kind == 'plugin' and not displaced and (artifact.native or _missing(prepared.before))
-                and not _same(actual, prepared.pristine)):
+        if (artifact.kind == 'plugin' and not displaced
+                and (artifact.native or (_missing(prepared.before) and not _same(actual, prepared.pristine)))):
             if native is None:
                 raise RuntimeError(f'Native installer required: {artifact.identity}')
             native(artifact.key.host, artifact.key.subject)

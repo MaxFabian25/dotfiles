@@ -474,7 +474,7 @@ class InstallationTest(unittest.TestCase):
                 release = operation.claude[plugin]
                 destination = self.roots.claude_home / 'plugins/cache' / marketplace_name / 'kit' / release.version
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(release.root, destination)
+                shutil.copytree(release.root, destination, dirs_exist_ok=True)
                 inventory[:] = [{'id': plugin, 'scope': 'user', 'enabled': True,
                                  'version': release.version, 'installPath': str(destination)}]
                 if self.interrupt:
@@ -725,6 +725,39 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual((current / 'ordinary.txt').read_text(), 'second release bytes\n')
         self.assertFalse((current / '.orphaned_at').exists())
         self.assertEqual(old_lease.read_text(), '{"pid":17,"procStart":"42"}')
+        self.assertEqual(self.calls, [])
+
+    def test_claude_version_update_adopts_the_pinned_release_a_native_listing_cached_and_registers_it(self):
+        destination = self._installed_claude()
+        (self.source / '.codex-plugin/plugin.json').write_text('{"name":"kit","version":"2.0.0"}')
+        (self.source / 'ordinary.txt').write_text('second release bytes\n')
+        digest = self.roots.tree_digest(self.source)
+        package = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
+        lock = replace(self.setup.lock['kit'], intent=intent(package, {}),
+                       trees={Host.CLAUDE: LockedTree('2.0.0', digest)})
+        self.setup = replace(self.setup, packages={'kit': package}, lock={'kit': lock})
+        current = destination.with_name('2.0.0')
+        shutil.copytree(self.source, current)
+        (current / '.in_use').mkdir()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual((current / 'ordinary.txt').read_text(), 'second release bytes\n')
+        self.assertIn('use the local reader', (current / 'skills/one/SKILL.md').read_text())
+        self.assertIn(('plugin', 'update'), [args[:2] for _, args in self.calls])
+
+    def test_claude_version_update_preserves_other_content_at_the_new_cache_path(self):
+        destination = self._installed_claude()
+        (self.source / '.codex-plugin/plugin.json').write_text('{"name":"kit","version":"2.0.0"}')
+        digest = self.roots.tree_digest(self.source)
+        package = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
+        lock = replace(self.setup.lock['kit'], intent=intent(package, {}),
+                       trees={Host.CLAUDE: LockedTree('2.0.0', digest)})
+        self.setup = replace(self.setup, packages={'kit': package}, lock={'kit': lock})
+        current = destination.with_name('2.0.0')
+        shutil.copytree(self.source, current)
+        (current / 'ordinary.txt').write_text('unknown bytes\n')
+        with self.assertRaisesRegex(ConcurrentEdit, 'Unverified destination preserved'):
+            self.run_apply()
+        self.assertEqual((current / 'ordinary.txt').read_text(), 'unknown bytes\n')
         self.assertEqual(self.calls, [])
 
     def test_claude_lease_created_after_swap_receipt_stops_the_rename(self):
