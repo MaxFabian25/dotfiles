@@ -1,6 +1,6 @@
 ---
 name: browser-and-computer-use
-description: Use before browser automation, verification, web development testing, or native desktop control. Both Claude Code and Codex use agent-browser for browsers on macOS, Windows, and WSL. Native apps use Codex Computer Use on macOS and Windows, and cua-driver on Linux.
+description: Use before browser automation, verification, web development testing, or native desktop control. Both Claude Code and Codex use agent-browser for browsers on macOS, Windows, and WSL. Native apps use Codex Computer Use on macOS, and cua-driver on Windows and Linux.
 ---
 
 # Browser and computer use
@@ -37,7 +37,7 @@ Host notes:
 Prefer a CLI, an API, or the browser tools when they can do the job. Use desktop control only for native apps.
 
 - macOS: OpenAI's Codex Computer Use, through the `cua_repl` server's `js` tool, for Codex and Claude Code alike. If `cua_repl` is missing, say so and stop. Start with `await cua.getState();` and follow the documentation it returns. An app must be approved before use. If a call fails with "was not approved to use <app>", ask the user to approve that app once from a Codex thread, which shows the approval prompt, then retry.
-- Windows: OpenAI's Codex Computer Use, through the `node_repl` server's `js` tool. First read Codex's skill at `~/.codex/plugins/cache/openai-bundled/computer-use/<newest version>/skills/computer-use/SKILL.md` and follow its Initialize section. It needs the Codex desktop app running. If a call fails with "Computer Use native pipe is unavailable", ask the user to open the Codex app, then retry.
+- Windows: use `cua-driver` through its CLI, or its MCP tools when connected. Read its own `cua-driver` skill first. Check `cua-driver status` and `cua-driver doctor` before driving an app, then discover the exact app and window with the driver's tools. Use `cua-driver call <tool>` with JSON on standard input for CLI calls. If the service is stopped, start the installed service with `cua-driver autostart kick`. Do not start a second daemon or use Codex Computer Use as a fallback.
 - Linux (WSL): the open-source `cua-driver` server's MCP tools, called directly; the `cua-driver` CLI depends on a background service that is stopped here. Its own `cua-driver` skill documents the tools. The server draws on a private virtual display (`:99`), hidden from the user along with any app you launch there.
 
 ## Maintenance
