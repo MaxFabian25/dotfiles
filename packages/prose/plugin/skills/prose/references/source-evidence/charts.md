@@ -39,6 +39,11 @@ that no source sets, such as 300 dpi, are house choices.
   and said so, so that has no rule.
 - **Changes.** Signing every change is a house choice. Opus tables left positive changes unsigned
   in 4 of 8 runs across the first four versions.
+- **Title length.** The ONS chart-title guidance (`AUTH-ONS-CHART-TITLES`) asks for the main
+  message in ten words or fewer, with the data, geography, and period in a short subtitle. The
+  EU data visualisation guide, the FT's Chart Doctor column, and the New York Times graphics
+  desk's one-line headlines agree and are cited only. With the previous text, Opus titles had a
+  median of 12 words, and 17 of 30 ran past ten, with dashboard headlines of up to 26 words.
 - **Findings from the data.** Computing the figures and findings in titles, notes, and text
   alternatives from the data is a house choice. In round 4 one build script hard-coded the figures
   in its titles, and in round 5 one title dated a lead from the month before it began.

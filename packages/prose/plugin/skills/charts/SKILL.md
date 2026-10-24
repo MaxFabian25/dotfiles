@@ -51,9 +51,10 @@ charts](references/ibcs-charts.md) before drawing.
 
 ## Delivery
 
-- **Title and source.** Give each display a title that states its finding and a source line that
-  names the producer or system and the data's date. On a dashboard, the headline states the
-  finding and each panel title names its measure. The producer is the organisation or system that
+- **Title and source.** Give each display a title of ten words or fewer that states its finding,
+  and put its supporting figures, measure, and period in a subtitle. Give it a source line that
+  names the producer or system and the data's date. On a dashboard, the headline follows the same
+  limit and each panel title names its measure. The producer is the organisation or system that
   made the data. When the request does not name it, write a marked placeholder in its place, such
   as `Source: [producer to confirm], September 2026`, keep any file name as an extra detail, and
   ask the user for the producer in your reply.
