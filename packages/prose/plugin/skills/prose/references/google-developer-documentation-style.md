@@ -21,6 +21,9 @@ interface text, technical content, APIs, quantities, accessibility, source handl
 ## Authority and scope
 
 - Apply host, product, and project style before this module.
+- For a new page in an existing documentation set, treat a term form that the set uses consistently
+  as project terminology, even when Google's word list gives another form. Use that form throughout
+  the page. Keep code, identifiers, and paths in their source form.
 - Apply the [authority and preservation rules](../SKILL.md#authority-and-preservation) when
   requirements conflict or a Google preference would change a source or host-owned form.
 - Apply [British English spelling](english-core.md#british-english-spelling) and [requirement

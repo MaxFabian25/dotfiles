@@ -5,6 +5,7 @@ interface.
 
 Apply a selected host or product terminology adapter with these rules. For Google developer
 documentation, apply the [Google UI terminology adapter](google-developer-documentation-style.md#google-ui-terminology-adapter).
+For user documentation on an Apple platform, apply [Apple style](apple-style.md).
 Apply [Interface copy](interface-copy.md) only when user-visible product text is written or reviewed.
 Apply the [authority and preservation rules](../SKILL.md#authority-and-preservation) to every
 label, state, message, command, and product term below.
@@ -13,16 +14,23 @@ label, state, message, command, and product term below.
 
 - In user materials, describe the task or visible result before naming a control. Name the control
   only when this helps readers locate or distinguish it.
+- Give only the steps, controls, and labels that the supplied material states or the product shows,
+  and keep every supplied step and note. When the task needs a step the material lacks, mark it for
+  the owner to confirm instead of supplying it from memory.
 - Distinguish a visible label from text the reader must enter. Name the element by its exact label or
   accessible name. Format a visible label in bold unless the host requires another treatment.
   Format entered text as the exact literal.
 - Follow the capitalisation shown in the interface. Use sentence case when labels are all uppercase
   or inconsistently capitalised.
+- Name interface elements as the readers' interface language shows them, such as *Control Centre*
+  and *Mobile Data* on a British English device, and keep one interface language throughout, even
+  when the supplied text mixes them. When the readers' interface language is not stated, use the
+  one that matches the document's English variety.
 - Omit a trailing interface ellipsis from a generic command reference.
 - Give context when naming a control outside a procedure. State its purpose or action in the
   preceding prose.
-- Document each specialised accessibility feature that the product provides. State its purpose and
-  explain how readers use or configure it.
+- Document each specialised accessibility feature that the product provides. State its purpose,
+  explain how readers use or configure it, and say where they get support for it.
 - Use a control's technical name in developer materials or when readers must understand a
   distinction. For novice readers, use a familiar description only when it improves understanding.
   Use the same name throughout the document.

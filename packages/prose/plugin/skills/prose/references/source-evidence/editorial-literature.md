@@ -11,6 +11,11 @@ The Microsoft guide supplies supporting editorial evidence for technical, interf
 accessibility, and conversational content. It governs Microsoft names and terminology only when
 Microsoft is the applicable product authority.
 
+The Red Hat supplementary style guide governs Red Hat names and terminology only when Red Hat is the
+applicable product authority. It supplements IBM Style, which Prose has not reviewed. The PDF states
+no licence; its repository declares CC BY-SA 4.0, so Prose uses independently worded rules and
+reproduces none of its text.
+
 The Oxford guide supplies supporting editorial evidence for *Spelling*, *Inclusive communication*,
 *Identity and personal characteristics*, *References*, *Capitalisation*, and *Numbers*. It also
 supports *Punctuation*, *Names and titles*, *Highlighting/emphasising text*, and *Footnotes*. Its

@@ -32,6 +32,8 @@ scope](source-evidence/plain-language.md#plain-language) when that designation m
   comparison basis. Match the strength of the claim to the evidence. Remove redundant hedges while
   keeping distinct conditions and limitations. State what an evidence gap prevents you from
   concluding.
+- Show an abstract financial or contractual mechanism through one worked example that follows one
+  person with the supplied terms. Label any assumed figure as illustrative.
 - Keep figurative language restrained in analytical claims and understandable across the intended
   audience. Preserve deliberate literary voice and logical or emphatic negation.
 - Apply the [abbreviation rules](terminology-selection.md#abbreviations) before introducing an
@@ -80,7 +82,9 @@ Keep instructions and consequential explanations clear.
 Keep the supported fact or action. Remove redundant clauses, empty praise, invented attributions,
 unneeded transitions, and summaries that add no information or useful social function. State a
 positive point directly instead of building an unnecessary binary contrast. A claim that fits any
-plausible subject needs specific evidence or removal. End on the last useful point.
+plausible subject needs specific evidence or removal. Summarise a governing provision in plain words
+instead of copying its clauses, and give its exact wording only when the reader needs it, after the
+summary. State each fact once in a summary. End on the last useful point.
 
 Remove placeholders, leaked tool output, tracking parameters, and conversational leftovers from a
 finished deliverable. Express a state in words rather than an emoji or status glyph. These are

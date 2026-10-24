@@ -1,5 +1,5 @@
 "audit_sequence","page_id","navigation_section","section_position","title","canonical_url","last_updated","accessed","source_role","scope","disposition","prose_licence_id","code_licence_id"
-"1","GOOGLE-STYLE-001","Introduction","1","About this guide","https://developers.google.com/style","2026-04-27","2026-08-22","authority","developer documentation prose","A","LIC-GOOGLE-PROSE","LIC-GOOGLE-CODE"
+"1","GOOGLE-STYLE-001","Introduction","1","About this guide","https://developers.google.com/style","2026-10-09","2026-10-22","authority","developer documentation prose","A","LIC-GOOGLE-PROSE","LIC-GOOGLE-CODE"
 "2","GOOGLE-STYLE-002","Language and grammar","1","Abbreviations","https://developers.google.com/style/abbreviations","2025-12-01","2026-08-22","authority","developer documentation prose","A","LIC-GOOGLE-PROSE","LIC-GOOGLE-CODE"
 "3","GOOGLE-STYLE-003","General principles","1","Write accessible documentation","https://developers.google.com/style/accessibility","2025-04-21","2026-08-22","authority","prose and host implementation","M","LIC-GOOGLE-PROSE","LIC-GOOGLE-CODE"
 "4","GOOGLE-STYLE-004","Language and grammar","3","Anthropomorphism","https://developers.google.com/style/anthropomorphism","2024-10-15","2026-08-22","authority","developer documentation prose","A","LIC-GOOGLE-PROSE","LIC-GOOGLE-CODE"

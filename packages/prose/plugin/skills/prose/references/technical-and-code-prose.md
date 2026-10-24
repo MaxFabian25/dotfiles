@@ -105,6 +105,7 @@ A *code span* is an inline sequence of code-formatted characters in CommonMark.
 | Domain name | [IANA example domains](https://www.iana.org/help/example-domains) |
 | IPv4 address | The three documentation address blocks in [RFC 5737](https://doi.org/10.17487/RFC5737) |
 | IPv6 address | The documentation prefixes `2001:db8::/32` from [RFC 3849](https://doi.org/10.17487/RFC3849) and `3fff::/20` from [RFC 9637](https://doi.org/10.17487/RFC9637) |
+| 48-bit MAC address | The documentation values in section 2.1.4 of [RFC 9542](https://doi.org/10.17487/RFC9542): `00-00-5E-00-53-00` to `00-00-5E-00-53-FF` for unicast and `01-00-5E-90-10-00` to `01-00-5E-90-10-FF` for multicast. Write them with the separator and letter case that the platform uses |
 | North American 555 line number | The NANPA [fictitious, non-working numbers from `555-0100` through `555-0199`](https://www.nanpa.com/numbering/555-line-numbers) |
 
 Do not use these resources for production traffic. Do not treat a vendor-owned registrable domain
@@ -188,6 +189,10 @@ The following rules cover internal API references and public API references in o
   a date, version, release, condition, or live authority.
 - Retain these words in procedural or time-stamped content, such as a press release, blog post, or
   release note. State the reference point.
+- In a release note for a fixed issue, give the earlier cause and its consequence in the past tense,
+  then the fix and its result in the present tense. Anchor the earlier state to the
+  update, as in *Before this update*, and write each note as a sentence, not a changelog command
+  such as *Fix race in lease renewal*.
 - Avoid documenting future features or products. Do not pre-announce them unless the owning
   authority has approved publication. Keep unapproved plans out of examples and implications.
 - Use present tense for current capability.

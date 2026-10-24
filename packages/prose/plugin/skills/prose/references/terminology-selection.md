@@ -103,6 +103,11 @@ short forms.
   subject field or boundary when it affects the meaning.
 - Use *means* for an exhaustive definition and *includes* or *does not include* for a
   non-exhaustive or exclusive statement.
+- In a plain-language rewrite for lay readers, replace a label that a legal or financial document
+  defines for its own convenience, such as *the Issuer* or an initialism made from a party's name.
+  Use a name or pronoun the reader already knows. Keep a defined term only when its exact scope
+  affects the reader's rights or obligations, and explain it at first use. Such labels are not
+  established terminology for that reader.
 
 ## Maintaining a terminology register
 

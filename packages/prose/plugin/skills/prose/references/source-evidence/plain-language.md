@@ -17,3 +17,9 @@ definitions, testing, uncertainty, visual explanation, and scientific communicat
 plain-language guide carries forward selected PlainLanguage.gov guidance. The archived
 [PlainLanguage.gov repository](https://github.com/GSA/plainlanguage.gov) retains the retired site's
 pages under the CC0 1.0 public domain dedication.
+
+The SEC's *A Plain English Handbook* supports the rules on drafting labels, summarised provisions,
+and worked examples for financial or contractual mechanisms.
+The handbook declares itself uncopyrighted, but its preface, margin quotations, and Appendix B
+filings are third-party material, so Prose uses independently worded rules and reproduces none of
+it.

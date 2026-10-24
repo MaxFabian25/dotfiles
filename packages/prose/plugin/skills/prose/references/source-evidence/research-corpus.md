@@ -60,6 +60,7 @@ Interpret each source role under the [canonical role definitions](../source-mani
 | `AUTH-ISO-9241-112` | Presentation of information by interactive systems |
 | `AUTH-ISO-9241-210` | Human-centred design process rather than output prose |
 | `AUTH-ISO-9241-115` | Conceptual, interaction, interface, and navigation design |
+| `AUTH-ETSI-EN-301-549-V4` | Accessibility support in product documentation and accessibility conformance claims in EU scope. ETSI terms permit no reproduction beyond implementation extracts, so Prose keeps designations and independently worded rules |
 
 ## Interface and developer documentation
 

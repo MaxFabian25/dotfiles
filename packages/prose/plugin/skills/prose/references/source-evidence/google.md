@@ -22,6 +22,11 @@ The [notices page](https://developers.google.com/style/notices) was checked on 6
 Its rendered `Last updated` value remained `2025-09-08`. This check confirmed the exclusions
 recorded in the [notice rules](../google-developer-documentation-style.md#notes-cautions-warnings-and-other-notices).
 
+The [About this guide](https://developers.google.com/style) page was checked on 22 October 2026.
+Its rendered `Last updated` value was `2026-10-09`, and its article body matched the 27 April 2026
+revision. The rule that keeps a documentation set's consistent term form over the word list's form
+adapts that page's precedence of project style.
+
 When changing adopted guidance or source records, follow the
 [source maintenance rule](../source-manifest.md#source-drift).
 

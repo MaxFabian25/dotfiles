@@ -31,6 +31,7 @@ sections needed for the current work.
 | Commit messages and pull requests | [Commit and pull-request prose](commit-and-pull-request-prose.md), [technical prose](technical-and-code-prose.md) |
 | Indexes and index cross-references | [Indexing and cross-references](indexing-and-cross-references.md) |
 | Final publication, research records, rights clearance, LIX, or reader testing | The matching section of [publication verification](publication-verification.md) |
+| Accessibility statements or conformance claims | [Final-format publication](publication-verification.md#final-format-publication) |
 
 ## Technical writing and interfaces
 
@@ -77,3 +78,5 @@ also apply.
   sources, multimedia, and legal or public documents.
 - IBCS: [IBCS notation](ibcs-notation.md) for the text of business reports, presentations, and
   dashboards.
+- Apple: [Apple style](apple-style.md) for user documentation and interface instructions on Apple
+  platforms.

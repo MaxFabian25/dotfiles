@@ -43,7 +43,9 @@ with version labels removed and output order randomised. Record factual, scope, 
 failures separately; stylistic quality cannot offset them. These comparison safeguards adapt
 [Clarity's evaluation protocol](https://github.com/addyosmani/clarity/blob/e27ceeff60368cf6966b4ea00a5b9b36418ee9a0/evals/JUDGE.md).
 Preserve the actual outputs and record an inconclusive result as inconclusive. Use the real host
-when checking skill discovery.
+when checking skill discovery. Run each comparison with the plugin loaded as the host loads it and
+a prompt a user would type. A brief that names Prose or tells writers to open its references
+changes which references they read, and so inflates a rule's measured effect.
 
 Tests should exercise retained behaviour through the validator's public interface. Preserve checks
 for meaningful contracts such as broken links and exact installed bytes. Avoid assertions about

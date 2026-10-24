@@ -24,8 +24,10 @@ Keep enough evidence to reproduce the relevant checks:
 
 When the task includes accessibility conformance or material barriers to the intended readers, use
 applicable tools and human review. Review alternatives, captions, table meaning, keyboard use,
-reflow, and contrast as applicable. Name the WCAG version and success criterion for a WCAG
-conformance claim. Report unperformed checks instead of claiming conformance from proofreading.
+reflow, and contrast as applicable. For an accessibility conformance claim, name the standard, its
+version, and the success criterion or clause, such as WCAG 2.2 success criterion 1.4.1 or EN 301 549
+V4.1.1 clause 10.1.4.1. When the source does not give the version, ask for it instead of supplying
+one. Report unperformed checks instead of claiming conformance from proofreading.
 
 Use ordinary host history when an earlier version cannot affect a reader's decision. When readers
 can discover and rely on an earlier version, keep this publication record:
