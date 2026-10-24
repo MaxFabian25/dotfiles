@@ -1,0 +1,17 @@
+# Google's standard install locations for Google Chrome, in order of preference. Each device sets
+# executablePath in ~/.agent-browser/config.json to the first one that exists, or keeps its current
+# value when that is one of them. Chrome for Testing is never a candidate.
+macos = [
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "{home}/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+]
+linux = [
+  "/opt/google/chrome/chrome",
+  "/usr/bin/google-chrome-stable",
+  "/usr/bin/google-chrome",
+]
+windows = [
+  '%ProgramFiles%\Google\Chrome\Application\chrome.exe',
+  '%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe',
+  '%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe',
+]

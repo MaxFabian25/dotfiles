@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
+import os
 from pathlib import Path
 from typing import Mapping
 import re
@@ -8,7 +10,7 @@ import tomllib
 
 import tomlkit
 
-from host_state import DeviceRoots
+from host_state import DeviceRoots, Platform
 from pstack_runtime import OVERRIDE_KEY, model_entries, validate_codex, validate_models
 
 
@@ -33,10 +35,26 @@ class NpmrcConfiguration:
     fields: Mapping[tuple[str, ...], object]
 
 
-Configuration = FileConfiguration | TomlConfiguration | NpmrcConfiguration
+@dataclass(frozen=True)
+class JsonConfiguration:
+    name: str
+    destination: Path
+    fields: Mapping[tuple[str, ...], object]
 
 
-def desired(public: Path | None, private: Path | None, roots: DeviceRoots) -> tuple[Configuration, ...]:
+@dataclass(frozen=True)
+class BlockedConfiguration:
+    """A configuration this device cannot satisfy. The plan reports it and applies nothing."""
+    name: str
+    destination: Path
+    reason: str
+
+
+Configuration = FileConfiguration | TomlConfiguration | NpmrcConfiguration | JsonConfiguration | BlockedConfiguration
+
+
+def desired(public: Path | None, private: Path | None, roots: DeviceRoots, platform: Platform,
+            environ: Mapping[str, str] = os.environ) -> tuple[Configuration, ...]:
     result: list[Configuration] = []
     mise = public / 'config/mise/config.toml' if public else None
     if mise and mise.is_file():
@@ -52,6 +70,9 @@ def desired(public: Path | None, private: Path | None, roots: DeviceRoots) -> tu
             raise ValueError('Public npm configuration must contain only top-level string, integer or boolean keys')
         result.append(NpmrcConfiguration('npm-user', roots.home / '.npmrc',
                                          {(key,): _npmrc_value(value) for key, value in source.items()}))
+    chrome = public / 'config/agent-browser/chrome.toml' if public else None
+    if chrome and chrome.is_file():
+        result.append(_agent_browser(tomllib.loads(chrome.read_text(encoding='utf-8')), roots, platform, environ))
     pstack = private / 'config/pstack' if private else None
     if pstack and pstack.is_dir():
         models = (pstack / 'models.md').read_bytes()
@@ -67,17 +88,70 @@ def desired(public: Path | None, private: Path | None, roots: DeviceRoots) -> tu
     return tuple(result)
 
 
+_WINDOWS_VARIABLE = re.compile(r'%([^%]+)%')
+
+
+def _agent_browser(candidates: dict, roots: DeviceRoots, platform: Platform,
+                   environ: Mapping[str, str]) -> JsonConfiguration | BlockedConfiguration:
+    if (set(candidates) != {item.value for item in Platform}
+            or not all(isinstance(paths, list) and paths and all(isinstance(path, str) for path in paths)
+                       for paths in candidates.values())):
+        raise ValueError('agent-browser Chrome candidates need a list of paths for each of macos, linux and windows')
+    destination = roots.home / '.agent-browser/config.json'
+    paths = [path for path in (_expand(template, roots.home, environ) for template in candidates[platform.value])
+             if path is not None]
+    try:
+        current = read_fields(destination.read_bytes() if destination.is_file() else None,
+                              {('executablePath',): None}, 'json')[('executablePath',)].get('value')
+    except ValueError:
+        current = None
+    chosen = installed_chrome(current, paths)
+    if chosen is None:
+        return BlockedConfiguration('agent-browser', destination,
+                                    'No installed Google Chrome found for agent-browser. Install Google Chrome; '
+                                    'Chrome for Testing is not accepted. Checked: ' + ', '.join(paths))
+    return JsonConfiguration('agent-browser', destination, {('executablePath',): chosen})
+
+
+def _expand(template: str, home: Path, environ: Mapping[str, str]) -> str | None:
+    if not all(environ.get(name) for name in _WINDOWS_VARIABLE.findall(template)):
+        return None
+    return _WINDOWS_VARIABLE.sub(lambda match: environ[match[1]], template.replace('{home}', str(home)))
+
+
+def installed_chrome(current: object, candidates: list[str], is_file=os.path.isfile) -> str | None:
+    """The current path when it is an installed candidate, so a working choice never churns, else the first
+    installed candidate."""
+    installed = [path for path in candidates if is_file(path)]
+    same = lambda path: os.path.normcase(os.path.normpath(path))
+    if isinstance(current, str) and any(same(current) == same(path) for path in installed):
+        return current
+    return installed[0] if installed else None
+
+
+def _document(data: bytes | None, syntax: str) -> dict:
+    if data is None:
+        return {}
+    text = data.decode('utf-8-sig')
+    if syntax == 'toml':
+        return tomllib.loads(text)
+    document = json.loads(text)
+    if not isinstance(document, dict):
+        raise ValueError('A managed JSON file must hold an object')
+    return document
+
+
 def read_fields(data: bytes | None, fields: Mapping[tuple[str, ...], object],
                 syntax: str = 'toml') -> dict[tuple[str, ...], object]:
     if syntax == 'npmrc':
         return _read_npmrc(data, fields)
-    document = tomllib.loads(data.decode('utf-8-sig')) if data is not None else {}
+    document = _document(data, syntax)
     values = {}
     for path in fields:
         value = document
         for key in path:
             if not isinstance(value, dict):
-                raise ValueError('A managed TOML key traverses a non-table: ' + '.'.join(path))
+                raise ValueError(f'A managed {syntax.upper()} key traverses a non-table: ' + '.'.join(path))
             if key not in value:
                 values[path] = {'present': False}
                 break
@@ -90,6 +164,8 @@ def read_fields(data: bytes | None, fields: Mapping[tuple[str, ...], object],
 def patch_fields(data: bytes | None, fields: Mapping[tuple[str, ...], object], syntax: str = 'toml') -> bytes:
     if syntax == 'npmrc':
         return _patch_npmrc(data, fields)
+    if syntax == 'json':
+        return _patch_json(data, fields)
     before = data.decode('utf-8-sig') if data is not None else ''
     document = tomlkit.parse(before)
     for path, desired_value in fields.items():
@@ -101,6 +177,27 @@ def patch_fields(data: bytes | None, fields: Mapping[tuple[str, ...], object], s
         if table.get(path[-1]) != desired_value:
             table[path[-1]] = desired_value
     after = tomlkit.dumps(document).encode('utf-8')
+    if data is not None and data.startswith(b'\xef\xbb\xbf'):
+        after = b'\xef\xbb\xbf' + after
+    return after
+
+
+def _patch_json(data: bytes | None, fields: Mapping[tuple[str, ...], object]) -> bytes:
+    """Rewrites the file only when a managed value changes. A rewrite keeps every other key and their order."""
+    document = _document(data, 'json')
+    changed = False
+    for path, desired_value in fields.items():
+        table = document
+        for key in path[:-1]:
+            table = table.setdefault(key, {})
+            if not isinstance(table, dict):
+                raise ValueError('A managed JSON key traverses a non-object: ' + '.'.join(path))
+        if path[-1] not in table or table[path[-1]] != desired_value:
+            table[path[-1]] = desired_value
+            changed = True
+    if data is not None and not changed:
+        return data
+    after = (json.dumps(document, indent=2, ensure_ascii=False) + '\n').encode('utf-8')
     if data is not None and data.startswith(b'\xef\xbb\xbf'):
         after = b'\xef\xbb\xbf' + after
     return after

@@ -361,10 +361,50 @@ class InstallationTest(unittest.TestCase):
         config_source.parent.mkdir(parents=True)
         config_source.write_text('[scope]\nmin-release-age = 3\n')
         with self.assertRaises(ValueError):
-            desired(self.public, None, self.roots)
+            desired(self.public, None, self.roots, Platform.LINUX)
         config_source.write_text('min-release-age = 3\nfund = false\n')
-        npm = next(item for item in desired(self.public, None, self.roots) if item.name == 'npm-user')
+        npm = next(item for item in desired(self.public, None, self.roots, Platform.LINUX) if item.name == 'npm-user')
         self.assertEqual(npm.fields, {('min-release-age',): '3', ('fund',): 'false'})
+
+    def chrome_candidates(self, *installed):
+        candidates = [self.root / 'chrome-a', self.root / 'chrome-b']
+        for name in installed:
+            (self.root / name).write_bytes(b'')
+        source = self.public / 'config/agent-browser/chrome.toml'
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text('macos = ["/none"]\nwindows = ["/none"]\nlinux = [' +
+                          ', '.join(f"'{path}'" for path in candidates) + ']\n')
+        live = self.roots.home / '.agent-browser/config.json'
+        live.parent.mkdir(parents=True, exist_ok=True)
+        return [str(path) for path in candidates], live
+
+    def test_agent_browser_gets_the_first_installed_chrome_and_keeps_other_keys(self):
+        (a, b), live = self.chrome_candidates('chrome-b')
+        live.write_text('{"headed": true, "executablePath": "/cft/chrome"}')
+        with self.assertRaises(ConcurrentEdit):
+            self.run_apply()
+        live.write_text('{"headed": true}')
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(json.loads(live.read_text()), {'headed': True, 'executablePath': b})
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
+    def test_agent_browser_keeps_a_current_installed_chrome(self):
+        (a, b), live = self.chrome_candidates('chrome-a', 'chrome-b')
+        live.write_text(json.dumps({'executablePath': b, 'profile': 'kept'}))
+        before = live.read_bytes()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(live.read_bytes(), before)
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
+    def test_agent_browser_without_installed_chrome_blocks_the_pull(self):
+        _, live = self.chrome_candidates()
+        current = plan(self.setup, self.device)
+        self.assertEqual(current.exit_code, 3)
+        self.assertTrue(any('No installed Google Chrome' in d.detail for d in current.blocked))
+        with self.assertRaises(RuntimeError):
+            self.run_apply(current)
+        self.assertFalse(live.exists())
+        self.assertEqual(self.calls, [])
 
     def test_receiptless_mismatched_toml_field_is_not_overwritten(self):
         config_source = self.public / 'config/mise/config.toml'

@@ -11,8 +11,8 @@ import subprocess
 import tempfile
 import uuid
 
-from configuration import (FileConfiguration, NpmrcConfiguration, TomlConfiguration, desired, patch_fields,
-                           read_fields, validate_runtime)
+from configuration import (BlockedConfiguration, FileConfiguration, JsonConfiguration, NpmrcConfiguration,
+                           desired, patch_fields, read_fields, validate_runtime)
 from description import AlignedInstall, LocalSource, RepoSource, SkillRoot, SnapshotSource, _canonical, plugin_id
 from drift import Difference, EntryRef, Kind
 from host_state import FactKey, Host, InstallDetail, Surface, Unpinned, bytes_digest
@@ -198,7 +198,7 @@ class AcceptedInstallations:
         self.directory = self.roots.codex_home / 'dotfiles/accepted'
         self.configurations = desired(setup.roots.public.parent if setup.roots.public else None,
                                       setup.roots.private.parent if setup.roots.private else None,
-                                      self.roots) if configurations else ()
+                                      self.roots, device.platform) if configurations else ()
         self._prepared = {}
 
     def _path(self, artifact):
@@ -287,9 +287,11 @@ class AcceptedInstallations:
                                                 str(self.setup.rules.digest), 'file', fact.value, self.setup.rules.text)
         units.extend(rules.values())
         for config in self.configurations:
+            if isinstance(config, BlockedConfiguration):
+                continue
             data = config.data if isinstance(config, FileConfiguration) else None
-            fields = config.fields if isinstance(config, (TomlConfiguration, NpmrcConfiguration)) else None
-            syntax = 'npmrc' if isinstance(config, NpmrcConfiguration) else 'toml'
+            fields = None if isinstance(config, FileConfiguration) else config.fields
+            syntax = {NpmrcConfiguration: 'npmrc', JsonConfiguration: 'json'}.get(type(config), 'toml')
             fingerprint = data if data is not None else _encoded([[list(k), v] for k, v in sorted(fields.items())])
             units.append(_Artifact('configuration:' + config.name, None, None, config.destination, config.destination,
                                    (config.destination,), str(bytes_digest(fingerprint)),
@@ -358,6 +360,9 @@ class AcceptedInstallations:
             if kind is not None:
                 differences.append(Difference(kind, artifact.key, artifact.expected, None, artifact.entry,
                                               detail=f'{artifact.identity}: {detail}'))
+        differences.extend(Difference(Kind.INCOMPLETE, None, None, None, None,
+                                      detail=f'configuration:{config.name}: {config.reason}')
+                           for config in self.configurations if isinstance(config, BlockedConfiguration))
         if self.configurations and not any(difference.key is None for difference in differences):
             try:
                 validate_runtime(self.configurations, self.roots, proposed=False)

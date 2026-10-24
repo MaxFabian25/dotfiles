@@ -1,7 +1,7 @@
 from pathlib import Path
 import unittest
 
-from configuration import patch_fields, read_fields
+from configuration import _expand, installed_chrome, patch_fields, read_fields
 
 
 class ConfigurationTests(unittest.TestCase):
@@ -79,6 +79,38 @@ expose_spawn_agent_model_overrides = true # managed
         fields = {('min-release-age',): '3'}
         self.assertEqual(patch_fields(None, fields, 'npmrc'), b'min-release-age=3\n')
         self.assertEqual(patch_fields(b'fund=false', fields, 'npmrc'), b'fund=false\nmin-release-age=3\n')
+
+    def test_json_patch_keeps_other_keys_and_unchanged_bytes(self):
+        fields = {('executablePath',): '/opt/google/chrome/chrome'}
+        self.assertEqual(patch_fields(None, fields, 'json'), b'{\n  "executablePath": "/opt/google/chrome/chrome"\n}\n')
+        before = b'{"headed": true, "executablePath": "/old/chrome", "extensions": ["/x"]}'
+        after = patch_fields(before, fields, 'json')
+        self.assertEqual(after, b'{\n  "headed": true,\n  "executablePath": "/opt/google/chrome/chrome",\n'
+                                b'  "extensions": [\n    "/x"\n  ]\n}\n')
+        self.assertEqual(patch_fields(after, fields, 'json'), after)
+        compact = b'{"executablePath":"/opt/google/chrome/chrome","headed":true}'
+        self.assertEqual(patch_fields(compact, fields, 'json'), compact)
+        self.assertEqual(read_fields(after, fields, 'json'),
+                         {('executablePath',): {'present': True, 'value': '/opt/google/chrome/chrome'}})
+        with self.assertRaises(ValueError):
+            read_fields(b'["not", "an", "object"]', fields, 'json')
+
+    def test_installed_chrome_keeps_a_working_choice_and_never_invents_one(self):
+        installed = {'/opt/google/chrome/chrome', '/usr/bin/google-chrome-stable', '/cft/chrome'}.__contains__
+        candidates = ['/missing/chrome', '/opt/google/chrome/chrome', '/usr/bin/google-chrome-stable']
+        self.assertEqual(installed_chrome(None, candidates, installed), '/opt/google/chrome/chrome')
+        self.assertEqual(installed_chrome('/usr/bin/google-chrome-stable', candidates, installed),
+                         '/usr/bin/google-chrome-stable')
+        self.assertEqual(installed_chrome('/cft/chrome', candidates, installed), '/opt/google/chrome/chrome')
+        self.assertEqual(installed_chrome('/missing/chrome', candidates, installed), '/opt/google/chrome/chrome')
+        self.assertIsNone(installed_chrome('/cft/chrome', ['/missing/chrome'], installed))
+
+    def test_windows_candidates_need_their_variables(self):
+        template = r'%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe'
+        self.assertEqual(_expand(template, Path('/home'), {'ProgramFiles(x86)': r'C:\Program Files (x86)'}),
+                         r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe')
+        self.assertIsNone(_expand(template, Path('/home'), {}))
+        self.assertEqual(_expand('{home}/Applications/Chrome', Path('/Users/u'), {}), '/Users/u/Applications/Chrome')
 
 
 if __name__ == '__main__':
