@@ -95,9 +95,9 @@ claude = { version = "0.1.0+codex-aligned.de3530765d0e", tree = "sha256:b3a05c0a
 intent = "sha256:15c4ab6eb8970ddfb7089ef6a94b6bfbf14f09a36a992fa27fa28a546f918838"
 
 [prose]
-intent = "sha256:b262ed5b27f7e3877672f6c42fd8fdde0b7f759196b4e3105622a19bf28efcfe"
-codex = { version = "0.3.2+dotfiles.20261024", tree = "sha256:d0fe642a2036def86a4e60e73f47043ac139a30004305ac679cccc9f8a72eaa2" }
-claude = { version = "0.3.2+codex-aligned.551e0d658517", tree = "sha256:5a9055f709c89c7fed66597f521ea896592148efc431b1e5af02bd9790f7b29c" }
+intent = "sha256:07678de7635eedc399443b21da0ffeb5f3fab0429321c30ff7e27d1cb908d288"
+codex = { version = "0.3.3+dotfiles.20261024", tree = "sha256:234bf5acaafb4e1b64727c6cc09cce589ce9f9004c1a7ea2ba6afe4e80597cc5" }
+claude = { version = "0.3.3+codex-aligned.d584da9aa9fb", tree = "sha256:c8dd9c9ad95fc0da2917f188ba6bfd4445ec50ac755545a532cea8e7dedf2c9d" }
 
 [pstack]
 intent = "sha256:4f3f6d2e48bc0a4e8589e364c5ebb1ca25ec88320a276a98d038dfb692fbe614"

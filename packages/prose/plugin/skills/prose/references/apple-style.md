@@ -10,9 +10,10 @@ evidence](source-evidence/apple-style.md).
 
 ## Apple UI terminology adapter
 
-- Name each interface element in plain text, as the readers' interface shows it. Put a name of two
-  or more words in sentence-style capitals in quotation marks, such as turn on "Sync with iCloud".
-  This replaces the house bold label.
+- Name each interface element in plain text, with the words and capitals the readers' interface
+  shows. Put quotation marks around a name of two or more words that the interface shows in
+  sentence-style capitals, such as turn on "Sync with iCloud". Leave a title-style menu command,
+  such as Back Up Now, unquoted. This replaces the house bold label.
 - Join a key combination with hyphens in plain text, such as Shift-Command-E. This replaces the
   house `Control+S` form and monospace keys. Order modifiers Fn, Control, Option, Shift, Command. On
   first use, say that a hyphen means holding the earlier keys down while pressing the last one.

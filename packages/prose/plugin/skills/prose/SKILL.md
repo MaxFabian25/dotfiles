@@ -18,7 +18,7 @@ Follow the governing instructions and the editing scope authorised by the user. 
 meaning, claim scope, voice, dialect, genre, and established terminology. In a plain-language rewrite
 for lay readers, replace a document's [drafting labels](references/terminology-selection.md#definitions),
 such as *the Issuer* or an initialism coined for the document, with plain names, and keep a defined
-term whose exact scope affects the reader's rights. When editing or extending
+term whose exact scope affects the reader's rights, explained at first use. When editing or extending
 supplied text, keep its established mechanics, such as serial-comma use, quotation marks, and date
 form, in rewritten and added sentences unless a selected style governs them or the user authorises
 normalisation. Treat the predominant form in the text, or a form set by its typesetting
@@ -50,8 +50,12 @@ and the requested style's reference under [Named styles](references/index.md#nam
 For a governed designation, use [terminology selection](references/terminology-selection.md). For
 Prose's registered source or term provenance, use [source provenance](references/source-manifest.md).
 For an accessibility statement or conformance claim, use [publication
-verification](references/publication-verification.md#final-format-publication).
+verification](references/publication-verification.md#final-format-publication). For instructions
+that name a screen, control, or device, use [interface
+instructions](references/interface-instructions.md). For technical or code-adjacent prose, such as
+release notes, use [technical prose](references/technical-and-code-prose.md).
 
-Return the requested artefact when the requested changes and relevant checks are complete. Disclose
+Return the requested artefact when the requested changes and relevant checks are complete. When the
+user asks for the artefact alone, begin the reply with its first line. Disclose
 missing information or unavailable guidance that materially limits the result. Include method when
 the user requests it.
