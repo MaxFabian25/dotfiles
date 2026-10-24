@@ -52,7 +52,10 @@ that no source sets, such as 300 dpi, are house choices.
   rates in 5 of 6 rate tables in round 7, and rounded dashboard chart data to four decimals before
   rounding it again for display.
 - **Destination size and build script.** The 8 pt and 12 pt floors, 300 dpi, and keeping the build
-  script with its output are house choices.
+  script with its output are house choices. The 12 px floor for web pages is one of the critical
+  Chartability tests that the EU data visualisation guide summarises
+  (`AUTH-EU-DATAVIS-CHARTABILITY`). With the previous text, 12 of 18 dashboards in rounds 6 to 9
+  rendered text under 12 px, such as 11 px axis ticks and 10 px source lines and badges.
 - **Text alternative.** The W3C complex images tutorial (`AUTH-W3C-COMPLEX-IMAGES`) supports a
   short alternative plus the values. Giving sparklines their own alternatives is a house choice.
   The placement table records format behaviour checked on 22 October 2026 with xlsxwriter 3.3.0,
@@ -77,6 +80,6 @@ The sources disagree on several points. The skill resolves them as follows:
   measured gap needs it.
 - **Dashboard scrolling.** Vertical scrolling is acceptable when what needs attention comes first,
   following the ONS dashboard guidance.
-- **Reuse.** The rules are independently worded. The Analysis Function, ONS, and W3C pages permit
-  adaptation with attribution. The Australian Style Manual, the Plotly website, and ISO 24896 are
-  cited only, because their licences do not permit adaptation.
+- **Reuse.** The rules are independently worded. The Analysis Function, ONS, W3C, and EU guide
+  pages permit adaptation with attribution. The Australian Style Manual, the Plotly website, and
+  ISO 24896 are cited only, because their licences do not permit adaptation.

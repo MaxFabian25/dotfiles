@@ -35,8 +35,8 @@ charts](references/ibcs-charts.md) before drawing.
 ## Layout
 
 - **Destination size.** Build each figure at its final size, such as 16 cm wide for an A4 report
-  column, with every text element at 8 pt or more at that size, or 12 pt on a slide. Save raster
-  images at 300 dpi.
+  column, with every text element at 8 pt or more at that size, 12 px or more as rendered on a web
+  page at both test widths below, or 12 pt on a slide. Save raster images at 300 dpi.
 - **Page width.** Load web charts, tables, and dashboards at 390 px and 1366 px wide, and measure
   `document.documentElement.scrollWidth` at each. It equals the viewport width, and a wide table
   scrolls inside its own container. Put what needs attention first at every width, and keep tick
