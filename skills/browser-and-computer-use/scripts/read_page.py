@@ -3,8 +3,9 @@
 
 Opens one Chrome window of its own in the given profile, loads each URL through that window's address
 bar, and prints each page's text, or saves it under --out. It stops at a bot check, closes only its own
-window, and ends its cua-driver session. Requires a running Chrome and cua-driver on PATH. On WSL, pass
---cua cua-driver.exe to drive Chrome on the Windows desktop.
+window, and ends its cua-driver session. Requires the user's own Chrome running, and cua-driver on PATH. A
+Chrome that automation started, such as agent-browser's, is never used. On WSL, pass --cua cua-driver.exe to
+drive Chrome on the Windows desktop.
 """
 
 import argparse
@@ -18,6 +19,7 @@ import time
 
 BOT_CHECK = re.compile(r'Just a moment|Security Verification|DataDome|captcha|Are you a robot', re.IGNORECASE)
 NYT_LIMIT = 5  # The NYT shows a bot check after a longer run of pages.
+NOT_OWN = re.compile(r'--(?:remote-debugging-(?:port|pipe)|headless|enable-automation|user-data-dir|type)\b')
 ROW = re.compile(r'- \[\d+\] AX(\w+)(?: "((?:[^"\\]|\\.)*)")?(?: = "((?:[^"\\]|\\.)*)")?', re.DOTALL)
 
 
@@ -45,11 +47,35 @@ class Driver:
                          **{'max_elements': 6000, 'timeout_ms': 15000, **args})
 
 
+def command_line(pid, cua):
+    """A process's command line, or '' when it can't be read. cua-driver.exe on WSL reports Windows processes."""
+    if sys.platform == 'win32' or cua.endswith('.exe'):
+        query = f'(Get-CimInstance Win32_Process -Filter "ProcessId={int(pid)}").CommandLine'
+        argv = ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', query]
+    else:
+        argv = ['ps', '-o', 'command=', '-p', str(int(pid))]
+    try:
+        return subprocess.run(argv, capture_output=True, text=True, timeout=30).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ''
+
+
 def chrome(driver):
-    for app in driver.call('list_apps').get('apps', []):
-        if app.get('bundle_id') == 'com.google.Chrome' or app.get('name') in ('Google Chrome', 'chrome'):
-            return app['pid']
-    raise RuntimeError('Google Chrome is not running; start it, then run this again')
+    """The user's own Chrome. Automation, such as agent-browser, starts Chrome with DevTools, headless or with a
+    profile folder of its own, and Chrome's helper processes carry --type; skip all of those."""
+    apps = [app for app in driver.call('list_apps').get('apps', [])
+            if app.get('pid') and app.get('running', True)
+            and (app.get('bundle_id') == 'com.google.Chrome' or app.get('name') in ('Google Chrome', 'chrome'))]
+    if not apps:
+        raise RuntimeError('Google Chrome is not running; start it, then run this again')
+    lines = {app['pid']: command_line(app['pid'], driver.command) for app in apps}
+    own = [app for app in apps if lines[app['pid']] and not NOT_OWN.search(lines[app['pid']])]
+    if not own and len(apps) == 1 and not lines[apps[0]['pid']]:
+        own = apps  # the only Chrome, and its command line can't be read
+    if len(own) != 1:
+        found = '; '.join(f"pid {app['pid']}: {lines[app['pid']][:80] or 'command line unreadable'}" for app in apps)
+        raise RuntimeError(f"can't tell which Chrome is the user's own ({found})")
+    return own[0]['pid']
 
 
 def open_window(driver, pid, profile, url):
