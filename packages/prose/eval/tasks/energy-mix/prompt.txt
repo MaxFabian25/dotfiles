@@ -1,0 +1,4 @@
+For the sustainability page on our website (it's a static site), I'd like a chart showing where our
+stores' electricity has come from each year since 2019. The data is in data/electricity_mix.csv. The
+point is the shift to renewables. Please use Vega-Lite and give me the spec plus an HTML snippet I
+can paste into the page.

@@ -1,6 +1,6 @@
 {
   "globs": ["**/*.md"],
-  "ignores": ["node_modules/**", ".venv/**"],
+  "ignores": ["node_modules/**", ".venv/**", "eval/tasks/**"],
   "config": {
     "default": false,
     "MD011": true,

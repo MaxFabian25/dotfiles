@@ -1,4 +1,4 @@
-.PHONY: setup check lint format test validate
+.PHONY: setup check lint format test validate eval-test
 
 export PYTHONDONTWRITEBYTECODE := 1
 
@@ -22,3 +22,6 @@ test:
 
 validate:
 	uv run --locked python -B scripts/validate_release.py --source plugin --json
+
+eval-test:
+	uv run --locked python -B -m unittest discover -s eval/tests

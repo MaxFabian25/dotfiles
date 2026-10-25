@@ -1,0 +1,4 @@
+Please turn data/regional_employment.csv into the main table for our web statistical release, as an
+HTML page I can hand to the web team. It's employment by region and sector in the second quarter of
+2025 and 2026, in thousands of people. In the CSV, "c" means the figure is suppressed for
+confidentiality and ".." means it is not available.

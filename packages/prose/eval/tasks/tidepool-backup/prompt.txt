@@ -1,0 +1,1 @@
+Please copyedit backup-help.md. It's the Apple Support-style help page for our app, Tidepool, which runs on iPhone, iPad, and Mac. Follow Apple's style for Apple-platform user documentation. Our house spelling is British English. Save the edited page over the file, then give me a short list of the changes you made.

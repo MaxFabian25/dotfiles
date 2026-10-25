@@ -1,0 +1,1 @@
+Can you edit service-desk-guide.md for clarity and structure? Keep its meaning and every requirement. Save the edited guide over the file, then give me a short list of the changes you made.

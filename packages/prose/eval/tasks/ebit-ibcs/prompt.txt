@@ -1,0 +1,5 @@
+Our management dashboard follows IBCS. Could you make the monthly EBIT chart for it as a PNG, using
+matplotlib, from data/ebit_2026.csv? January to September are actuals and October to December are
+the forecast made on 1 October 2026. The figures come from the group consolidation in SAP S/4HANA,
+extracted on 5 October 2026. The April loss came from a one-off write-down of store fittings in
+Malmö. The dashboard tile is about 16 cm wide.

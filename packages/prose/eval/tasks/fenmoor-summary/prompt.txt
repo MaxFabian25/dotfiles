@@ -1,0 +1,6 @@
+We are offering bonds to retail investors, and the offer section of our prospectus summary (summary-of-the-offer.md) has to be readable by them. Our lawyers have approved the facts. Rewrite the section in plain English and save it as summary-of-the-offer-plain.md. Keep every fact, figure, date and condition, and do not add facts. You may use these business facts:
+
+- In the year to 31 March 2026, 61% of the group's revenue came from one customer, Halden Rail.
+- That revenue comes from a maintenance contract that expires on 31 March 2028. Halden Rail can end the contract earlier by giving 12 months' notice.
+
+Then give me a short list of points our legal team must decide.

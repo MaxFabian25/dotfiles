@@ -844,9 +844,50 @@ def _validate_research_sources(
                 )
 
 
+def _claude_manifest_parity(
+    source: TreeSnapshot, installed: TreeSnapshot, findings: list[Finding]
+) -> None:
+    """Claude's copy carries its own manifest and build record in .claude-plugin/."""
+    relative = ".claude-plugin/plugin.json"
+    ours = _parse_json(source.files.get(".codex-plugin/plugin.json"))
+    theirs = _parse_json(installed.files.get(relative))
+    if not isinstance(ours, Mapping) or not isinstance(theirs, Mapping):
+        return
+
+    def base(version: Any) -> Any:
+        return version.split("+", 1)[0] if isinstance(version, str) else version
+
+    if theirs.get("name") != ours.get("name") or base(theirs.get("version")) != base(
+        ours.get("version")
+    ):
+        _append(
+            findings,
+            "installed-manifest-mismatch",
+            relative,
+            "Claude's manifest names a different plugin or version from the source.",
+        )
+
+
 def _payload_parity(
     source: TreeSnapshot, installed: TreeSnapshot, findings: list[Finding]
 ) -> None:
+    if (
+        ".claude-plugin/plugin.json" in installed.files
+        and ".codex-plugin/plugin.json" not in installed.files
+    ):
+        _claude_manifest_parity(source, installed, findings)
+        source = TreeSnapshot(
+            {k: v for k, v in source.files.items() if k.startswith("skills/")},
+            source.skills,
+        )
+        installed = TreeSnapshot(
+            {
+                k: v
+                for k, v in installed.files.items()
+                if not k.startswith(".claude-plugin/")
+            },
+            installed.skills,
+        )
     source_paths = set(source.files)
     installed_paths = set(installed.files)
     if source_paths != installed_paths:

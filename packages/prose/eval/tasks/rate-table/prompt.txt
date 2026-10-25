@@ -1,0 +1,3 @@
+Could you make the conversion table for next week's quarterly business review?
+data/conversion_quarterly.csv has online sessions, orders and the conversion rate by market for the
+last four quarters. I need it as an HTML page.

@@ -249,6 +249,33 @@ class ValidateReleaseTests(unittest.TestCase):
         installed = self.clone_source("installed")
         self.assertEqual(validate_release.validate(source, installed), [])
 
+    def claude_copy(self, source: Path, **manifest: str) -> Path:
+        """Claude's aligned copy: the source skills with a .claude-plugin manifest."""
+        installed = self.clone_source("claude")
+        shutil.rmtree(installed / ".codex-plugin")
+        codex = json.loads((source / ".codex-plugin/plugin.json").read_text("utf-8"))
+        version = codex["version"].split("+")[0] + "+codex-aligned.81f941768923"
+        (installed / ".claude-plugin").mkdir()
+        self.write_json(
+            installed / ".claude-plugin/plugin.json",
+            {"name": codex["name"], "version": version, **manifest},
+        )
+        self.write_json(installed / ".claude-plugin/codex-alignment.json", {})
+        return installed
+
+    def test_claude_layout_compares_skills_and_manifest(self) -> None:
+        source = self.clone_source("source")
+        self.assertEqual(
+            validate_release.validate(source, self.claude_copy(source)), []
+        )
+        self.assertIn(
+            "installed-manifest-mismatch",
+            self.codes(source, self.claude_copy(source, version="0.0.1+x")),
+        )
+        drifted = self.claude_copy(source)
+        (drifted / "skills/prose/SKILL.md").write_text("Drift.\n", encoding="utf-8")
+        self.assertIn("payload-digest-mismatch", self.codes(source, drifted))
+
     def test_missing_source_evidence_file_is_rejected(self) -> None:
         root = self.clone_source()
         register = root / "skills/prose/references/source-authorities.csv"

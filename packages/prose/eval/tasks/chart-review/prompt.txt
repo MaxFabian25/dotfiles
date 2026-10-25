@@ -1,0 +1,3 @@
+This chart is going into Thursday's board pack and I'm not happy with it. Can you review it and fix
+whatever needs fixing? The script is charts/margin_by_category.py and the current output is
+charts/margin_by_category.png. The figures are Q3 2026 year-to-date.

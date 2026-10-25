@@ -1,0 +1,14 @@
+Write a short how-to for the blog of our British company, Fieldnote Ltd. It explains how customers
+set up our app's widget on iPhone and share a field report by video call. Return only the article,
+in Markdown.
+
+Notes from our product team:
+
+- The widget works on iPhones running iOS 26 or later.
+- Touch and hold the Home Screen, tap the Edit button, then Add Widget, and choose Fieldnote.
+- To show the widget on the Lock Screen, open Settings → Wallpaper.
+- Check the iPhone's battery settings if the widget stops updating: Low Power Mode pauses
+  background refresh.
+- To discuss a report live, FaceTime your colleague and use SharePlay to show the report.
+- Swipe down from the top-right corner to open Control Center and turn on Do Not Disturb during
+  site visits.

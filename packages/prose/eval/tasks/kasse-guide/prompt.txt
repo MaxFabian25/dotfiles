@@ -1,0 +1,21 @@
+Write the user guide page for our product from the facts below. Use Markdown. Return only the page.
+
+Product: Kasse, a point-of-sale web app for small retailers. We sell it to retailers across the EU,
+and it falls under the European Accessibility Act, so our documentation must meet EN 301 549.
+
+Facts:
+
+- Kasse runs in current versions of Chrome, Edge, Firefox, and Safari, on desktop and iPad.
+- Staff sign in with their staff number and a four-digit PIN.
+- A sale: scan or search for items, choose a payment method (card, cash, or MobilePay), then take
+  payment. The receipt prints or is emailed.
+- Refunds need a manager's PIN.
+- End-of-day report: Reports > End of day. It shows takings by payment method and the cash that
+  should be in the drawer.
+- Accessibility features:
+  - Every function works from the keyboard. Shortcuts: F2 new sale, F4 search items, F8 take
+    payment, Esc cancels the current step.
+  - High-contrast theme: Settings > Display > High contrast.
+  - Text size: Settings > Display > Text size, from 100% to 200%.
+  - Screen readers: checked with NVDA 2026.2 on Windows 11 and VoiceOver on iPadOS 26.
+- Support: support@kasse.example, phone +45 70 20 30 40, weekdays 08:00 to 17:00.

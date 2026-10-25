@@ -1,0 +1,1 @@
+Our prospectus summary needs a short entry on how conversion works, for retail investors who have never held a convertible bond. Write that entry from section 7 of the bond terms, which is in terms-condition-7.md. Keep it accurate to the terms and do not add facts. Reply with the entry only.

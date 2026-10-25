@@ -1,0 +1,11 @@
+Write the help-centre article for our Mac app, Ledgerly. Follow Apple's conventions for Mac
+documentation. Return only the article, in Markdown.
+
+The article explains two tasks. Use these notes from our engineers:
+
+- Export a report as PDF: open the report, then File → Export → PDF. Shortcut: Cmd+Shift+E.
+- Turn on automatic backups: Ledgerly → Settings → Backups, then switch on "Back up automatically".
+  The backup status also shows as a menu bar icon, and you can add it to Control Center.
+- Customers who use Ledgerly on several Macs can sync their reports through iCloud Drive.
+- To duplicate a report quickly, press Cmd+D, or right-click the report in the sidebar and choose
+  Duplicate.

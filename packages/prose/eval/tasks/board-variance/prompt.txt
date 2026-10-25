@@ -1,0 +1,4 @@
+Our board pack follows IBCS. Please add a sheet called "Q3 EBIT by region" to board_pack.xlsx with a
+table of Q3 2026 EBIT by region (PY, BU and AC, with the variances to budget) and a native Excel
+chart that shows actual against budget and the variance. The figures are in
+data/q3_ebit_regions.csv, in euros.

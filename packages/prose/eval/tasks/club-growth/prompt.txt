@@ -1,0 +1,6 @@
+For the quarterly marketing review, the loyalty team wants to know which regions gained the most
+Nordwind Club members over the past year and which lost members. Can you make it as a single HTML
+file that works without an internet connection? It's going on the intranet. The data folder is the
+team's standard regional pack: data/club_members.csv has members by region at 30 September 2025
+and 30 September 2026, data/population.csv has Eurostat's population figures for 1 January 2025,
+and data/nordic_nuts2.geojson has Eurostat's NUTS 2024 region boundaries.

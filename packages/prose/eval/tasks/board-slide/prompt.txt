@@ -1,0 +1,2 @@
+I need one slide for Thursday's board meeting showing Q3 2026 net sales against budget by region.
+The numbers are in data/q3_sales_regions.csv, in euros. Please make it as a PowerPoint file.

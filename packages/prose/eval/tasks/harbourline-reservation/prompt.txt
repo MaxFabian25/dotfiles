@@ -1,0 +1,33 @@
+Write a documentation page for system administrators that explains how to reserve a fixed IP
+address for one client in Harbourline Server 3.4, a DHCP server that runs on Linux. It will be
+published in our public product documentation. Use Markdown. Return only the page.
+
+My notes from trying it on my own network:
+
+- You need Harbourline Server 3.4 or later already installed and running, root access on the
+  server (we normally use sudo), and the client's MAC address.
+- The command is `harbourctl reservation add --mac 3c:22:fb:91:0a:7e --ip 10.20.0.57 --name
+  build-agent-07`. The MAC is my laptop's. 10.20.0.57 is a free address in our office scope. The
+  name is just a label.
+- harbourctl writes the reservation to /etc/harbourline/reservations.yaml. The file looks like this
+  after adding it (there are other keys above, I've cut them):
+
+```yaml
+reservations:
+  - name: build-agent-07
+    mac: 3c:22:fb:91:0a:7e
+    ip: 10.20.0.57
+    lease_time: infinite
+```
+
+- Then reload with `systemctl reload harbourline`. Both harbourctl and systemctl need root.
+- To check: `harbourctl reservation list` prints:
+
+```text
+NAME             MAC                IP          STATE
+build-agent-07   3c:22:fb:91:0a:7e  10.20.0.57  active
+```
+
+- If the client already has a lease for another address, it keeps that until the lease expires.
+  Running `harbourctl lease release --mac <mac>` forces it to pick up the reservation on its next
+  request.

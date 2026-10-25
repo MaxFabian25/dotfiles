@@ -1,0 +1,25 @@
+nuts_id,region,country,members
+DK01,Hovedstaden,Denmark,149917
+DK02,Sjælland,Denmark,35641
+DK03,Syddanmark,Denmark,84031
+DK04,Midtjylland,Denmark,116918
+DK05,Nordjylland,Denmark,67900
+FI19,Länsi-Suomi,Finland,29998
+FI1B,Helsinki-Uusimaa,Finland,47464
+FI1C,Etelä-Suomi,Finland,22840
+FI1D,Pohjois- ja Itä-Suomi,Finland,4980
+FI20,Åland,Finland,279
+NO02,Innlandet,Norway,2585
+NO06,Trøndelag/Trööndelage,Norway,13981
+NO07,Nord-Norge,Norway,2429
+NO08,Oslo og Viken,Norway,35400
+NO09,Agder og Sør-Østlandet,Norway,8544
+NO0A,Vestlandet,Norway,44616
+SE11,Stockholm,Sweden,45817
+SE12,Östra Mellansverige,Sweden,25477
+SE21,Småland med öarna,Sweden,5437
+SE22,Sydsverige,Sweden,76458
+SE23,Västsverige,Sweden,78278
+SE31,Norra Mellansverige,Sweden,4307
+SE32,Mellersta Norrland,Sweden,1093
+SE33,Övre Norrland,Sweden,2059

@@ -1,0 +1,4 @@
+Area managers keep asking where their store stands against the chain average on customer
+satisfaction. Can you turn data/store_scores.csv into an interactive chart I can upload to the
+intranet as a single HTML file? Plotly is fine. The scores are from the September 2026 customer
+survey and are out of 100.

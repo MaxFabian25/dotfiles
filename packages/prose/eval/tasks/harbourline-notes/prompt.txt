@@ -1,0 +1,1 @@
+I maintain the documentation for Harbourline Server, a DHCP and DNS server that our customers run on their own Linux hosts. Version 3.4 ships next week. Turn the engineering ticket summaries in tickets-3.4.txt into the customer-facing release notes for 3.4, and save them as release-notes-3.4.md in Markdown.

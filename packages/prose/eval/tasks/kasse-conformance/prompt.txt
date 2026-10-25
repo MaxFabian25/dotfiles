@@ -1,0 +1,13 @@
+Write the "Accessibility conformance" section of the Kasse user guide from the facts below. Use
+Markdown. Return only the section.
+
+Facts:
+
+- Kasse is a point-of-sale web app sold to retailers across the EU. It falls under the European
+  Accessibility Act.
+- In October 2026, Nordwind Accessibility ApS audited Kasse against EN 301 549.
+- Kasse meets all applicable requirements except two:
+  - The receipt preview image has no text alternative.
+  - The refund status shows only as red text, with no other cue.
+- Both are planned to be fixed in the March 2027 release.
+- Accessibility feedback: support@kasse.example.

@@ -1,0 +1,1 @@
+Please write a docs page explaining how cronlet handles daylight saving changes, like what happens to a 2:30 AM job on the night the clocks go forward or back. Put it in docs/ and follow the Google developer documentation style guide.

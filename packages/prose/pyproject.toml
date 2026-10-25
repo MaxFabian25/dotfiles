@@ -12,6 +12,7 @@ package = false
 [tool.ruff]
 target-version = "py310"
 include = ["*.py"]
+extend-exclude = ["eval/tasks"]
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I"]
@@ -19,6 +20,6 @@ select = ["E4", "E7", "E9", "F", "I"]
 [tool.pyright]
 pythonVersion = "3.10"
 typeCheckingMode = "off"
-include = ["scripts", "tests"]
-exclude = ["**/__pycache__"]
-extraPaths = ["scripts"]
+include = ["scripts", "tests", "eval"]
+exclude = ["**/__pycache__", "eval/tasks"]
+extraPaths = ["scripts", "eval"]
