@@ -2,8 +2,9 @@
 
 Run it with the engine's own Python from the canonical public checkout. `start NAME` makes a worktree of
 each repository at origin/main on branch NAME. Edit there. `finish NAME` locks and builds the named
-entries, commits both worktrees, rebases them onto whatever origin/main now holds, pairs the private
-release.toml with the public commit, pushes, and pulls. `clean NAME` removes the worktrees and branches once origin/main has them.
+entries, commits both worktrees, stops if origin/main changed the same files meanwhile, rebases them onto
+it, pairs the private release.toml with the public commit, checks both pushes with --dry-run, pushes, and
+pulls. `clean NAME` removes the worktrees and branches once origin/main has them.
 """
 from __future__ import annotations
 
@@ -25,6 +26,9 @@ GITHUB_SSH = re.compile(r'^(?:git@github\.com:|ssh://git@github\.com/)')
 CREDENTIALS = ('-c', 'credential.https://github.com.helper=',
                '-c', 'credential.https://github.com.helper=!gh auth git-credential')
 ATTEMPTS = 3
+MOVED = re.compile(r'\((?:fetch first|non-fast-forward)\)')
+# Files every release rewrites, so both sides changing them says nothing about clashing work.
+PAIRING_FILES = frozenset({'release.toml', 'setup/lock.toml'})
 
 
 def places(args):
@@ -65,13 +69,6 @@ def rebase(root):
     return True
 
 
-def drop_caches(root):
-    """Remove the ignored __pycache__ folders that tests leave beside skill scripts, which a lock would pin."""
-    for path in git(root, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory').splitlines():
-        if Path(path).name == '__pycache__':
-            shutil.rmtree(root / path)
-
-
 def rewrite(path, pattern, replacement):
     """Substitute in place, keeping the file's own line endings."""
     text = path.read_bytes().decode('utf-8')
@@ -90,7 +87,17 @@ def pair(public, private, message):
 
 
 def push_url(root):
-    return GITHUB_SSH.sub('https://github.com/', git(root, 'remote', 'get-url', 'origin'))
+    return GITHUB_SSH.sub('https://github.com/', git(root, 'remote', 'get-url', '--push', 'origin'))
+
+
+def overlap(root):
+    """Files origin/main changed since this branch left it that this branch changed too. A clean rebase can
+    still join two sessions' clashing designs for the same file."""
+    git(root, 'fetch', '--prune', 'origin')
+    fork = git(root, 'merge-base', 'HEAD', 'origin/main')
+    theirs = set(git(root, 'diff', '--name-only', fork, 'origin/main').splitlines())
+    ours = set(git(root, 'diff', '--name-only', fork, 'HEAD').splitlines())
+    return sorted((theirs & ours) - PAIRING_FILES)
 
 
 def push(root):
@@ -114,8 +121,6 @@ def finish(args, public_repo, private_repo):
     owned = ['--refresh-owned'] if args.refresh_owned else []
     lock = [*python, 'lock_setup.py', *setups, '--output', str(base / 'build/lock'), *entries, *owned, '--write']
     if args.entry:
-        drop_caches(public)
-        drop_caches(private)
         run(lock, public)
     if args.package:
         packages = [part for package in args.package for part in ('--package', package)]
@@ -130,11 +135,15 @@ def finish(args, public_repo, private_repo):
         if not args.private_message:
             raise RuntimeError(f'{private}: pass --private-message with the private commit message')
         commit(private, args.private_message)
+    if not args.overlap_reviewed:
+        shared = [f'{tree.name}: {", ".join(files)}' for tree in (public, private) if (files := overlap(tree))]
+        if shared:
+            raise RuntimeError('another session changed the same files on origin/main since this branch started ('
+                               + '; '.join(shared) + '). Read its commits with git log -p HEAD..origin/main -- FILE, '
+                               'reconcile the two designs, then finish again with --overlap-reviewed')
     paired = ahead(public)
     for attempt in range(1, ATTEMPTS + 1):
         if rebase(public) and args.entry:
-            drop_caches(public)
-            drop_caches(private)
             run(lock, public)
             if dirty(public):
                 git(public, 'commit', '-q', '-a', '--amend', '--no-edit')
@@ -146,15 +155,20 @@ def finish(args, public_repo, private_repo):
             raise RuntimeError('nothing to release: both branches match origin/main')
         if not args.push:
             break
+        published = False
         try:
+            for tree in (public, private):  # login and write access on both before either moves
+                git(tree, *CREDENTIALS, 'push', '--dry-run', '-q', push_url(tree), 'HEAD:main')
             if ahead(public):
                 push(public)
+                published = True
             push(private)
             break
         except RuntimeError as error:
             git(private, 'reset', '-q', '--hard', before)
-            if 'rejected' not in str(error):
-                raise RuntimeError(f'push failed: {error}') from error
+            if not MOVED.search(str(error)):
+                state = 'the public commit is on origin without its pair' if published else 'nothing was pushed'
+                raise RuntimeError(f'push failed and {state}: {error}') from error
             if attempt == ATTEMPTS:
                 raise RuntimeError(f'push failed {ATTEMPTS} times; origin keeps moving: {error}') from error
     print(f'public {git(public, "rev-parse", "--short", "HEAD")}  private {git(private, "rev-parse", "--short", "HEAD")}'
@@ -162,6 +176,8 @@ def finish(args, public_repo, private_repo):
     if args.pull:
         result = subprocess.run([*python, str(public_repo / 'pull.py'), '--root', str(public_repo),
                                  '--private', str(private_repo), '--update', '--apply'], cwd=public_repo, timeout=1800)
+        if result.returncode == 0 and (args.entry or args.package):
+            subprocess.run([*python, str(public_repo / 'skill_listing.py')], cwd=public_repo, timeout=900)
         return result.returncode
     return 0
 
@@ -200,6 +216,8 @@ def main(argv=None):
     parser.add_argument('--package', action='append', default=[], help='build this package (repeat)')
     parser.add_argument('--test', action='append', default=[], help='unittest module to run first (repeat)')
     parser.add_argument('--push', action='store_true', help='push both branches to origin/main')
+    parser.add_argument('--overlap-reviewed', action='store_true',
+                        help='finish although origin changed files this branch changed, after reading those commits')
     parser.add_argument('--pull', action='store_true', help='then pull and apply the pair on this device')
     parser.add_argument('--force', action='store_true', help='clean: remove unpushed branches too')
     args = parser.parse_args(argv)

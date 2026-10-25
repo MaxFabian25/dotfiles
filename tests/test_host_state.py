@@ -89,7 +89,8 @@ class TreeDigestTest(unittest.TestCase):
             root = Path(directory) / 'tree'
             write(root / 'SKILL.md', 'x\n')
             before = roots.tree_digest(root)
-            for marker in ('.in_use/pid', '.orphaned_at', 'node_modules/a/index.js', '.git/HEAD'):
+            for marker in ('.in_use/pid', '.orphaned_at', 'node_modules/a/index.js', '.git/HEAD',
+                           'scripts/__pycache__/tool.cpython-314.pyc'):
                 write(root / marker, 'noise\n')
             self.assertEqual(roots.tree_digest(root), before)
 

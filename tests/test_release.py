@@ -19,7 +19,7 @@ class ReleaseTest(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.key = self.root / 'release'
         subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'release', '-f', str(self.key)], check=True)
-        self.public_origin = self.origin('public-origin', {'content': 'first\n'})
+        self.public_origin = self.origin('public-origin', {'content': 'first\n', 'doc': 'one\ntwo\nthree\nfour\nfive\n'})
         first = git(self.public_origin, 'rev-parse', 'main')
         self.private_origin = self.origin('private-origin', {'release.toml': f'public_commit = "{first}"\n'})
         self.public = self.clone(self.public_origin, 'dotfiles')
@@ -86,15 +86,30 @@ class ReleaseTest(unittest.TestCase):
         git(self.private, 'remote', 'set-url', 'origin', 'git@github.com:Owner/private.git')
         self.assertEqual(release.push_url(self.private), 'https://github.com/Owner/private.git')
 
-    def test_drop_caches_removes_only_ignored_python_caches(self):
-        (self.public / '.gitignore').write_text('__pycache__/\n', encoding='utf-8')
-        cache = self.public / 'skills/tool/scripts/__pycache__'
-        cache.mkdir(parents=True)
-        (cache / 'tool.cpython-314.pyc').write_bytes(b'')
-        (cache.parent / 'tool.py').write_text('', encoding='utf-8')
-        release.drop_caches(self.public)
-        self.assertFalse(cache.exists())
-        self.assertTrue((cache.parent / 'tool.py').exists())
+    def test_finish_stops_on_a_file_origin_also_changed_until_reviewed(self):
+        release_main(['start', 'edit', *self.options()], self.public)
+        (self.worktrees / 'edit/public/doc').write_text('ONE\ntwo\nthree\nfour\nfive\n', encoding='utf-8')
+        other = self.clone(self.public_origin, 'other-public')
+        (other / 'doc').write_text('one\ntwo\nthree\nfour\nFIVE\n', encoding='utf-8')
+        git(other, 'commit', '-qam', 'Another session')
+        git(other, 'push', '-q', 'origin', 'HEAD:main')
+        message = self.root / 'message'
+        message.write_text('Edit the doc\n', encoding='utf-8')
+        finish = ['finish', 'edit', '--message', str(message), '--push', *self.options()]
+        self.assertEqual(release_main(finish, self.public), 3)
+        self.assertEqual(git(self.public_origin, 'show', 'main:doc'), 'one\ntwo\nthree\nfour\nFIVE')
+        self.assertEqual(release_main([*finish, '--overlap-reviewed'], self.public), 0)
+        self.assertEqual(git(self.public_origin, 'show', 'main:doc'), 'ONE\ntwo\nthree\nfour\nFIVE')
+
+    def test_a_refused_push_publishes_neither_half(self):
+        release_main(['start', 'refused', *self.options()], self.public)
+        (self.worktrees / 'refused/public/content').write_text('second\n', encoding='utf-8')
+        git(self.private, 'remote', 'set-url', '--push', 'origin', str(self.root / 'missing.git'))
+        message = self.root / 'message'
+        message.write_text('Change the content\n', encoding='utf-8')
+        self.assertEqual(release_main(['finish', 'refused', '--message', str(message), '--push', *self.options()],
+                                      self.public), 3)
+        self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'first')
 
     def test_finish_without_a_message_stops_before_committing(self):
         release_main(['start', 'quiet', *self.options()], self.public)

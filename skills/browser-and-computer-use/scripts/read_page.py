@@ -88,14 +88,15 @@ def page_text(tree):
 
 
 def close(driver, pid, window):
-    """Press the window's own close button, which works while Chrome is behind the user's app."""
+    """Press the window's own close button, which works while Chrome is behind the user's app. Only macOS
+    leaves it unnamed, as the leftmost title-bar button; elsewhere press only a button named Close."""
     data = driver.tree(pid, window, tree_format='elements')
     buttons = [e for e in data.get('elements', []) if e.get('depth') == 1 and e.get('role') in ('AXButton', 'Button')]
     named = [e for e in buttons if (e.get('title') or e.get('name') or '').lower() == 'close']
     unnamed = sorted((e for e in buttons if not (e.get('title') or e.get('name'))), key=lambda e: e['frame']['x'])
-    button = (named or unnamed or [None])[0]
+    button = (named or (unnamed if sys.platform == 'darwin' else []) or [None])[0]
     if button is None:
-        raise RuntimeError(f'window {window} has no close button; ask the user to close it')
+        raise RuntimeError(f'window {window} has no button named Close; ask the user to close it')
     driver.call('click', pid=pid, window_id=window, element_token=button['element_token'])
 
 

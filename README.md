@@ -90,8 +90,12 @@ uv run --locked python pull.py --root . --private ../dotfiles-private --update -
 `release.py` runs a whole delivery from this checkout. `start NAME` makes a worktree of each repository
 at `origin/main` under `~/worktrees/NAME`. After editing there, `finish NAME --message FILE --push --pull`
 locks and builds any `--entry` and `--package`, commits both worktrees, rebases them onto a newer
-`origin/main` if another session pushed meanwhile, pairs `release.toml`, pushes, and pulls.
-`clean NAME` removes the worktrees once `origin/main` has them.
+`origin/main` if another session pushed meanwhile, pairs `release.toml`, pushes, and pulls. It stops
+before rebasing when origin changed a file this branch also changed, until you have read those
+commits and pass `--overlap-reviewed`, and it checks both pushes with `--dry-run` first, so a refused
+login publishes neither half. After a pull that changed skills or packages, it runs `skill_listing.py`,
+which warns when Claude Code lists skills without their descriptions. `clean NAME` removes the
+worktrees once `origin/main` has them.
 
 ```sh
 uv run --locked python release.py finish NAME --message msg.txt --entry prose --refresh-owned --push --pull
@@ -127,7 +131,7 @@ uv run --locked python tests/native_smoke.py ./setup ../dotfiles-private/setup
 The smoke test uses temporary application homes and real native plugin loaders. It does not use a
 live installation as its test fixture. It retains its isolated evidence on failure.
 
-Only `build_setup.py`, `lock_setup.py`, `sync.py`, `pull.py`, `release.py`, and `schedule.py` are supported public
+Only `build_setup.py`, `lock_setup.py`, `sync.py`, `pull.py`, `release.py`, `schedule.py`, and `skill_listing.py` are supported public
 command entry points. Lower-level packaging modules contain compatibility helpers, not a second
 configuration authority. Do not recreate historical JSON registries to drive them.
 

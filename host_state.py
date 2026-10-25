@@ -33,7 +33,7 @@ GENERATED = (
     ('tree', '.claude-plugin/upstream.json'),
 )
 _TOKEN_PATH = re.compile(r'(\{(?:engine|codex_home|claude_home|agents_home|home)\})([^\s"\'`<>|,;()\[\]{}]*)')
-_SKIPPED_PARTS = frozenset({'.in_use', 'node_modules', '.git'})
+_SKIPPED_PARTS = frozenset({'.in_use', 'node_modules', '.git', '__pycache__'})
 
 
 def parse_commit(text: str) -> Commit:
@@ -172,8 +172,9 @@ class DeviceRoots:
     def tree_digest(self, root: Path, *, swap: Mapping[Path, bytes | None] = {}) -> Digest:
         """sha256 over the sorted JSON map of relative POSIX path to sha256 of each file's bytes.
 
-        Skips .in_use, .orphaned_at, node_modules and .git. `swap` substitutes bytes for listed files,
-        None meaning absent, which is how an overlaid cache is read as its pristine release.
+        Skips .in_use, .orphaned_at, node_modules, .git and __pycache__, which Python writes beside any
+        module it imports, even under -I. `swap` substitutes bytes for listed files, None meaning absent,
+        which is how an overlaid cache is read as its pristine release.
         """
         root = Path(root)
         hashes = {}

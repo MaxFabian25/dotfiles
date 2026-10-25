@@ -364,5 +364,21 @@ class NativeGitMarketplaceTest(unittest.TestCase):
                 self.registry.write_bytes(before[1])
 
 
+class SyncMainTest(unittest.TestCase):
+    def test_a_blocked_apply_prints_the_rows_that_block_it(self):
+        from unittest import mock
+        import sync
+        device = mock.Mock()
+        device.roots.installed_engine.return_value = None
+        current = SimpleNamespace(blocked=('row',), changes=(), result='plan')
+        with mock.patch('sync.load'), mock.patch('sync.Device.current', return_value=device), \
+                mock.patch('sync.plan', return_value=current), \
+                mock.patch('sync.render', return_value='attention\n  kit  stale-lock  run lock_setup.py\n'), \
+                mock.patch('sync.apply', side_effect=RuntimeError('Sync is blocked')), \
+                mock.patch('sys.stdout') as stdout, mock.patch('sys.stderr'):
+            self.assertEqual(sync.main(['--apply']), 3)
+        self.assertIn('stale-lock  run lock_setup.py', ''.join(call.args[0] for call in stdout.write.call_args_list))
+
+
 if __name__ == '__main__':
     unittest.main()

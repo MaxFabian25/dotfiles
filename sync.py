@@ -29,6 +29,8 @@ def main(argv=None):
                                f'at {device.roots.engine} cannot see; run sync.py or pull.py from that checkout')
         current = plan(setup, device)
         if args.apply:
+            if current.blocked and not args.json:
+                print(render(current.result), end='')  # its attention rows name each blocker and its fix
             current, backup = apply(setup, device, current)
             if backup:
                 print(f'Backups: {backup}', file=sys.stderr)
