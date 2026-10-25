@@ -55,6 +55,10 @@ that name a screen, control, or device, use [interface
 instructions](references/interface-instructions.md). For technical or code-adjacent prose, such as
 release notes, use [technical prose](references/technical-and-code-prose.md).
 
+Before you hand over English prose longer than a few paragraphs, run `scripts/scan_prose.py FILE`
+on the HTML, Markdown, or text file and settle each finding in context. It flags serial-comma gaps
+and other house mechanics, and the patterns the unslop writing passes remove.
+
 Return the requested artefact when the requested changes and relevant checks are complete. When the
 user asks for the artefact alone, begin the reply with its first line. Disclose
 missing information or unavailable guidance that materially limits the result. Include method when

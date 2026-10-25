@@ -2,10 +2,12 @@
 """Read web pages in the user's own Chrome through cua-driver's accessibility tree, never DevTools.
 
 Opens one Chrome window of its own in the given profile, loads each URL through that window's address
-bar, and prints each page's text, or saves it under --out. It stops at a bot check, closes only its own
-window, and ends its cua-driver session. Requires the user's own Chrome running, and cua-driver on PATH. A
-Chrome that automation started, such as agent-browser's, is never used. On WSL, pass --cua cua-driver.exe to
-drive Chrome on the Windows desktop.
+bar, and prints each page's text, or saves it under --out. It reads only the page, never the tab strip or
+the rest of the browser, prints each table row on one line, and with --expand first opens collapsed FAQ
+answers. It skips a page whose address bar shows another site, such as a sign-in redirect. It stops at a
+bot check, closes only its own window, and ends its cua-driver session. Requires the user's own Chrome
+running, and cua-driver on PATH. A Chrome that automation started, such as agent-browser's, is never used.
+On WSL, pass --cua cua-driver.exe to drive Chrome on the Windows desktop.
 """
 
 import argparse
@@ -16,11 +18,16 @@ import secrets
 import subprocess
 import sys
 import time
+from urllib.parse import urlsplit
 
 BOT_CHECK = re.compile(r'Just a moment|Security Verification|DataDome|captcha|Are you a robot', re.IGNORECASE)
 NYT_LIMIT = 5  # The NYT shows a bot check after a longer run of pages.
 NOT_OWN = re.compile(r'--(?:remote-debugging-(?:port|pipe)|headless|enable-automation|user-data-dir|type)\b')
-ROW = re.compile(r'- \[\d+\] AX(\w+)(?: "((?:[^"\\]|\\.)*)")?(?: = "((?:[^"\\]|\\.)*)")?', re.DOTALL)
+ROW = re.compile(r'^( *)- \[(\d+)\] AX(\w+)(?: "((?:[^"\\]|\\.)*)")?(?: = "((?:[^"\\]|\\.)*)")?',
+                 re.MULTILINE | re.DOTALL)
+TAB_STRIP = re.compile(r'(?:Expand Tabs|Tab groups|Search tabs|New Tab)\b')  # Chrome's strip follows the page
+CELLS = ('Cell', 'ColumnHeader', 'RowHeader')
+EXPAND_LIMIT = 40
 
 
 class Driver:
@@ -91,26 +98,100 @@ def open_window(driver, pid, profile, url):
     raise RuntimeError('no new Chrome window appeared')
 
 
-def load(driver, pid, window, url):
+def address_bar(driver, pid, window):
     data = driver.tree(pid, window, query='Address and search bar', max_elements=60)
-    found = re.search(r'\[(\d+)\] AXTextField "Address and search bar"', data.get('tree_markdown', ''))
+    found = re.search(r'\[(\d+)\] AXTextField "Address and search bar"(?: = "((?:[^"\\]|\\.)*)")?',
+                      data.get('tree_markdown', ''))
     if not found:
         raise RuntimeError('the window has no address bar in its accessibility tree')
-    token = f'{data["snapshot_id"]}:{found[1]}'
+    return f'{data["snapshot_id"]}:{found[1]}', found[2] or ''
+
+
+def load(driver, pid, window, url):
+    token, _ = address_bar(driver, pid, window)
     driver.call('set_value', pid=pid, window_id=window, element_token=token, value=url)
     driver.call('press_key', pid=pid, window_id=window, element_token=token, key='return')
 
 
+def host(url):
+    return (urlsplit(url if '//' in url else '//' + url).hostname or '').removeprefix('www.')
+
+
+def same_site(wanted, shown):
+    a, b = host(wanted), host(shown)
+    return bool(a and b) and (a == b or a.endswith('.' + b) or b.endswith('.' + a))
+
+
+def rows(tree):
+    """(depth, index, role, text) for each numbered row of the page's web area; none when the tree has no web area,
+    because the rest of the window is the user's browser, not the page."""
+    found = [(len(m[1]), m[2], m[3], ((m[5] or m[4] or '').strip())) for m in ROW.finditer(tree)]
+    start = next((i for i, row in enumerate(found) if row[2] == 'WebArea'), None)
+    if start is None:
+        return []
+    area = found[start][0]
+    page = []
+    for row in found[start + 1:]:
+        if row[0] <= area or TAB_STRIP.match(row[3]):
+            break
+        page.append(row)
+    return page
+
+
 def page_text(tree):
-    start = tree.find('AXWebArea')
-    lines = []
-    for role, label, value in ROW.findall(tree[start if start >= 0 else 0:]):
-        text = (value or label).strip()
+    lines, table, cells = [], None, None
+
+    def end_row():
+        nonlocal cells
+        if cells is not None and any(cells):
+            lines.append(' | '.join(' '.join(' '.join(text.split()) for text in cell) for cell in cells))
+        cells = None
+
+    for depth, _, role, text in rows(tree):
         if role == 'Image' and '\n' in text:
             text = text.splitlines()[0]
+        if table is not None and depth <= table:
+            end_row()
+            table = None
+        if role == 'Table':
+            table = depth
+            continue
+        if table is not None:
+            if role == 'Row':
+                end_row()
+                cells = []
+            elif role in CELLS:
+                cells = [] if cells is None else cells
+                cells.append([text] if text else [])
+            elif text and cells:
+                cells[-1].append(text)
+            continue
         if text:
             lines.append({'Heading': '# ', 'Image': '[image] ', 'Link': '[link] '}.get(role, '') + text)
+    end_row()
     return '\n'.join(lines)
+
+
+def collapsed_questions(tree):
+    """Button labels ending in a question mark with no answer below them, as an FAQ accordion shows them."""
+    page = rows(tree)
+    questions = []
+    for i, (depth, _, role, text) in enumerate(page):
+        if role != 'Button' or not text.endswith('?'):
+            continue
+        following = page[i + 1] if i + 1 < len(page) else None
+        if following is None or following[0] < depth or following[2] in ('Button', 'Heading', 'Link'):
+            questions.append(text)
+    return questions[:EXPAND_LIMIT]
+
+
+def expand(driver, pid, window, questions):
+    for question in questions:
+        data = driver.tree(pid, window, query=question, max_elements=40)
+        found = re.search(rf'\[(\d+)\] AXButton "{re.escape(question)}"', data.get('tree_markdown', ''))
+        if found:
+            driver.call('click', pid=pid, window_id=window, element_token=f'{data["snapshot_id"]}:{found[1]}')
+            time.sleep(0.8)
 
 
 def close(driver, pid, window):
@@ -133,6 +214,7 @@ def main():
     parser.add_argument('--out', type=Path, help='save each page here instead of printing it; macOS only')
     parser.add_argument('--cua', default='cua-driver', help='the cua-driver command; cua-driver.exe on WSL')
     parser.add_argument('--wait', type=float, default=7, help='seconds to let each page load')
+    parser.add_argument('--expand', action='store_true', help='open collapsed FAQ answers before reading')
     args = parser.parse_args()
     if args.out and sys.platform != 'darwin':
         parser.error('--out works only on macOS; the employer manages Windows and WSL, so keep article text out of files there')
@@ -140,6 +222,7 @@ def main():
         parser.error(f'read at most {NYT_LIMIT} NYT pages per session')
     driver = Driver(args.cua, f'read-page-{secrets.token_hex(3)}')
     pid = window = None
+    skipped = False
     try:
         pid = chrome(driver)
         for index, url in enumerate(args.urls):
@@ -149,12 +232,24 @@ def main():
                 load(driver, pid, window, url)
             time.sleep(args.wait)
             data = driver.tree(pid, window)
-            text = page_text(data.get('tree_markdown', ''))
             title = driver.windows(pid).get(window, '')
-            if BOT_CHECK.search(title + '\n' + text[:2000]):
+            _, shown = address_bar(driver, pid, window)
+            if BOT_CHECK.search(title + '\n' + page_text(data.get('tree_markdown', ''))[:2000]):
                 print(f'Stopped at a bot check on {url}; tell the user.', file=sys.stderr)
                 return 4
-            page = f'URL: {url}\nTITLE: {title}\n\n{text}\n'
+            if not same_site(url, shown):
+                print(f'Skipped {url}: the window shows {shown or "no address"}.', file=sys.stderr)
+                skipped = True
+                continue
+            if args.expand:
+                questions = collapsed_questions(data.get('tree_markdown', ''))
+                if questions:
+                    expand(driver, pid, window, questions)
+                    data = driver.tree(pid, window)
+            text = page_text(data.get('tree_markdown', ''))
+            if not text:
+                print(f'{url}: the window shows no page content yet; try a longer --wait.', file=sys.stderr)
+            page = f'URL: {url}\nADDRESS: {shown}\nTITLE: {title}\n\n{text}\n'
             if args.out:
                 args.out.mkdir(parents=True, exist_ok=True)
                 slug = re.sub(r'[^a-z0-9]+', '-', url.lower().split('//', 1)[-1]).strip('-')[-90:]
@@ -162,7 +257,7 @@ def main():
                 print(f'{len(text):7d} characters  {url}')
             else:
                 print(page)
-        return 0
+        return 5 if skipped else 0
     except (RuntimeError, OSError, subprocess.SubprocessError) as error:
         print(f'read_page stopped: {error}', file=sys.stderr)
         return 3

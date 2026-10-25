@@ -14,6 +14,10 @@ quantitative explanations, identify material differences in reader knowledge, nu
 comprehension before choosing the explanation. Consult the [plain-science source
 scope](source-evidence/plain-language.md#plain-language) when that designation matters.
 
+- When you write for a reader other than the person asking, settle in one round of questions what
+  the request leaves open: the reader and what they already know, whether they want a
+  recommendation or a neutral comparison, the options really available, the criteria and features
+  in scope, a length budget, and how the document will reach them.
 - Lead with the main point and its support. Keep a limiting condition with its claim; put it first
   when the main point would otherwise mislead. Present a narrative sequence chronologically unless
   the requested analytical order serves the reader better.
@@ -32,6 +36,10 @@ scope](source-evidence/plain-language.md#plain-language) when that designation m
   comparison basis. Match the strength of the claim to the evidence. Remove redundant hedges while
   keeping distinct conditions and limitations. State what an evidence gap prevents you from
   concluding.
+- While researching for a deliverable, keep each factual claim with its source passage and link,
+  or mark it as your inference. When the sources are silent, say the point is not stated; silence
+  is not a *No*. Give a legal or regulatory conclusion in the authority's own words with its
+  citation, or label it as your reading.
 - Show an abstract financial or contractual mechanism through one worked example that follows one
   person with the supplied terms. Label any assumed figure as illustrative.
 - Keep figurative language restrained in analytical claims and understandable across the intended
@@ -62,6 +70,8 @@ reasoning; use a list for a genuine set and a table for comparison across dimens
 items are requirements, alternatives, or examples. Number them when order, rank, count, or later
 reference matters. Keep item syntax consistent, introduce the list's purpose, and nest only for a
 real parent-child relationship. State whether a choice permits both alternatives or exactly one.
+Answer in the body any question the gathered sources can answer, for each option compared, and keep
+a list of next steps to actions only the reader can take.
 
 Address the reader directly when useful. Use role names accurately and identify the author group
 or recommending authority when it matters. Describe software, hardware, and services through
@@ -94,6 +104,13 @@ textual choices, not evidence of who or what wrote a passage.
 
 When the task includes testing reader understanding, use the [reader-testing
 process](publication-verification.md#reader-testing).
+
+Before you hand over a document written for a reader other than the person asking, such as a
+briefing, comparison, or assessment, have a fresh agent read only the document and a short
+description of that reader. Ask it for passages that mislead, repeat a fact, leave a term
+unexplained, or answer a question the reader did not ask, and resolve each one. When the writer is
+a model whose maker the document assesses, also have a model from another maker check the factual
+claims and look for framing that favours the writer's maker.
 
 Complete the requested prose when its required information is clear, usable, and faithful to the
 source and the selected rules.

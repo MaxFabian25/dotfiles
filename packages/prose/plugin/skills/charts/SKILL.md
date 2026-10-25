@@ -20,7 +20,8 @@ charts](references/ibcs-charts.md) before drawing.
   the colour as drawn after any opacity. Greyed context series, range bands, and reference, event,
   and leader lines all count, and a light band can meet the ratio with an edge line. Separate
   adjacent fills with a gap in the background colour. Set all chart text, tick labels and notes
-  included, at 4.5:1 or more.
+  included, at 4.5:1 or more. Measure each pair with `scripts/contrast.py FG BG`, which composites
+  any opacity the way a browser draws it.
 - **Shaded maps.** Shade regions by a rate, such as cases per 100,000 people, so a region's area
   doesn't stand in for its size. Run the classes from a lowest class at 1.5:1 or less against the
   background to a dark highest class, darker at each step, so large regions with low values recede.

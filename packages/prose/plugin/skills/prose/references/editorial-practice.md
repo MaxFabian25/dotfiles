@@ -1,6 +1,7 @@
 # Editorial practice
 
-Apply this branch when supplied prose is edited or reviewed, or a voice sample guides new prose.
+Apply this branch when supplied prose is edited or reviewed, when you revise your own draft after
+feedback, or when a voice sample guides new prose.
 Use the request and prior decisions to determine the authorised editing scope, including
 permission to normalise the prose.
 
@@ -16,6 +17,11 @@ passage-level findings by their effect on the reader.
 Query uncertainty that would materially affect meaning, factual basis, voice, or scope. Write
 neutral, concise, answerable queries and offer concrete alternatives when known. Use prior answers
 and decisions.
+
+Treat each cut or correction the user makes, and any reason they give, as a standing rule for the
+rest of the work. Apply it in one pass to every remaining item and to each companion document, and
+list the further changes it implies for one confirmation instead of asking about each item. Once the
+user has said a piece is too long, make later fixes replace words rather than add them.
 
 ## Voice samples
 
