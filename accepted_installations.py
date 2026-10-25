@@ -489,24 +489,38 @@ class AcceptedInstallations:
                         builder.sources.tree(repo.url, repo.commit, source, skill.source.path)
                 if self.roots.tree_digest(source) != artifact.expected.digest:
                     raise BuildError(f'{skill.name}: source bytes do not match the locked loose skill')
-            if artifact.fields is not None:
-                target = _fields_image({k: {'present': True, 'value': v} for k, v in artifact.fields.items()},
-                                       artifact.syntax)
-            elif source is not None:
-                target = image(source)
-                if artifact.claude_cache and {'.in_use', '.orphaned_at'} & target.get('entries', {}).keys():
-                    raise BuildError(f'Claude runtime metadata is not source content: {artifact.identity}')
-                if any(part in {'.git', 'node_modules'} for path in target.get('entries', {}) for part in Path(path).parts):
-                    raise BuildError(f'Excluded source content is not ownership evidence: {artifact.identity}')
-            else:
-                target = {'kind': 'file', 'sha256': str(bytes_digest(data))}
-            prepared.append(self._prepare_artifact(artifact, target, source, data, pristine))
+            prepared.append(self._prepare_artifact(artifact, self._target(artifact, source, data), source, data, pristine))
         validate_runtime(self.configurations, self.roots, proposed=True)
         tokens = tuple(object() for _ in prepared)
         self._prepared.update(zip(tokens, prepared))
         result = Prepared(tokens, built, claude)
         self.preflight(result)
         return result
+
+    def rehearse(self, observations):
+        """Run prepare's checks against the accepted receipts, without writing, for each artifact whose target
+        needs no build: rules and configurations. Plugins, roles and loose skills go unchecked here, because
+        their targets exist only after their packages or sources are built."""
+        for artifact in self.artifacts(observations):
+            if artifact.kind not in ('file', 'fields'):
+                continue
+            kind, detail = self._assessment(artifact)
+            if kind == Kind.LOCAL_EDIT:
+                raise ConcurrentEdit(f'{artifact.identity}: {detail}')
+            if kind is not None:
+                self._prepare_artifact(artifact, self._target(artifact, None, artifact.data), None, artifact.data, None)
+
+    def _target(self, artifact, source, data):
+        if artifact.fields is not None:
+            return _fields_image({k: {'present': True, 'value': v} for k, v in artifact.fields.items()}, artifact.syntax)
+        if source is None:
+            return {'kind': 'file', 'sha256': str(bytes_digest(data))}
+        target = image(source)
+        if artifact.claude_cache and {'.in_use', '.orphaned_at'} & target.get('entries', {}).keys():
+            raise BuildError(f'Claude runtime metadata is not source content: {artifact.identity}')
+        if any(part in {'.git', 'node_modules'} for path in target.get('entries', {}) for part in Path(path).parts):
+            raise BuildError(f'Excluded source content is not ownership evidence: {artifact.identity}')
+        return target
 
     def _prepare_artifact(self, artifact, target, source, data, pristine):
         receipt = self._receipt(artifact)

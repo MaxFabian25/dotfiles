@@ -33,11 +33,13 @@ def main(argv=None):
                                f'at {device.roots.engine} cannot see; run sync.py or pull.py from that checkout')
         current = plan(setup, device)
         if args.candidate:
-            # A check leaves validating a changed configuration to the apply step, which a candidate never reaches.
+            # The apply step, which a candidate never reaches, validates changed settings and checks each file
+            # against the copy it last accepted, and a pull stops there too.
             from accepted_installations import AcceptedInstallations
             from configuration import validate_runtime
-            validate_runtime(AcceptedInstallations(setup.for_platform(device.platform), device).configurations,
-                             device.roots, proposed=True)
+            owner = AcceptedInstallations(setup.for_platform(device.platform), device)
+            validate_runtime(owner.configurations, device.roots, proposed=True)
+            owner.rehearse(current.observations)
         if args.apply:
             if current.blocked and not args.json:
                 print(render(current.result), end='')  # its attention rows name each blocker and its fix

@@ -226,6 +226,29 @@ class InstallationTest(unittest.TestCase):
         self.assertFalse((self.roots.codex_home / 'AGENTS.md').exists())
         self.assertEqual(self.calls, [])
 
+    def test_rehearsal_refuses_what_the_apply_step_refuses_without_writing(self):
+        from accepted_installations import AcceptedInstallations
+        self.run_apply()
+        for path in self.receipt_paths():
+            path.unlink()
+        (self.roots.codex_home / 'AGENTS.md').write_text('unknown historical bytes\n')
+        current = plan(self.setup, self.device)
+        self.assertEqual(current.exit_code, 1)
+        owner = AcceptedInstallations(self.setup.for_platform(self.device.platform), self.device)
+        before = self.snapshot()
+        with self.assertRaisesRegex(ConcurrentEdit, 'rules:.*independently pinned baseline'):
+            owner.rehearse(current.observations)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_rehearsal_passes_a_reviewed_change(self):
+        from accepted_installations import AcceptedInstallations
+        self.run_apply()
+        self.setup = replace(self.setup, rules=Rules(b'Updated reviewed rules.\n'))
+        current = plan(self.setup, self.device)
+        before = self.snapshot()
+        AcceptedInstallations(self.setup.for_platform(self.device.platform), self.device).rehearse(current.observations)
+        self.assertEqual(self.snapshot(), before)
+
     def test_edit_after_prepare_is_rechecked_before_mutation(self):
         from sync_hosts import Apply
         self.run_apply()

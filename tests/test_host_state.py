@@ -250,6 +250,19 @@ class InstalledEngineTest(unittest.TestCase):
             plan.assert_called_once()
             self.assertTrue(validate.call_args.kwargs['proposed'])
 
+    def test_a_candidate_stops_where_the_apply_step_would(self):
+        import sync
+        from sync_files import ConcurrentEdit
+        with tempfile.TemporaryDirectory() as temp:
+            device = mock.Mock(roots=roots_for(temp))
+            with mock.patch('sync.load'), mock.patch('sync.Device.current', return_value=device), \
+                    mock.patch('sync.plan') as plan, mock.patch('configuration.validate_runtime'), \
+                    mock.patch('accepted_installations.AcceptedInstallations') as owner, mock.patch('sys.stderr') as stderr:
+                owner.return_value.rehearse.side_effect = ConcurrentEdit('Unverified existing content preserved')
+                self.assertEqual(sync.main(['--candidate']), 3)
+            owner.return_value.rehearse.assert_called_once_with(plan.return_value.observations)
+            self.assertIn('Unverified existing content preserved', ''.join(call.args[0] for call in stderr.write.call_args_list))
+
 
 if __name__ == '__main__':
     unittest.main()

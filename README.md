@@ -100,9 +100,11 @@ first in each of these cases:
 - A new file would be left out of the commit by this allowlist `.gitignore`. It names the file.
 - Origin changed a file this branch also changed. Read those commits, then pass `--overlap-reviewed`.
 - This device's pull would stop on the pair. It runs the pull's check on the worktrees
-  (`sync.py --candidate`), including the settings validation a pull otherwise runs only while
-  applying, so it catches a model alias the engine rejects or an owned skill edited without
-  `--refresh-owned`. That check takes about half a minute.
+  (`sync.py --candidate`), plus two checks a pull otherwise reaches only while applying: the settings
+  validation, and the comparison of each rule and configuration file with the copy it last accepted.
+  So it catches a model alias the engine rejects, an owned skill edited without `--refresh-owned`, or
+  a configuration change the apply step would refuse. Plugins, roles and loose skills need a build
+  before that comparison, so the check leaves them to the pull. It takes up to half a minute.
 - A push would be refused. It checks both pushes with `--dry-run`, so a refused login publishes
   neither half.
 
