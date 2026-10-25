@@ -8,11 +8,11 @@ explicit = ["rpi"]
 tool_notes = "apply"
 
 [codex]
-install = [{ via = "skills", enabled = true }]
+install = [{ via = "skills", enabled = false }]
 
 [codex.roles]
 from = "generated"
 directory = "agents"
 
 [claude]
-install = [{ via = "skills", enabled = true }]
+install = [{ via = "skills", enabled = false }]
