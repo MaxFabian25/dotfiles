@@ -72,6 +72,8 @@ CATALOGS = {Host.CODEX: frozenset({'openai-bundled', 'openai-primary-runtime', '
             Host.CLAUDE: frozenset({'claude-plugins-official', 'anthropic-plugin-directory'})}
 ENGINE_MARKETPLACE = {Host.CODEX: 'personal', Host.CLAUDE: 'personal-collections'}
 ALIGNED_MARKETPLACE = 'codex-aligned'
+# Claude Code lists Anthropic's own skills under this prefix without any plugin install behind them.
+ANTHROPIC_SKILLS = 'anthropic-skills'
 
 
 class Platform(enum.StrEnum):

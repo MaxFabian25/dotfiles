@@ -308,12 +308,22 @@ class InvariantTest(unittest.TestCase):
             ('codex', '"{agents_home}/skills/example-skill/SKILL.md" = "off"'):
                 'skills.{agents_home}/skills/example-skill/SKILL.md: owned by the loose skill example-skill',
             ('claude', 'example-skill = "on"'): 'skills.example-skill: owned by the loose skill example-skill',
+            ('codex', '"anthropic-skills:chrome-browser" = "off"'):
+                'skills.anthropic-skills:chrome-browser: a plugin skill belongs to its package',
         }
         for (host, line), problem in cases.items():
             with Roots() as roots, self.subTest(line):
                 path = roots.private / f'hosts/{host}.toml'
                 path.write_text((path.read_text() if path.is_file() else '[skills]\n') + line + '\n')
                 self.assertEqual(roots.problems(), [f'{path}:{problem}'])
+
+    def test_a_claude_toggle_can_name_one_of_anthropics_own_skills(self):
+        with Roots() as roots:
+            path = roots.private / 'hosts/claude.toml'
+            path.parent.mkdir(exist_ok=True)
+            path.write_text('[skills]\n"anthropic-skills:chrome-browser" = "off"\n')
+            setup = description_toml.load(roots.roots())
+        self.assertEqual(setup.host_skills[H.CLAUDE], {'anthropic-skills:chrome-browser': M.OFF})
 
     def test_a_repo_must_register_the_marketplace_an_install_names(self):
         with Roots() as roots:

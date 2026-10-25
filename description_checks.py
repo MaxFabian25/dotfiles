@@ -5,7 +5,7 @@ import subprocess
 
 from description import (AlignedInstall, BuildSource, CourseRecipe, EngineInstall, GenericRecipe, MarketplaceInstall,
                          LocalSource, Package, RepoSource, Roots, Setup, SkillRoot, SnapshotRecipe, SnapshotSource, Visibility, entry_path)
-from host_state import CATALOGS, Host, SkillMode
+from host_state import ANTHROPIC_SKILLS, CATALOGS, Host, SkillMode
 import portable
 
 
@@ -189,7 +189,7 @@ _SKILL_ROOTS = {Host.CODEX: (SkillRoot.CODEX, SkillRoot.AGENTS), Host.CLAUDE: (S
 
 
 def _toggle_owner(setup: Setup, host: Host, key: str) -> str | None:
-    if ':' in key:
+    if ':' in key and not (host == Host.CLAUDE and key.startswith(ANTHROPIC_SKILLS + ':')):
         return 'a plugin skill belongs to its package'
     for name, skill in setup.loose.items():
         placed = [root for root in _SKILL_ROOTS[host] if root in skill.place]
