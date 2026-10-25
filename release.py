@@ -158,7 +158,7 @@ def finish(args, public_repo, private_repo):
             if attempt == ATTEMPTS:
                 raise RuntimeError(f'push failed {ATTEMPTS} times; origin keeps moving: {error}') from error
     print(f'public {git(public, "rev-parse", "--short", "HEAD")}  private {git(private, "rev-parse", "--short", "HEAD")}'
-          + ('  pushed' if args.push else '  not pushed'))
+          + ('  pushed' if args.push else '  not pushed'), flush=True)
     if args.pull:
         result = subprocess.run([*python, str(public_repo / 'pull.py'), '--root', str(public_repo),
                                  '--private', str(private_repo), '--update', '--apply'], cwd=public_repo, timeout=1800)
