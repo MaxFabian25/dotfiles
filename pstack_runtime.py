@@ -13,6 +13,8 @@ import portable
 MODEL_FILE = ".config/pstack/models.md"
 CONFIG_FILE = ".codex/config.toml"
 OVERRIDE_KEY = "expose_spawn_agent_model_overrides"
+# The model values Claude Code's Agent tool accepts. `claude --help` names only some of them, as examples.
+CLAUDE_ALIASES = {"opus", "sonnet", "haiku", "fable"}
 
 
 def digest(data):
@@ -78,10 +80,6 @@ def validate_models(home, data, *, codex_home=None):
     catalog = json.loads(((codex_home or home / '.codex') / 'models_cache.json').read_text(encoding='utf-8-sig'))
     models = {m["slug"]: {e["effort"] for e in m.get("supported_reasoning_levels", [])}
               for m in catalog["models"] if m.get("visibility") == "list"}
-    help_result = subprocess.run(cli_command("claude", "--help"), capture_output=True, text=True, encoding='utf-8', timeout=20)
-    if help_result.returncode:
-        raise RuntimeError("Claude CLI model discovery failed")
-    aliases = set(re.findall(r"['\"](opus|sonnet|haiku|fable)['\"]", help_result.stdout))
     entries = model_entries(data)
     for section, role, model, effort in entries:
         if model in {"inherit-parent", "auto"}:
@@ -91,7 +89,7 @@ def validate_models(home, data, *, codex_home=None):
         cli_command("codex" if harness == "codex" else "claude")
         if harness == "codex" and (slug not in models or effort not in models[slug]):
             raise ValueError(f"Unavailable Codex model or effort for {section}/{role}: {model}@{effort}")
-        if harness == "claude-code" and slug not in aliases:
+        if harness == "claude-code" and slug not in CLAUDE_ALIASES:
             raise ValueError(f"Unconfirmed Claude alias for {section}/{role}: {slug}")
     return len(entries)
 

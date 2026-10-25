@@ -3,6 +3,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 spec = importlib.util.spec_from_file_location("pstack_runtime", Path(__file__).parents[1] / "pstack_runtime.py")
@@ -35,6 +36,18 @@ class PstackRuntimeTests(unittest.TestCase):
                 runtime.replace_checked(path, b"reviewed version", b"replacement")
             self.assertEqual(path.read_bytes(), b"concurrent edit")
             self.assertEqual(list(Path(folder).iterdir()), [path])
+
+    def test_accepts_claude_aliases_the_help_text_omits(self):
+        with tempfile.TemporaryDirectory() as folder:
+            codex_home = Path(folder)
+            (codex_home / "models_cache.json").write_text('{"models": [{"slug": "gpt-6.1-sol", "visibility": "list", '
+                                                          '"supported_reasoning_levels": [{"effort": "low"}]}]}')
+            value = b'## claude-code\nrecall readers: haiku@low\n## codex\nrecall readers: gpt-6.1-sol@low\n'
+            with patch.object(runtime.portable, "claude_cli", return_value="claude"), \
+                    patch.object(runtime.portable, "codex_cli", return_value="codex"):
+                self.assertEqual(runtime.validate_models(codex_home, value, codex_home=codex_home), 2)
+                with self.assertRaisesRegex(ValueError, "Unconfirmed Claude alias for claude-code/recall readers: gpt"):
+                    runtime.validate_models(codex_home, value.replace(b"haiku", b"gpt"), codex_home=codex_home)
 
 
 if __name__ == "__main__":
