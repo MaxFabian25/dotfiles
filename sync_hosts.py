@@ -206,8 +206,7 @@ class Apply:
 
     def _enabled(self, host, identity, enabled):
         if host == Host.CODEX:
-            self.files.toml(self.roots.codex_home / 'config.toml',
-                            lambda data: data.setdefault('plugins', {}).setdefault(identity, {}).__setitem__('enabled', enabled))
+            self.files.toml(self.roots.codex_home / 'config.toml', lambda data: set_plugin_enabled(data, identity, enabled))
         else:
             self.files.json(self.roots.claude_home / 'settings.json',
                             lambda data: data.setdefault('enabledPlugins', {}).__setitem__(identity, enabled))
@@ -256,6 +255,16 @@ class Apply:
             if value == prefix or value.startswith(prefix + '/'):
                 return child(getattr(self.roots, token), value[len(prefix):].lstrip('/'))
         raise ValueError(f'Not a managed device-relative path: {value}')
+
+def set_plugin_enabled(data, identity, enabled):
+    """When config.toml's [plugins."…"] tables are spread out, tomlkit hands back a proxy, and a key set on a table
+    the proxy has just created is lost, leaving an empty header. So a new table is inserted with its value."""
+    plugins = data.setdefault('plugins', {})
+    if identity in plugins:
+        plugins[identity]['enabled'] = enabled
+    else:
+        plugins[identity] = {'enabled': enabled}
+
 
 def merge_catalog(data, name, entries):
     if data.get('name', name) != name:

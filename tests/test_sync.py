@@ -34,6 +34,20 @@ class FileSafetyTest(unittest.TestCase):
             self.assertEqual(config.read_bytes(), original.replace(b'enabled = false', b'enabled = true'))
             self.assertEqual(next((root / 'backups').glob('*-config.toml')).read_bytes(), original)
 
+    def test_plugin_toggle_reaches_a_new_table_among_spread_out_plugin_tables(self):
+        import tomllib
+        from sync_files import Files
+        from sync_hosts import set_plugin_enabled
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = root / 'config.toml'
+            config.write_bytes(b'[plugins."a@x"]\nenabled = true\n\n[tui]\nk = 1\n\n[plugins."b@x"]\n')
+            files = Files(root / 'backups')
+            for identity in ('a@x', 'b@x', 'new@x'):
+                files.toml(config, lambda data, i=identity: set_plugin_enabled(data, i, False))
+            plugins = tomllib.loads(config.read_text())['plugins']
+            self.assertEqual(plugins, {name: {'enabled': False} for name in ('a@x', 'b@x', 'new@x')})
+
     def test_noop_does_not_create_a_backup_or_rewrite_the_file(self):
         from sync_files import Files
         with tempfile.TemporaryDirectory() as temp:
