@@ -369,7 +369,20 @@ class ObserveTest(unittest.TestCase):
             observation = device.state().observe(hs.Request())
         self.assertEqual(observation.facts[key(S.HOOK, 'impeccable@personal')].value, hs.Approved(1))
         self.assertEqual(observation.details[key(S.PLUGIN, 'impeccable@personal')].hooks, 3)
-        self.assertIn(('residue', 'hooks.state', '1 approvals of hooks no installed plugin defines'),
+        self.assertIn(('residue', 'hooks.state', '1 approvals of hooks no installed plugin or hooks file defines'),
+                      [(n.kind.value, n.subject, n.detail) for n in observation.notes])
+
+    def test_approvals_from_a_hooks_file_are_stray_only_once_the_file_is_gone(self):
+        with Device() as device:
+            own = device.roots.codex_home / 'hooks.json'
+            device.write(own, json.dumps({'hooks': {}}))
+            gone = device.roots.home / 'Documents/old/.codex/hooks.json'
+            config = device.roots.codex_home / 'config.toml'
+            config.write_text(config.read_text() + ''.join(
+                f'\n[hooks.state."{path.as_posix()}:session_start:0:0"]\nenabled = true\ntrusted_hash = "sha256:z"\n'
+                for path in (own, gone)))
+            observation = device.state().observe(hs.Request())
+        self.assertIn(('residue', 'hooks.state', '1 approvals of hooks no installed plugin or hooks file defines'),
                       [(n.kind.value, n.subject, n.detail) for n in observation.notes])
 
     def test_hook_approvals_use_current_native_trust_and_enablement(self):

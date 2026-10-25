@@ -288,6 +288,19 @@ class ObserveTest(unittest.TestCase):
             ('unmodeled', 'extraKnownMarketplaces.personal-collections', 'directory source'),
         ])
 
+    def test_overrides_of_anthropics_own_skills_are_device_local_not_residue(self):
+        with Device() as device:
+            settings = device.roots.claude_home / 'settings.json'
+            data = json.loads(settings.read_text())
+            data['skillOverrides'] = {'anthropic-skills:computer-use': 'off', 'anthropic-skills:morning': 'off',
+                                      'gone:skill': 'off'}
+            settings.write_text(json.dumps(data))
+            notes = [(n.kind.value, n.subject, n.detail) for n in device.state().observe(hs.Request()).notes]
+        self.assertIn(('device-local', 'skillOverrides.anthropic-skills', "overrides of Anthropic's own skills, which "
+                       'no plugin installs: computer-use, morning; sync leaves them alone'), notes)
+        self.assertIn(('residue', 'skillOverrides.gone:skill', 'no single enabled install of that plugin'), notes)
+        self.assertNotIn('skillOverrides.anthropic-skills:computer-use', [subject for _, subject, _ in notes])
+
     def test_a_disabled_duplicate_reads_at_its_own_old_pin_and_only_named_flags(self):
         with Device() as device:
             observation = device.state().observe(hs.Request())

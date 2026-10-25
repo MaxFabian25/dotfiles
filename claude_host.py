@@ -29,6 +29,8 @@ import portable
 _HOST = Host.CLAUDE
 CATALOGS = ALL_CATALOGS[_HOST]
 ENGINE = ENGINE_MARKETPLACE[_HOST]
+# Claude Code lists Anthropic's own skills under this prefix without any plugin install behind them.
+ANTHROPIC_SKILLS = 'anthropic-skills'
 
 
 class MissingCache(Unread):
@@ -268,6 +270,7 @@ class ClaudeState:
         for plugin in user:
             if plugin['enabled']:
                 enabled.setdefault(plugin['id'].split('@', 1)[0], []).append(plugin['id'])
+        anthropic = []
         for subject, value in settings.get('skillOverrides', {}).items():
             if value not in ('on', 'off'):
                 seen.note(NoteKind.UNMODELED, f'skillOverrides.{subject}', repr(value))
@@ -279,8 +282,14 @@ class ClaudeState:
             elif len(enabled.get(plugin, [])) == 1:
                 owner = enabled[plugin][0]
                 seen.add(Surface.SKILL, f'{owner}:{skill}', mode, seen.key(Surface.PLUGIN, owner))
+            elif plugin == ANTHROPIC_SKILLS:
+                anthropic.append(skill)
             else:
                 seen.note(NoteKind.RESIDUE, f'skillOverrides.{subject}', 'no single enabled install of that plugin')
+        if anthropic:
+            seen.note(NoteKind.DEVICE_LOCAL, f'skillOverrides.{ANTHROPIC_SKILLS}',
+                      f'overrides of Anthropic\'s own skills, which no plugin installs: {", ".join(sorted(anthropic))}; '
+                      'sync leaves them alone')
         local = roots.claude_home / '.claude/settings.local.json'
         if local.is_file():
             seen.note(NoteKind.DEVICE_LOCAL, 'settings.local.json', 'skill overrides scoped to the project at {claude_home}')

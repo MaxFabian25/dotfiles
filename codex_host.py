@@ -68,6 +68,13 @@ def _hook_keys(plugin_id: str, root: Path) -> set[str]:
             for index, _ in enumerate(entry['hooks'])}
 
 
+def _stray_approval(name: str, defined: set[str]) -> bool:
+    """A hooks.state key is `<plugin id>:hooks/hooks.json:...` for a plugin's hook, or `<path>:<event>:<group>:<index>`
+    for one in the user's or a project's own hooks.json, which is live while that file exists."""
+    source = Path(name.rsplit(':', 3)[0])
+    return not source.is_file() if source.is_absolute() else name not in defined
+
+
 def _approved_hooks(cli: Sequence[str], home: Path, timeout: float = 30) -> frozenset[str]:
     try:
         process = subprocess.Popen([*cli, 'app-server', '--stdio'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -500,10 +507,10 @@ class CodexState:
             except Unread as error:
                 seen.unread('codex hooks/list', error, {Surface.HOOK}, {plugin for plugin, keys in hooks.items() if keys})
         defined = set().union(*hooks.values())
-        stray = sum(name not in defined for name, value in state.items()
+        stray = sum(_stray_approval(name, defined) for name, value in state.items()
                     if value.get('enabled', True) and value.get('trusted_hash'))
         if stray:
-            seen.note(NoteKind.RESIDUE, 'hooks.state', f'{stray} approvals of hooks no installed plugin defines')
+            seen.note(NoteKind.RESIDUE, 'hooks.state', f'{stray} approvals of hooks no installed plugin or hooks file defines')
         for folder in (roots.codex_home / 'skills', roots.agents_home / 'skills'):
             observe_loose(seen, folder, _loose)
         rules = roots.codex_home / 'AGENTS.md'
