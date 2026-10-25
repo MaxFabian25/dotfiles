@@ -3,6 +3,7 @@ import base64
 import contextlib
 import io
 import json
+import os
 from pathlib import Path
 import shutil
 import sys
@@ -27,6 +28,12 @@ class StandalonePackageTests(unittest.TestCase):
         self.home = Path(self.temp.name) / 'home'
         self.root = self.home / 'packages'
         self.root.mkdir(parents=True)
+        # codex_home() and claude_home() prefer these over the patched home, which would reach the real ones.
+        environment = patch.dict(os.environ)
+        environment.start()
+        self.addCleanup(environment.stop)
+        for variable in ('CODEX_HOME', 'CLAUDE_CONFIG_DIR'):
+            os.environ.pop(variable, None)
         patcher = patch.object(sp, 'ROOT', self.root)
         patcher.start()
         self.addCleanup(patcher.stop)

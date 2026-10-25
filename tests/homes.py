@@ -34,7 +34,7 @@ sys.stdout.write(answers[key])
 class Home:
     def __enter__(self):
         self.directory = tempfile.TemporaryDirectory()
-        base = Path(self.directory.name)
+        base = Path(self.directory.name).resolve()
         self.roots = host_state.DeviceRoots(home=base, codex_home=base / '.codex', claude_home=base / '.claude',
                                             agents_home=base / '.agents', engine=base / 'engine')
         self.bin = base / 'bin'

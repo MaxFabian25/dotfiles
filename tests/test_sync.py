@@ -219,7 +219,7 @@ class NativeGitMarketplaceTest(unittest.TestCase):
         from sync_sources import Sources
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve()
         self.upstream = self.root / 'upstream'
         self.upstream.mkdir()
         git(self.upstream, 'init', '-b', 'main')

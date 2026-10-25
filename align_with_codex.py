@@ -66,16 +66,17 @@ def selected_skills(root, data, disabled, plugin, kept_skills=_LEGACY):
     if isinstance(paths, str):
         paths = [paths]
     result = []
+    base = root.resolve()
     for relative in paths:
         directory = (root / relative).resolve()
-        if not directory.is_relative_to(root.resolve()):
+        if not directory.is_relative_to(base):
             raise RuntimeError(f'Skill escapes plugin: {directory}')
         candidates = [directory / 'SKILL.md'] if (directory / 'SKILL.md').exists() else directory.rglob('SKILL.md')
         for path in candidates:
             front = yaml.safe_load(read_utf8(path).split('---', 2)[1])
             name = str(front.get('name', path.parent.name))
             if f'{plugin}:{name}' not in disabled or name in kept:
-                result.append(path.relative_to(root))
+                result.append(path.relative_to(base))
     return sorted(set(result), key=lambda path: path.parts)
 
 

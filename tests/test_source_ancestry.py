@@ -19,7 +19,7 @@ class AdaptationAncestryTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.upstream = self.root / 'upstream'
         self.upstream.mkdir()
         git(self.upstream, 'init', '-b', 'main')
