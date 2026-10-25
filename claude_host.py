@@ -46,6 +46,25 @@ def portable_name(skill: str) -> str:
     return re.sub(r'[^a-z0-9-]+', '-', skill.lower()).strip('-')
 
 
+def _loaded(catalogs: dict[str, tuple[Path, dict]], plugin_id: str, install: Path) -> Path:
+    """The folder Claude Code runs a plugin from. A directory marketplace's plugin whose catalog source is a
+    relative path runs from that folder, not from its install cache, so its flags are read there."""
+    name, marketplace = plugin_id.split('@', 1)
+    if marketplace not in catalogs:
+        return install
+    directory, catalog = catalogs[marketplace]
+    entry = next((p for p in catalog.get('plugins', []) if isinstance(p, dict) and p.get('name') == name), None)
+    source = entry.get('source') if entry else None
+    if not isinstance(source, str):
+        return install
+    root = (directory / source).resolve()
+    if not root.is_relative_to(directory.resolve()):
+        raise Unread(f'catalog source leaves its marketplace: {plugin_id}')
+    if not root.is_dir():
+        raise Unread(f'the folder Claude Code loads {plugin_id} from is not on disk: {source}')
+    return root
+
+
 @dataclass(frozen=True)
 class NativeMarketplace:
     root: Path
@@ -227,6 +246,7 @@ class ClaudeState:
                 seen.note(NoteKind.RESIDUE, 'enabledPlugins', f'{len(orphans)} entries for plugins that are not installed')
 
         outputs = self.engine_outputs()
+        catalogs: dict[str, tuple[Path, dict]] = {}
         for name, entry in settings.get('extraKnownMarketplaces', {}).items():
             source = entry.get('source', {})
             kind = source.get('source')
@@ -243,9 +263,12 @@ class ClaudeState:
                 directory = Path(source.get('path', ''))
                 manifest = directory / '.claude-plugin/marketplace.json'
                 try:
-                    matches = manifest.is_file() and json.loads(portable.read_utf8(manifest)).get('name') == name
+                    catalog = json.loads(portable.read_utf8(manifest)) if manifest.is_file() else {}
                 except (OSError, ValueError):
-                    matches = False
+                    catalog = {}
+                matches = isinstance(catalog, dict) and catalog.get('name') == name
+                if matches:
+                    catalogs[name] = (directory, catalog)
                 if matches and name in outputs:
                     seen.add(Surface.MARKETPLACE, name, EngineMarketplace())
                     continue
@@ -327,7 +350,7 @@ class ClaudeState:
             if partial and not wanted:
                 continue
             try:
-                explicit = self._explicit(root, wanted)
+                explicit = self._explicit(root, wanted, catalogs, plugin['id'])
             except Unread as error:
                 seen.unread(root, error, {Surface.SKILL}, {plugin['id']},
                             missing_tree=seen.key(Surface.TREE, plugin['id']) if isinstance(error, MissingCache) else None)
@@ -354,8 +377,10 @@ class ClaudeState:
                       {plugin: (installed[plugin], spec) for plugin, spec in request.overlays.items() if plugin in installed})
         return seen.finish(version, offered)
 
-    def _explicit(self, root: Path, wanted: set[str] | None) -> set[str]:
-        """Skills whose SKILL.md frontmatter sets disable-model-invocation."""
+    def _explicit(self, root: Path, wanted: set[str] | None, catalogs: dict[str, tuple[Path, dict]] | None = None,
+                  plugin_id: str = '') -> set[str]:
+        """Skills whose SKILL.md frontmatter sets disable-model-invocation, read from the folder Claude Code runs the
+        plugin from once its install cache is known to be there."""
         try:
             mode = root.stat().st_mode
         except FileNotFoundError as error:
@@ -364,6 +389,8 @@ class ClaudeState:
             raise Unread(f'cache unreadable: {self.roots.tokens(root)}: {error}') from error
         if not stat.S_ISDIR(mode):
             raise Unread(f'cache is not a directory: {self.roots.tokens(root)}')
+        if catalogs:
+            root = _loaded(catalogs, plugin_id, root)
         try:
             return {skill for skill, path in skill_paths(root).items()
                     if (wanted is None or skill in wanted)

@@ -318,6 +318,29 @@ class ObserveTest(unittest.TestCase):
         self.assertEqual([(u.source, u.surfaces, u.subjects) for u in observation.unknown],
                          [('{claude_home}/plugins/installed_plugins.json', frozenset({S.PLUGIN}), frozenset({'interfaces@interfaces'}))])
 
+    def test_a_directory_marketplace_plugin_reads_its_flags_from_the_folder_claude_runs(self):
+        catalog = 'marketplaces/codex-aligned/.claude-plugin/marketplace.json'
+        poteto = key(S.SKILL, 'kit@codex-aligned:poteto-mode')
+        with Device() as device:
+            # The fixture's install cache marks poteto-mode explicit; the catalog's copy, which Claude Code runs, does not.
+            device.write(device.roots.claude_home / catalog, json.dumps({'name': 'codex-aligned', 'plugins': [
+                {'name': 'kit', 'source': './plugins/kit/1.0+codex-aligned.x', 'version': '1.0+codex-aligned.x'}]}))
+            device.skill(device.roots.claude_home / 'marketplaces/codex-aligned/plugins/kit/1.0+codex-aligned.x', 'poteto-mode')
+            observation = device.state().observe(hs.Request())
+        self.assertNotIn(poteto, observation.facts)
+        self.assertEqual(observation.unknown, ())
+
+    def test_a_catalog_source_outside_its_marketplace_or_missing_is_unknown(self):
+        for source, reason in (('../outside', 'catalog source leaves its marketplace'), ('./plugins/kit/gone', 'not on disk')):
+            with self.subTest(source=source), Device() as device:
+                device.write(device.roots.claude_home / 'marketplaces/codex-aligned/.claude-plugin/marketplace.json',
+                             json.dumps({'name': 'codex-aligned', 'plugins': [{'name': 'kit', 'source': source}]}))
+                (device.roots.claude_home / 'marketplaces/outside').mkdir()
+                observation = device.state().observe(hs.Request())
+                self.assertNotIn(key(S.SKILL, 'kit@codex-aligned:poteto-mode'), observation.facts)
+                self.assertTrue(any(u.subjects == frozenset({'kit@codex-aligned'}) and reason in u.reason
+                                    for u in observation.unknown))
+
     def test_an_overlaid_claude_cache_reads_as_its_release(self):
         with Device() as device:
             root = device.roots.claude_home / 'plugins/cache/codex-aligned/kit/1.0-codex-aligned.x'

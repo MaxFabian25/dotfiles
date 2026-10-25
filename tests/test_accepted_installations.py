@@ -950,7 +950,11 @@ class InstallationTest(unittest.TestCase):
                           if d.key and d.key.surface == Surface.SKILL], [('changed', 'kit@personal-collections:one')])
         self.assertEqual(self.run_apply(after_recovery).exit_code, 0)
         self.assertEqual(self.calls, [])
+        # Claude Code runs the catalog's copy, so flags are read there; an edited cache still stops the plan.
         (destination / 'skills/one/SKILL.md').write_text('---\nnot valid yaml: [\n---\n')
+        edited = plan(self.setup, self.device)
+        self.assertEqual(edited.exit_code, 2, edited.blocked)
+        (self.roots.engine / 'claude/plugins/kit/1.0.0/skills/one/SKILL.md').write_text('---\nnot valid yaml: [\n---\n')
         self.assertEqual(plan(self.setup, self.device).exit_code, 3)
 
     def test_aligned_claude_missing_cache_defers_alignment_and_skill_reads(self):

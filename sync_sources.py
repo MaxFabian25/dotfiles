@@ -348,7 +348,8 @@ class Builder:
                     skills = member.skills or tuple(sorted(p.parent.name for p in (codex.root / 'skills').glob('*/SKILL.md')))
                     definitions.append({'name': name, 'skills': list(skills), 'description': descriptions[name]})
                 config = {'packagingRevision': metadata.get('claudePackaging', 1), 'collections': {package.name: definitions}}
-                packages = build_collection(package.name, codex.root, config, self.directory / 'claude')
+                explicit = frozenset(name for name, mode in package.modes.items() if mode == SkillMode.EXPLICIT)
+                packages = build_collection(package.name, codex.root, config, self.directory / 'claude', explicit)
                 root = Path(next(p['release'] for p in packages if p['name'] == (install.name or package.name)))
             else:
                 root = codex.root
