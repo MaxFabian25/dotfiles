@@ -2,9 +2,10 @@
 
 Run it with the engine's own Python from the canonical public checkout. `start NAME` makes a worktree of
 each repository at origin/main on branch NAME. Edit there. `finish NAME` locks and builds the named
-entries, commits both worktrees, stops if origin/main changed the same files meanwhile, rebases them onto
-it, pairs the private release.toml with the public commit, checks that this device's pull could apply the
-pair, checks both pushes with --dry-run, pushes, and pulls. `clean NAME` removes the worktrees and branches once origin/main has them.
+entries, runs the public test suite, commits both worktrees, stops if origin/main changed the same files
+meanwhile, rebases them onto it, pairs the private release.toml with the public commit, checks that this
+device's pull could apply the pair, checks both pushes with --dry-run, pushes, and pulls. `clean NAME`
+removes the worktrees and branches once origin/main has them.
 """
 from __future__ import annotations
 
@@ -100,6 +101,16 @@ def overlap(root):
     return sorted((theirs & ours) - PAIRING_FILES)
 
 
+def test_suite(public, log):
+    """Run every public test, not just the ones the change looks like it touches."""
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open('w', encoding='utf-8') as output:
+        result = subprocess.run([sys.executable, '-B', '-m', 'unittest', 'discover', '-s', 'tests'], cwd=public,
+                                stdout=output, stderr=subprocess.STDOUT, timeout=1800)
+    if result.returncode:
+        raise RuntimeError(f'the test suite failed; read {log}')
+
+
 def device_check(public, private):
     """Stop on a release that would stop the pull, which every device would then hit. Sync exits 1 when it
     only has changes to apply, as every release does, but so does a crash, which skips the closing summary."""
@@ -136,8 +147,7 @@ def finish(args, public_repo, private_repo):
     if args.package:
         packages = [part for package in args.package for part in ('--package', package)]
         run([*python, 'build_setup.py', *setups, '--output', str(base / 'build/build'), *packages], public)
-    if args.test:
-        run([*python, '-m', 'unittest', *args.test], public)
+    test_suite(public, base / 'build/tests.log')
     if dirty(public):
         if not args.message:
             raise RuntimeError(f'{public}: pass --message with the public commit message')
@@ -226,7 +236,6 @@ def main(argv=None):
     parser.add_argument('--entry', action='append', default=[], help='lock this setup entry (repeat)')
     parser.add_argument('--refresh-owned', action='store_true', help='accept the edited owned trees of the entries')
     parser.add_argument('--package', action='append', default=[], help='build this package (repeat)')
-    parser.add_argument('--test', action='append', default=[], help='unittest module to run first (repeat)')
     parser.add_argument('--push', action='store_true', help='push both branches to origin/main')
     parser.add_argument('--overlap-reviewed', action='store_true',
                         help='finish although origin changed files this branch changed, after reading those commits')

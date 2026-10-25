@@ -89,7 +89,8 @@ uv run --locked python pull.py --root . --private ../dotfiles-private --update -
 
 `release.py` runs a whole delivery from this checkout. `start NAME` makes a worktree of each repository
 at `origin/main` under `~/worktrees/NAME`. After editing there, `finish NAME --message FILE --push --pull`
-locks and builds any `--entry` and `--package`, commits both worktrees, rebases them onto a newer
+locks and builds any `--entry` and `--package`, runs the whole public test suite (about 75 seconds, with
+its output in the release's `build/tests.log`), commits both worktrees, rebases them onto a newer
 `origin/main` if another session pushed meanwhile, pairs `release.toml`, pushes, and pulls. It stops
 before rebasing when origin changed a file this branch also changed, until you have read those
 commits and pass `--overlap-reviewed`, and it checks both pushes with `--dry-run` first, so a refused

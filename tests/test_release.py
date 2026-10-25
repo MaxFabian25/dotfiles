@@ -13,6 +13,7 @@ def git(root, *args):
 
 
 SYNC_WITH_CHANGES = 'print("Managed changes: 1; blocking issues: 0.")\nraise SystemExit(1)\n'
+PASSING_TEST = 'import unittest\n\n\nclass Seed(unittest.TestCase):\n    def test_passes(self):\n        pass\n'
 
 
 class ReleaseTest(unittest.TestCase):
@@ -24,7 +25,7 @@ class ReleaseTest(unittest.TestCase):
         subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'release', '-f', str(self.key)], check=True)
         # The release's device check runs the worktree's sync.py, which exits 1 when it has changes to apply.
         self.public_origin = self.origin('public-origin', {'content': 'first\n', 'doc': 'one\ntwo\nthree\nfour\nfive\n',
-                                                           'sync.py': SYNC_WITH_CHANGES})
+                                                           'sync.py': SYNC_WITH_CHANGES, 'tests/test_seed.py': PASSING_TEST})
         first = git(self.public_origin, 'rev-parse', 'main')
         self.private_origin = self.origin('private-origin', {'release.toml': f'public_commit = "{first}"\n'})
         self.public = self.clone(self.public_origin, 'dotfiles')
@@ -126,6 +127,17 @@ class ReleaseTest(unittest.TestCase):
                                       self.public), 3)
         self.assertEqual(git(self.public_origin, 'show', 'main:sync.py'), SYNC_WITH_CHANGES.strip())
         self.assertEqual(git(self.private_origin, 'log', '--format=%s', 'main'), 'seed')
+
+    def test_finish_runs_the_whole_suite_and_stops_on_a_failure(self):
+        release_main(['start', 'failing', *self.options()], self.public)
+        (self.worktrees / 'failing/public/tests/test_other.py').write_text(
+            PASSING_TEST.replace('pass', 'self.fail("broken")'), encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Add a failing test\n', encoding='utf-8')
+        self.assertEqual(release_main(['finish', 'failing', '--message', str(message), '--push', *self.options()],
+                                      self.public), 3)
+        self.assertIn('broken', (self.worktrees / 'failing/build/tests.log').read_text(encoding='utf-8'))
+        self.assertEqual(git(self.public_origin, 'ls-tree', '--name-only', 'main', 'tests/'), 'tests/test_seed.py')
 
     def test_finish_stops_when_the_device_check_crashes(self):
         release_main(['start', 'crash', *self.options()], self.public)
