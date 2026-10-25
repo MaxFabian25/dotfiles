@@ -10,6 +10,7 @@ removes the worktrees and branches once origin/main has them.
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 import re
 import shutil
@@ -102,11 +103,14 @@ def overlap(root):
 
 
 def test_suite(public, log):
-    """Run every public test, not just the ones the change looks like it touches."""
+    """Run every public test, not just the ones the change looks like it touches. The config roots point at a
+    missing folder, as in CI, because agent sessions export CODEX_HOME at this device's real config."""
     log.parent.mkdir(parents=True, exist_ok=True)
+    absent = log.parent / 'absent-config'
+    environment = {**os.environ, 'CODEX_HOME': str(absent / 'codex'), 'CLAUDE_CONFIG_DIR': str(absent / 'claude')}
     with log.open('w', encoding='utf-8') as output:
         result = subprocess.run([sys.executable, '-B', '-m', 'unittest', 'discover', '-s', 'tests'], cwd=public,
-                                stdout=output, stderr=subprocess.STDOUT, timeout=1800)
+                                env=environment, stdout=output, stderr=subprocess.STDOUT, timeout=1800)
     if result.returncode:
         raise RuntimeError(f'the test suite failed; read {log}')
 

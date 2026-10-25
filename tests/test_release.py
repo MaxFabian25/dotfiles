@@ -139,6 +139,18 @@ class ReleaseTest(unittest.TestCase):
         self.assertIn('broken', (self.worktrees / 'failing/build/tests.log').read_text(encoding='utf-8'))
         self.assertEqual(git(self.public_origin, 'ls-tree', '--name-only', 'main', 'tests/'), 'tests/test_seed.py')
 
+    def test_finish_runs_the_suite_against_missing_config_roots(self):
+        release_main(['start', 'isolated', *self.options()], self.public)
+        (self.worktrees / 'isolated/public/tests/test_config.py').write_text(
+            'import os\nfrom pathlib import Path\nimport unittest\n\n\nclass Config(unittest.TestCase):\n'
+            '    def test_roots_are_missing(self):\n'
+            '        for variable in ("CODEX_HOME", "CLAUDE_CONFIG_DIR"):\n'
+            '            self.assertFalse(Path(os.environ[variable]).exists())\n', encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Check the config roots\n', encoding='utf-8')
+        self.assertEqual(release_main(['finish', 'isolated', '--message', str(message), '--push', *self.options()],
+                                      self.public), 0)
+
     def test_finish_stops_when_the_device_check_crashes(self):
         release_main(['start', 'crash', *self.options()], self.public)
         (self.worktrees / 'crash/public/sync.py').write_text('raise KeyError("models")\n', encoding='utf-8')

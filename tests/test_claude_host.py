@@ -31,7 +31,7 @@ class ProjectTest(unittest.TestCase):
                       None, d.HostMarketplace('interfaces', d.MarketplaceMode.CHECKOUT))
         setup = d.Setup(roots=d.Roots(Path('/p'), None), packages={}, repos={'interfaces': repo}, loose={},
                         host_skills={}, rules=None, note_rules=(), public_repositories=frozenset(), lock={})
-        facts = claude_host.ClaudeState(hs.DeviceRoots.current(), 'claude').project(setup)
+        facts = claude_host.ClaudeState(homes.projection_roots(), 'claude').project(setup)
         self.assertEqual(facts[key(S.MARKETPLACE, 'interfaces')].value,
                          hs.CheckoutMarketplace('https://github.com/example/interfaces.git', NEW))
 
@@ -52,7 +52,7 @@ class ProjectTest(unittest.TestCase):
         setup = d.Setup(roots=d.Roots(Path('/p'), None), packages={'interfaces': interfaces, 'course': course},
                         repos={'interfaces': repo}, loose={}, host_skills={hs.Host.CLAUDE: {'playwright': M.ON}}, rules=None,
                         note_rules=(), public_repositories=frozenset(), lock=lock)
-        facts = claude_host.ClaudeState(hs.DeviceRoots.current(), 'claude').project(setup)
+        facts = claude_host.ClaudeState(homes.projection_roots(), 'claude').project(setup)
         aligned, native = key(S.PLUGIN, 'interfaces@codex-aligned'), key(S.PLUGIN, 'interfaces@interfaces')
         split = key(S.PLUGIN, 'course@personal-collections')
         self.assertEqual({k: (f.value, f.follows) for k, f in facts.items()}, {
@@ -83,7 +83,7 @@ class ProjectTest(unittest.TestCase):
                         d.ClaudePlacement((d.AlignedInstall(True),), {'handoff': M.EXPLICIT, 'shell': M.ON}))
         setup = d.Setup(roots=d.Roots(Path('/p'), None), packages={'kit': kit}, repos={}, loose={}, host_skills={},
                         rules=None, note_rules=(), public_repositories=frozenset(), lock={})
-        facts = claude_host.ClaudeState(hs.DeviceRoots.current(), 'claude').project(setup)
+        facts = claude_host.ClaudeState(homes.projection_roots(), 'claude').project(setup)
         aligned = key(S.PLUGIN, 'kit@codex-aligned')
         self.assertEqual({k.subject: f.value for k, f in facts.items() if k.surface == S.SKILL}, {
             'kit@codex-aligned:handoff': M.EXPLICIT,

@@ -54,7 +54,7 @@ class ProjectTest(unittest.TestCase):
         lock = {'kit': d.Lock(D1, {hs.Host.CODEX: d.LockedTree('1.0+upstream', D1)}),
                 'impeccable': d.Lock(D1, {}, {'impeccable_documenter.toml': D2}, hooks=3),
                 'define-goal': d.Lock(D1, placements={d.SkillRoot.CODEX: D3})}
-        facts = codex_host.CodexState(homes.host_state.DeviceRoots.current(), 'codex').project(setup(
+        facts = codex_host.CodexState(homes.projection_roots(), 'codex').project(setup(
             [KIT, IMPECCABLE, CONNECTOR], [SKILLS, IMPECCABLE_REPO], [DEFINE_GOAL], {hs.Host.CODEX: {'plugin-creator': M.OFF}},
             d.Rules(b''), lock))
         kit, impeccable, connector = key(S.PLUGIN, 'kit@personal'), key(S.PLUGIN, 'impeccable@personal'), key(S.PLUGIN, 'connector@openai-curated-remote')
@@ -83,7 +83,7 @@ class ProjectTest(unittest.TestCase):
                        d.HostMarketplace('local', d.MarketplaceMode.CHECKOUT), None)
         prose = package('prose', d.RepoSource('local'), d.CodexPlacement((d.MarketplaceInstall('local', True),)))
         lock = {'prose': d.Lock(D1, {hs.Host.CODEX: d.LockedTree('0.2.0+codex.1', D2)})}
-        facts = codex_host.CodexState(hs.DeviceRoots.current(), 'codex').project(setup([prose], [local], lock=lock))
+        facts = codex_host.CodexState(homes.projection_roots(), 'codex').project(setup([prose], [local], lock=lock))
         self.assertEqual(facts[key(S.MARKETPLACE, 'local')].value, hs.CheckoutMarketplace('https://github.com/example/local.git', C1))
         self.assertEqual(facts[key(S.PLUGIN, 'prose@local')].value, hs.PluginValue(True, hs.Released('0.2.0+codex.1')))
 
@@ -92,19 +92,19 @@ class ProjectTest(unittest.TestCase):
         package = d.Package('rpi', d.Visibility.PUBLIC, '', source, {}, d.ToolNotes.AUDIT,
                             d.CodexPlacement((d.EngineInstall(True), d.MarketplaceInstall('skills', True))), None)
         lock = {'rpi': d.Lock(D1, {hs.Host.CODEX: d.LockedTree('1.0.0', D2)})}
-        facts = codex_host.CodexState(hs.DeviceRoots.current(), 'codex').project(setup([package], [SKILLS], lock=lock))
+        facts = codex_host.CodexState(homes.projection_roots(), 'codex').project(setup([package], [SKILLS], lock=lock))
         self.assertEqual(facts[key(S.PLUGIN, 'rpi@personal')].value, hs.PluginValue(True, hs.Released('1.0.0')))
         self.assertEqual(facts[key(S.PLUGIN, 'rpi@skills')].value, hs.PluginValue(True, hs.Pinned(C2)))
         self.assertEqual(facts[key(S.TREE, 'rpi@personal')].value, hs.TreeValue(D2))
 
     def test_trusted_hooks_without_a_locked_count_project_nothing(self):
-        facts = codex_host.CodexState(hs.DeviceRoots.current(), 'codex').project(setup([IMPECCABLE], [IMPECCABLE_REPO]))
+        facts = codex_host.CodexState(homes.projection_roots(), 'codex').project(setup([IMPECCABLE], [IMPECCABLE_REPO]))
         self.assertEqual(sorted(k.surface.name for k in facts), ['MARKETPLACE', 'OVERLAY', 'PLUGIN'])
 
     def test_a_disabled_build_is_not_pinned(self):
         disabled = package('kit', KIT.source, d.CodexPlacement((d.EngineInstall(False),)))
         lock = {'kit': d.Lock(D1, {hs.Host.CODEX: d.LockedTree('1.0', D1)})}
-        facts = codex_host.CodexState(hs.DeviceRoots.current(), 'codex').project(setup([disabled], lock=lock))
+        facts = codex_host.CodexState(homes.projection_roots(), 'codex').project(setup([disabled], lock=lock))
         self.assertEqual(facts[key(S.PLUGIN, 'kit@personal')].value, hs.PluginValue(False, hs.Unpinned()))
         self.assertNotIn(key(S.TREE, 'kit@personal'), facts)
 

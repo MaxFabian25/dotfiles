@@ -24,3 +24,7 @@ jobs:
         with:
           python-version: "3.14"
       - run: uv run --locked python -B -m unittest discover -s tests
+        env:
+          # A missing folder, as release.py uses, so tests that resolve device roots never read real config.
+          CODEX_HOME: ${{ runner.temp }}/absent-config/codex
+          CLAUDE_CONFIG_DIR: ${{ runner.temp }}/absent-config/claude

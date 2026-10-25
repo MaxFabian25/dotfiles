@@ -31,6 +31,14 @@ sys.stdout.write(answers[key])
 '''
 
 
+def projection_roots():
+    """Roots for tests that only project a description. The home does not exist, so neither this device's
+    config nor a CODEX_HOME or CLAUDE_CONFIG_DIR exported by an agent session can reach the test."""
+    base = Path(tempfile.gettempdir()) / 'dotfiles-tests-absent-home'
+    return host_state.DeviceRoots(home=base, codex_home=base / '.codex', claude_home=base / '.claude',
+                                  agents_home=base / '.agents', engine=host_state.ENGINE)
+
+
 class Home:
     def __enter__(self):
         self.directory = tempfile.TemporaryDirectory()
