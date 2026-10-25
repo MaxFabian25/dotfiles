@@ -105,12 +105,6 @@ codex = { version = "0.15.30+upstream.eb4db2b55b2b.codex1", tree = "sha256:061ad
 claude = { version = "0.15.30+codex-aligned.2a4315b8e2ca", tree = "sha256:a080f4182f4f4b333a1e1e9102d0ac6e9b21c25d9191367d2c20cf8e178a4fe9" }
 roles = { "comment-sicko.toml" = "sha256:6f3ea8222b5e7abf65decd3712a9d32f5804953e0539e61b2a9f92e11148d56e", "poteto-agent.toml" = "sha256:3d113f3faefd9ee007f001bedc51aa9227b46bb5a233567e87eba1f56e89c206", "pstack-reader.toml" = "sha256:e1ce58630b65ea7ce264d6590d4209a525ae2df8ba422fafdc2a6fc3a55a885a" }
 
-[rpi]
-intent = "sha256:d69e6b3a6fee328e446377fe9d44de2ef0a670784fe052a37957f4c4a29c316f"
-codex = { version = "1.0.0", tree = "sha256:e5aa86674d76a4d9eecc1728041e1768a734c37861c13ce1d437be1f8e0331d1" }
-claude = { version = "1.0.0", tree = "sha256:e5aa86674d76a4d9eecc1728041e1768a734c37861c13ce1d437be1f8e0331d1" }
-roles = { "codebase-analyzer.toml" = "sha256:394adedf2a79148daf19fe931bf3d46f1991c9fb80508905b917c25d487d8711", "codebase-locator.toml" = "sha256:7c2391475a6f5fd4a64bda02a93e1ab3d9491ebfb28d1a4b4df7b032da826f96", "codebase-pattern-finder.toml" = "sha256:a9e4e113ffd5db25946a1bb7083d9cbe504ec296e97a37e92d4293a0a59fe3e5", "outline-implementer-agent.toml" = "sha256:b9d751b311d38e3b84415fcf8384cbc3090402da5a0a1f006477ea39ba21d90c", "web-search-researcher.toml" = "sha256:0ee98f90c603c4702b5f7f9d17ce374999da34246a879991c70562d44b2b7054" }
-
 [show-me]
 intent = "sha256:a2da7274ed5675b694dc0ac9440d9cec25318dcccce7a8df3e8453044963cab1"
 codex = { version = "1.0.1", tree = "sha256:c309b44dd0292b87989c1c9c3691e3c411151bdeead0527240ada2b4fa19b69f" }
