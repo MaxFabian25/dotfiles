@@ -3,8 +3,8 @@
 Run it with the engine's own Python from the canonical public checkout. `start NAME` makes a worktree of
 each repository at origin/main on branch NAME. Edit there. `finish NAME` locks and builds the named
 entries, commits both worktrees, stops if origin/main changed the same files meanwhile, rebases them onto
-it, pairs the private release.toml with the public commit, checks both pushes with --dry-run, pushes, and
-pulls. `clean NAME` removes the worktrees and branches once origin/main has them.
+it, pairs the private release.toml with the public commit, checks that this device's pull could apply the
+pair, checks both pushes with --dry-run, pushes, and pulls. `clean NAME` removes the worktrees and branches once origin/main has them.
 """
 from __future__ import annotations
 
@@ -100,6 +100,17 @@ def overlap(root):
     return sorted((theirs & ours) - PAIRING_FILES)
 
 
+def device_check(public, private):
+    """Stop on a release that would stop the pull, which every device would then hit. Sync exits 1 when it
+    only has changes to apply, as every release does, but so does a crash, which skips the closing summary."""
+    result = subprocess.run([sys.executable, '-B', str(public / 'sync.py'), '--candidate', '--public',
+                             str(public / 'setup'), '--private', str(private / 'setup')],
+                            cwd=public, capture_output=True, text=True, encoding='utf-8', timeout=1800)
+    if result.returncode not in (0, 1) or 'Managed changes:' not in result.stdout:
+        sys.stderr.write(result.stdout + result.stderr)
+        raise RuntimeError(f'the pull on this device would stop on this release (sync exited {result.returncode}); nothing was pushed')
+
+
 def push(root):
     git(root, *CREDENTIALS, 'push', '-q', push_url(root), 'HEAD:main')
 
@@ -153,6 +164,7 @@ def finish(args, public_repo, private_repo):
             pair(public, private, args.pair_message)
         if not ahead(public) and not ahead(private):
             raise RuntimeError('nothing to release: both branches match origin/main')
+        device_check(public, private)
         if not args.push:
             break
         published = False

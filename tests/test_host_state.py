@@ -235,6 +235,21 @@ class InstalledEngineTest(unittest.TestCase):
             plan.assert_not_called()
             self.assertIn('run sync.py or pull.py from that checkout', ''.join(call.args[0] for call in stderr.write.call_args_list))
 
+    def test_a_candidate_plans_outside_the_installed_checkout_and_validates_its_proposed_settings(self):
+        import sync
+        with tempfile.TemporaryDirectory() as temp:
+            roots = roots_for(temp)
+            registry = {'personal-collections': {'source': {'source': 'directory', 'path': str(Path(temp) / 'dotfiles/claude')}}}
+            write(roots.claude_home / 'plugins/known_marketplaces.json', json.dumps(registry))
+            device = mock.Mock(roots=roots)
+            with mock.patch('sync.load'), mock.patch('sync.Device.current', return_value=device), \
+                    mock.patch('sync.plan') as plan, mock.patch('accepted_installations.AcceptedInstallations'), \
+                    mock.patch('configuration.validate_runtime', side_effect=ValueError('Unconfirmed Claude alias')) as validate, \
+                    mock.patch('sys.stderr'):
+                self.assertEqual(sync.main(['--candidate']), 3)
+            plan.assert_called_once()
+            self.assertTrue(validate.call_args.kwargs['proposed'])
+
 
 if __name__ == '__main__':
     unittest.main()

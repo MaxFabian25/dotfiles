@@ -93,7 +93,10 @@ locks and builds any `--entry` and `--package`, commits both worktrees, rebases 
 `origin/main` if another session pushed meanwhile, pairs `release.toml`, pushes, and pulls. It stops
 before rebasing when origin changed a file this branch also changed, until you have read those
 commits and pass `--overlap-reviewed`, and it checks both pushes with `--dry-run` first, so a refused
-login publishes neither half. After a pull that changed skills or packages, it runs `skill_listing.py`,
+login publishes neither half. Before pushing, it runs this device's pull check on the worktree pair
+(`sync.py --candidate`), including the settings validation a pull otherwise runs only while applying,
+and stops where the pull would stop, such as on a model alias the engine rejects or an owned skill
+edited without `--refresh-owned`. That check takes about half a minute. After a pull that changed skills or packages, it runs `skill_listing.py`,
 which warns when Claude Code lists skills without their descriptions. `clean NAME` removes the
 worktrees once `origin/main` has them.
 

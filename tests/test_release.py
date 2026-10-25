@@ -12,6 +12,9 @@ def git(root, *args):
     return subprocess.check_output(['git', '-C', str(root), *args], stderr=subprocess.DEVNULL).decode().strip()
 
 
+SYNC_WITH_CHANGES = 'print("Managed changes: 1; blocking issues: 0.")\nraise SystemExit(1)\n'
+
+
 class ReleaseTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -19,7 +22,9 @@ class ReleaseTest(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.key = self.root / 'release'
         subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'release', '-f', str(self.key)], check=True)
-        self.public_origin = self.origin('public-origin', {'content': 'first\n', 'doc': 'one\ntwo\nthree\nfour\nfive\n'})
+        # The release's device check runs the worktree's sync.py, which exits 1 when it has changes to apply.
+        self.public_origin = self.origin('public-origin', {'content': 'first\n', 'doc': 'one\ntwo\nthree\nfour\nfive\n',
+                                                           'sync.py': SYNC_WITH_CHANGES})
         first = git(self.public_origin, 'rev-parse', 'main')
         self.private_origin = self.origin('private-origin', {'release.toml': f'public_commit = "{first}"\n'})
         self.public = self.clone(self.public_origin, 'dotfiles')
@@ -110,6 +115,26 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(release_main(['finish', 'refused', '--message', str(message), '--push', *self.options()],
                                       self.public), 3)
         self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'first')
+
+    def test_finish_stops_before_pushing_a_release_the_pull_would_stop_on(self):
+        release_main(['start', 'broken', *self.options()], self.public)
+        (self.worktrees / 'broken/public/sync.py').write_text(
+            'import sys\nprint("Sync stopped: unconfirmed alias", file=sys.stderr)\nraise SystemExit(3)\n', encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Break the pull\n', encoding='utf-8')
+        self.assertEqual(release_main(['finish', 'broken', '--message', str(message), '--push', *self.options()],
+                                      self.public), 3)
+        self.assertEqual(git(self.public_origin, 'show', 'main:sync.py'), SYNC_WITH_CHANGES.strip())
+        self.assertEqual(git(self.private_origin, 'log', '--format=%s', 'main'), 'seed')
+
+    def test_finish_stops_when_the_device_check_crashes(self):
+        release_main(['start', 'crash', *self.options()], self.public)
+        (self.worktrees / 'crash/public/sync.py').write_text('raise KeyError("models")\n', encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Crash the pull\n', encoding='utf-8')
+        self.assertEqual(release_main(['finish', 'crash', '--message', str(message), '--push', *self.options()],
+                                      self.public), 3)
+        self.assertEqual(git(self.public_origin, 'show', 'main:sync.py'), SYNC_WITH_CHANGES.strip())
 
     def test_finish_without_a_message_stops_before_committing(self):
         release_main(['start', 'quiet', *self.options()], self.public)

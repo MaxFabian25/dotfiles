@@ -18,16 +18,26 @@ def main(argv=None):
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--apply', action='store_true', help='apply verified changes, with local backups')
     mode.add_argument('--check', action='store_true', help='report the plan without installing anything (default)')
+    mode.add_argument('--candidate', action='store_true',
+                      help="check from a release worktree's engine before the release is pushed")
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args(argv)
     try:
         setup = load(Roots.resolve(args.public, args.private))
         device = Device.current()
         installed = device.roots.installed_engine()
-        if installed is not None and installed != device.roots.engine.resolve():
+        # A candidate's engine is not the one Claude installs from, so its plan also lists the plugin builds it
+        # cannot see as changes. Only a stop or a blocker tells whether the pull could apply the release.
+        if installed is not None and installed != device.roots.engine.resolve() and not args.candidate:
             raise RuntimeError(f'this device installs from the checkout at {installed}, whose plugin builds this engine '
                                f'at {device.roots.engine} cannot see; run sync.py or pull.py from that checkout')
         current = plan(setup, device)
+        if args.candidate:
+            # A check leaves validating a changed configuration to the apply step, which a candidate never reaches.
+            from accepted_installations import AcceptedInstallations
+            from configuration import validate_runtime
+            validate_runtime(AcceptedInstallations(setup.for_platform(device.platform), device).configurations,
+                             device.roots, proposed=True)
         if args.apply:
             if current.blocked and not args.json:
                 print(render(current.result), end='')  # its attention rows name each blocker and its fix
