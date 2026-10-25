@@ -1,9 +1,12 @@
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 class FileSafetyTest(unittest.TestCase):

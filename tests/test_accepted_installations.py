@@ -2,10 +2,12 @@ from dataclasses import replace
 import json
 from pathlib import Path
 import shutil
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from codex_host import CodexState
 from configuration import desired
 from description import (Adaptation, AlignedInstall, ClaudePlacement, CodexPlacement, EngineInstall, Hooks, LocalSource, Lock, LockedTree,

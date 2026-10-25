@@ -1,6 +1,8 @@
 from pathlib import Path
+import sys
 import unittest
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from configuration import _expand, installed_chrome, patch_fields, read_fields
 
 

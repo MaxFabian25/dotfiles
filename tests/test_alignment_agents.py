@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 spec = importlib.util.spec_from_file_location('alignment', Path(__file__).resolve().parents[1] / 'align_with_codex.py')
 alignment = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(alignment)

@@ -1,11 +1,13 @@
 from pathlib import Path
 import shutil
+import sys
 from types import SimpleNamespace
 import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from pull import paired, run, update
 
 

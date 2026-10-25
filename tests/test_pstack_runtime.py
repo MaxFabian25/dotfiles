@@ -1,8 +1,10 @@
 import importlib.util
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 spec = importlib.util.spec_from_file_location("pstack_runtime", Path(__file__).parents[1] / "pstack_runtime.py")
 runtime = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runtime)

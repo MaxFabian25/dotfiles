@@ -1,9 +1,11 @@
 from dataclasses import replace
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from description import Adaptation, CodexPlacement, EngineInstall, Package, Roots, Setup, ToolNotes, Visibility
 from host_state import DeviceRoots, Host
 from portable import GIT
