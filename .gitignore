@@ -5,6 +5,8 @@
 !/README.md
 !/.gitignore
 !/.gitattributes
+!/.github/
+!/.github/**
 !/setup/
 !/setup/**
 !/config/

@@ -23,7 +23,8 @@ class InvocationOverridesTest(unittest.TestCase):
             (root / 'agents/openai.yaml').write_text('policy:\n  allow_implicit_invocation: false\n')
             registry = {'targets': {'Codex': {'review-agent@system': ['review-agent']}, 'Claude': {}},
                         'standaloneRoots': {'Codex': {'review-agent@system': str(root)}}}
-            with patch.object(module, 'HOME', home), patch.object(module.subprocess, 'check_output', return_value='{"installed": []}'):
+            with patch.object(module, 'HOME', home), patch.object(module, 'codex_cli', return_value='codex'), \
+                    patch.object(module.subprocess, 'check_output', return_value='{"installed": []}'):
                 installs = module.installations(registry)
                 writes, counts = module.plan(registry, installs)
                 self.assertEqual(counts, {'Codex': 1, 'Claude': 0})
@@ -41,7 +42,8 @@ class InvocationOverridesTest(unittest.TestCase):
             home = Path(directory).resolve()
             registry = {'targets': {'Codex': {'x@system': ['x']}, 'Claude': {}},
                         'standaloneRoots': {'Codex': {'x@system': str(home / 'other')}}}
-            with patch.object(module, 'HOME', home), patch.object(module.subprocess, 'check_output', return_value='{"installed": []}'):
+            with patch.object(module, 'HOME', home), patch.object(module, 'codex_cli', return_value='codex'), \
+                    patch.object(module.subprocess, 'check_output', return_value='{"installed": []}'):
                 with self.assertRaises(ValueError):
                     module.installations(registry)
 
@@ -306,7 +308,8 @@ class InvocationOverridesTest(unittest.TestCase):
             registry = {'targets': {'Codex': {}, 'Claude': {}}}
             adaptations = {'plugins': {'plugin': {'repository': '/nowhere', 'baseRef': 'upstream', 'adaptedRef': 'main',
                                                    'hosts': ['Codex'], 'identities': ['plugin@a']}}}
-            with patch.object(module, 'HOME', home), patch.object(module.subprocess, 'check_output', return_value=inventory):
+            with patch.object(module, 'HOME', home), patch.object(module, 'codex_cli', return_value='codex'), \
+                    patch.object(module.subprocess, 'check_output', return_value=inventory):
                 found = module.installations(registry, adaptations=adaptations)
             self.assertEqual([(host, identity) for host, identity, _ in found], [('Codex', 'plugin@a')])
 
