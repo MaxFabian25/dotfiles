@@ -17,6 +17,16 @@ that no source sets, such as 300 dpi, are house choices.
   and leader lines at 1.8:1. The Analysis Function
   colour guidance (`AUTH-UKAF-DATA-VIS-COLOURS`) asks 3:1 between all adjacent colours and
   corroborates the stricter case.
+- **Shaded maps.** The W3C Understanding document for 1.4.11 names colour gradients that represent
+  a measurement, such as heat maps, as essential colour, and does not require chart parts whose
+  values are also presented in a conforming way. The 1.5:1 ceiling for the lowest class and the
+  3:1 outlines of at least 1 px are house choices. With the previous text, all three writers of a
+  regional map in round 12 set the lowest of five classes at 3.1:1 to 3.3:1 against the page to
+  meet the contrast rule. That squeezed the classes into about half the lightness range and gave
+  the large, sparsely populated northern regions a mid-tone fill. The same writers already shaded
+  rates rather than totals, used an equal-area projection, gave a key and a data table, and stated
+  the finding in the text alternative, so those have no rule. Before the rule set a width, two of
+  three writers in round 13 drew outlines 0.36 px wide on a phone, which showed faintly.
 - **Direct labels, labelled values, and one scale per measure.** The Analysis Function chart
   guidance (`AUTH-UKAF-DATA-VIS-CHARTS`) prefers direct labels to legends and few, light
   gridlines. The ONS data visualisation manual (`AUTH-ONS-DATA-VIS`) asks for consistent scales
@@ -55,7 +65,9 @@ that no source sets, such as 300 dpi, are house choices.
   script with its output are house choices. The 12 px floor for web pages is one of the critical
   Chartability tests that the EU data visualisation guide summarises
   (`AUTH-EU-DATAVIS-CHARTABILITY`). With the previous text, 12 of 18 dashboards in rounds 6 to 9
-  rendered text under 12 px, such as 11 px axis ticks and 10 px source lines and badges.
+  rendered text under 12 px, such as 11 px axis ticks and 10 px source lines and badges. Measuring
+  SVG text with its screen scale is a house choice: in round 13 one writer checked a map label's
+  computed size of 13 px while the height-capped map drew it at 11.8 px.
 - **Text alternative.** The W3C complex images tutorial (`AUTH-W3C-COMPLEX-IMAGES`) supports a
   short alternative plus the values. Giving sparklines their own alternatives is a house choice.
   The placement table records format behaviour checked on 22 October 2026 with xlsxwriter 3.3.0,

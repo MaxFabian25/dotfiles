@@ -21,6 +21,12 @@ charts](references/ibcs-charts.md) before drawing.
   and leader lines all count, and a light band can meet the ratio with an edge line. Separate
   adjacent fills with a gap in the background colour. Set all chart text, tick labels and notes
   included, at 4.5:1 or more.
+- **Shaded maps.** Shade regions by value from a lowest class at 1.5:1 or less against the
+  background to a dark highest class, darker at each step, so large regions with low values recede.
+  Outline every region at 3:1 or more against the background and at least 1 px wide as drawn at
+  both test widths below, such as with `vector-effect: non-scaling-stroke`, instead of separating
+  fills with a gap. Give every region's value in a table or label; the fills then need not meet
+  3:1.
 - **Direct labels.** Name each series or stacked segment beside its marks: at the line end, inside
   or next to the segment, or above the stack. Use a legend only when direct labels would collide,
   and then give each series a second cue, such as a pattern, marker, or line style.
@@ -36,7 +42,8 @@ charts](references/ibcs-charts.md) before drawing.
 
 - **Destination size.** Build each figure at its final size, such as 16 cm wide for an A4 report
   column, with every text element at 8 pt or more at that size, 12 px or more as rendered on a web
-  page at both test widths below, or 12 pt on a slide. Save raster images at 300 dpi.
+  page at both test widths below, or 12 pt on a slide. SVG text renders at its computed font size
+  times the scale from `getScreenCTM()`, so measure it that way. Save raster images at 300 dpi.
 - **Page width.** Load web charts, tables, and dashboards at 390 px and 1366 px wide, and measure
   `document.documentElement.scrollWidth` at each. It equals the viewport width, and a wide table
   scrolls inside its own container. Put what needs attention first at every width, and keep tick
