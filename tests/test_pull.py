@@ -148,19 +148,22 @@ class PairedPullTest(unittest.TestCase):
             self.assertEqual(run(args), 0)
             self.assertEqual((receipt.read_bytes(), receipt.stat().st_mtime_ns), before)
 
-    def test_tools_install_only_after_an_applied_sync_succeeds(self):
+    def test_tools_install_after_an_applied_sync_that_nothing_blocked(self):
         pinned = self.root / 'home/.config/dotfiles/allowed_signers'
         pinned.parent.mkdir(parents=True)
         shutil.copyfile(self.signers, pinned)
+        receipt = self.root / 'home/.local/state/dotfiles/last-applied.json'
         calls = []
-        for code, apply in ((0, False), (1, True), (0, True)):
+        for code, apply in ((0, False), (1, False), (2, True), (3, True), (1, True), (0, True)):
             candidate = self.commit(self.public_origin, 'sync.py', f'raise SystemExit({code})\n')
             self.commit(self.private_origin, 'release.toml', f'public_commit = "{candidate}"\n')
             args = SimpleNamespace(root=self.public, private=self.private, update=True, apply=apply)
             with patch('pull.Path.home', return_value=self.root / 'home'), \
                     patch('pull.install_tools', lambda home, state: calls.append((code, apply))):
                 self.assertEqual(run(args), code)
-        self.assertEqual(calls, [(0, True)])
+            # Changes that remain after applying leave the pair unrecorded, so only the last pull writes a receipt.
+            self.assertEqual(receipt.exists(), (code, apply) == (0, True))
+        self.assertEqual(calls, [(1, True), (0, True)])
 
 
 class InstallToolsTest(unittest.TestCase):

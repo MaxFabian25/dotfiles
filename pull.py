@@ -121,6 +121,12 @@ def run(args):
         if private:
             command += ['--private', str(private / 'setup')]
         result = subprocess.run(command, cwd=root, timeout=1200)
+        # 1 after --apply: sync wrote what it could and nothing blocked it, but some managed changes did not take.
+        # The pair is not applied, so it gets no receipt, but the mise config was written, so its tools still install.
+        if result.returncode == 1 and args.apply:
+            print('Dotfiles pull: managed changes remain after applying, listed above under drift; the pair is not '
+                  'recorded as applied, and the next pull retries them', file=sys.stderr)
+            install_tools(Path.home(), state)
         if result.returncode == 0 and args.apply:
             from sync_files import Files, contents
             receipt = state / 'last-applied.json'
