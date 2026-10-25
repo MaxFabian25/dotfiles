@@ -21,12 +21,13 @@ charts](references/ibcs-charts.md) before drawing.
   and leader lines all count, and a light band can meet the ratio with an edge line. Separate
   adjacent fills with a gap in the background colour. Set all chart text, tick labels and notes
   included, at 4.5:1 or more.
-- **Shaded maps.** Shade regions by value from a lowest class at 1.5:1 or less against the
-  background to a dark highest class, darker at each step, so large regions with low values recede.
-  Outline every region at 3:1 or more against the background and at least 1 px wide as drawn at
-  both test widths below, such as with `vector-effect: non-scaling-stroke`, instead of separating
-  fills with a gap. Give every region's value in a table or label; the fills then need not meet
-  3:1.
+- **Shaded maps.** Shade regions by a rate, such as members or change in members per 1,000
+  residents, so a region's area doesn't stand in for its size. Run the classes from a lowest class
+  at 1.5:1 or less against the background to a dark highest class, darker at each step, so large
+  regions with low values recede. Outline every region at 3:1 or more against the background and
+  at least 1 px wide as drawn at both test widths below, such as with
+  `vector-effect: non-scaling-stroke`, instead of separating fills with a gap. Give every region's
+  value in a table or label; the fills then need not meet 3:1.
 - **Direct labels.** Name each series or stacked segment beside its marks: at the line end, inside
   or next to the segment, or above the stack. Use a legend only when direct labels would collide,
   and then give each series a second cue, such as a pattern, marker, or line style.
