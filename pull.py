@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -86,6 +88,26 @@ def paired(public, private):
         raise RuntimeError(f'Public/private release mismatch: expected public {expected}, found {actual}; no device changes')
 
 
+def install_tools(home, state):
+    """A release only writes tool versions into the mise config, and mise stops on a pinned version that isn't
+    installed. Install once per config contents, and again on the next pull after a failed install."""
+    config = home / '.config/mise/config.toml'
+    if not config.is_file():
+        return
+    record = state / 'mise-installed.sha256'
+    digest = hashlib.sha256(config.read_bytes()).hexdigest()
+    if record.is_file() and record.read_text(encoding='utf-8').strip() == digest:
+        return
+    mise = shutil.which('mise')
+    if mise is None:
+        raise RuntimeError(f'{config} pins tools, but mise is not on PATH to install them')
+    # mise also reads version files in the folder it runs in, so it runs in the home folder, not the pull's checkout.
+    result = subprocess.run([mise, '--cd', str(home), 'install', '--yes'], timeout=900)
+    if result.returncode:
+        raise RuntimeError(f'mise install exited {result.returncode}; device files were applied, and the next pull retries it')
+    record.write_text(digest + '\n', encoding='utf-8')
+
+
 def run(args):
     root = args.root.resolve()
     private = args.private.resolve() if args.private else None
@@ -109,6 +131,7 @@ def run(args):
             if any(previous.get(key) != value for key, value in commits.items()):
                 data = {'at': datetime.now(timezone.utc).isoformat(), **commits}
                 Files(state / 'receipt-backups').write(receipt, (json.dumps(data, indent=2) + '\n').encode(), expected=before)
+            install_tools(Path.home(), state)
         return result.returncode
 
 

@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from pull import paired, run, update
+from pull import install_tools, paired, run, update
 
 
 def git(root, *args):
@@ -147,6 +147,63 @@ class PairedPullTest(unittest.TestCase):
             before = receipt.read_bytes(), receipt.stat().st_mtime_ns
             self.assertEqual(run(args), 0)
             self.assertEqual((receipt.read_bytes(), receipt.stat().st_mtime_ns), before)
+
+    def test_tools_install_only_after_an_applied_sync_succeeds(self):
+        pinned = self.root / 'home/.config/dotfiles/allowed_signers'
+        pinned.parent.mkdir(parents=True)
+        shutil.copyfile(self.signers, pinned)
+        calls = []
+        for code, apply in ((0, False), (1, True), (0, True)):
+            candidate = self.commit(self.public_origin, 'sync.py', f'raise SystemExit({code})\n')
+            self.commit(self.private_origin, 'release.toml', f'public_commit = "{candidate}"\n')
+            args = SimpleNamespace(root=self.public, private=self.private, update=True, apply=apply)
+            with patch('pull.Path.home', return_value=self.root / 'home'), \
+                    patch('pull.install_tools', lambda home, state: calls.append((code, apply))):
+                self.assertEqual(run(args), code)
+        self.assertEqual(calls, [(0, True)])
+
+
+class InstallToolsTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name)
+        self.state = self.home / '.local/state/dotfiles'
+        self.state.mkdir(parents=True)
+        self.config = self.home / '.config/mise/config.toml'
+        self.config.parent.mkdir(parents=True)
+        self.config.write_text('[tools]\nnpm = "12.2.0"\n', encoding='utf-8')
+        self.calls = []
+
+    def install(self, code=0, mise='/opt/mise'):
+        def fake_run(command, **kwargs):
+            self.calls.append(command)
+            return subprocess.CompletedProcess(command, code)
+        with patch('pull.shutil.which', return_value=mise), patch('pull.subprocess.run', fake_run):
+            install_tools(self.home, self.state)
+
+    def test_installs_once_per_config_and_again_after_a_pin_changes(self):
+        self.install()
+        self.install()
+        self.assertEqual(self.calls, [['/opt/mise', '--cd', str(self.home), 'install', '--yes']])
+        self.config.write_text('[tools]\nnpm = "12.2.1"\n', encoding='utf-8')
+        self.install()
+        self.assertEqual(len(self.calls), 2)
+
+    def test_failed_install_raises_and_the_next_pull_retries(self):
+        with self.assertRaisesRegex(RuntimeError, 'mise install exited 1'):
+            self.install(code=1)
+        self.install()
+        self.assertEqual(len(self.calls), 2)
+
+    def test_missing_mise_is_reported(self):
+        with self.assertRaisesRegex(RuntimeError, 'mise is not on PATH'):
+            self.install(mise=None)
+
+    def test_device_without_a_mise_config_installs_nothing(self):
+        self.config.unlink()
+        self.install()
+        self.assertEqual(self.calls, [])
 
 
 if __name__ == '__main__':
