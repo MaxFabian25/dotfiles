@@ -92,6 +92,28 @@ class PlanTest(unittest.TestCase):
             self.assertEqual(len(result.unmanaged), 1)
             self.assertEqual(result.exit_code, 0)
 
+    def test_a_listed_unmanaged_item_becomes_a_note_and_a_stale_listing_shows(self):
+        from description import Roots, Setup
+        from device import Device
+        from device_sync import plan
+        from host_state import (DeviceRoots, Fact, FactKey, Host, NoteKind, Observation, Platform, PluginValue, Surface,
+                                Unpinned)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            key = FactKey(Host.CODEX, Surface.PLUGIN, 'local-tool@personal')
+            gone = FactKey(Host.CODEX, Surface.LOOSE_SKILL, '{agents_home}/skills/gone')
+            absent_host = FactKey(Host.CLAUDE, Surface.LOOSE_SKILL, '{claude_home}/skills/elsewhere')
+            observation = Observation(Host.CODEX, 'test', {key: Fact(key, PluginValue(True, Unpinned()))},
+                                      frozenset({key.subject}), frozenset(), ())
+            state = SimpleNamespace(host=Host.CODEX, project=lambda setup: {}, observe=lambda request: observation)
+            setup = Setup(Roots(root / 'public', None), {}, {}, {}, {}, None, (), frozenset(), {},
+                          {Platform.LINUX: frozenset({key, gone, absent_host})})
+            result = plan(setup, Device(Platform.LINUX, DeviceRoots.current(root), (state,), ()))
+            self.assertEqual((result.changes, result.unmanaged, len(result.expected), result.exit_code), ((), (), 1, 0))
+            self.assertEqual([(n.kind, n.subject, n.detail) for n in result.result.notes], [
+                (NoteKind.DEVICE_LOCAL, 'expected unmanaged items', '1 named in devices/linux.toml; sync leaves them alone'),
+                (NoteKind.RESIDUE, gone.subject, 'listed in devices/linux.toml but no longer an unmanaged difference here')])
+
 
 def git(root, *args):
     return subprocess.run(['git', '-C', str(root), *args], check=True, capture_output=True, text=True).stdout.strip()

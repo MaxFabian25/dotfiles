@@ -14,7 +14,7 @@ import os
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, NewType
 
-from host_state import ALIGNED_MARKETPLACE, ENGINE_MARKETPLACE, Commit, Digest, ENGINE, EntryName, Host, Platform, SkillMode, bytes_digest
+from host_state import ALIGNED_MARKETPLACE, ENGINE_MARKETPLACE, Commit, Digest, ENGINE, EntryName, FactKey, Host, Platform, SkillMode, bytes_digest
 
 RepoName = NewType('RepoName', str)
 SCHEMA = 1
@@ -350,6 +350,8 @@ class Setup:
     note_rules: tuple[NoteRule, ...]
     public_repositories: frozenset[str]
     lock: Mapping[EntryName, Lock]
+    # Unmanaged items each platform's device is known to carry, from the private devices/<platform>.toml.
+    expected_unmanaged: Mapping[Platform, frozenset[FactKey]] = field(default_factory=dict)
 
     def for_platform(self, platform: Platform) -> Setup:
         packages = {}

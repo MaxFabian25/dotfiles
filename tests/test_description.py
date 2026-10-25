@@ -221,6 +221,21 @@ class LeakTest(unittest.TestCase):
                             f'{roots.public}/rules/AGENTS.md:: shared rules are private'):
                 self.assertIn(problem, problems)
 
+    def test_a_device_list_loads_from_the_private_root_only(self):
+        with Roots() as roots:
+            (roots.private / 'devices').mkdir()
+            (roots.private / 'devices/macos.toml').write_text(
+                '[codex]\nplugin = ["chrome@openai-bundled"]\n[claude]\nloose_skill = ["{claude_home}/skills/orca-cli"]\n')
+            listed = description_toml.load(roots.roots()).expected_unmanaged
+            self.assertEqual(listed, {host_state.Platform.MACOS: frozenset({
+                host_state.FactKey(H.CODEX, host_state.Surface.PLUGIN, 'chrome@openai-bundled'),
+                host_state.FactKey(H.CLAUDE, host_state.Surface.LOOSE_SKILL, '{claude_home}/skills/orca-cli')})})
+            (roots.private / 'devices/linux.toml').write_text('[codex]\nplugins = ["x"]\n')
+            self.assertEqual(roots.problems(), [f'{roots.private}/devices/linux.toml:codex.plugins: unknown key'])
+            (roots.private / 'devices/linux.toml').unlink()
+            shutil.move(roots.private / 'devices', roots.public / 'devices')
+            self.assertIn(f'{roots.public}/devices/macos.toml:: device lists are private', roots.problems(private=False))
+
     def test_a_mistyped_private_value_is_a_problem_not_a_crash(self):
         with Roots() as roots:
             path = roots.private / 'packages/example-connector.toml'

@@ -19,7 +19,8 @@ from description import (AcademicRecipe, Adaptation, AlignedInstall, BUILDS, Bui
                          RepoSource, Roots, Rules, SCHEMA, Setup, SkillRoot, SnapshotRecipe, SnapshotSource, Source,
                          ToolNotes, Visibility, entry_path, via)
 from description_checks import check_invariants, check_placement, check_privacy, check_references
-from host_state import ALIGNED_MARKETPLACE, ENGINE_MARKETPLACE, Commit, EntryName, Host, Platform, SkillMode, parse_commit, parse_digest
+from host_state import (ALIGNED_MARKETPLACE, ENGINE_MARKETPLACE, Commit, EntryName, FactKey, Host, Platform, SkillMode, Surface,
+                        parse_commit, parse_digest)
 import portable
 
 
@@ -306,6 +307,20 @@ def _parse_host_skills(path: Path, data: Mapping, errors: list[str]) -> dict[str
     return modes
 
 
+def _parse_device(path: Path, data: Mapping, errors: list[str]) -> frozenset[FactKey]:
+    """A [host] table per host, listing subjects by surface as sync reports them:
+    loose_skill = ["{claude_home}/skills/orca-cli"]."""
+    table = _Table(path, data, errors)
+    keys = set()
+    for host in Host:
+        if (surfaces := table.sub(host.value)) is not None:
+            for surface in Surface:
+                keys.update(FactKey(host, surface, subject) for subject in surfaces.strings(surface.name.lower()))
+            surfaces.done()
+    table.done()
+    return frozenset(keys)
+
+
 def _parse_lock(path: Path, data: Mapping, errors: list[str]) -> dict[EntryName, Lock]:
     locks = {}
     for name, raw in data.items():
@@ -342,6 +357,7 @@ class _Root:
     public_repositories: frozenset[str] = frozenset()
     lock: dict[EntryName, Lock] = field(default_factory=dict)
     lock_path: Path | None = None
+    expected_unmanaged: dict[Platform, frozenset[FactKey]] = field(default_factory=dict)
 
 
 def _toml(path: Path, errors: list[str]) -> dict | None:
@@ -390,6 +406,10 @@ def _read_root(root: Path, visibility: Visibility, errors: list[str]) -> _Root:
         path = root / 'hosts' / f'{host.value}.toml'
         if path.is_file() and (data := _toml(path, errors)) is not None:
             found.host_skills[host] = _parse_host_skills(path, data, errors)
+    for platform in Platform:
+        path = root / 'devices' / f'{platform.value}.toml'
+        if path.is_file() and (data := _toml(path, errors)) is not None:
+            found.expected_unmanaged[platform] = _parse_device(path, data, errors)
     rules_path = root / 'rules/AGENTS.md'
     if rules_path.is_file():
         found.rules = Rules(rules_path.read_bytes())
@@ -448,7 +468,8 @@ def _merge(roots: Roots, public: _Root, private: _Root) -> Setup:
         packages={**public.packages, **private.packages}, repos={**public.repos, **private.repos},
         loose={**public.loose, **private.loose}, host_skills={**public.host_skills, **private.host_skills},
         rules=private.rules or public.rules, note_rules=public.note_rules,
-        public_repositories=public.public_repositories, lock={**public.lock, **private.lock})
+        public_repositories=public.public_repositories, lock={**public.lock, **private.lock},
+        expected_unmanaged={**public.expected_unmanaged, **private.expected_unmanaged})
 
 
 @dataclass(frozen=True)

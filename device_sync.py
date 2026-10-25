@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, replace
 from typing import Mapping
 
 from description import Setup
 from device import Device
 from drift import Diff, Difference, Kind, Verdict, diff
-from host_state import FactKey, Host, Observation, Request, Surface
+from host_state import FactKey, Host, Note, NoteKind, Observation, Platform, Request, Surface
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,7 @@ class Plan:
     blocked: tuple[Difference, ...]
     unmanaged: tuple[Difference, ...]
     configurations: bool = True
+    expected: tuple[Difference, ...] = ()   # unmanaged, and named in this platform's device list
 
     @property
     def exit_code(self):
@@ -72,11 +74,27 @@ def plan(setup: Setup, device: Device, *, configurations=True) -> Plan:
         return bool(causes) and all(pending_cache(cause, tree, root) for cause in causes)
 
     retained = tuple(d for d in result.differences if d.key not in managed and not deferred_skill(d))
-    result = replace(result, differences=retained + owned)
+    unmanaged = tuple(d for d in retained + owned if d.kind == Kind.EXTRA and d.entry is None)
+    expected, notes = _expected(setup.expected_unmanaged.get(device.platform, frozenset()), unmanaged,
+                                device.platform, observations.keys())
+    result = replace(result, differences=tuple(d for d in retained + owned if d not in expected), notes=result.notes + notes)
     blocked = tuple(d for d in result.differences if d.kind.verdict == Verdict.ATTENTION)
-    unmanaged = tuple(d for d in result.differences if d.kind == Kind.EXTRA and d.entry is None)
+    unmanaged = tuple(d for d in unmanaged if d not in expected)
     changes = tuple(d for d in result.drift() if d not in unmanaged)
-    return Plan(result, observations, changes, blocked, unmanaged, configurations)
+    return Plan(result, observations, changes, blocked, unmanaged, configurations, expected)
+
+
+def _expected(listed: frozenset[FactKey], unmanaged: tuple[Difference, ...], platform: Platform,
+              hosts) -> tuple[tuple[Difference, ...], tuple[Note, ...]]:
+    """The unmanaged differences the device list names, with the notes that replace them: a count per host, and
+    one per listed item that is no longer an unmanaged difference, so the list cannot hide a stale entry."""
+    known = tuple(d for d in unmanaged if d.key in listed or d.follows in listed)
+    source = f'devices/{platform.value}.toml'
+    notes = [Note(NoteKind.DEVICE_LOCAL, host, 'expected unmanaged items', f'{count} named in {source}; sync leaves them alone')
+             for host, count in sorted(Counter(d.key.host for d in known).items())]
+    notes += [Note(NoteKind.RESIDUE, key.host, key.subject, f'listed in {source} but no longer an unmanaged difference here')
+              for key in sorted(listed - {d.key for d in known}) if key.host in hosts]
+    return known, tuple(notes)
 
 
 def changed_packages(current: Plan) -> frozenset[str]:

@@ -80,6 +80,8 @@ def check_privacy(found: Setup, errors: list[str]) -> None:
         errors.append(f'{root / "hosts" / (host.value + ".toml")}:: host toggles are private')
     if found.rules is not None:
         errors.append(f'{root / "rules/AGENTS.md"}:: shared rules are private')
+    for platform in found.expected_unmanaged:
+        errors.append(f'{root / "devices" / (platform.value + ".toml")}:: device lists are private')
 
 
 def check_references(setup: Setup, visibility: Visibility, errors: list[str]) -> None:

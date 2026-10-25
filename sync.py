@@ -30,8 +30,9 @@ def main(argv=None):
                 print(f'Backups: {backup}', file=sys.stderr)
         print(to_json(current.result) if args.json else render(current.result), end='\n' if args.json else '')
         if not args.json:
+            expected = f', plus {len(current.expected)} this device is expected to have' if current.expected else ''
             print(f'Managed changes: {len(current.changes)}; blocking issues: {len(current.blocked)}; '
-                  f'unmanaged differences left untouched: {len(current.unmanaged)}.')
+                  f'unmanaged differences left untouched: {len(current.unmanaged)}{expected}.')
         return current.exit_code
     except (DescriptionError, RuntimeError, ValueError, OSError) as error:
         print(f'Sync stopped: {error}', file=sys.stderr)
