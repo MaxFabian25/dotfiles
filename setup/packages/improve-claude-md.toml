@@ -7,7 +7,7 @@ repo = "skills"
 explicit = ["improve-claude-md"]
 
 [codex]
-install = [{ via = "skills", enabled = true }]
+install = [{ via = "skills", enabled = false }]
 
 [claude]
 install = [{ via = "skills", enabled = true }]

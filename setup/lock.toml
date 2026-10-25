@@ -58,7 +58,7 @@ hooks = 3
 intent = "sha256:ad44d6dcd85e8b9c17c26be5f3ed4ebd71c7a76edf8da3fce665cc6e30b704cb"
 
 [improve-claude-md]
-intent = "sha256:bf8a2c50006a8b28c171ed21c0cfc36d2526bb84e03f22248392fb2f32e803f8"
+intent = "sha256:74d75d2a43d74ea7b1f4a2f1a289ff250d08bf15e62880fc5d7d11383211c085"
 codex = { version = "1.0.0", tree = "sha256:a5fed7c30445e6de4576f1e8815418880bad4cbf72f5fb3cea4a95718d43653a" }
 claude = { version = "1.0.0", tree = "sha256:a5fed7c30445e6de4576f1e8815418880bad4cbf72f5fb3cea4a95718d43653a" }
 
