@@ -90,8 +90,9 @@ class AdaptationAncestryTest(unittest.TestCase):
         seed.mkdir()
         git(seed, 'init', '--bare')
         git(seed, 'remote', 'add', 'origin', self.url)
+        # Newer git starts maintenance in the background after a fetch, which would write the seed after the snapshot.
         for commit in (self.base, self.adapted):
-            git(seed, 'fetch', '--depth=1', 'origin', commit)
+            git(seed, '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', 'fetch', '--depth=1', 'origin', commit)
         before = {p.relative_to(seed): (p.read_bytes(), p.stat().st_mtime_ns)
                   for p in seed.rglob('*') if p.is_file()}
         self.sources = Sources(self.root / 'sources', seeds=(seed,))
