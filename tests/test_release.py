@@ -86,6 +86,16 @@ class ReleaseTest(unittest.TestCase):
         git(self.private, 'remote', 'set-url', 'origin', 'git@github.com:Owner/private.git')
         self.assertEqual(release.push_url(self.private), 'https://github.com/Owner/private.git')
 
+    def test_drop_caches_removes_only_ignored_python_caches(self):
+        (self.public / '.gitignore').write_text('__pycache__/\n', encoding='utf-8')
+        cache = self.public / 'skills/tool/scripts/__pycache__'
+        cache.mkdir(parents=True)
+        (cache / 'tool.cpython-314.pyc').write_bytes(b'')
+        (cache.parent / 'tool.py').write_text('', encoding='utf-8')
+        release.drop_caches(self.public)
+        self.assertFalse(cache.exists())
+        self.assertTrue((cache.parent / 'tool.py').exists())
+
     def test_finish_without_a_message_stops_before_committing(self):
         release_main(['start', 'quiet', *self.options()], self.public)
         (self.worktrees / 'quiet/public/content').write_text('edited\n', encoding='utf-8')

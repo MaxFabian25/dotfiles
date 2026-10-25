@@ -65,6 +65,13 @@ def rebase(root):
     return True
 
 
+def drop_caches(root):
+    """Remove the ignored __pycache__ folders that tests leave beside skill scripts, which a lock would pin."""
+    for path in git(root, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory').splitlines():
+        if Path(path).name == '__pycache__':
+            shutil.rmtree(root / path)
+
+
 def rewrite(path, pattern, replacement):
     """Substitute in place, keeping the file's own line endings."""
     text = path.read_bytes().decode('utf-8')
@@ -107,6 +114,8 @@ def finish(args, public_repo, private_repo):
     owned = ['--refresh-owned'] if args.refresh_owned else []
     lock = [*python, 'lock_setup.py', *setups, '--output', str(base / 'build/lock'), *entries, *owned, '--write']
     if args.entry:
+        drop_caches(public)
+        drop_caches(private)
         run(lock, public)
     if args.package:
         packages = [part for package in args.package for part in ('--package', package)]
@@ -124,6 +133,8 @@ def finish(args, public_repo, private_repo):
     paired = ahead(public)
     for attempt in range(1, ATTEMPTS + 1):
         if rebase(public) and args.entry:
+            drop_caches(public)
+            drop_caches(private)
             run(lock, public)
             if dirty(public):
                 git(public, 'commit', '-q', '-a', '--amend', '--no-edit')
