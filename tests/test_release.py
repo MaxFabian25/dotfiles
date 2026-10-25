@@ -82,6 +82,10 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(release_main(['clean', 'draft', *self.options()], self.public), 3)
         self.assertTrue((self.worktrees / 'draft/public').exists())
 
+    def test_pushes_a_github_ssh_origin_over_https(self):
+        git(self.private, 'remote', 'set-url', 'origin', 'git@github.com:Owner/private.git')
+        self.assertEqual(release.push_url(self.private), 'https://github.com/Owner/private.git')
+
     def test_finish_without_a_message_stops_before_committing(self):
         release_main(['start', 'quiet', *self.options()], self.public)
         (self.worktrees / 'quiet/public/content').write_text('edited\n', encoding='utf-8')

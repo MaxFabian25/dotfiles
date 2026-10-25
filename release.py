@@ -19,7 +19,9 @@ from pull import git
 
 ENGINE = Path(__file__).resolve().parent
 PUBLIC_COMMIT = re.compile(r'^public_commit = ".*"$', re.MULTILINE)
-# Push with the GitHub CLI's login, which the Mac and WSL hold, whatever helper the checkout configures.
+# Push over HTTPS with the GitHub CLI's login, which the Mac and WSL hold, whatever helper or SSH origin the
+# checkout configures. The private checkout's SSH origin uses a read-only deploy key.
+GITHUB_SSH = re.compile(r'^(?:git@github\.com:|ssh://git@github\.com/)')
 CREDENTIALS = ('-c', 'credential.https://github.com.helper=',
                '-c', 'credential.https://github.com.helper=!gh auth git-credential')
 ATTEMPTS = 3
@@ -80,8 +82,12 @@ def pair(public, private, message):
         git(private, 'commit', '-q', '-am', message or f'Pair "{subject}"')
 
 
+def push_url(root):
+    return GITHUB_SSH.sub('https://github.com/', git(root, 'remote', 'get-url', 'origin'))
+
+
 def push(root):
-    git(root, *CREDENTIALS, 'push', '-q', git(root, 'remote', 'get-url', 'origin'), 'HEAD:main')
+    git(root, *CREDENTIALS, 'push', '-q', push_url(root), 'HEAD:main')
 
 
 def start(args, public_repo, private_repo):
@@ -136,6 +142,8 @@ def finish(args, public_repo, private_repo):
             break
         except RuntimeError as error:
             git(private, 'reset', '-q', '--hard', before)
+            if 'rejected' not in str(error):
+                raise RuntimeError(f'push failed: {error}') from error
             if attempt == ATTEMPTS:
                 raise RuntimeError(f'push failed {ATTEMPTS} times; origin keeps moving: {error}') from error
     print(f'public {git(public, "rev-parse", "--short", "HEAD")}  private {git(private, "rev-parse", "--short", "HEAD")}'
