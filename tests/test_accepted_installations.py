@@ -341,6 +341,28 @@ class InstallationTest(unittest.TestCase):
             self.run_apply(current)
         self.assertIn('node = "20"', live.read_text())
 
+    def test_toml_fields_accept_a_newly_managed_key_only_while_it_is_absent(self):
+        config_source = self.public / 'config/mise/config.toml'
+        config_source.parent.mkdir(parents=True)
+        config_source.write_text('[tools]\nnode = "24"\nuv = "0.1"\n')
+        live = self.roots.home / '.config/mise/config.toml'
+        self.assertEqual(self.run_apply().exit_code, 0)
+        config_source.write_text('[tools]\nnode = "24"\nop = "2"\n')
+        live.write_text(live.read_text() + 'go = "1"\n')
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+        self.assertIn('op = "2"', live.read_text())
+        self.assertIn('uv = "0.1"', live.read_text())
+        config_source.write_text('[tools]\nnode = "24"\nop = "2"\npython = "3"\n')
+        live.write_text(live.read_text() + 'python = "2"\n')
+        with self.assertRaises(RuntimeError):
+            self.run_apply()
+        self.assertIn('python = "2"', live.read_text())
+        config_source.write_text('[tools]\nnode = "24"\nop = "2"\n')
+        live.write_text(live.read_text().replace('python = "2"\n', '').replace('uv = "0.1"', 'uv = "0.2"'))
+        config_source.write_text('[tools]\nnode = "24"\nop = "2"\nyarn = "1"\n')
+        self.assertEqual(self.run_apply().exit_code, 0)
+
     def test_npmrc_fields_share_the_owner_and_preserve_unmanaged_lines(self):
         config_source = self.public / 'config/npm/npmrc.toml'
         config_source.parent.mkdir(parents=True)

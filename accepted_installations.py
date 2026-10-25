@@ -303,6 +303,19 @@ class AcceptedInstallations:
             return _claude_cache_image(path or artifact.current, replacing=replacing)
         return image(path or artifact.current, artifact.fields, artifact.syntax)
 
+    def _unchanged(self, artifact, actual, accepted):
+        if _same(actual, accepted):
+            return True
+        if artifact.fields is None or not accepted['kind'].endswith('-fields'):
+            return False
+        # A release that adds or drops a managed key changes the field set, so read every key either side names:
+        # the receipt's keys must still hold their accepted values and a newly managed key must still be absent.
+        recorded = {tuple(field['path']): field for field in accepted['fields']}
+        current = image(artifact.current, dict.fromkeys([*recorded, *artifact.fields]), artifact.syntax)
+        return current['kind'] == accepted['kind'] and all(
+            _same(field, recorded.get(tuple(field['path']), {'path': field['path'], 'present': False}))
+            for field in current['fields'])
+
     def _known_pending(self, artifact, pending):
         target = pending['target']
         path = Path(target['path'])
@@ -334,7 +347,7 @@ class AcceptedInstallations:
         if accepted:
             if Path(accepted['path']) != artifact.current:
                 return Kind.CHANGED, 'Verify the installation at its new location'
-            if not _same(actual, accepted['image']):
+            if not self._unchanged(artifact, actual, accepted['image']):
                 if _missing(actual):
                     return Kind.MISSING, 'Recreate an absent managed artifact'
                 if accepted['intent'] != artifact.intent:
@@ -511,8 +524,8 @@ class AcceptedInstallations:
             before = actual
         elif _missing(actual):
             before = actual
-        elif accepted and Path(accepted['path']) == artifact.current and _same(actual, accepted['image']):
-            before = accepted['image']
+        elif accepted and Path(accepted['path']) == artifact.current and self._unchanged(artifact, actual, accepted['image']):
+            before = actual
         else:
             raise ConcurrentEdit(f'Unverified existing content preserved: {artifact.identity}; an independently pinned baseline is required')
         # A native host can cache the pinned release before its installer registers it, as Claude Code's
