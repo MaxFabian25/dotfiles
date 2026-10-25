@@ -276,6 +276,24 @@ class DiffTest(unittest.TestCase):
         self.assertIn('host-absent claude  host is not installed here', drift.render(absent))
         self.assertIn('stale-lock  the entry changed after its lock was written', drift.render(stale))
 
+    def test_an_owned_source_edited_after_its_pin_needs_a_person(self):
+        with Device() as device:
+            source = device.roots.home / 'private/skills/mine'
+            device.write(source / 'SKILL.md', '---\nname: mine\n---\nPinned\n')
+            device.write(device.roots.claude_home / 'skills/mine/SKILL.md', '---\nname: mine\n---\nPinned\n')
+            digest = device.roots.tree_digest(source)
+            mine = d.LooseSkill('mine', d.Visibility.PRIVATE, '', d.LocalSource('skills/mine', digest), {d.SkillRoot.CLAUDE: True})
+            device.setup = d.Setup(**{**device.setup.__dict__, 'loose': {'mine': mine}, 'lock': {
+                **device.setup.lock, 'mine': d.Lock(d.intent(mine, {}), placements={d.SkillRoot.CLAUDE: digest})}})
+            fresh = device.diff()
+            (source / 'SKILL.md').write_text('---\nname: mine\n---\nEdited\n')
+            edited = device.diff()
+        self.assertEqual(kinds(fresh), [])
+        self.assertEqual(kinds(edited), [(K.STALE_LOCK, None, None)])
+        self.assertEqual(edited.exit_code, 2)
+        self.assertIn('stale-lock  skills/mine changed after its tree was pinned; '
+                      'run lock_setup.py --entry mine --refresh-owned --write', drift.render(edited))
+
 
 if __name__ == '__main__':
     unittest.main()

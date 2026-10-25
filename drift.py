@@ -5,12 +5,12 @@ from collections import Counter
 from dataclasses import dataclass, fields, is_dataclass, replace
 import enum
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Mapping
 
-from description import Setup, SkillRoot, Visibility
+from description import LocalSource, Setup, SkillRoot, Visibility
 from device import Device
-from host_state import (CATALOGS, Approved, CheckoutMarketplace, EngineMarketplace, EntryName, Fact, FactKey, FactSet, FactValue,
+from host_state import (CATALOGS, Approved, CheckoutMarketplace, DeviceRoots, EngineMarketplace, EntryName, Fact, FactKey, FactSet, FactValue,
                         FileValue, GitMarketplace, Host, Note, NoteKind, Observation, OverlayBlocked, OverlayPending, OverlaySpec,
                         Pinned, Platform, PluginValue, Released, Request, Surface, TreeValue, Unknown, Unpinned, WorkingCopy)
 
@@ -143,6 +143,11 @@ def diff(setup: Setup, device: Device, *, observations: Mapping[Host, Observatio
     notes: list[Note] = []
     for name in sorted(stale):
         differences.append(Difference(Kind.STALE_LOCK, None, None, None, EntryRef(name, _visibility(setup, name))))
+    for name, path in sorted(_edited_owned(setup, device.roots).items()):
+        if name not in stale:
+            differences.append(Difference(Kind.STALE_LOCK, None, None, None, EntryRef(name, _visibility(setup, name)),
+                                          detail=f'{path} changed after its tree was pinned; '
+                                                 f'run lock_setup.py --entry {name} --refresh-owned --write'))
     for host in device.absent:
         if _targets(setup, host):
             differences.append(Difference(Kind.HOST_ABSENT, None, None, None, None, host=host))
@@ -191,6 +196,19 @@ def diff(setup: Setup, device: Device, *, observations: Mapping[Host, Observatio
     entries = Counter(entry.visibility for entry in (*setup.packages.values(), *setup.repos.values(), *setup.loose.values()))
     return Diff(device.platform, {Visibility.PUBLIC: setup.roots.public, Visibility.PRIVATE: setup.roots.private},
                 versions, {v: entries.get(v, 0) for v in Visibility}, compared, trees, tuple(differences), tuple(notes))
+
+
+def _edited_owned(setup: Setup, roots: DeviceRoots) -> dict[EntryName, str]:
+    """Owned sources whose files differ from the tree their entry pins. Sync compares a device with the pin, so
+    an edit committed without refreshing the pin would otherwise reach no device and raise no difference."""
+    edited = {}
+    for name, entry in (*setup.packages.items(), *setup.loose.items()):
+        root = setup.roots.of(entry.visibility)
+        if isinstance(entry.source, LocalSource) and root is not None:
+            tree = root.parent.joinpath(*PurePosixPath(entry.source.path).parts)
+            if roots.tree_digest(tree) != entry.source.digest:
+                edited[name] = entry.source.path
+    return edited
 
 
 _LOCKED = frozenset({Surface.TREE, Surface.AGENT, Surface.HOOK, Surface.LOOSE_SKILL})
@@ -288,7 +306,7 @@ def render(diff: Diff, *, full: bool = False, notes: bool = False) -> str:
                     case Kind.HOST_ABSENT:
                         what = f'{difference.host.value}  host is not installed here'
                     case Kind.STALE_LOCK:
-                        what = 'the entry changed after its lock was written'
+                        what = difference.detail or 'the entry changed after its lock was written'
                     case _:
                         what = f'{difference.host.value if difference.host else ""}  {difference.detail}'
                 lines.append(f'  {label:<30} {difference.kind.value:<11} {what}')
