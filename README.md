@@ -87,6 +87,16 @@ does not pin stops the pull before either checkout moves. Sign release commits w
 uv run --locked python pull.py --root . --private ../dotfiles-private --update --apply
 ```
 
+`release.py` runs a whole delivery from this checkout. `start NAME` makes a worktree of each repository
+at `origin/main` under `~/worktrees/NAME`. After editing there, `finish NAME --message FILE --push --pull`
+locks and builds any `--entry` and `--package`, commits both worktrees, rebases them onto a newer
+`origin/main` if another session pushed meanwhile, pairs `release.toml`, pushes, and pulls.
+`clean NAME` removes the worktrees once `origin/main` has them.
+
+```sh
+uv run --locked python release.py finish NAME --message msg.txt --entry prose --refresh-owned --push --pull
+```
+
 `schedule.py` previews a half-hourly local pull schedule. `--install` enables it only after the pair
 and the device check pass. macOS uses a LaunchAgent, Windows a per-user Scheduled Task, and Linux
 a systemd user timer. WSL requires an available systemd user session. Keep the previous maintenance
@@ -117,7 +127,7 @@ uv run --locked python tests/native_smoke.py ./setup ../dotfiles-private/setup
 The smoke test uses temporary application homes and real native plugin loaders. It does not use a
 live installation as its test fixture. It retains its isolated evidence on failure.
 
-Only `build_setup.py`, `lock_setup.py`, `sync.py`, `pull.py`, and `schedule.py` are supported public
+Only `build_setup.py`, `lock_setup.py`, `sync.py`, `pull.py`, `release.py`, and `schedule.py` are supported public
 command entry points. Lower-level packaging modules contain compatibility helpers, not a second
 configuration authority. Do not recreate historical JSON registries to drive them.
 

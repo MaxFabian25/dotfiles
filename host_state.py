@@ -98,6 +98,16 @@ class DeviceRoots:
         return cls(home=Path.home() if home is None else Path(home), codex_home=portable.codex_home(home),
                    claude_home=portable.claude_home(home), agents_home=portable.agents_home(home), engine=ENGINE)
 
+    def installed_engine(self) -> Path | None:
+        """The engine checkout this device's Claude installs from, read from where Claude registered the engine's
+        marketplace. Its plugin builds live in that checkout, so only an engine running there sees them."""
+        try:
+            registry = json.loads((self.claude_home / 'plugins/known_marketplaces.json').read_bytes())
+            path = registry[ENGINE_MARKETPLACE[Host.CLAUDE]]['source']['path']
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+        return Path(path).parent.resolve()
+
     def _pairs(self) -> list[tuple[str, str]]:
         pairs = {}
         for name in ('engine', 'codex_home', 'claude_home', 'agents_home', 'home'):

@@ -56,10 +56,10 @@ scripts and tests stay outside `plugin/`.
 
 ## Deliver a plugin update
 
-Bump the plugin version when its payload changes. From the dotfiles root, refresh the reviewed
-`prose` entry with `lock_setup.py --entry prose --refresh-owned --write`, supplying the public
-and private setup paths and an isolated build output. Verify the resulting source and lock diff,
-then run `sync.py --check` before `sync.py --apply`. The device sync publishes Prose through the
+Make the change in a `release.py start NAME` worktree, and bump the plugin version when its payload
+changes. Then, from the dotfiles root, run `release.py finish NAME --message FILE --entry prose
+--refresh-owned --package prose --push --pull`, which locks, builds, pairs, pushes, and pulls, as the
+dotfiles README's paired-release section describes. The device sync publishes Prose through the
 personal marketplace and builds Claude's aligned copy. It preserves current activation choices.
 
 After installation, replace `INSTALLED_PLUGIN_ROOT` with the installed directory and compare it

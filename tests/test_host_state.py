@@ -211,5 +211,29 @@ class ParsingTest(unittest.TestCase):
         self.assertEqual(host_state.clone_url('https://gitlab.com/a/b'), 'https://gitlab.com/a/b')
 
 
+class InstalledEngineTest(unittest.TestCase):
+    def test_reads_the_checkout_claude_installs_engine_builds_from(self):
+        with tempfile.TemporaryDirectory() as temp:
+            roots = roots_for(temp)
+            self.assertIsNone(roots.installed_engine())
+            checkout = Path(temp) / 'dotfiles'
+            registry = {'personal-collections': {'source': {'source': 'directory', 'path': str(checkout / 'claude')}}}
+            write(roots.claude_home / 'plugins/known_marketplaces.json', json.dumps(registry))
+            self.assertEqual(roots.installed_engine(), checkout.resolve())
+
+    def test_sync_refuses_an_engine_outside_the_installed_checkout(self):
+        import sync
+        with tempfile.TemporaryDirectory() as temp:
+            roots = roots_for(temp)
+            registry = {'personal-collections': {'source': {'source': 'directory', 'path': str(Path(temp) / 'dotfiles/claude')}}}
+            write(roots.claude_home / 'plugins/known_marketplaces.json', json.dumps(registry))
+            device = mock.Mock(roots=roots)
+            with mock.patch('sync.load'), mock.patch('sync.Device.current', return_value=device), \
+                    mock.patch('sync.plan') as plan, mock.patch('sys.stderr') as stderr:
+                self.assertEqual(sync.main(['--check']), 3)
+            plan.assert_not_called()
+            self.assertIn('run sync.py or pull.py from that checkout', ''.join(call.args[0] for call in stderr.write.call_args_list))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -23,6 +23,10 @@ def main(argv=None):
     try:
         setup = load(Roots.resolve(args.public, args.private))
         device = Device.current()
+        installed = device.roots.installed_engine()
+        if installed is not None and installed != device.roots.engine.resolve():
+            raise RuntimeError(f'this device installs from the checkout at {installed}, whose plugin builds this engine '
+                               f'at {device.roots.engine} cannot see; run sync.py or pull.py from that checkout')
         current = plan(setup, device)
         if args.apply:
             current, backup = apply(setup, device, current)
