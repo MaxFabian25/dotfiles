@@ -2,10 +2,11 @@
 
 Run it with the engine's own Python from the canonical public checkout. `start NAME` makes a worktree of
 each repository at origin/main on branch NAME. Edit there. `finish NAME` locks and builds the named
-entries, runs the public test suite, commits both worktrees, stops if origin/main changed the same files
-meanwhile, rebases them onto it, pairs the private release.toml with the public commit, checks that this
-device's pull could apply the pair, checks both pushes with --dry-run, pushes, and pulls. `clean NAME`
-removes the worktrees and branches once origin/main has them.
+entries, runs the public test suite, stops on new files the .gitignore allowlist would leave out, commits
+both worktrees, stops if origin/main changed the same files meanwhile, rebases them onto it, pairs the
+private release.toml with the public commit, checks that this device's pull could apply the pair, checks
+both pushes with --dry-run, pushes, and pulls. `clean NAME` removes the worktrees and branches once
+origin/main has them.
 """
 from __future__ import annotations
 
@@ -31,6 +32,8 @@ ATTEMPTS = 3
 MOVED = re.compile(r'\((?:fetch first|non-fast-forward)\)')
 # Files every release rewrites, so both sides changing them says nothing about clashing work.
 PAIRING_FILES = frozenset({'release.toml', 'setup/lock.toml'})
+# The public .gitignore is an allowlist: this pattern drops every path that a later ! line does not bring back.
+ALLOWLIST_BASE = '/*'
 
 
 def places(args):
@@ -50,6 +53,16 @@ def dirty(root):
 
 def ahead(root):
     return git(root, 'rev-parse', 'HEAD') != git(root, 'rev-parse', 'origin/main')
+
+
+def dropped(root):
+    """New paths the .gitignore allowlist leaves out, which a commit would silently miss. Cache rules ignore
+    paths too, but on purpose."""
+    ignored = git(root, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory').splitlines()
+    if not ignored:
+        return []
+    matches = (line.split('\t', 1) for line in git(root, 'check-ignore', '-v', '--', *ignored).splitlines())
+    return [path for source, path in matches if source.split(':', 2)[2] == ALLOWLIST_BASE]
 
 
 def commit(root, message):
@@ -152,6 +165,10 @@ def finish(args, public_repo, private_repo):
         packages = [part for package in args.package for part in ('--package', package)]
         run([*python, 'build_setup.py', *setups, '--output', str(base / 'build/build'), *packages], public)
     test_suite(public, base / 'build/tests.log')
+    for tree in (public, private):
+        if paths := dropped(tree):
+            raise RuntimeError(f'{tree}: .gitignore leaves out {", ".join(paths)}; add a "!" line for each path the '
+                               'release needs and delete the rest, then finish again')
     if dirty(public):
         if not args.message:
             raise RuntimeError(f'{public}: pass --message with the public commit message')

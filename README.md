@@ -89,18 +89,24 @@ uv run --locked python pull.py --root . --private ../dotfiles-private --update -
 
 `release.py` runs a whole delivery from this checkout. `start NAME` makes a worktree of each repository
 at `origin/main` under `~/worktrees/NAME`. After editing there, `finish NAME --message FILE --push --pull`
-locks and builds any `--entry` and `--package`, runs the whole public test suite (about 75 seconds, with
-its output in the release's `build/tests.log`, and with `CODEX_HOME` and `CLAUDE_CONFIG_DIR` pointing
-at a missing folder, as in CI, so no test reads this device's config), commits both worktrees, rebases them onto a newer
+locks and builds any `--entry` and `--package`, commits both worktrees, rebases them onto a newer
 `origin/main` if another session pushed meanwhile, pairs `release.toml`, pushes, and pulls. It stops
-before rebasing when origin changed a file this branch also changed, until you have read those
-commits and pass `--overlap-reviewed`, and it checks both pushes with `--dry-run` first, so a refused
-login publishes neither half. Before pushing, it runs this device's pull check on the worktree pair
-(`sync.py --candidate`), including the settings validation a pull otherwise runs only while applying,
-and stops where the pull would stop, such as on a model alias the engine rejects or an owned skill
-edited without `--refresh-owned`. That check takes about half a minute. After a pull that changed skills or packages, it runs `skill_listing.py`,
-which warns when Claude Code lists skills without their descriptions. `clean NAME` removes the
-worktrees once `origin/main` has them.
+first in each of these cases:
+
+- A test fails. It runs the whole public suite, in about 75 seconds, with the output in the release's
+  `build/tests.log`. `CODEX_HOME` and `CLAUDE_CONFIG_DIR` point at a missing folder, as in CI, so no
+  test reads this device's config.
+- A new file would be left out of the commit by this allowlist `.gitignore`. It names the file.
+- Origin changed a file this branch also changed. Read those commits, then pass `--overlap-reviewed`.
+- This device's pull would stop on the pair. It runs the pull's check on the worktrees
+  (`sync.py --candidate`), including the settings validation a pull otherwise runs only while
+  applying, so it catches a model alias the engine rejects or an owned skill edited without
+  `--refresh-owned`. That check takes about half a minute.
+- A push would be refused. It checks both pushes with `--dry-run`, so a refused login publishes
+  neither half.
+
+After a pull that changed skills or packages, it runs `skill_listing.py`, which warns when Claude Code
+lists skills without their descriptions. `clean NAME` removes the worktrees once `origin/main` has them.
 
 ```sh
 uv run --locked python release.py finish NAME --message msg.txt --entry prose --refresh-owned --push --pull
