@@ -198,6 +198,7 @@ class NativeCatalogTest(unittest.TestCase):
             self.assertEqual(commands, [(Host.CODEX, 'plugin', 'marketplace', 'add', str(root), '--json')])
 
     def test_claude_registers_an_exact_checkout_without_treating_the_pin_as_a_branch(self):
+        from dataclasses import replace
         from description import HostMarketplace, MarketplaceMode
         from host_state import DeviceRoots, FactKey, GitMarketplace, Host, Surface
         from sync_hosts import Apply
@@ -217,7 +218,7 @@ class NativeCatalogTest(unittest.TestCase):
             (upstream / 'source').write_text('Moved upstream')
             git(upstream, 'commit', '-am', 'Upstream moved')
             operation = Apply.__new__(Apply)
-            operation.roots = DeviceRoots.current(root)
+            operation.roots = replace(DeviceRoots.current(root), engine=root / 'engine')
             operation.builder = SimpleNamespace(sources=Sources(root / 'sources', seeds=(upstream,)))
             repo = SimpleNamespace(name='skills', url='https://github.com/example/skills.git', commit=commit,
                                    marketplace=lambda host: HostMarketplace('skills', MarketplaceMode.CHECKOUT))

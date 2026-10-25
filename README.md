@@ -93,9 +93,10 @@ locks and builds any `--entry` and `--package`, commits both worktrees, rebases 
 `origin/main` if another session pushed meanwhile, pairs `release.toml`, pushes, and pulls. It stops
 first in each of these cases:
 
-- A test fails. It runs the whole public suite, in about 75 seconds, with the output in the release's
-  `build/tests.log`. `CODEX_HOME` and `CLAUDE_CONFIG_DIR` point at a missing folder, as in CI, so no
-  test reads this device's config.
+- A test fails, or the suite writes into the worktree's `.sync/`, the engine cache that real pulls use
+  in the canonical checkout. It runs the whole public suite, in about 75 seconds, with the output in the
+  release's `build/tests.log`. `CODEX_HOME` and `CLAUDE_CONFIG_DIR` point at a missing folder, as in CI,
+  so no test reads this device's config.
 - A new file would be left out of the commit by this allowlist `.gitignore`. It names the file.
 - Origin changed a file this branch also changed. Read those commits, then pass `--overlap-reviewed`.
 - This device's pull would stop on the pair. It runs the pull's check on the worktrees

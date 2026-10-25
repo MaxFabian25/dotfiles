@@ -16,7 +16,7 @@ def git(root, *args):
 
 SYNC_WITH_CHANGES = 'print("Managed changes: 1; blocking issues: 0.")\nraise SystemExit(1)\n'
 PASSING_TEST = 'import unittest\n\n\nclass Seed(unittest.TestCase):\n    def test_passes(self):\n        pass\n'
-ALLOWLIST = '/*\n!/.gitignore\n!/content\n!/doc\n!/sync.py\n!/tests/\n!/tests/**\n__pycache__/\n'
+ALLOWLIST = '/*\n!/.gitignore\n!/content\n!/doc\n!/sync.py\n!/tests/\n!/tests/**\n__pycache__/\n.sync/\n'
 
 
 class ReleaseTest(unittest.TestCase):
@@ -171,6 +171,20 @@ class ReleaseTest(unittest.TestCase):
         (tree / 'content').write_text('second\n', encoding='utf-8')
         self.assertEqual(release_main(finish, self.public), 0)
         self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'second')
+
+    def test_finish_stops_on_a_suite_that_writes_into_the_engine_cache(self):
+        release_main(['start', 'cache', *self.options()], self.public)
+        (self.worktrees / 'cache/public/tests/test_cache.py').write_text(
+            'from pathlib import Path\nimport unittest\n\n\nclass Cache(unittest.TestCase):\n'
+            '    def test_writes_the_cache(self):\n'
+            '        Path(".sync/checkouts").mkdir(parents=True)\n', encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Write the cache\n', encoding='utf-8')
+        with redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(['finish', 'cache', '--message', str(message), '--push', *self.options()],
+                                          self.public), 3)
+        self.assertIn('the test suite wrote into', error.getvalue())
+        self.assertEqual(git(self.public_origin, 'ls-tree', '--name-only', 'main', 'tests/'), 'tests/test_seed.py')
 
     def test_finish_stops_when_the_device_check_crashes(self):
         release_main(['start', 'crash', *self.options()], self.public)

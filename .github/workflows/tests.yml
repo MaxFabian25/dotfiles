@@ -28,3 +28,5 @@ jobs:
           # A missing folder, as release.py uses, so tests that resolve device roots never read real config.
           CODEX_HOME: ${{ runner.temp }}/absent-config/codex
           CLAUDE_CONFIG_DIR: ${{ runner.temp }}/absent-config/claude
+      # The engine's .sync folder is the cache real pulls use, so no test may write into the checkout's copy.
+      - run: test ! -e .sync || { echo "::error::the tests wrote into .sync"; exit 1; }

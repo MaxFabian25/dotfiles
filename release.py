@@ -119,6 +119,8 @@ def test_suite(public, log):
     """Run every public test, not just the ones the change looks like it touches. The config roots point at a
     missing folder, as in CI, because agent sessions export CODEX_HOME at this device's real config."""
     log.parent.mkdir(parents=True, exist_ok=True)
+    cache = public / '.sync'
+    cached = cache.exists()
     absent = log.parent / 'absent-config'
     environment = {**os.environ, 'CODEX_HOME': str(absent / 'codex'), 'CLAUDE_CONFIG_DIR': str(absent / 'claude')}
     with log.open('w', encoding='utf-8') as output:
@@ -126,6 +128,9 @@ def test_suite(public, log):
                                 env=environment, stdout=output, stderr=subprocess.STDOUT, timeout=1800)
     if result.returncode:
         raise RuntimeError(f'the test suite failed; read {log}')
+    if cache.exists() and not cached:
+        raise RuntimeError(f'the test suite wrote into {cache}, which in the canonical checkout is the cache real '
+                           'pulls use; give the test that wrote it its own engine folder')
 
 
 def device_check(public, private):
