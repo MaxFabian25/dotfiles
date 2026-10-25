@@ -28,7 +28,7 @@ supabase = "2.120.0"
 "npm:vercel" = "63.1.2"
 "npm:portless" = "0.15.7"
 "npm:ctx7" = "0.6.1"
-"npm:impeccable" = "4.5.2"
+"npm:impeccable" = "4.7.0"
 stripe = "1.53.1"
 "npm:playwright" = "1.64.0"
 "npm:appium" = { version = "3.8.0", os = ["macos"] }
