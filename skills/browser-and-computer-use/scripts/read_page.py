@@ -25,6 +25,11 @@ NYT_LIMIT = 5  # The NYT shows a bot check after a longer run of pages.
 NOT_OWN = re.compile(r'--(?:remote-debugging-(?:port|pipe)|headless|enable-automation|user-data-dir|type)\b')
 ROW = re.compile(r'^( *)- \[(\d+)\] AX(\w+)(?: "((?:[^"\\]|\\.)*)")?(?: = "((?:[^"\\]|\\.)*)")?',
                  re.MULTILINE | re.DOTALL)
+# Windows' UI Automation tree names roles without AX, leaves some text rows unnumbered, and puts values in
+# brackets, where a link's value is its URL. It hides table rows, so a table's cells print one per line.
+UIA_ROW = re.compile(r'^( *)- (?:\[(\d+)\] )?(\w+)(?: "((?:[^"\\]|\\.)*)")?([^\n]*)', re.MULTILINE | re.DOTALL)
+UIA_VALUE = re.compile(r'value="((?:[^"\\]|\\.)*)"')
+UIA_ROLES = {'Hyperlink': 'Link', 'Edit': 'TextField', 'Table': 'Group'}
 TAB_STRIP = re.compile(r'(?:Expand Tabs|Tab groups|Search tabs|New Tab)\b')  # Chrome's strip follows the page
 CELLS = ('Cell', 'ColumnHeader', 'RowHeader')
 EXPAND_LIMIT = 40
@@ -33,6 +38,7 @@ EXPAND_LIMIT = 40
 class Driver:
     def __init__(self, command, session):
         self.command, self.session = command, session
+        self.uia = sys.platform == 'win32' or command.endswith('.exe')  # cua-driver.exe on WSL drives Windows
 
     def call(self, tool, **args):
         result = subprocess.run([self.command, 'call', tool], input=json.dumps({'session': self.session, **args}),
@@ -72,7 +78,7 @@ def chrome(driver):
     profile folder of its own, and Chrome's helper processes carry --type; skip all of those."""
     apps = [app for app in driver.call('list_apps').get('apps', [])
             if app.get('pid') and app.get('running', True)
-            and (app.get('bundle_id') == 'com.google.Chrome' or app.get('name') in ('Google Chrome', 'chrome'))]
+            and (app.get('bundle_id') == 'com.google.Chrome' or app.get('name') in ('Google Chrome', 'chrome', 'chrome.exe'))]
     if not apps:
         raise RuntimeError('Google Chrome is not running; start it, then run this again')
     lines = {app['pid']: command_line(app['pid'], driver.command) for app in apps}
@@ -87,7 +93,17 @@ def chrome(driver):
 
 def open_window(driver, pid, profile, url):
     before = set(driver.windows(pid))
-    target = {'bundle_id': 'com.google.Chrome'} if sys.platform == 'darwin' else {'name': 'Google Chrome'}
+    if driver.uia:
+        # Windows drops the arguments of a launch by name, so launch the installed chrome.exe by its path.
+        found = [app['bundle_id'] for app in driver.call('list_apps').get('apps', [])
+                 if app.get('name') == 'Google Chrome' and str(app.get('bundle_id')).lower().endswith('chrome.exe')]
+        if not found:
+            raise RuntimeError('cua-driver lists no installed Google Chrome')
+        target = {'path': found[0]}
+    elif sys.platform == 'darwin':
+        target = {'bundle_id': 'com.google.Chrome'}
+    else:
+        target = {'name': 'Google Chrome'}
     driver.call('launch_app', **target, creates_new_application_instance=True,
                 additional_arguments=[f'--profile-directory={profile}', '--new-window', url])
     for _ in range(30):
@@ -100,11 +116,11 @@ def open_window(driver, pid, profile, url):
 
 def address_bar(driver, pid, window):
     data = driver.tree(pid, window, query='Address and search bar', max_elements=60)
-    found = re.search(r'\[(\d+)\] AXTextField "Address and search bar"(?: = "((?:[^"\\]|\\.)*)")?',
-                      data.get('tree_markdown', ''))
+    found = re.search(r'\[(\d+)\] (?:AXTextField|Edit) "Address and search bar"'
+                      r'(?: = "((?:[^"\\]|\\.)*)"|[^\n]*?value="((?:[^"\\]|\\.)*)")?', data.get('tree_markdown', ''))
     if not found:
         raise RuntimeError('the window has no address bar in its accessibility tree')
-    return f'{data["snapshot_id"]}:{found[1]}', found[2] or ''
+    return f'{data["snapshot_id"]}:{found[1]}', found[2] or found[3] or ''
 
 
 def load(driver, pid, window, url):
@@ -125,7 +141,10 @@ def same_site(wanted, shown):
 def rows(tree):
     """(depth, index, role, text) for each numbered row of the page's web area; none when the tree has no web area,
     because the rest of the window is the user's browser, not the page."""
-    found = [(len(m[1]), m[2], m[3], ((m[5] or m[4] or '').strip())) for m in ROW.finditer(tree)]
+    if re.search(r'^ *- \[\d+\] AX', tree, re.MULTILINE):
+        found = [(len(m[1]), m[2], m[3], ((m[5] or m[4] or '').strip())) for m in ROW.finditer(tree)]
+    else:
+        found = uia_rows(tree)
     start = next((i for i, row in enumerate(found) if row[2] == 'WebArea'), None)
     if start is None:
         return []
@@ -136,6 +155,19 @@ def rows(tree):
             break
         page.append(row)
     return page
+
+
+def uia_rows(tree):
+    """rows() for a Windows tree, in its macOS role names. A link's text is its name, and list items and groups,
+    which repeat their contents' names, keep no text of their own."""
+    found = []
+    for m in UIA_ROW.finditer(tree):
+        role, name, value = m[3], (m[4] or '').strip(), UIA_VALUE.search(m[5])
+        role = 'WebArea' if role == 'Document' and 'id=RootWebArea' in m[5] else UIA_ROLES.get(role, role)
+        text = '' if role in ('ListItem', 'Group') else name if role in ('Link', 'WebArea') else (
+            value[1].strip() if value else '') or name
+        found.append((len(m[1]), m[2], role, text))
+    return found
 
 
 def page_text(tree):
@@ -188,7 +220,7 @@ def collapsed_questions(tree):
 def expand(driver, pid, window, questions):
     for question in questions:
         data = driver.tree(pid, window, query=question, max_elements=40)
-        found = re.search(rf'\[(\d+)\] AXButton "{re.escape(question)}"', data.get('tree_markdown', ''))
+        found = re.search(rf'\[(\d+)\] (?:AX)?Button "{re.escape(question)}"', data.get('tree_markdown', ''))
         if found:
             driver.call('click', pid=pid, window_id=window, element_token=f'{data["snapshot_id"]}:{found[1]}')
             time.sleep(0.8)
@@ -196,12 +228,18 @@ def expand(driver, pid, window, questions):
 
 def close(driver, pid, window):
     """Press the window's own close button, which works while Chrome is behind the user's app. Only macOS
-    leaves it unnamed, as the leftmost title-bar button; elsewhere press only a button named Close."""
+    leaves it unnamed, as the leftmost title-bar button. Windows labels it Close below the window's panes, above
+    the Close buttons of tabs and pages; elsewhere press only a top-level button named Close."""
     data = driver.tree(pid, window, tree_format='elements')
-    buttons = [e for e in data.get('elements', []) if e.get('depth') == 1 and e.get('role') in ('AXButton', 'Button')]
-    named = [e for e in buttons if (e.get('title') or e.get('name') or '').lower() == 'close']
-    unnamed = sorted((e for e in buttons if not (e.get('title') or e.get('name'))), key=lambda e: e['frame']['x'])
-    button = (named or (unnamed if sys.platform == 'darwin' else []) or [None])[0]
+    if driver.uia:
+        named = sorted((e for e in data.get('elements', []) if e.get('role') == 'Button' and e.get('label') == 'Close'),
+                       key=lambda e: e['depth'])
+        button = (named or [None])[0]
+    else:
+        buttons = [e for e in data.get('elements', []) if e.get('depth') == 1 and e.get('role') in ('AXButton', 'Button')]
+        named = [e for e in buttons if (e.get('title') or e.get('name') or '').lower() == 'close']
+        unnamed = sorted((e for e in buttons if not (e.get('title') or e.get('name'))), key=lambda e: e['frame']['x'])
+        button = (named or (unnamed if sys.platform == 'darwin' else []) or [None])[0]
     if button is None:
         raise RuntimeError(f'window {window} has no button named Close; ask the user to close it')
     driver.call('click', pid=pid, window_id=window, element_token=button['element_token'])
@@ -220,12 +258,22 @@ def main():
         parser.error('--out works only on macOS; the employer manages Windows and WSL, so keep article text out of files there')
     if sum('nytimes.com' in url for url in args.urls) > NYT_LIMIT:
         parser.error(f'read at most {NYT_LIMIT} NYT pages per session')
+    if sys.platform == 'win32':
+        sys.stdout.reconfigure(encoding='utf-8')  # a pipe's ANSI code page can't print every page
     driver = Driver(args.cua, f'read-page-{secrets.token_hex(3)}')
     pid = window = None
     skipped = False
     try:
         pid = chrome(driver)
         for index, url in enumerate(args.urls):
+            if window is not None and driver.uia:
+                # Windows refuses the address bar's Return key in the background, so each page gets a window.
+                close(driver, pid, window)
+                for _ in range(10):
+                    if window not in driver.windows(pid):
+                        break
+                    time.sleep(1)
+                window = None
             if window is None:
                 window = open_window(driver, pid, args.profile, url)
             else:
