@@ -44,6 +44,12 @@ plugin content. This distinction applies only to installed Claude plugins. Unkno
 markers, and links still block reconciliation. A populated lease directory blocks replacement of that
 same cache path. Source builds and staged replacements remain strict raw trees.
 
+Python writes a `__pycache__` folder beside any module it imports. Comparisons of installed, accepted
+and staged trees leave out these folders and the regular files in them, as the tree digests do, so a
+skill whose script was imported is not a local edit. A link or special file inside one still blocks
+reconciliation. Copies from a source leave the folders out, and a replacement moves the installed ones
+aside with the rest of the old tree. A changed `.pyc` file therefore goes unnoticed.
+
 ## Review source changes
 
 The entry in `setup` describes the intended source, selection, policy, and host placement. Its lock

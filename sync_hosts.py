@@ -3,10 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 import json
 import subprocess
-import shutil
 
 import portable
-from accepted_installations import AcceptedInstallations, image
+from accepted_installations import AcceptedInstallations, copy_tree, image
 from claude_host import native_marketplace
 from description import EngineInstall, MarketplaceMode, plugin_id, via
 from device_sync import changed_packages
@@ -171,7 +170,7 @@ class Apply:
         expected = image(source)
         if not destination.exists():
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(source, destination)
+            copy_tree(source, destination)
         if image(destination) != expected:
             raise ConcurrentEdit(f'Cached immutable source was edited: {destination}')
 

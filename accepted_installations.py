@@ -23,6 +23,7 @@ from sync_sources import BuildError
 
 _ABSENT = {'kind': 'absent'}
 _RENDERER = 1
+_PYTHON_CACHE = '__pycache__'
 
 
 def _encoded(value):
@@ -38,7 +39,11 @@ def _linked(path):
 
 
 def image(path: Path, fields=None, syntax='toml'):
-    """Raw path, entry-kind and byte evidence. Portable lock normalization is not ownership evidence."""
+    """Raw path, entry-kind and byte evidence. Portable lock normalization is not ownership evidence.
+
+    Leaves out the folders and files under __pycache__, which Python writes beside any module it imports,
+    as tree_digest does. A link or special file there is still refused.
+    """
     if _linked(path):
         raise ConcurrentEdit(f'Refusing a linked working copy: {path}')
     if fields is not None:
@@ -59,6 +64,8 @@ def image(path: Path, fields=None, syntax='toml'):
         mode = entry.lstat().st_mode
         if _linked(entry):
             raise ConcurrentEdit(f'Refusing a linked tree entry: {entry}')
+        if _PYTHON_CACHE in entry.relative_to(path).parts and (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
+            continue
         if stat.S_ISDIR(mode):
             entries[relative] = {'kind': 'directory'}
         elif stat.S_ISREG(mode):
@@ -116,6 +123,11 @@ def _claude_runtime(path):
     return present
 
 
+def copy_tree(source: Path, destination: Path):
+    """Copy a tree without the Python caches that image() leaves out."""
+    shutil.copytree(source, destination, ignore=shutil.ignore_patterns(_PYTHON_CACHE))
+
+
 def _claude_cache_image(path, *, replacing=False):
     if _linked(path) or not path.is_dir():
         return image(path)
@@ -126,6 +138,8 @@ def _claude_cache_image(path, *, replacing=False):
                 raise ConcurrentEdit(f'Claude cache has lease markers; let Claude release them before replacement: {path}')
             continue
         child = image(entry)
+        if entry.name == _PYTHON_CACHE:
+            continue
         if child['kind'] == 'tree':
             entries[entry.name] = {'kind': 'directory'}
             entries.update({f'{entry.name}/{name}': value for name, value in child['entries'].items()})
@@ -465,7 +479,7 @@ class AcceptedInstallations:
                 scratch = self.roots.engine / '.sync/accepted-images'
                 scratch.mkdir(parents=True, exist_ok=True)
                 source = Path(tempfile.mkdtemp(prefix=package.name + '-', dir=scratch)) / 'tree'
-                shutil.copytree(release.root, source)
+                copy_tree(release.root, source)
                 install = next(i for i in package.placement(artifact.key.host).installs
                                if plugin_id(package.name, i, artifact.key.host) == artifact.key.subject)
                 if not isinstance(install, AlignedInstall):
@@ -654,7 +668,7 @@ class AcceptedInstallations:
             if not _same(image(staged), prepared.target):
                 raise ConcurrentEdit(f'Prepared stage was edited: {staged}')
         else:
-            shutil.copytree(prepared.source, staged)
+            copy_tree(prepared.source, staged)
         if not _same(image(staged), prepared.target):
             raise ConcurrentEdit(f'Prepared stage failed verification: {staged}')
         if not _same(self._read(artifact, destination, replacing=True), actual):

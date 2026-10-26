@@ -981,6 +981,51 @@ class InstallationTest(unittest.TestCase):
             marker.unlink()
         self.assertEqual(plan(self.setup, self.device).exit_code, 0)
 
+    def test_python_caches_are_not_local_edits(self):
+        self.run_apply()
+        for cache in (self.installed() / 'skills/one/__pycache__', self.roots.codex_home / 'skills/loose/__pycache__'):
+            cache.mkdir()
+            (cache / 'tool.cpython-314.pyc').write_bytes(b'compiled')
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+        destination = self._installed_claude()
+        for name in ('__pycache__', 'skills/one/__pycache__'):
+            (destination / name).mkdir()
+            (destination / name / 'tool.cpython-314.pyc').write_bytes(b'compiled')
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
+    def test_a_reviewed_update_replaces_a_loose_skill_with_python_caches(self):
+        self.run_apply()
+        loose = self.roots.codex_home / 'skills/loose'
+        (loose / '__pycache__').mkdir()
+        (loose / '__pycache__/tool.cpython-314.pyc').write_bytes(b'compiled')
+        source = self.public / 'owned/loose'
+        (source / 'SKILL.md').write_text('An updated loose skill.\n')
+        (source / '__pycache__').mkdir()
+        (source / '__pycache__/tool.cpython-314.pyc').write_bytes(b'source cache')
+        digest = self.roots.tree_digest(source)
+        skill = replace(self.setup.loose['loose'], source=LocalSource('owned/loose', digest))
+        self.setup = replace(self.setup, loose={'loose': skill},
+                             lock={**self.setup.lock, 'loose': Lock(intent(skill, {}), placements={SkillRoot.CODEX: digest})})
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual((loose / 'SKILL.md').read_text(), 'An updated loose skill.\n')
+        self.assertFalse((loose / '__pycache__').exists())
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
+    def test_a_linked_python_cache_still_blocks(self):
+        self.run_apply()
+        elsewhere = self.root / 'elsewhere'
+        elsewhere.mkdir()
+        cache = self.roots.codex_home / 'skills/loose/__pycache__'
+        cache.symlink_to(elsewhere, target_is_directory=True)
+        self.assertEqual(plan(self.setup, self.device).exit_code, 2)
+        cache.unlink()
+        cache.mkdir()
+        (cache / 'tool.cpython-314.pyc').symlink_to(elsewhere)
+        self.assertEqual(plan(self.setup, self.device).exit_code, 2)
+        destination = self._installed_claude()
+        (destination / '__pycache__').symlink_to(elsewhere, target_is_directory=True)
+        self.assertEqual(plan(self.setup, self.device).exit_code, 2)
+
     def test_claude_skill_unread_during_verified_pending_swap_recovers(self):
         destination = self._interrupted_claude_install()
         settings = self.roots.claude_home / 'settings.json'
