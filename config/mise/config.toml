@@ -38,6 +38,7 @@ stripe = "1.53.1"
 "npm:@devcontainers/cli" = "0.89.0"
 
 # Keep the selected npm ahead of Node's bundled npm, including after directory changes.
+# mise resolves an empty entry to config_root, the home folder here, so the else branch names a missing folder.
 [env._.path]
-path = ['{{ tools["npm:npm"].path }}/node_modules/.bin']
+path = ['{% if tools["npm:npm"] %}{{ tools["npm:npm"].path }}/node_modules/.bin{% else %}{{ config_root }}/.config/mise/npm-not-installed{% endif %}']
 tools = true
