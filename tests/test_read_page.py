@@ -168,13 +168,26 @@ class WindowsTest(unittest.TestCase):
         self.assertEqual(launch['additional_arguments'], ['--profile-directory=Default', '--new-window',
                                                           'https://example.com/'])
 
-    def test_closes_the_window_not_a_tab(self):
-        elements = [{'role': 'Button', 'label': 'Close', 'depth': 9, 'element_token': 'tab'},
-                    {'role': 'Button', 'label': 'Close', 'depth': 5, 'element_token': 'window'},
-                    {'role': 'Button', 'label': 'Minimize', 'depth': 5, 'element_token': 'minimize'}]
-        driver = FakeWindows(get_window_state={'elements': elements}, click={})
-        read_page.close(driver, 7, 1)
-        self.assertEqual(driver.calls[-1], ('click', {'pid': 7, 'window_id': 1, 'element_token': 'window'}))
+    def test_finds_a_window_chrome_opened_minimized(self):
+        minimized = {'window_id': 2, 'title': 'window 2', 'bounds': {'height': 20}, 'minimized': True}
+        driver = FakeWindows(list_windows=[windows(1), {'windows': windows(1)['windows'] + [minimized]}], launch_app={},
+                             list_apps={'apps': [{'name': 'Google Chrome', 'bundle_id': CHROME_EXE, 'pid': 0}]})
+        self.assertEqual(read_page.open_window(driver, 7, 'Default', 'https://example.com/'), 2)
+
+    def test_closes_the_window_through_ui_automation(self):
+        driver = FakeWindows()
+        with mock.patch.object(read_page.subprocess, 'run', return_value=mock.Mock(returncode=0)) as run:
+            read_page.close(driver, 7, 6622428)
+        script = run.call_args.args[0][-1]
+        self.assertIn('FromHandle([IntPtr]6622428)', script)
+        self.assertIn('ProcessId -ne 7', script)
+        self.assertIn('WindowPattern', script)
+        self.assertEqual(driver.calls, [])
+
+    def test_reports_a_window_it_could_not_close(self):
+        with mock.patch.object(read_page.subprocess, 'run', return_value=mock.Mock(returncode=3)):
+            with self.assertRaisesRegex(RuntimeError, 'ask the user to close it'):
+                read_page.close(FakeWindows(), 7, 1)
 
 
 if __name__ == '__main__':

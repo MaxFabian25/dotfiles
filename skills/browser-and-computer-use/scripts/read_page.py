@@ -52,8 +52,9 @@ class Driver:
         return data
 
     def windows(self, pid):
+        """Chrome's windows without its popups. Windows reports a minimized window 20 high; it still reads."""
         return {w['window_id']: w.get('title', '') for w in self.call('list_windows', pid=pid).get('windows', [])
-                if w.get('bounds', {}).get('height', 0) > 200}
+                if w.get('bounds', {}).get('height', 0) > 200 or w.get('minimized')}
 
     def tree(self, pid, window, **args):
         return self.call('get_window_state', pid=pid, window_id=window, include_screenshot=False,
@@ -227,19 +228,25 @@ def expand(driver, pid, window, questions):
 
 
 def close(driver, pid, window):
-    """Press the window's own close button, which works while Chrome is behind the user's app. Only macOS
-    leaves it unnamed, as the leftmost title-bar button. Windows labels it Close below the window's panes, above
-    the Close buttons of tabs and pages; elsewhere press only a top-level button named Close."""
-    data = driver.tree(pid, window, tree_format='elements')
+    """Close only this window, while Chrome is behind the user's app. Chrome on Windows can open it minimized,
+    where cua-driver refuses every click and key, so Windows asks the window itself to close through UI
+    Automation, after checking that its handle still belongs to that Chrome. Elsewhere press the window's own
+    close button: macOS leaves it unnamed, as the leftmost title-bar button; others name it Close."""
     if driver.uia:
-        named = sorted((e for e in data.get('elements', []) if e.get('role') == 'Button' and e.get('label') == 'Close'),
-                       key=lambda e: e['depth'])
-        button = (named or [None])[0]
-    else:
-        buttons = [e for e in data.get('elements', []) if e.get('depth') == 1 and e.get('role') in ('AXButton', 'Button')]
-        named = [e for e in buttons if (e.get('title') or e.get('name') or '').lower() == 'close']
-        unnamed = sorted((e for e in buttons if not (e.get('title') or e.get('name'))), key=lambda e: e['frame']['x'])
-        button = (named or (unnamed if sys.platform == 'darwin' else []) or [None])[0]
+        script = ('Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes; '
+                  f'$e = [Windows.Automation.AutomationElement]::FromHandle([IntPtr]{int(window)}); '
+                  f'if ($e.Current.ProcessId -ne {int(pid)}) {{ exit 3 }}; '
+                  '$e.GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Close()')
+        result = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script],
+                                capture_output=True, text=True, timeout=60)
+        if result.returncode:
+            raise RuntimeError(f'window {window} did not close; ask the user to close it')
+        return
+    data = driver.tree(pid, window, tree_format='elements')
+    buttons = [e for e in data.get('elements', []) if e.get('depth') == 1 and e.get('role') in ('AXButton', 'Button')]
+    named = [e for e in buttons if (e.get('title') or e.get('name') or '').lower() == 'close']
+    unnamed = sorted((e for e in buttons if not (e.get('title') or e.get('name'))), key=lambda e: e['frame']['x'])
+    button = (named or (unnamed if sys.platform == 'darwin' else []) or [None])[0]
     if button is None:
         raise RuntimeError(f'window {window} has no button named Close; ask the user to close it')
     driver.call('click', pid=pid, window_id=window, element_token=button['element_token'])
