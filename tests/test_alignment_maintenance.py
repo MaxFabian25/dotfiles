@@ -11,6 +11,16 @@ alignment = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(alignment)
 
 
+class TreeFilesTests(unittest.TestCase):
+    def test_python_caches_are_not_package_content(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'scripts/__pycache__').mkdir(parents=True)
+            (root / 'scripts/tool.py').write_text('code')
+            (root / 'scripts/__pycache__/tool.cpython-314.pyc').write_bytes(b'compiled')
+            self.assertEqual(list(alignment.tree_files(root)), ['scripts/tool.py'])
+
+
 class MaintenanceSelectionTests(unittest.TestCase):
     def test_preserves_disables_uninstalls_and_unavailable_project_scopes(self):
         with tempfile.TemporaryDirectory() as project:

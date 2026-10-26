@@ -116,10 +116,10 @@ def claude_host_names(text, plugin, agents):
 
 
 def tree_files(root):
-    # Runtime markers and script-installed dependencies are not package content.
+    # Runtime markers, script-installed dependencies and Python caches are not package content.
     return {posix(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
             for path in sorted(root.rglob('*'), key=lambda path: path.parts) if path.is_file() and path.name != '.orphaned_at'
-            and not {'.in_use', 'node_modules'} & set(path.relative_to(root).parts)}
+            and not {'.in_use', 'node_modules', '__pycache__'} & set(path.relative_to(root).parts)}
 
 
 def verify(entries):

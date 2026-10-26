@@ -71,6 +71,14 @@ class RuntimeDependencies(unittest.TestCase):
             (root / 'SKILL.md').write_text('skill')
             self.assertEqual(list(package.files(root)), ['SKILL.md'])
 
+    def test_python_caches_are_not_package_content(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'scripts/__pycache__').mkdir(parents=True)
+            (root / 'scripts/tool.py').write_text('code')
+            (root / 'scripts/__pycache__/tool.cpython-314.pyc').write_bytes(b'compiled')
+            self.assertEqual(list(package.files(root)), ['scripts/tool.py'])
+
 
 
 

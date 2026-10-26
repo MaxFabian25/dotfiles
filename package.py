@@ -15,12 +15,13 @@ ROOT = Path(__file__).resolve().parent
 
 def files(root):
     # Dependencies a packaged script installs beside itself at run time are not package content,
-    # nor are the .in_use and .orphaned_at markers Claude Code writes into installed plugin caches.
+    # nor are the .in_use and .orphaned_at markers Claude Code writes into installed plugin caches,
+    # nor the __pycache__ folders Python writes beside any module it imports.
     return {
         posix(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(root.rglob('*'), key=lambda path: path.parts)
         if path.is_file() and path.name != '.orphaned_at'
-        and not {'node_modules', '.in_use'} & set(path.relative_to(root).parts)
+        and not {'node_modules', '.in_use', '__pycache__'} & set(path.relative_to(root).parts)
     }
 
 
