@@ -1,0 +1,12 @@
+# OpenAI's Codex workspace runtime for Linux x64, which carries the openai-primary-runtime plugin catalog.
+# The Codex app installs it on macOS and Windows. On Linux every pull installs exactly this archive at
+# ~/.cache/codex-runtimes/codex-primary-runtime and registers its catalog with Codex.
+# `codex_runtime.py review --write` writes this file from LATEST.json and the archive. Do not edit it by hand.
+public = true
+version = "26.1025.11240"
+url = "https://persistent.oaistatic.com/codex-primary-runtime/26.1025.11240/codex-primary-runtime-linux-x64-26.1025.11240.tar.xz"
+archive = "sha256:fe9ba205428c67084fbbb89a8bcdb17f8d84164c02fd1bdd3f593149f1cda299"
+archive_bytes = 387299468
+tree = "sha256:161a860ef28eba73cf529a643d0f95fb735a8970052cc7d3204eae21cb20abd7"
+tree_bytes = 1658132379
+plugins = ["documents", "pdf", "presentations", "spreadsheets", "template-creator"]

@@ -7,10 +7,11 @@ import subprocess
 import portable
 from accepted_installations import AcceptedInstallations, copy_tree, image
 from claude_host import native_marketplace
+import codex_runtime
 from description import EngineInstall, MarketplaceMode, plugin_id, via
 from device_sync import changed_packages
 from host_observation import Unread
-from host_state import EngineMarketplace, FactKey, Host, SkillMode, Surface, clone_url
+from host_state import EngineMarketplace, FactKey, Host, PluginValue, Released, SkillMode, Surface, clone_url
 from sync_files import Files, ConcurrentEdit, backup_directory
 from sync_sources import child
 
@@ -36,6 +37,7 @@ class Apply:
     def run(self):
         self.owner.preflight(self.prepared)
         self._marketplaces()
+        self._runtime()
         self._catalogs()
         for artifact in self.prepared.artifacts:
             self.owner.apply(artifact, self.files, native=self._install)
@@ -81,6 +83,15 @@ class Apply:
                 self.command(host, 'plugin', 'marketplace', 'add', str(checkout), '--scope', 'user', '--json')
             else:
                 self._claude_git_marketplace(repo, spec)
+
+    def _runtime(self):
+        """The bundle, then its catalog, before any plugin from it. The plan infers registration from the plugins
+        Codex lists, installed ones included, so it can be wrong. The catalog is therefore registered whenever the
+        runtime changes, and registering it again at the same path is harmless."""
+        if not any(d.key == codex_runtime.KEY for d in self.current.changes):
+            return
+        catalog = codex_runtime.install(self.setup.runtime, self.roots)
+        self.command(Host.CODEX, 'plugin', 'marketplace', 'add', str(catalog), '--json')
 
     def _claude_git_marketplace(self, repo, spec):
         settings_path = self.roots.claude_home / 'settings.json'
@@ -182,6 +193,7 @@ class Apply:
             self.command(host, 'plugin', 'update' if existing else 'install', identity, '--scope', 'user', '--json')
 
     def _plugins(self):
+        wanted = {d.key: d.expected for d in self.current.changes if d.key and d.key.surface == Surface.PLUGIN}
         for state in self.device.hosts:
             host = state.host
             observation = self.current.observations[host]
@@ -198,7 +210,7 @@ class Apply:
                         if existing and existing.value.enabled:
                             self._enabled(host, identity, False)
                         continue
-                    if package.source is None and existing is None:
+                    if package.source is None and (existing is None or _behind(wanted.get(key), existing.value)):
                         self._install(host, identity)
                     if existing is None or not existing.value.enabled:
                         self._enabled(host, identity, True)
@@ -254,6 +266,14 @@ class Apply:
             if value == prefix or value.startswith(prefix + '/'):
                 return child(getattr(self.roots, token), value[len(prefix):].lstrip('/'))
         raise ValueError(f'Not a managed device-relative path: {value}')
+
+
+def _behind(wanted: PluginValue | None, installed: PluginValue) -> bool:
+    """A catalog plugin the description pins by version, held here at another version. Codex keeps an installed
+    plugin when its catalog moves, and adding it again installs the catalog's version. An Unpinned expectation never
+    counts, so a version Codex reports for an app-managed catalog never causes a re-add."""
+    return wanted is not None and isinstance(wanted.pin, Released) and installed.pin != wanted.pin
+
 
 def set_plugin_enabled(data, identity, enabled):
     """When config.toml's [plugins."…"] tables are spread out, tomlkit hands back a proxy, and a key set on a table

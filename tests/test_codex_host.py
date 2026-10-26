@@ -16,6 +16,7 @@ import homes
 import host_state
 import description
 import codex_host
+from runtime_pin import RuntimePin
 d, hs = description, host_state
 S, M = hs.Surface, hs.SkillMode
 C1, C2 = 'a' * 40, 'b' * 40
@@ -100,6 +101,19 @@ class ProjectTest(unittest.TestCase):
     def test_trusted_hooks_without_a_locked_count_project_nothing(self):
         facts = codex_host.CodexState(homes.projection_roots(), 'codex').project(setup([IMPECCABLE], [IMPECCABLE_REPO]))
         self.assertEqual(sorted(k.surface.name for k in facts), ['MARKETPLACE', 'OVERLAY', 'PLUGIN'])
+
+    def test_the_runtime_catalogs_installs_carry_the_pinned_version_on_linux_only(self):
+        pin = RuntimePin('26.1025.11240', 'https://example.invalid/runtime.tar.xz', D1, 1, D2, 1, ('pdf',))
+        on = package('pdf', None, d.CodexPlacement((d.MarketplaceInstall('openai-primary-runtime', True),)))
+        off = package('template-creator', None, d.CodexPlacement((d.MarketplaceInstall('openai-primary-runtime', False),)))
+        pinned, unpinned = (d.Setup(**{**setup([on, off]).__dict__, 'runtime': runtime}) for runtime in (pin, None))
+        state = codex_host.CodexState(homes.projection_roots(), 'codex')
+        linux = state.project(pinned.for_platform(hs.Platform.LINUX))
+        self.assertEqual(linux[key(S.PLUGIN, 'pdf@openai-primary-runtime')].value, hs.PluginValue(True, hs.Released('26.1025.11240')))
+        self.assertEqual(linux[key(S.PLUGIN, 'template-creator@openai-primary-runtime')].value, hs.PluginValue(False, hs.Unpinned()))
+        for platform in (hs.Platform.MACOS, hs.Platform.WINDOWS):
+            self.assertEqual(state.project(pinned.for_platform(platform)), state.project(unpinned.for_platform(platform)),
+                             f'the pin changes nothing on {platform.value}')
 
     def test_a_disabled_build_is_not_pinned(self):
         disabled = package('kit', KIT.source, d.CodexPlacement((d.EngineInstall(False),)))
@@ -491,6 +505,14 @@ class ObserveTest(unittest.TestCase):
             wanted = key(S.SKILL, 'latex:texlive')
             observation = device.state().observe(hs.Request(skills=frozenset({'latex:texlive'})))
         self.assertEqual(observation.facts[wanted].value, M.EXPLICIT)
+
+    def test_the_runtime_catalogs_installed_plugins_are_observed_at_their_version(self):
+        with Device() as device:
+            device.inventory.append(plugin(device, 'pdf@openai-primary-runtime', True, '26.1025.11240', {'source': 'local', 'path': 'x'}))
+            observation = device.state().observe(hs.Request())
+        self.assertEqual(observation.facts[key(S.PLUGIN, 'pdf@openai-primary-runtime')].value,
+                         hs.PluginValue(True, hs.Released('26.1025.11240')))
+        self.assertEqual(observation.facts[key(S.PLUGIN, 'latex@openai-bundled')].value, hs.PluginValue(True, hs.Unpinned()))
 
     def test_plugins_the_cli_lists_as_available_are_offered(self):
         with Device() as device:

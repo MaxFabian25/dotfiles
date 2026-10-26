@@ -4,6 +4,7 @@ from collections import Counter
 from dataclasses import dataclass, replace
 from typing import Mapping
 
+import codex_runtime
 from description import Setup
 from device import Device
 from drift import Diff, Difference, Kind, Verdict, diff
@@ -37,6 +38,8 @@ def plan(setup: Setup, device: Device, *, configurations=True) -> Plan:
     result = diff(setup, device, observations=observations)
     owner = AcceptedInstallations(projected, device, configurations=configurations)
     artifacts, owned = owner.inspect(observations)
+    if Host.CODEX in observations:
+        owned += codex_runtime.inspect(projected.runtime, device.roots, observations[Host.CODEX].offered)
     stale = setup.stale()
     managed = {key for facts in projects.values() for key, fact in facts.items()
                if fact.entry not in stale and key.surface in

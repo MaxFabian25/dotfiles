@@ -14,6 +14,7 @@ import host_state
 import description
 import description_checks
 import description_toml
+import runtime_pin
 H, M = host_state.Host, host_state.SkillMode
 
 
@@ -247,6 +248,39 @@ class LeakTest(unittest.TestCase):
             lock = roots.private / 'lock.toml'
             lock.write_text(lock.read_text() + '\n[impeccable]\nintent = "sha256:' + 'b' * 64 + '"\n')
             self.assertEqual(roots.problems(), [f'{lock}:impeccable: locks only entries of its own root'])
+
+
+class RuntimePinTest(unittest.TestCase):
+    PIN = runtime_pin.RuntimePin(
+        '26.1025.11240', f'{runtime_pin.ORIGIN}26.1025.11240/codex-primary-runtime-linux-x64-26.1025.11240.tar.xz',
+        'sha256:' + 'a' * 64, 387299468, 'sha256:' + 'b' * 64, 1836123456, ('pdf', 'presentations'))
+
+    def test_the_runtime_pin_loads_from_the_public_root_and_not_the_private_one(self):
+        with Roots() as roots:
+            (roots.public / runtime_pin.PIN).write_text(self.PIN.render())
+            self.assertEqual(description_toml.load(roots.roots()).runtime, self.PIN)
+            moved = roots.private / runtime_pin.PIN
+            shutil.move(roots.public / runtime_pin.PIN, moved)
+            self.assertEqual(roots.problems(), [f'{moved}:: the runtime pin belongs to the public root'])
+
+    def test_an_enabled_runtime_package_must_name_a_plugin_the_pin_offers(self):
+        with Roots() as roots:
+            (roots.public / runtime_pin.PIN).write_text(self.PIN.render())
+            path = roots.private / 'packages/documents.toml'
+            path.write_text('[codex]\ninstall = [{ via = "openai-primary-runtime", enabled = true }]\n')
+            self.assertEqual(roots.problems(), [
+                f'{path}:codex.install[0].via: the pinned linux runtime 26.1025.11240 offers no documents; '
+                'set platforms to keep it off linux, or pin a runtime that has it'])
+            path.write_text('platforms = ["macos"]\n' + path.read_text())
+            self.assertIn('documents', description_toml.load(roots.roots()).packages)
+
+    def test_for_platform_keeps_the_runtime_only_on_linux(self):
+        with Roots() as roots:
+            (roots.public / runtime_pin.PIN).write_text(self.PIN.render())
+            setup = description_toml.load(roots.roots())
+        self.assertEqual({platform: setup.for_platform(platform).runtime for platform in host_state.Platform},
+                         {host_state.Platform.LINUX: self.PIN, host_state.Platform.MACOS: None,
+                          host_state.Platform.WINDOWS: None})
 
 
 class InvariantTest(unittest.TestCase):

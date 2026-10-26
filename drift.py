@@ -115,7 +115,9 @@ def _classify(key: FactKey, expected: FactValue | None, observed: FactValue | No
         if surface == Surface.PLUGIN and not expected.enabled:
             return NoteKind.DORMANT
         marketplace = key.subject.partition('@')[2]
-        if surface == Surface.PLUGIN and marketplace in CATALOGS[key.host] and key.subject not in observation.offered:
+        # A catalog the description pins is one sync installs, so its plugin is drift even before it is offered.
+        if (surface == Surface.PLUGIN and marketplace in CATALOGS[key.host] and isinstance(expected.pin, Unpinned)
+                and key.subject not in observation.offered):
             return NoteKind.UNAVAILABLE
         return Kind.APPROVAL if surface == Surface.HOOK else Kind.MISSING
     if surface == Surface.PLUGIN and not observed.enabled:

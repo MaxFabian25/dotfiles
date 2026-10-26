@@ -6,7 +6,7 @@ import subprocess
 from description import (AlignedInstall, BuildSource, CourseRecipe, EngineInstall, GenericRecipe, MarketplaceInstall,
                          LocalSource, Package, RepoSource, Roots, Setup, SkillRoot, SnapshotRecipe, SnapshotSource, ToolNotes,
                          Visibility, entry_path)
-from host_state import ANTHROPIC_SKILLS, CATALOGS, Host, SkillMode
+from host_state import ANTHROPIC_SKILLS, CATALOGS, PRIMARY_RUNTIME, Host, SkillMode
 import portable
 
 
@@ -108,6 +108,12 @@ def check_references(setup: Setup, visibility: Visibility, errors: list[str]) ->
                         errors.append(f'{path}:{key}: repo {source.repo} does not register {install.marketplace} in {host.value}')
                 elif source is None and install.marketplace not in CATALOGS[host]:
                     errors.append(f'{path}:{key}: unknown marketplace {install.marketplace}; without a source it must be a {host.value} catalog')
+                elif (source is None and install.marketplace == PRIMARY_RUNTIME and install.enabled
+                      and (runtime := setup.runtime) is not None
+                      and (not package.platforms or runtime.platform in package.platforms)
+                      and name not in runtime.plugins):
+                    errors.append(f'{path}:{key}: the pinned {runtime.platform.value} runtime {runtime.version} offers no '
+                                  f'{name}; set platforms to keep it off {runtime.platform.value}, or pin a runtime that has it')
                 elif isinstance(source, (BuildSource, LocalSource)) and install.enabled:
                     errors.append(f'{path}:{key}: a build installs through the engine, not {install.marketplace}')
     for name, skill in setup.loose.items():

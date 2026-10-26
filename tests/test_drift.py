@@ -214,6 +214,14 @@ class DiffTest(unittest.TestCase):
         self.assertEqual(kinds(lacking), [])
         self.assertIn((hs.NoteKind.UNAVAILABLE, 'gmail@openai-curated-remote'), [(n.kind, n.subject) for n in lacking.notes])
 
+    def test_a_catalog_the_description_pins_is_drift_not_a_note(self):
+        observation = hs.Observation(hs.Host.CODEX, 'test', {}, frozenset(), frozenset(), ())
+        key = hs.FactKey(hs.Host.CODEX, S.PLUGIN, 'pdf@openai-primary-runtime')
+        self.assertEqual(drift._classify(key, hs.PluginValue(True, hs.Released('26.1025.11240')), None, observation),
+                         K.MISSING, 'sync installs the catalog it pins, so the plugin is missing, not unavailable')
+        self.assertEqual(drift._classify(key, hs.PluginValue(True, hs.Unpinned()), None, observation),
+                         hs.NoteKind.UNAVAILABLE)
+
     def test_an_equal_value_from_an_unread_source_is_incomplete(self):
         with Device() as device:
             device.toggles = '[[skills.config]\n'

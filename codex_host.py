@@ -22,7 +22,7 @@ from description import (HOST_TOGGLES, RULES, BuildSource, EngineInstall, Hooks,
                          ToolNotes, plugin_id, via)
 from host_observation import Observer, Unread, checkout, observe_loose, observe_trees, run
 from invocation_overrides import skill_paths
-from host_state import (CATALOGS as ALL_CATALOGS, ENGINE_MARKETPLACE, Approved, CheckoutMarketplace, DeviceRoots,
+from host_state import (CATALOGS as ALL_CATALOGS, ENGINE_MARKETPLACE, PRIMARY_RUNTIME, Approved, CheckoutMarketplace, DeviceRoots,
                         Commit, EngineMarketplace, Fact, FactKey, FactSet, FileValue, GitMarketplace, Host, InstallDetail,
                         NoteKind, Observation, OverlaySpec, Pinned, PluginValue, Released, Request, SkillMode, Surface,
                         TreeValue, Unpinned, bytes_digest, clone_url, parse_commit)
@@ -207,6 +207,9 @@ class CodexState:
                     pin = Released(tree.version) if install.enabled and tree else Unpinned()
                 elif repo is not None:
                     pin = Pinned(repo.commit)
+                elif via(install, _HOST) == PRIMARY_RUNTIME and setup.runtime is not None and install.enabled:
+                    # The engine installs this catalog's bundle here, and its plugins carry the bundle's version.
+                    pin = Released(setup.runtime.version)
                 else:
                     pin = Unpinned()
                 key = add(Surface.PLUGIN, plugin, PluginValue(install.enabled, pin), package.name)
@@ -355,6 +358,8 @@ class CodexState:
 
         def pin(plugin) -> Pinned | Released | Unpinned:
             marketplace, source = plugin['marketplaceName'], plugin.get('source') or {}
+            if marketplace == PRIMARY_RUNTIME:
+                return Released(plugin['version'])     # compared only where the description pins the runtime
             if marketplace in CATALOGS:
                 return Unpinned()
             release = releases.get(plugin['pluginId'])

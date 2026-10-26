@@ -22,6 +22,7 @@ from description_checks import check_invariants, check_placement, check_privacy,
 from host_state import (ALIGNED_MARKETPLACE, ENGINE_MARKETPLACE, Commit, EntryName, FactKey, Host, Platform, SkillMode, Surface,
                         parse_commit, parse_digest)
 import portable
+import runtime_pin
 
 
 _REQUIRED = object()
@@ -358,6 +359,7 @@ class _Root:
     lock: dict[EntryName, Lock] = field(default_factory=dict)
     lock_path: Path | None = None
     expected_unmanaged: dict[Platform, frozenset[FactKey]] = field(default_factory=dict)
+    runtime: runtime_pin.RuntimePin | None = None
 
 
 def _toml(path: Path, errors: list[str]) -> dict | None:
@@ -393,6 +395,12 @@ def _read_root(root: Path, visibility: Visibility, errors: list[str]) -> _Root:
         table.done()
     else:
         errors.append(f'{setup_path}:: missing')
+    pin = root / runtime_pin.PIN
+    if visibility == Visibility.PRIVATE:
+        if pin.exists():
+            errors.append(f'{pin}:: the runtime pin belongs to the public root')
+    else:
+        found.runtime = runtime_pin.RuntimePin.read(pin, errors)
     for kind, parser, target in (('packages', _parse_package, found.packages), ('repos', _parse_repo, found.repos),
                                  ('skills', _parse_loose, found.loose)):
         for path in sorted((root / kind).glob('*.toml')):
@@ -469,7 +477,7 @@ def _merge(roots: Roots, public: _Root, private: _Root) -> Setup:
         loose={**public.loose, **private.loose}, host_skills={**public.host_skills, **private.host_skills},
         rules=private.rules or public.rules, note_rules=public.note_rules,
         public_repositories=public.public_repositories, lock={**public.lock, **private.lock},
-        expected_unmanaged={**public.expected_unmanaged, **private.expected_unmanaged})
+        expected_unmanaged={**public.expected_unmanaged, **private.expected_unmanaged}, runtime=public.runtime)
 
 
 @dataclass(frozen=True)

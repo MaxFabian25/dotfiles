@@ -67,8 +67,10 @@ class Host(enum.StrEnum):
     CLAUDE = 'claude'
 
 
-# Marketplaces a host's app or the signed-in account provides. Their plugins have no source to build or pin.
-CATALOGS = {Host.CODEX: frozenset({'openai-bundled', 'openai-primary-runtime', 'openai-curated', 'openai-curated-remote'}),
+PRIMARY_RUNTIME = 'openai-primary-runtime'
+# Marketplaces a host's app or the signed-in account provides. Their plugins have no source to build. Only the
+# runtime's, where the engine installs it, are pinned, by its version.
+CATALOGS = {Host.CODEX: frozenset({'openai-bundled', PRIMARY_RUNTIME, 'openai-curated', 'openai-curated-remote'}),
             Host.CLAUDE: frozenset({'claude-plugins-official', 'anthropic-plugin-directory'})}
 ENGINE_MARKETPLACE = {Host.CODEX: 'personal', Host.CLAUDE: 'personal-collections'}
 ALIGNED_MARKETPLACE = 'codex-aligned'

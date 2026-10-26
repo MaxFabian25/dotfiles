@@ -8,6 +8,7 @@ Linux, including WSL. Source review happens centrally. Each device reconciles a 
 | Path | Purpose |
 | --- | --- |
 | `setup/` | Public source pins, selected skills, host choices, and reproducible build locks |
+| `setup/codex-runtime.toml` | The reviewed archive of Codex's workspace runtime for Linux. Pulls on Linux and WSL install it, and `codex_runtime.py review --write` writes it |
 | `packages/prose/` | Owned Prose source and its release checks |
 | `skills/` | Owned portable skills |
 | `config/mise/config.toml` | Reviewed tool versions and the PATH entry that keeps the selected npm ahead of Node's own, without credentials or local environment settings |
@@ -141,6 +142,33 @@ sed 's/#.*//' config/apt/packages.txt | xargs sudo apt-get install -y
 
 Running it again is safe. apt skips packages that are already installed.
 
+## Pin Codex's workspace runtime on Linux
+
+On macOS and Windows, the Codex app downloads OpenAI's workspace runtime and registers the
+`openai-primary-runtime` plugin catalog inside it. On Linux and WSL, a pull does both from
+`setup/codex-runtime.toml`. The pull unpacks exactly the pinned archive at
+`~/.cache/codex-runtimes/codex-primary-runtime`, the only path Codex accepts that catalog from, and
+registers the catalog. When the pin moves, the same pull replaces the runtime and adds its plugins again,
+because Codex keeps an installed plugin at its old version.
+
+`~/.local/state/dotfiles/codex-runtime.json` records each file the pull unpacked, with its size, inode, and
+modification and change times, so a later pull re-reads only the files where one of those moved. Any write moves
+the change time, even one that puts the modification time back. A runtime folder that this device did
+not install, or one edited since, stops the pull until you move it aside. A folder identical to the pin is the
+exception, and the pull records it as its own. The `__pycache__` folders that Python writes inside the runtime
+are not compared.
+
+```sh
+uv run --locked python codex_runtime.py review    # compare the pin with OpenAI's LATEST.json
+uv run --locked python codex_runtime.py verify    # re-hash this device's runtime against the pin
+```
+
+`review` exits 1 when OpenAI has published a different archive. To pin it, run `review --write` with `--public`
+and `--private` set to a release worktree's `setup` folders. It downloads and unpacks the archive, checks that
+every plugin carries the runtime's version, and rewrites the pin. It runs only on Linux, such as WSL, because the
+archive holds paths that differ only in case. It writes only into a linked worktree, because an uncommitted change
+in a main checkout would stop every pull. Without `--write`, `review` runs on any platform.
+
 ## Verify changes
 
 ```sh
@@ -151,7 +179,7 @@ uv run --locked python tests/native_smoke.py ./setup ../dotfiles-private/setup
 The smoke test uses temporary application homes and real native plugin loaders. It does not use a
 live installation as its test fixture. It retains its isolated evidence on failure.
 
-Only `build_setup.py`, `lock_setup.py`, `sync.py`, `pull.py`, `release.py`, `schedule.py`, and `skill_listing.py` are supported public
+Only `build_setup.py`, `codex_runtime.py`, `lock_setup.py`, `sync.py`, `pull.py`, `release.py`, `schedule.py`, and `skill_listing.py` are supported public
 command entry points. Lower-level packaging modules contain compatibility helpers, not a second
 configuration authority. Do not recreate historical JSON registries to drive them.
 

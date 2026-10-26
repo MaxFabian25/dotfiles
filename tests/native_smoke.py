@@ -26,7 +26,7 @@ def main():
     args = parser.parse_args()
     setup = load(Roots(args.public, args.private))
     setup = replace(setup, packages={'prose': setup.packages['prose']}, repos={}, loose={},
-                    host_skills={}, rules=None, lock={'prose': setup.lock['prose']})
+                    host_skills={}, rules=None, lock={'prose': setup.lock['prose']}, runtime=None)
     real = Device.current()
     if real.absent:
         raise RuntimeError(f'Both native CLIs are required: {real.absent}')

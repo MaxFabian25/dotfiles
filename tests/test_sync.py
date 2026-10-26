@@ -250,6 +250,40 @@ class NativeCatalogTest(unittest.TestCase):
             self.assertEqual((checkout / 'source').read_text(), 'Pinned bytes')
 
 
+class RuntimeCatalogPluginTest(unittest.TestCase):
+    def installs(self, changes, installed):
+        """The plugins _plugins adds, for pdf@openai-primary-runtime held at `installed` and the plan's changes."""
+        from description import CodexPlacement, MarketplaceInstall, Package, ToolNotes, Visibility
+        from host_state import Fact, FactKey, Host, PluginValue, Surface
+        from sync_hosts import Apply
+        identity = 'pdf@openai-primary-runtime'
+        key = FactKey(Host.CODEX, Surface.PLUGIN, identity)
+        operation = Apply.__new__(Apply)
+        operation.device = SimpleNamespace(hosts=(SimpleNamespace(host=Host.CODEX),))
+        operation.current = SimpleNamespace(
+            changes=tuple(SimpleNamespace(key=key, expected=PluginValue(True, pin)) for pin in changes),
+            observations={Host.CODEX: SimpleNamespace(facts={key: Fact(key, PluginValue(True, installed))})})
+        operation.packages = {'pdf'}
+        operation.setup = SimpleNamespace(packages={'pdf': Package(
+            'pdf', Visibility.PRIVATE, '', None, {}, ToolNotes.AUDIT,
+            CodexPlacement((MarketplaceInstall('openai-primary-runtime', True),)), None)})
+        added = []
+        operation._install = lambda host, plugin: added.append(plugin)
+        operation._enabled = lambda host, plugin, enabled: self.fail('an enabled plugin was enabled again')
+        operation._plugins()
+        return added
+
+    def test_a_plugin_behind_its_pinned_catalog_is_added_again(self):
+        from host_state import Released
+        self.assertEqual(self.installs([Released('26.2')], Released('26.1')), ['pdf@openai-primary-runtime'])
+
+    def test_an_unpinned_catalog_plugin_reported_at_a_version_is_never_re_added(self):
+        from host_state import Released, Unpinned
+        for changes in ([], [Unpinned()]):
+            with self.subTest(changes=changes):
+                self.assertEqual(self.installs(changes, Released('26.1')), [])
+
+
 class NativeGitMarketplaceTest(unittest.TestCase):
     def setUp(self):
         from description import HostMarketplace

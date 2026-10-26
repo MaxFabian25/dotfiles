@@ -15,6 +15,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, NewType
 
 from host_state import ALIGNED_MARKETPLACE, ENGINE_MARKETPLACE, Commit, Digest, ENGINE, EntryName, FactKey, Host, Platform, SkillMode, bytes_digest
+from runtime_pin import RuntimePin
 
 RepoName = NewType('RepoName', str)
 SCHEMA = 1
@@ -352,6 +353,7 @@ class Setup:
     lock: Mapping[EntryName, Lock]
     # Unmanaged items each platform's device is known to carry, from the private devices/<platform>.toml.
     expected_unmanaged: Mapping[Platform, frozenset[FactKey]] = field(default_factory=dict)
+    runtime: RuntimePin | None = None   # the public setup/codex-runtime.toml, kept only on its platform
 
     def for_platform(self, platform: Platform) -> Setup:
         packages = {}
@@ -370,7 +372,8 @@ class Setup:
                         changes['modes'] = {}
                     placements[host.value] = replace(placement, **changes)
             packages[name] = replace(package, modes={}, tool_notes=ToolNotes.AUDIT, **placements)
-        return replace(self, packages=packages)
+        runtime = self.runtime if self.runtime is not None and self.runtime.platform == platform else None
+        return replace(self, packages=packages, runtime=runtime)
 
     def stale(self) -> frozenset[EntryName]:
         """Entries whose lock is missing, no longer matches their parsed intent, or lacks a record the intent needs."""
