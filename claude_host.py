@@ -7,7 +7,7 @@ An aligned copy keeps a skill the package has off when the package gives it a Cl
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 import re
 import stat
@@ -55,8 +55,8 @@ def _loaded(catalogs: dict[str, tuple[Path, dict]], plugin_id: str, install: Pat
     source = entry.get('source') if entry else None
     if not isinstance(source, str):
         return install
-    root = (directory / source).resolve()
-    if not root.is_relative_to(directory.resolve()):
+    root = directory / source
+    if not root.resolve().is_relative_to(directory.resolve()):
         raise Unread(f'catalog source leaves its marketplace: {plugin_id}')
     if not root.is_dir():
         raise Unread(f'the folder Claude Code loads {plugin_id} from is not on disk: {source}')
@@ -320,6 +320,13 @@ class ClaudeState:
             root = Path(plugin['installPath'])
             marketplace = plugin['id'].split('@', 1)[1]
             follows = seen.key(Surface.PLUGIN, plugin['id'])
+            detail = seen.details.get(follows)
+            try:
+                loaded = _loaded(catalogs, plugin['id'], root)
+            except Unread:
+                loaded = root   # the flag read below records why
+            if isinstance(detail, InstallDetail) and loaded != root:
+                seen.details[follows] = replace(detail, loaded=loaded)
             if marketplace == ALIGNED_VIA and plugin['enabled']:
                 try:
                     root.stat()

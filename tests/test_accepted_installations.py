@@ -561,6 +561,8 @@ class InstallationTest(unittest.TestCase):
             alignment = self.source / '.claude-plugin/codex-alignment.json'
             alignment.parent.mkdir()
             alignment.write_text('{"excludedSkillNames": []}')
+        # The kit's tool notes make the installed image differ from the release, which the interrupted swaps here
+        # need. A real description refuses tool notes for an engine install, since Claude Code runs the release.
         package = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', self.roots.tree_digest(self.source)), codex=None,
                           claude=ClaudePlacement((AlignedInstall(True) if aligned else EngineInstall(True),)),
                           modes={} if implicit else {'one': SkillMode.EXPLICIT})
@@ -640,6 +642,19 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual(self.run_apply().exit_code, 0)
         self.calls.clear()
         return destination
+
+    def test_an_edit_to_the_folder_claude_code_runs_blocks_like_a_cache_edit(self):
+        self._installed_claude()
+        loaded = self.roots.engine / 'claude/plugins/kit/1.0.0/ordinary.txt'
+        original = loaded.read_text()
+        loaded.write_text('edited where Claude Code runs it\n')
+        edited = plan(self.setup, self.device)
+        self.assertEqual(edited.exit_code, 2)
+        self.assertEqual([(d.kind.value, d.detail) for d in edited.blocked],
+                         [('local-edit', 'plugin:claude:kit@personal-collections: The folder Claude Code runs it from, '
+                                            '{engine}/claude/plugins/kit/1.0.0, differs from its locked release')])
+        loaded.write_text(original)
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
 
     def test_claude_runtime_metadata_is_not_owned_and_exact_adoption_preserves_it(self):
         destination = self._installed_claude()

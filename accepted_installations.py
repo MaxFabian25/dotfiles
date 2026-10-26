@@ -165,6 +165,7 @@ class _Artifact:
     syntax: str = 'toml'
     native: bool = False
     provenance: object = None
+    loaded: Path | None = None      # Claude: the catalog folder Claude Code runs the plugin from, not its cache
 
     @property
     def claude_cache(self):
@@ -268,7 +269,8 @@ class AcceptedInstallations:
                                                      'selection': selection}
                     units.append(_Artifact(f'plugin:{key.host}:{key.subject}', key, entry, destination, current,
                                            (destination,), str(bytes_digest(_encoded(fingerprint))), 'plugin', fact.value,
-                                           native=needs_native, provenance=fingerprint))
+                                           native=needs_native, provenance=fingerprint,
+                                           loaded=detail.loaded if isinstance(detail, InstallDetail) else None))
                 elif key.surface in (Surface.AGENT, Surface.LOOSE_SKILL):
                     path = self.roots.codex_home / 'agents' / key.subject if key.surface == Surface.AGENT else self.expand(key.subject)
                     fingerprint = (str(bytes_digest(_encoded({'digest': fact.value.digest, 'paths': device_paths,
@@ -354,6 +356,11 @@ class AcceptedInstallations:
                     return Kind.CHANGED, 'Verify exact desired content before replacing a stale receipt'
                 return Kind.LOCAL_EDIT, 'Installed bytes differ from the accepted image'
             if accepted['intent'] == artifact.intent and _same(accepted['bindings'], _bindings(artifact.aliases)):
+                # That folder is the built release itself, so it holds the locked tree, while the cache holds the
+                # accepted image of the release with its install overlay.
+                if artifact.loaded is not None and self.roots.tree_digest(artifact.loaded) != artifact.expected.digest:
+                    return Kind.LOCAL_EDIT, (f'The folder Claude Code runs it from, {self.roots.tokens(artifact.loaded)}, '
+                                             'differs from its locked release')
                 return None, ''
             return Kind.CHANGED, 'Prepare the reviewed desired image'
         if _missing(actual):

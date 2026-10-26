@@ -4,7 +4,8 @@ from pathlib import Path, PurePosixPath
 import subprocess
 
 from description import (AlignedInstall, BuildSource, CourseRecipe, EngineInstall, GenericRecipe, MarketplaceInstall,
-                         LocalSource, Package, RepoSource, Roots, Setup, SkillRoot, SnapshotRecipe, SnapshotSource, Visibility, entry_path)
+                         LocalSource, Package, RepoSource, Roots, Setup, SkillRoot, SnapshotRecipe, SnapshotSource, ToolNotes,
+                         Visibility, entry_path)
 from host_state import ANTHROPIC_SKILLS, CATALOGS, Host, SkillMode
 import portable
 
@@ -134,6 +135,11 @@ def check_invariants(setup: Setup, errors: list[str]) -> None:
                 key = f'{host.value}.install[{index}]'
                 if isinstance(install, EngineInstall) and package.source is None:
                     errors.append(f'{path}:{key}: an engine install needs a source')
+                # Claude Code runs these from the engine's catalog, which the install overlay's notes never reach.
+                if (host == Host.CLAUDE and isinstance(install, EngineInstall) and install.enabled
+                        and package.tool_notes == ToolNotes.APPLY):
+                    errors.append(f'{path}:{key}: Claude Code runs this install from the catalog, where tool notes do '
+                                  'not reach; give it an aligned Claude install')
                 if isinstance(install, AlignedInstall) and install.enabled and not (
                         package.codex and any(i.enabled for i in package.codex.installs)):
                     errors.append(f'{path}:{key}: an enabled aligned copy needs an enabled Codex install')

@@ -327,10 +327,13 @@ class ObserveTest(unittest.TestCase):
             # The fixture's install cache marks poteto-mode explicit; the catalog's copy, which Claude Code runs, does not.
             device.write(device.roots.claude_home / catalog, json.dumps({'name': 'codex-aligned', 'plugins': [
                 {'name': 'kit', 'source': './plugins/kit/1.0+codex-aligned.x', 'version': '1.0+codex-aligned.x'}]}))
-            device.skill(device.roots.claude_home / 'marketplaces/codex-aligned/plugins/kit/1.0+codex-aligned.x', 'poteto-mode')
+            loaded = device.roots.claude_home / 'marketplaces/codex-aligned/plugins/kit/1.0+codex-aligned.x'
+            device.skill(loaded, 'poteto-mode')
             observation = device.state().observe(hs.Request())
         self.assertNotIn(poteto, observation.facts)
         self.assertEqual(observation.unknown, ())
+        self.assertEqual(observation.details[key(S.PLUGIN, 'kit@codex-aligned')].loaded, loaded)
+        self.assertIsNone(observation.details[key(S.PLUGIN, 'interfaces@interfaces')].loaded)
 
     def test_a_catalog_source_outside_its_marketplace_or_missing_is_unknown(self):
         for source, reason in (('../outside', 'catalog source leaves its marketplace'), ('./plugins/kit/gone', 'not on disk')):

@@ -317,6 +317,13 @@ class InvariantTest(unittest.TestCase):
                 path.write_text((path.read_text() if path.is_file() else '[skills]\n') + line + '\n')
                 self.assertEqual(roots.problems(), [f'{path}:{problem}'])
 
+    def test_tool_notes_cannot_target_a_claude_install_run_from_the_catalog(self):
+        with Roots() as roots:
+            path = roots.private / 'packages/example-course.toml'
+            path.write_text(path.read_text().replace('[skills]\n', '[skills]\ntool_notes = "apply"\n'))
+            self.assertEqual(roots.problems(), [f'{path}:claude.install[0]: Claude Code runs this install from the catalog, '
+                                                'where tool notes do not reach; give it an aligned Claude install'])
+
     def test_a_claude_toggle_can_name_one_of_anthropics_own_skills(self):
         with Roots() as roots:
             path = roots.private / 'hosts/claude.toml'

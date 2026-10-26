@@ -349,6 +349,7 @@ class InstallDetail:
     url: str | None = None           # a git install's repository
     path: str | None = None          # and the plugin's folder inside it
     hooks: int = 0                   # Codex: hooks the installed tree defines
+    loaded: Path | None = None       # Claude: the catalog folder it runs a directory marketplace's plugin from
 
 
 @dataclass(frozen=True)
