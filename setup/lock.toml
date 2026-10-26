@@ -100,9 +100,9 @@ codex = { version = "0.3.9+dotfiles.20261025", tree = "sha256:8205c59e4c79f6ffdd
 claude = { version = "0.3.9+codex-aligned.d20dd57da8da", tree = "sha256:ed218a33a231820681fdd7bdfee57322cab0e319ca582c4456f48158985983e5" }
 
 [pstack]
-intent = "sha256:791b4bfe350a72809028e493bd29d1ca14a6c295c4c9b78dcc0bb3363298b1f3"
+intent = "sha256:4d40f90c2e4721cd45bf23f6f53397ae375730f7ab2620536fa9b501404678ef"
 codex = { version = "0.15.30+upstream.eb4db2b55b2b.codex1", tree = "sha256:061ade68944276db1c71f48da715552f465f89fa52304b3d7c59a91f5b79766a" }
-claude = { version = "0.15.30+codex-aligned.6f5f0d5369ed", tree = "sha256:5800508178611442e64912d14fe5d568a7539b20d8d5de8cbd48bbc85f6e72a0" }
+claude = { version = "0.15.30+codex-aligned.30f4e2c219e3", tree = "sha256:b6f4cc45539b568083c6b48a945c32aabc00d8e9a2c7026dcaee3ef7bf281eb9" }
 roles = { "comment-sicko.toml" = "sha256:6f3ea8222b5e7abf65decd3712a9d32f5804953e0539e61b2a9f92e11148d56e", "poteto-agent.toml" = "sha256:3d113f3faefd9ee007f001bedc51aa9227b46bb5a233567e87eba1f56e89c206", "pstack-reader.toml" = "sha256:e1ce58630b65ea7ce264d6590d4209a525ae2df8ba422fafdc2a6fc3a55a885a" }
 
 [show-me]
