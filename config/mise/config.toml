@@ -36,3 +36,8 @@ stripe = "1.53.1"
 "npm:typescript" = "7.0.2"
 "npm:typescript-language-server" = "6.0.2"
 "npm:@devcontainers/cli" = "0.89.0"
+
+# Keep the selected npm ahead of Node's bundled npm, including after directory changes.
+[env._.path]
+path = ['{{ tools["npm:npm"].path }}/node_modules/.bin']
+tools = true

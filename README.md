@@ -10,7 +10,7 @@ Linux, including WSL. Source review happens centrally. Each device reconciles a 
 | `setup/` | Public source pins, selected skills, host choices, and reproducible build locks |
 | `packages/prose/` | Owned Prose source and its release checks |
 | `skills/` | Owned portable skills |
-| `config/mise/config.toml` | Reviewed tool versions, without credentials or local environment settings |
+| `config/mise/config.toml` | Reviewed tool versions and the PATH entry that keeps the selected npm ahead of Node's own, without credentials or local environment settings |
 | `config/npm/npmrc.toml` | Reviewed top-level keys for each device's `~/.npmrc`. Other lines, such as registry credentials, stay local |
 | `config/agent-browser/chrome.toml` | Google Chrome's install paths for each platform. Each device sets only `executablePath` in `~/.agent-browser/config.json` to an installed one, never Chrome for Testing, and a device without Google Chrome blocks its pull |
 | `config/apt/packages.txt` | Ubuntu packages for Linux and WSL, installed by hand |

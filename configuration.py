@@ -59,10 +59,12 @@ def desired(public: Path | None, private: Path | None, roots: DeviceRoots, platf
     mise = public / 'config/mise/config.toml' if public else None
     if mise and mise.is_file():
         source = tomllib.loads(mise.read_text(encoding='utf-8'))
-        if set(source) != {'tools'} or not isinstance(source['tools'], dict):
-            raise ValueError('Public mise configuration must contain only a tools table')
+        if ('tools' not in source or not set(source) <= {'tools', 'env'}
+                or not all(isinstance(table, dict) for table in source.values())):
+            raise ValueError('Public mise configuration must contain only a tools table and an optional env table')
         result.append(TomlConfiguration('mise-tools', roots.home / '.config/mise/config.toml',
-                                        {('tools', name): value for name, value in source['tools'].items()}))
+                                        {('tools', name): value for name, value in source['tools'].items()}
+                                        | _leaf_fields(source.get('env', {}), ('env',))))
     npm = public / 'config/npm/npmrc.toml' if public else None
     if npm and npm.is_file():
         source = tomllib.loads(npm.read_text(encoding='utf-8'))
@@ -86,6 +88,13 @@ def desired(public: Path | None, private: Path | None, roots: DeviceRoots, platf
                               {('features', 'multi_agent_v2', OVERRIDE_KEY): settings['spawn_overrides']}),
         ])
     return tuple(result)
+
+
+def _leaf_fields(table: dict, prefix: tuple[str, ...]) -> dict[tuple[str, ...], object]:
+    result = {}
+    for key, value in table.items():
+        result.update(_leaf_fields(value, (*prefix, key)) if isinstance(value, dict) else {(*prefix, key): value})
+    return result
 
 
 _WINDOWS_VARIABLE = re.compile(r'%([^%]+)%')

@@ -89,8 +89,9 @@ def paired(public, private):
 
 
 def install_tools(home, state):
-    """A release only writes tool versions into the mise config, and mise stops on a pinned version that isn't
-    installed. Install once per config contents, and again on the next pull after a failed install."""
+    """A release writes tool versions and the npm PATH entry into the mise config, and mise stops on a pinned
+    version that isn't installed. Install once per config contents, and again on the next pull after a failed
+    install."""
     config = home / '.config/mise/config.toml'
     if not config.is_file():
         return

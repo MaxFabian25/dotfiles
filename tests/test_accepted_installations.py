@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 import sys
 import tempfile
+import tomllib
 import unittest
 from unittest.mock import patch
 
@@ -385,6 +386,41 @@ class InstallationTest(unittest.TestCase):
         live.write_text(live.read_text().replace('python = "2"\n', '').replace('uv = "0.1"', 'uv = "0.2"'))
         config_source.write_text('[tools]\nnode = "24"\nop = "2"\nyarn = "1"\n')
         self.assertEqual(self.run_apply().exit_code, 0)
+
+    def test_mise_env_entry_already_on_the_device_is_adopted_then_updated(self):
+        config_source = self.public / 'config/mise/config.toml'
+        config_source.parent.mkdir(parents=True)
+        config_source.write_text('[tools]\nnode = "24"\n')
+        entry = ('\n# Keep npm first.\n[env._.path]\n'
+                 "path = ['{{ tools[\"npm:npm\"].path }}/node_modules/.bin']\ntools = true\n")
+        live = self.roots.home / '.config/mise/config.toml'
+        live.parent.mkdir(parents=True)
+        live.write_text('# keep me\n[tools]\nnode = "24"\n\n[env]\nLOCAL = "test-only-local"\n'
+                        + entry.replace('.bin', 'other'))
+        self.assertEqual(self.run_apply().exit_code, 0)
+        config_source.write_text('[tools]\nnode = "24"\n' + entry)
+        with self.assertRaises(ConcurrentEdit):
+            self.run_apply()
+        self.assertIn('/node_modules/other', live.read_text())
+        live.write_text(live.read_text().replace('/node_modules/other', '/node_modules/.bin'))
+        before = live.read_bytes()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+        self.assertEqual(live.read_bytes(), before)
+        config_source.write_text('[tools]\nnode = "24"\n' + entry.replace('/node_modules/.bin', '/bin'))
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(tomllib.loads(live.read_text()),
+                         tomllib.loads(before.decode().replace('/node_modules/.bin', '/bin')))
+        self.assertIn('# keep me', live.read_text())
+        self.assertIn('# Keep npm first.', live.read_text())
+
+    def test_mise_source_accepts_only_tools_and_env_tables(self):
+        config_source = self.public / 'config/mise/config.toml'
+        config_source.parent.mkdir(parents=True)
+        for text in ('[tools]\nnode = "24"\n[settings]\nexperimental = true\n', '[env]\nLOCAL = "1"\n'):
+            config_source.write_text(text)
+            with self.assertRaises(ValueError):
+                desired(self.public, None, self.roots, Platform.LINUX)
 
     def test_npmrc_fields_share_the_owner_and_preserve_unmanaged_lines(self):
         config_source = self.public / 'config/npm/npmrc.toml'
