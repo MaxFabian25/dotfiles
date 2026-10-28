@@ -3,7 +3,7 @@ public = true
 [source]
 build = "generic"
 repository = "https://github.com/vercel/next.js.git"
-commit = "2e559938ff9d3fae80594795dbba191f39537fb9"
+commit = "ced39776fdf810336ed9e9cfebe789cfdd2d2138"
 subdirectory = "skills"
 manifest = ".claude-plugin/plugin.json"
 packaging = 1
