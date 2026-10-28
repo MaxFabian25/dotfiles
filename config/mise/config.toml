@@ -20,7 +20,7 @@ uv = "0.13.5"
 pnpm = "12.9.1"
 "npm:@yarnpkg/cli-dist" = "4.18.1"
 "npm:npm" = "12.2.1"
-"npm:@openai/codex" = "0.164.0-alpha.12"
+"npm:@openai/codex" = "0.166.0-alpha.5"
 "npm:agent-browser" = "0.39.1"
 powershell = { version = "7.6.6", os = ["macos"] }
 bun = { version = "latest", os = ["macos"] }

@@ -124,9 +124,10 @@ class Runtime(homes.Home):
         self.bundle = self.roots.home / '.cache/codex-runtimes' / cr.ROOT
         self.work = self.bundle.with_name(f'.{cr.ROOT}.dotfiles')
         self.record = self.roots.home / '.local/state/dotfiles/codex-runtime.json'
-        patcher = mock.patch('platform.machine', return_value='x86_64')
-        patcher.start()
-        self.patches = [patcher]
+        self.patches = [mock.patch('platform.machine', return_value='x86_64'),
+                        mock.patch.object(sys, 'platform', 'linux')]
+        for patcher in self.patches:
+            patcher.start()
         return self
 
     def __exit__(self, *exc):
