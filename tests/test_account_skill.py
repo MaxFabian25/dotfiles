@@ -30,6 +30,7 @@ class SourceSelectionTest(unittest.TestCase):
             select_source([{'name': 'example:task', 'pluginId': 'example@openai-curated-remote',
                             'path': '/publisher/settings.json'}], 'example:task')
 
+    @unittest.skipIf(sys.platform == 'win32', 'WSL path translation runs on POSIX')
     def test_wsl_uses_windows_python_and_preserves_the_native_profile(self):
         for profile in ('C:/Users/test person/profile/home', '/mnt/c/Users/test person/profile/home'):
             with self.subTest(profile=profile), patch('portable.WINDOWS', False), patch.object(Path, 'is_file', return_value=True):
