@@ -55,7 +55,8 @@ def main():
         source = home / 'source'
         (source / '.codex-plugin').mkdir(parents=True)
         name = 'dotfiles-policy-fixture'
-        (source / '.codex-plugin/plugin.json').write_text(json.dumps({'name': name, 'version': '1.0.0', 'skills': './skills/'}))
+        for manifest in ('plugin.json', '.codex-plugin/plugin.json'):
+            (source / manifest).write_text(json.dumps({'name': name, 'version': '1.0.0', 'skills': './skills/'}))
         for skill in ('explicit-test', 'ordinary-test'):
             path = source / 'skills' / skill
             path.mkdir(parents=True)

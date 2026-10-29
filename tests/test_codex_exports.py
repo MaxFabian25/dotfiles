@@ -59,6 +59,19 @@ class PolicyExportTest(unittest.TestCase):
             with self.assertRaisesRegex(BuildError, 'immutable policy export was edited'):
                 builder.codex(package, verify=False)
 
+    def test_all_native_manifest_variants_use_the_export_version(self):
+        with Home() as home:
+            source, _, package, builder = self.fixture(home)
+            manifests = ('plugin.json', '.codex-plugin/plugin.json', '.claude-plugin/plugin.json', '.cursor-plugin/plugin.json')
+            original = b'{"name":"kit","version":"1.0.0"}\n'
+            for name in manifests:
+                home.write(source / name, original.decode())
+            package = replace(package, source=LocalSource('source', home.roots.tree_digest(source)))
+            built = builder.codex(package, verify=False)
+            for name in manifests:
+                self.assertEqual(json.loads((built.root / name).read_bytes())['version'], built.version)
+                self.assertEqual((source / name).read_bytes(), original)
+
     def test_native_marketplace_source_keeps_publisher_version(self):
         with Home() as home:
             _, original, package, builder = self.fixture(home)

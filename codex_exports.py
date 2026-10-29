@@ -47,7 +47,7 @@ def export(package, built, directory, roots):
             target = staged / path.relative_to(built.root.resolve())
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(after.encode('utf-8'))
-        receipt = {'schema': 1, 'upstream_version': built.version, 'upstream_digest': built.digest,
+        receipt = {'schema': 2, 'upstream_version': built.version, 'upstream_digest': built.digest,
                    'explicit': [name for _, _, _, name in changes]}
         receipt_path = staged / '.dotfiles-policy.json'
         if receipt_path.exists():
@@ -55,11 +55,12 @@ def export(package, built, directory, roots):
         receipt_path.write_bytes((json.dumps(receipt, indent=2) + '\n').encode())
         digest = str(roots.tree_digest(staged)).removeprefix('sha256:')
         version = built.version + ('.' if '+' in built.version else '+') + 'explicit.' + digest[:16]
-        manifest = next(staged / name for name in ('.codex-plugin/plugin.json', '.claude-plugin/plugin.json', 'plugin.json')
-                        if (staged / name).is_file())
-        data = json.loads(manifest.read_bytes())
-        data['version'] = version
-        manifest.write_bytes((json.dumps(data, indent=2, ensure_ascii=False) + '\n').encode())
+        for name in ('plugin.json', '.codex-plugin/plugin.json', '.claude-plugin/plugin.json', '.cursor-plugin/plugin.json'):
+            manifest = staged / name
+            if manifest.is_file():
+                data = json.loads(manifest.read_bytes())
+                data['version'] = version
+                manifest.write_bytes((json.dumps(data, indent=2, ensure_ascii=False) + '\n').encode())
         expected = roots.tree_digest(staged)
         destination = parent / version
         if destination.exists():
