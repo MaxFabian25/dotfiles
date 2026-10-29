@@ -11,7 +11,7 @@ import tomllib
 import tomlkit
 
 from host_state import DeviceRoots, Platform
-from pstack_runtime import OVERRIDE_KEY, model_entries, validate_codex, validate_models
+from pstack_runtime import OVERRIDE_KEY, model_entries, model_target, validate_codex, validate_models
 
 
 @dataclass(frozen=True)
@@ -78,10 +78,23 @@ def desired(public: Path | None, private: Path | None, roots: DeviceRoots, platf
     pstack = private / 'config/pstack' if private else None
     if pstack and pstack.is_dir():
         models = (pstack / 'models.md').read_bytes()
-        model_entries(models)
+        entries = model_entries(models)
         settings = tomllib.loads((pstack / 'runtime.toml').read_text(encoding='utf-8'))
-        if set(settings) != {'spawn_overrides'} or not isinstance(settings['spawn_overrides'], bool):
-            raise ValueError('Pstack runtime configuration needs one boolean spawn_overrides')
+        if (set(settings) - {'spawn_overrides', 'excluded_codex_models'}
+                or not isinstance(settings.get('spawn_overrides'), bool)):
+            raise ValueError('Pstack runtime configuration needs boolean spawn_overrides and optional excluded_codex_models')
+        excluded = settings.get('excluded_codex_models', [])
+        if (not isinstance(excluded, list)
+                or any(not isinstance(slug, str) or not slug or re.search(r'[\s:@,]', slug)
+                       or slug in {'auto', 'inherit-parent'} for slug in excluded)):
+            raise ValueError('Pstack excluded_codex_models must be a list of nonempty bare model slugs')
+        excluded = frozenset(excluded)
+        for section, role, model, _effort in entries:
+            if model in {'auto', 'inherit-parent'}:
+                continue
+            harness, slug = model_target(section, model)
+            if harness == 'codex' and slug in excluded:
+                raise ValueError(f'Excluded Codex model for {section}/{role}: {slug} (excluded_codex_models)')
         result.extend([
             FileConfiguration('pstack-models', roots.home / '.config/pstack/models.md', models),
             TomlConfiguration('pstack-runtime', roots.codex_home / 'config.toml',

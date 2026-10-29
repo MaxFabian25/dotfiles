@@ -46,6 +46,9 @@ class PstackRuntimeTests(unittest.TestCase):
             with patch.object(runtime.portable, "claude_cli", return_value="claude"), \
                     patch.object(runtime.portable, "codex_cli", return_value="codex"):
                 self.assertEqual(runtime.validate_models(codex_home, value, codex_home=codex_home), 2)
+                cross_harness = (b'## claude-code\narena runners: haiku@low, codex:gpt-6.1-sol@low\n'
+                                 b'## codex\narena runners: gpt-6.1-sol@low, claude:opus@high\n')
+                self.assertEqual(runtime.validate_models(codex_home, cross_harness, codex_home=codex_home), 4)
                 with self.assertRaisesRegex(ValueError, "Unconfirmed Claude alias for claude-code/recall readers: gpt"):
                     runtime.validate_models(codex_home, value.replace(b"haiku", b"gpt"), codex_home=codex_home)
 

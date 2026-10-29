@@ -1,9 +1,11 @@
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from configuration import _expand, installed_chrome, patch_fields, read_fields
+from configuration import _expand, desired, installed_chrome, patch_fields, read_fields
+from host_state import DeviceRoots, Platform
 
 
 class ConfigurationTests(unittest.TestCase):
@@ -113,6 +115,70 @@ expose_spawn_agent_model_overrides = true # managed
                          r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe')
         self.assertIsNone(_expand(template, Path('/home'), {}))
         self.assertEqual(_expand('{home}/Applications/Chrome', Path('/Users/u'), {}), '/Users/u/Applications/Chrome')
+
+
+class PstackPolicyTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        self.private = root / 'private'
+        self.source = self.private / 'config/pstack'
+        self.source.mkdir(parents=True)
+        home = root / 'home'
+        self.roots = DeviceRoots(home, home / '.codex', home / '.claude', home / '.agents', root / 'engine')
+
+    def configure(self, settings, codex='current-model@high', claude='opus@high'):
+        models = f'## claude-code\narena runners: {claude}\n## codex\narena runners: {codex}\n'.encode()
+        (self.source / 'models.md').write_bytes(models)
+        (self.source / 'runtime.toml').write_text(settings)
+        return desired(None, self.private, self.roots, Platform.LINUX)
+
+    def test_excluded_models_are_rejected_in_direct_prefixed_and_panel_seats(self):
+        for codex, claude, section in [
+            ('retired-model@high', 'opus@high', 'codex'),
+            ('codex:retired-model@high', 'opus@high', 'codex'),
+            ('current-model@high, retired-model@high', 'opus@high', 'codex'),
+            ('current-model@high', 'opus@high, codex:retired-model@high', 'claude-code'),
+        ]:
+            with self.subTest(codex=codex, claude=claude), self.assertRaisesRegex(
+                    ValueError, f'Excluded Codex model for {section}/arena runners: retired-model'):
+                self.configure('spawn_overrides = true\nexcluded_codex_models = ["retired-model"]\n', codex, claude)
+            self.assertFalse(self.roots.home.exists())
+
+    def test_exclusion_is_exact_and_stays_out_of_native_config(self):
+        configurations = self.configure(
+            'spawn_overrides = false\nexcluded_codex_models = ["current", "current-model-old", "opus"]\n',
+            codex='current-model@high, claude:opus@high')
+        models, runtime = configurations
+        self.assertEqual(models.data, (self.source / 'models.md').read_bytes())
+        self.assertEqual(runtime.fields, {('features', 'multi_agent_v2', 'expose_spawn_agent_model_overrides'): False})
+
+    def test_missing_or_empty_exclusions_preserve_existing_behavior(self):
+        for policy in ('', 'excluded_codex_models = []\n'):
+            with self.subTest(policy=policy):
+                configurations = self.configure('spawn_overrides = true\n' + policy, codex='retired-model@high')
+                self.assertEqual(len(configurations), 2)
+
+    def test_inherited_model_selection_is_not_a_concrete_excluded_model(self):
+        for model in ('auto', 'inherit-parent'):
+            with self.subTest(model=model):
+                self.assertEqual(len(self.configure(
+                    'spawn_overrides = true\nexcluded_codex_models = ["retired-model"]\n',
+                    codex=f'{model}@high')), 2)
+
+    def test_malformed_exclusion_policy_is_rejected(self):
+        for value in ('"retired-model"', 'false', '1', '{}', '[1]', '[""]', '[" "]',
+                      '[" retired-model"]', '["retired model"]', '["codex:retired-model"]',
+                      '["retired-model@high"]', '["auto"]', '["inherit-parent"]'):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'excluded_codex_models'):
+                self.configure(f'spawn_overrides = true\nexcluded_codex_models = {value}\n')
+
+    def test_required_boolean_and_unknown_runtime_keys_remain_rejected(self):
+        for settings in ('', 'spawn_overrides = "true"\n',
+                         'spawn_overrides = true\nunknown = []\n'):
+            with self.subTest(settings=settings), self.assertRaises(ValueError):
+                self.configure(settings)
 
 
 if __name__ == '__main__':

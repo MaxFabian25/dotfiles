@@ -76,6 +76,11 @@ def cli_command(name, *args):
     return command
 
 
+def model_target(section: str, model: str) -> tuple[str, str]:
+    harness = "codex" if model.startswith("codex:") else "claude-code" if model.startswith("claude:") else section
+    return harness, model.split(":", 1)[-1]
+
+
 def validate_models(home, data, *, codex_home=None):
     catalog = json.loads(((codex_home or home / '.codex') / 'models_cache.json').read_text(encoding='utf-8-sig'))
     models = {m["slug"]: {e["effort"] for e in m.get("supported_reasoning_levels", [])}
@@ -84,8 +89,7 @@ def validate_models(home, data, *, codex_home=None):
     for section, role, model, effort in entries:
         if model in {"inherit-parent", "auto"}:
             continue
-        harness = "codex" if model.startswith("codex:") else "claude-code" if model.startswith("claude:") else section
-        slug = model.split(":", 1)[-1]
+        harness, slug = model_target(section, model)
         cli_command("codex" if harness == "codex" else "claude")
         if harness == "codex" and (slug not in models or effort not in models[slug]):
             raise ValueError(f"Unavailable Codex model or effort for {section}/{role}: {model}@{effort}")

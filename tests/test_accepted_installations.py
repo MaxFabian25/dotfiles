@@ -1299,6 +1299,21 @@ class InstallationTest(unittest.TestCase):
                                                        'expose_spawn_agent_model_overrides = false'))
         self.assertEqual(plan(self.setup, self.device).exit_code, 2)
 
+    def test_excluded_model_stops_planning_before_managed_writes(self):
+        private = self.root / 'private'
+        source = private / 'config/pstack'
+        source.mkdir(parents=True)
+        (source / 'models.md').write_text(
+            '## claude-code\ncode: opus@high\n## codex\ncode: retired-model@high\n')
+        (source / 'runtime.toml').write_text(
+            'spawn_overrides = true\nexcluded_codex_models = ["retired-model"]\n')
+        self.setup = replace(self.setup, roots=replace(self.setup.roots, private=private / 'setup'))
+        before = list(self.roots.home.iterdir())
+        with self.assertRaisesRegex(ValueError, 'Excluded Codex model for codex/code: retired-model'):
+            self.run_apply()
+        self.assertEqual(list(self.roots.home.iterdir()), before)
+        self.assertEqual(self.calls, [])
+
     def test_toml_unmanaged_concurrent_edit_survives_managed_update(self):
         from sync_hosts import Apply
         source = self.public / 'config/mise/config.toml'
