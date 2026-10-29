@@ -134,6 +134,18 @@ def git(root, *args):
 
 
 class PinnedBuildTest(unittest.TestCase):
+    def test_locking_enabled_catalog_plugin_does_not_build_application_content(self):
+        from description import CodexPlacement, Lock, MarketplaceInstall, Package, Roots, Setup, ToolNotes, Visibility, intent
+        from lock_setup import refresh
+        from unittest.mock import Mock
+        package = Package('drive', Visibility.PRIVATE, '', None, {}, ToolNotes.AUDIT,
+                          CodexPlacement((MarketplaceInstall('openai-curated-remote', True),)), None)
+        setup = Setup(Roots(Path('/public'), Path('/private')), {'drive': package}, {}, {}, {}, None, (), frozenset(), {})
+        builder = Mock()
+        updated = refresh(setup, builder, ['drive'])
+        self.assertEqual(updated.lock['drive'], Lock(intent(package, {})))
+        builder.codex.assert_not_called()
+
     def test_rebuild_uses_the_pin_even_after_upstream_moves_and_rejects_changed_output(self):
         from dataclasses import replace
         from description import BuildSource, CodexPlacement, EngineInstall, GenericRecipe, Lock, LockedTree, Package, Roots, Setup, ToolNotes, Visibility, intent

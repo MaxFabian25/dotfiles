@@ -7,7 +7,7 @@ import shutil
 import tempfile
 
 from host_state import SkillMode
-from invocation_overrides import read_text, skill_paths, transform_policy
+from invocation_overrides import read_text, skill_paths, transform_policy, transform_skill
 
 
 def explicit_skills(package):
@@ -19,16 +19,24 @@ def explicit_skills(package):
 
 def policy_writes(package, root):
     paths = skill_paths(root)
-    names = explicit_skills(package)
+    explicit = explicit_skills(package)
+    implicit = {name for name, mode in package.modes.items() if mode == SkillMode.ON}
+    names = explicit | implicit
     if missing := names - paths.keys():
-        raise ValueError(f'{package.name}: missing explicit skills: {sorted(missing)}')
+        raise ValueError(f'{package.name}: missing invocation-policy skills: {sorted(missing)}')
     changes = []
     for name in sorted(names):
         sidecar = paths[name].parent / 'agents/openai.yaml'
         before = read_text(sidecar)
-        after = transform_policy(before, False)
+        after = transform_policy(before, name in implicit)
         if before != after:
             changes.append((sidecar, before, after, name))
+        if name in implicit:
+            skill = paths[name]
+            before = read_text(skill)
+            after = transform_skill(before, f'{package.name}:{name}', {})
+            if before != after:
+                changes.append((skill, before, after, name))
     return tuple(changes)
 
 
@@ -48,7 +56,10 @@ def export(package, built, directory, roots):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(after.encode('utf-8'))
         receipt = {'schema': 2, 'upstream_version': built.version, 'upstream_digest': built.digest,
-                   'explicit': [name for _, _, _, name in changes]}
+                   'explicit': [name for _, _, _, name in changes if package.modes.get(name) != SkillMode.ON]}
+        implicit = sorted({name for _, _, _, name in changes if package.modes.get(name) == SkillMode.ON})
+        if implicit:
+            receipt['implicit'] = implicit
         receipt_path = staged / '.dotfiles-policy.json'
         if receipt_path.exists():
             raise BuildError(f'{package.name}: source already contains a policy export receipt')

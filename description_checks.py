@@ -62,6 +62,8 @@ def check_privacy(found: Setup, errors: list[str]) -> None:
         source = package.source
         if source is None:
             errors.append(f'{path}:source: catalog and account toggles are private')
+        elif isinstance(source, RepoSource) and source.imports:
+            errors.append(f'{path}:source.imports: source snapshots are private')
         elif isinstance(source, BuildSource):
             recipe = source.recipe
             if isinstance(recipe, CourseRecipe):
@@ -132,6 +134,15 @@ def check_invariants(setup: Setup, errors: list[str]) -> None:
         path = entry_path(roots.of(package.visibility), 'packages', name)
         if isinstance(package.source, LocalSource) and package.source.variants:
             errors.append(f'{path}:source.variants: only loose skills have host variants')
+        if isinstance(package.source, RepoSource) and package.source.imports:
+            for skill in package.source.imports:
+                if not skill or skill in ('.', '..') or any(c in skill for c in '/\\:'):
+                    errors.append(f'{path}:source.imports: expected a single skill directory name')
+            for host in Host:
+                placement = package.placement(host)
+                if placement and any(i.enabled and not isinstance(i, (EngineInstall, AlignedInstall))
+                                     for i in placement.installs):
+                    errors.append(f'{path}:source.imports: composed packages install through an engine catalog')
         for host in Host:
             placement = package.placement(host)
             installs = placement.installs if placement else ()
@@ -158,8 +169,6 @@ def check_invariants(setup: Setup, errors: list[str]) -> None:
         if selected and not isinstance(package.source.recipe, GenericRecipe):
             for skill in sorted(set(package.modes) - set(selected)):
                 errors.append(f'{path}:skills: {skill} is not a selected skill')
-        if SkillMode.ON in package.modes.values() and package.source is not None:
-            errors.append(f'{path}:skills.on: only catalog packages take on')
         _check_claude_modes(package, path, selected, errors)
     for host, modes in setup.host_skills.items():
         path = (roots.private or roots.public) / 'hosts' / f'{host.value}.toml'
@@ -168,6 +177,8 @@ def check_invariants(setup: Setup, errors: list[str]) -> None:
             if owner:
                 errors.append(f'{path}:skills.{key}: {owner}')
     for name, skill in setup.loose.items():
+        if isinstance(skill.source, RepoSource) and skill.source.imports:
+            errors.append(f'{entry_path(roots.of(skill.visibility), "skills", name)}:source.imports: only packages import skills')
         if isinstance(skill.source, LocalSource) and skill.source.variants and set(skill.source.variants) != set(skill.place):
             errors.append(f'{entry_path(roots.of(skill.visibility), "skills", name)}:source.variants: '
                           'names a path for each placement, and only those')

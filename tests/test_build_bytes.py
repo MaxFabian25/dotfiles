@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import align_with_codex
@@ -15,6 +16,32 @@ from portable import GIT
 
 
 class BuildBytesTests(unittest.TestCase):
+    def test_course_model_invocation_override_is_limited_to_the_selected_skill(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'source'
+            for name in ('selected', 'other'):
+                skill = source / 'skills' / name
+                skill.mkdir(parents=True)
+                (skill / 'SKILL.md').write_text(
+                    f'---\nname: {name}\ndescription: Example\ndisable-model-invocation: true\n---\nInstructions.\n')
+            for arguments in (('init', '-q'), ('add', '.'),
+                              ('-c', 'user.name=Build Test', '-c', 'user.email=build@example.invalid',
+                               'commit', '-qm', 'Fixture')):
+                subprocess.run([*GIT, '-C', str(source), *arguments], check=True, capture_output=True)
+            config = {'checkout': str(source), 'packagingRevision': 1, 'repository': 'example/course',
+                      'collection': 'example', 'branch': 'main', 'displayName': 'Example',
+                      'description': 'Example workflows.', 'url': 'https://example.invalid/course',
+                      'selectedSkills': [
+                          {'sourcePath': 'skills/selected', 'sourceName': 'selected', 'installedName': 'selected',
+                           'normalizations': [], 'allowImplicitInvocation': True},
+                          {'sourcePath': 'skills/other', 'sourceName': 'other', 'installedName': 'other',
+                           'normalizations': []}]}
+            release, _ = course_package.build('example', config, output_root=root / 'output')
+            for name, allowed in (('selected', True), ('other', False)):
+                policy = yaml.safe_load((release / 'skills' / name / 'agents/openai.yaml').read_text())
+                self.assertIs(policy['policy']['allow_implicit_invocation'], allowed)
+
     def test_receipt_bytes_do_not_depend_on_native_path_ordering(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

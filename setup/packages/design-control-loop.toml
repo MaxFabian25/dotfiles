@@ -4,7 +4,7 @@ public = true
 repo = "skills"
 
 [skills]
-explicit = ["design-control-loop"]
+on = ["design-control-loop"]
 
 [codex]
 install = [{ via = "skills", enabled = true }]

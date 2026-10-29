@@ -4,7 +4,7 @@ public = true
 repo = "skills"
 
 [skills]
-explicit = ["show-me"]
+on = ["show-me"]
 
 [codex]
 install = [{ via = "skills", enabled = true }]

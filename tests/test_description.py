@@ -126,6 +126,21 @@ def write(root, files):
 
 
 class RenderTest(unittest.TestCase):
+    def test_private_composition_pins_round_trip_and_change_intent(self):
+        with Roots() as roots:
+            path = roots.private / 'packages/combined.toml'
+            path.write_text('[source]\nrepo = "impeccable"\nimports = { extra = "sha256:' + 'a' * 64 +
+                            '" }\n[skills]\non = ["variant"]\n[codex]\ninstall = [{ via = "personal", enabled = true }]\n')
+            setup = description_toml.load(roots.roots())
+            package = setup.packages['combined']
+            self.assertEqual(package.source.imports, {'extra': 'sha256:' + 'a' * 64})
+            files = description_toml.render_root(setup, description.Visibility.PRIVATE, None)
+            path.write_bytes(files['packages/combined.toml'])
+            self.assertEqual(description_toml.load(roots.roots()).packages['combined'], package)
+            path.write_text(path.read_text().replace('a' * 64, 'b' * 64))
+            changed = description_toml.load(roots.roots()).packages['combined']
+            self.assertNotEqual(description.intent(package, setup.repos), description.intent(changed, setup.repos))
+
     def test_an_unchanged_entry_keeps_its_bytes_comments_and_all(self):
         with Roots() as roots:
             setup = description_toml.load(roots.roots())
@@ -154,6 +169,19 @@ class RenderTest(unittest.TestCase):
 
 
 class LeakTest(unittest.TestCase):
+    def test_private_imports_cannot_be_published_or_bypass_the_engine(self):
+        with Roots() as roots:
+            path = roots.public / 'packages/impeccable.toml'
+            original = path.read_text()
+            path.write_text(original.replace('repo = "impeccable"',
+                            'repo = "impeccable"\nimports = { extra = "sha256:' + 'a' * 64 + '" }'))
+            problems = roots.problems()
+            self.assertIn(f'{path}:source.imports: source snapshots are private', problems)
+            private = roots.private / 'packages/combined.toml'
+            private.write_text(path.read_text().replace('public = true\n', ''))
+            path.write_text(original)
+            self.assertIn(f'{private}:source.imports: composed packages install through an engine catalog', roots.problems())
+
     def test_a_public_reference_to_a_private_name_is_unknown(self):
         with Roots() as roots:
             path = roots.public / 'packages/impeccable.toml'

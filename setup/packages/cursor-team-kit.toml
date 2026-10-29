@@ -1,5 +1,5 @@
 public = true
-note = "All 18 skills present on 2026-10-14, listed by name so later upstream additions are not exported. Duplicates of existing workflows are disabled by name in Codex skills.config, and Claude's aligned copy omits them: check-compiler-errors, fix-ci, fix-merge-conflicts, get-pr-comments, loop-on-ci, new-branch-and-pr, review-and-ship, run-smoke-tests, workflow-from-chats. No harness adaptation: only pr-review-canvas mentions an in-app browser, which both hosts handle as written. Invocation flags live in invocation-overrides.json explicitTargets."
+note = "All 18 skills present on 2026-10-14 are selected so later upstream additions are not exported. Disabled skills are listed below; Claude's aligned copy omits them. No harness adaptation: only pr-review-canvas mentions an in-app browser, which both hosts handle as written. Invocation choices are recorded below."
 
 [source]
 build = "generic"
@@ -35,14 +35,9 @@ url = "https://github.com/cursor/plugins/tree/main/cursor-team-kit"
 
 [skills]
 off = [
-  "check-compiler-errors",
-  "fix-ci",
-  "fix-merge-conflicts",
-  "get-pr-comments",
-  "loop-on-ci",
-  "new-branch-and-pr",
-  "review-and-ship",
   "run-smoke-tests",
+  "weekly-review",
+  "what-did-i-get-done",
   "workflow-from-chats",
 ]
 explicit = [
@@ -50,7 +45,9 @@ explicit = [
   "control-ui",
   "deslop",
   "make-pr-easy-to-review",
+  "new-branch-and-pr",
   "pr-review-canvas",
+  "review-and-ship",
   "thermo-nuclear-code-quality-review",
   "verify-this",
 ]

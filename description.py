@@ -137,6 +137,7 @@ class BuildSource:
 class RepoSource:
     repo: RepoName                   # the commit lives on the repo entry
     path: str | None = None
+    imports: Mapping[str, Digest] = field(default_factory=dict, metadata={'intent': 'when-set'})
 
 
 @dataclass(frozen=True)

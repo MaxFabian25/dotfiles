@@ -77,7 +77,9 @@ def build(name, config, revision='HEAD', *, output_root=None):
             if config.get('skillDisplayNamePrefix'):
                 interface['display_name'] = config['skillDisplayNamePrefix']+interface.get('display_name', selection['sourceName'])
             interface['default_prompt'] = 'Use $'+selection['installedName']+' for this task.'
-            if explicit:
+            if selection.get('allowImplicitInvocation') is True:
+                agent.setdefault('policy', {})['allow_implicit_invocation'] = True
+            elif explicit:
                 agent.setdefault('policy', {})['allow_implicit_invocation'] = False
             sidecar.parent.mkdir(exist_ok=True)
             write_utf8(sidecar, yaml.safe_dump(agent, sort_keys=False, allow_unicode=True, width=100000))

@@ -22,7 +22,7 @@ url = "https://github.com/vercel/next.js/tree/canary/skills"
 branch = "canary"
 
 [codex]
-install = [{ via = "personal", enabled = true }]
+install = [{ via = "personal", enabled = false }]
 
 [claude]
-install = [{ via = "codex-aligned", enabled = true }]
+install = [{ via = "codex-aligned", enabled = false }]

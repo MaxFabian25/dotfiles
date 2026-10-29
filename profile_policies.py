@@ -8,8 +8,8 @@ import tomllib
 from codex_exports import explicit_skills
 from description import MarketplaceInstall, RepoSource, plugin_id
 from drift import Difference, EntryRef, Kind
-from host_state import FileValue, Host, bytes_digest
-from invocation_overrides import skill_paths, transform_policy
+from host_state import FileValue, Host, SkillMode, bytes_digest
+from invocation_overrides import skill_paths, transform_policy, transform_skill
 from sync_files import ConcurrentEdit, contents
 from sync_sources import BuildError, child, plugin_manifest
 
@@ -38,7 +38,9 @@ def inspect(setup, roots):
             continue
         plugins = tomllib.loads(config.decode('utf-8')).get('plugins', {})
         for package in setup.packages.values():
-            if not package.codex or not isinstance(package.source, RepoSource) or not explicit_skills(package):
+            modes = {name: False for name in explicit_skills(package)}
+            modes.update({name: True for name, mode in package.modes.items() if mode == SkillMode.ON})
+            if not package.codex or not isinstance(package.source, RepoSource) or not modes:
                 continue
             locked = setup.lock.get(package.name)
             tree = locked.trees.get(Host.CODEX) if locked else None
@@ -67,27 +69,39 @@ def inspect(setup, roots):
                     if plugin_manifest(target).get('name') != package.name:
                         raise ValueError(f'profile plugin identity differs: {target}')
                     available = skill_paths(source)
-                    for name in sorted(explicit_skills(package)):
+                    for name, implicit in sorted(modes.items()):
                         skill = available[name]
                         relative = skill.parent.relative_to(source)
                         sidecar = child(target, (relative / 'agents/openai.yaml').as_posix())
                         if sidecar.absolute() != sidecar.resolve():
                             raise ValueError(f'profile policy path is linked: {sidecar}')
                         original = contents(skill.parent / 'agents/openai.yaml')
-                        desired = transform_policy(original.decode('utf-8') if original is not None else None, False).encode()
+                        desired = transform_policy(original.decode('utf-8') if original is not None else None, implicit).encode()
+                        previous = transform_policy(original.decode('utf-8') if original is not None else None, not implicit).encode()
                         actual = contents(sidecar)
-                        if actual == desired:
-                            continue
-                        if actual != original:
-                            raise ValueError(f'profile policy differs from both reviewed copies: {sidecar}')
+                        if actual not in (original, desired, previous):
+                            raise ValueError(f'profile policy differs from the reviewed source and policies: {sidecar}')
                         profile_skill = target / skill.relative_to(source)
-                        if contents(profile_skill) != skill.read_bytes():
+                        original_skill = skill.read_bytes()
+                        desired_skill = (transform_skill(original_skill.decode('utf-8'),
+                                                         f'{package.name}:{name}', {}).encode()
+                                         if implicit else original_skill)
+                        actual_skill = contents(profile_skill)
+                        if actual == desired and actual_skill == desired_skill:
+                            continue
+                        if actual_skill not in (original_skill, desired_skill):
                             raise ValueError(f'profile skill has local edits: {profile_skill}')
-                        guards = ((config_path, config), (profile_skill, skill.read_bytes()))
-                        repairs.append(Repair(sidecar, actual, desired, guards))
-                        differences.append(Difference(Kind.OVERLAY, None, FileValue(bytes_digest(desired)),
-                                                      FileValue(bytes_digest(actual)) if actual is not None else None,
-                                                      entry, host=Host.CODEX, detail=f'profile policy: {sidecar}'))
+                        writes = [(sidecar, actual, desired)]
+                        if implicit:
+                            writes.append((profile_skill, actual_skill, desired_skill))
+                        guards = ((config_path, config), (profile_skill, actual_skill), (sidecar, actual))
+                        for path, before, after in writes:
+                            if before == after:
+                                continue
+                            repairs.append(Repair(path, before, after, guards))
+                            differences.append(Difference(Kind.OVERLAY, None, FileValue(bytes_digest(after)),
+                                                          FileValue(bytes_digest(before)) if before is not None else None,
+                                                          entry, host=Host.CODEX, detail=f'profile policy: {path}'))
                 except (OSError, ValueError, KeyError, BuildError) as error:
                     differences.append(Difference(Kind.LOCAL_EDIT, None, None, None, entry,
                                                   host=Host.CODEX, detail=str(error)))

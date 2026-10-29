@@ -80,6 +80,30 @@ class PolicyExportTest(unittest.TestCase):
             self.assertEqual(built.version, '1.0.0')
             self.assertEqual((built.root / 'skills/publish/agents/openai.yaml').read_text(), original)
 
+    def test_implicit_export_overrides_both_flags_without_changing_source_or_other_skills(self):
+        with Home() as home:
+            source, _, package, builder = self.fixture(home)
+            skill = source / 'skills/publish/SKILL.md'
+            skill.write_text('---\nname: publish\ndescription: Publish\ndisable-model-invocation: true\n---\nKeep body.\n')
+            sidecar = source / 'skills/publish/agents/openai.yaml'
+            sidecar.write_text('interface:\n  display_name: Publish\npolicy:\n  allow_implicit_invocation: false\n')
+            before = home.roots.tree_digest(source)
+            package = replace(package, source=LocalSource('source', before), modes={'publish': SkillMode.ON})
+            built = builder.codex(package, verify=False)
+            self.assertIn('disable-model-invocation: false', (built.root / 'skills/publish/SKILL.md').read_text())
+            self.assertIn('allow_implicit_invocation: true', (built.root / 'skills/publish/agents/openai.yaml').read_text())
+            self.assertIn('display_name: Publish', (built.root / 'skills/publish/agents/openai.yaml').read_text())
+            self.assertEqual(home.roots.tree_digest(source), before)
+            self.assertEqual((built.root / 'skills/ordinary/SKILL.md').read_bytes(),
+                             (source / 'skills/ordinary/SKILL.md').read_bytes())
+            self.assertEqual(builder.codex(package, verify=False), built)
+            native = replace(package, codex=CodexPlacement((MarketplaceInstall('publisher', True),)))
+            pristine = builder.codex(native, verify=False)
+            self.assertEqual(pristine.version, '1.0.0')
+            effective = builder.effective(native, pristine)
+            self.assertIn('disable-model-invocation: false', (effective / 'skills/publish/SKILL.md').read_text())
+            self.assertIn('allow_implicit_invocation: true', (effective / 'skills/publish/agents/openai.yaml').read_text())
+
 
 class ProfilePolicyTest(unittest.TestCase):
     def fixture(self, home):
@@ -162,6 +186,42 @@ class ProfilePolicyTest(unittest.TestCase):
             repairs, differences = profile_policies.inspect(setup, home.roots)
             self.assertFalse(repairs)
             self.assertIn('local edits', differences[0].detail)
+
+    def test_implicit_profile_policy_repairs_both_flags_and_rejects_unrelated_edits(self):
+        with Home() as home:
+            setup, target, _ = self.fixture(home)
+            package = replace(setup.packages['kit'], modes={'publish': SkillMode.ON})
+            source = home.roots.engine / 'native/kit' / ('a' * 40)
+            for root in (source, target):
+                home.write(root / 'skills/publish/SKILL.md',
+                           '---\nname: publish\ndescription: Publish\ndisable-model-invocation: true\n---\nKeep body.\n')
+                home.write(root / 'skills/publish/agents/openai.yaml', 'policy:\n  allow_implicit_invocation: false\n')
+            lock = replace(setup.lock['kit'], trees={Host.CODEX: LockedTree('1.0.0', home.roots.tree_digest(source))})
+            setup = replace(setup, packages={'kit': package}, lock={'kit': lock})
+            repairs, differences = profile_policies.inspect(setup, home.roots)
+            self.assertEqual((len(repairs), len(differences)), (2, 2))
+            profile_policies.apply(repairs, Files(home.roots.home / 'backups'))
+            self.assertIn('disable-model-invocation: false', (target / 'skills/publish/SKILL.md').read_text())
+            self.assertIn('allow_implicit_invocation: true', (target / 'skills/publish/agents/openai.yaml').read_text())
+            self.assertEqual(profile_policies.inspect(setup, home.roots), ((), ()))
+            (target / 'skills/publish/SKILL.md').write_text('Unrelated user edit')
+            repairs, differences = profile_policies.inspect(setup, home.roots)
+            self.assertFalse(repairs)
+            self.assertIn('local edits', differences[0].detail)
+
+    def test_profile_can_change_a_previously_reviewed_explicit_policy_to_implicit(self):
+        with Home() as home:
+            setup, target, _ = self.fixture(home)
+            repairs, _ = profile_policies.inspect(setup, home.roots)
+            profile_policies.apply(repairs, Files(home.roots.home / 'backups'))
+            package = replace(setup.packages['kit'], modes={'publish': SkillMode.ON})
+            setup = replace(setup, packages={'kit': package})
+            repairs, differences = profile_policies.inspect(setup, home.roots)
+            self.assertEqual(len(repairs), 1)
+            self.assertTrue(all(d.kind.value == 'overlay' for d in differences))
+            profile_policies.apply(repairs, Files(home.roots.home / 'new-backups'))
+            self.assertIn('allow_implicit_invocation: true', (target / 'skills/publish/agents/openai.yaml').read_text())
+            self.assertEqual(profile_policies.inspect(setup, home.roots), ((), ()))
 
 
 if __name__ == '__main__':

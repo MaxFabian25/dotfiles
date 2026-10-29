@@ -169,6 +169,9 @@ class Builder:
             raise BuildError(f'{package.name} is supplied by the application, not built by sync')
         manifest = plugin_manifest(tree)
         result = Built(package.name, tree, str(manifest.get('version', '0.1.0')), self.roots.tree_digest(tree))
+        if isinstance(source, RepoSource) and source.imports:
+            from composed_package import compose
+            result = compose(package, result, self.setup.roots.private, self.directory, self.roots)
         if package.codex and any(isinstance(i, EngineInstall) and i.enabled for i in package.codex.installs):
             from codex_exports import export
             result = export(package, result, self.directory, self.roots)
@@ -243,6 +246,7 @@ class Builder:
 
         label = host.value.capitalize()
         explicit = {name for name, mode in package.modes.items() if mode == SkillMode.EXPLICIT}
+        implicit = {name for name, mode in package.modes.items() if mode == SkillMode.ON}
         if host == Host.CODEX and package.claude:
             explicit.update(name for name, mode in package.claude.modes.items() if mode == SkillMode.EXPLICIT)
         if host == Host.CODEX:
@@ -259,7 +263,8 @@ class Builder:
                 policy = yaml.safe_load(text) if text else {}
                 if name not in exported and (policy or {}).get('policy', {}).get('allow_implicit_invocation') is False:
                     explicit.remove(name)
-        registry = {'targets': {label: {}}, 'explicitTargets': {label: {identity: sorted(explicit)}}}
+        registry = {'targets': {label: {identity: sorted(implicit)}},
+                    'explicitTargets': {label: {identity: sorted(explicit)}}}
         adaptations = {'plugins': {}}
         adaptation = package.codex.adaptation if host == Host.CODEX and package.codex else None
         if adaptation:

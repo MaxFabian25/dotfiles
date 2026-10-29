@@ -126,7 +126,9 @@ def _parse_source(table: _Table | None) -> Source:
             table.error('variants', 'expected codex, agents or claude relative paths')
         return LocalSource(table.get('local', str), table.parse('tree', parse_digest, table.get('tree', str)), variants)
     if 'repo' in table.data:
-        return RepoSource(RepoName(table.get('repo', str)), table.get('path', str, None))
+        imports = {name: table.parse(f'imports.{name}', parse_digest, value)
+                   for name, value in table.get('imports', dict, {}).items()}
+        return RepoSource(RepoName(table.get('repo', str)), table.get('path', str, None), imports)
     build = table.get('build', str)
     recipe = _parse_recipe(table, build) if build else None
     frozen_table = table.sub('frozen')
@@ -584,6 +586,8 @@ def _dump_package(package: Package) -> dict:
         out['source'] = _dump_local(source)
     elif isinstance(source, RepoSource):
         out['source'] = {'repo': source.repo, **({'path': source.path} if source.path is not None else {})}
+        if source.imports:
+            out['source']['imports'] = _Inline(dict(sorted(source.imports.items())))
     elif isinstance(source, BuildSource):
         recipe = _dump_recipe(source.recipe)
         recipe.update(packaging=source.packaging, display_name=source.display_name)

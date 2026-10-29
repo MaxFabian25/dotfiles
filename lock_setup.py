@@ -23,7 +23,7 @@ def refresh(setup, builder, names, *, owned=False):
         if isinstance(entry, Package):
             previous = locks.get(name, Lock(intent(entry, setup.repos)))
             trees, roles, hooks = dict(previous.trees), previous.roles, previous.hooks
-            if any(p and any(i.enabled for i in p.installs) for p in (entry.codex, entry.claude)):
+            if entry.source is not None and any(p and any(i.enabled for i in p.installs) for p in (entry.codex, entry.claude)):
                 built = builder.codex(entry, verify=False)
                 trees[Host.CODEX] = LockedTree(built.version, built.digest)
                 for built_claude in builder.claude(entry, built, verify=False).values():
