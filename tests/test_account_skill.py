@@ -1,10 +1,12 @@
 import sys
+import io
 from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from read_account_skill import select_source, windows_handoff
+from read_account_skill import main, select_source, windows_handoff
 
 
 class SourceSelectionTest(unittest.TestCase):
@@ -46,6 +48,23 @@ class SourceSelectionTest(unittest.TestCase):
             self.assertIsNone(windows_handoff('/home/test/.codex', 'read_account_skill.py'))
         with patch('portable.WINDOWS', True):
             self.assertIsNone(windows_handoff('C:/Users/test/.codex', 'read_account_skill.py'))
+
+    def test_publisher_unicode_is_utf8_even_under_a_legacy_console_encoding(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            skill = Path(temporary) / 'SKILL.md'
+            skill.write_bytes('Publisher café 🚀\n'.encode('utf-8'))
+            buffer = io.BytesIO()
+            output = io.TextIOWrapper(buffer, encoding='ascii')
+            errors = io.TextIOWrapper(io.BytesIO(), encoding='ascii')
+            with patch('read_account_skill.Client') as client, patch('read_account_skill.windows_handoff', return_value=None), \
+                    patch('sys.stdout', output), patch('sys.stderr', errors):
+                client.return_value.skills.return_value = [{'name': 'example:task',
+                    'pluginId': 'example@openai-curated-remote', 'path': str(skill)}]
+                self.assertEqual(main(['example:task']), 0)
+                output.flush()
+                self.assertIn('Publisher café 🚀\n', buffer.getvalue().decode('utf-8'))
+            output.close()
+            errors.close()
 
 
 if __name__ == '__main__':

@@ -119,6 +119,8 @@ def windows_handoff(profile, script):
 
 
 def main(argv=None):
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('name')
     parser.add_argument('--profile', type=Path)
