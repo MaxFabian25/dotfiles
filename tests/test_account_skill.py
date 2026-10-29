@@ -63,7 +63,7 @@ class SourceSelectionTest(unittest.TestCase):
                     'pluginId': 'example@openai-curated-remote', 'path': str(skill)}]
                 self.assertEqual(main(['example:task']), 0)
                 output.flush()
-                self.assertIn('Publisher café 🚀\n', buffer.getvalue().decode('utf-8'))
+                self.assertIn('Publisher café 🚀', buffer.getvalue().decode('utf-8').splitlines())
             output.close()
             errors.close()
 
