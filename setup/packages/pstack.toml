@@ -3,11 +3,70 @@ public = true
 [source]
 build = "generic"
 repository = "https://github.com/cursor/plugins.git"
-commit = "eb4db2b55b2b7dec3d9282754cddf0a56bf4ff10"
+commit = "1ba91fc25c0977741dd0e267849e6234b037ed0a"
 subdirectory = "pstack"
 manifest = ".cursor-plugin/plugin.json"
 packaging = 1
 display_name = "pstack"
+select = [
+  "./skills/architect",
+  "./skills/arena",
+  "./skills/automate-me",
+  "./skills/benchmark-checklist",
+  "./skills/blast-radius",
+  "./skills/bro",
+  "./skills/correct",
+  "./skills/create-formal-verification-skill",
+  "./skills/create-verification-skill",
+  "./skills/figure-it-out",
+  "./skills/how",
+  "./skills/in-your-own-words",
+  "./skills/interrogate",
+  "./skills/ketchup",
+  "./skills/maintain-formal-verification-skill",
+  "./skills/maintain-verification-skill",
+  "./skills/make-bot-ui",
+  "./skills/no-comments",
+  "./skills/poteto-help",
+  "./skills/poteto-mode",
+  "./skills/principle-attack-the-premise",
+  "./skills/principle-boundary-discipline",
+  "./skills/principle-build-the-lever",
+  "./skills/principle-encode-lessons-in-structure",
+  "./skills/principle-exhaust-the-design-space",
+  "./skills/principle-experience-first",
+  "./skills/principle-explain-the-number",
+  "./skills/principle-fix-root-causes",
+  "./skills/principle-foundational-thinking",
+  "./skills/principle-guard-the-context-window",
+  "./skills/principle-laziness-protocol",
+  "./skills/principle-make-operations-idempotent",
+  "./skills/principle-migrate-callers-then-delete-legacy-apis",
+  "./skills/principle-minimize-reader-load",
+  "./skills/principle-model-the-domain",
+  "./skills/principle-never-block-on-the-human",
+  "./skills/principle-outcome-oriented-execution",
+  "./skills/principle-prove-it-works",
+  "./skills/principle-redesign-from-first-principles",
+  "./skills/principle-separate-before-serializing-shared-state",
+  "./skills/principle-sequence-verifiable-units",
+  "./skills/principle-subtract-before-you-add",
+  "./skills/principle-test-behavior-not-implementation",
+  "./skills/principle-type-system-discipline",
+  "./skills/recall",
+  "./skills/reflect",
+  "./skills/setup-pstack",
+  "./skills/sharpen",
+  "./skills/show-me-your-work",
+  "./skills/statechart",
+  "./skills/swarm",
+  "./skills/tdd",
+  "./skills/teach",
+  "./skills/technical-writing",
+  "./skills/typescript-best-practices",
+  "./skills/unslop",
+  "./skills/why",
+]
 
 [source.metadata]
 url = "https://github.com/cursor/plugins/tree/main/pstack"
@@ -76,7 +135,7 @@ tool_notes = "exempt"
 
 [codex]
 install = [{ via = "personal", enabled = true }]
-adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "f6a0a03bf57aec01a17d9b9c6cd4b0335512f6a4", adapted = "e00cf876beccf5de59e3375934eedab489d7c903", harness = "skills/poteto-mode/references/harnesses.md" }
+adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "5568d87290548bcf913bce23dcd313e5d29ba796", adapted = "118d6173e756393c1826c3a7f6da5c3aee82fbce", harness = "skills/poteto-mode/references/harnesses.md" }
 
 [codex.roles]
 from = "plugin"
@@ -86,4 +145,62 @@ directory = "agents/codex"
 install = [{ via = "codex-aligned", enabled = true }]
 
 [claude.skills]
-on = ["poteto-mode"]
+on = [
+  "architect",
+  "arena",
+  "automate-me",
+  "benchmark-checklist",
+  "blast-radius",
+  "bro",
+  "correct",
+  "create-formal-verification-skill",
+  "create-verification-skill",
+  "figure-it-out",
+  "how",
+  "in-your-own-words",
+  "interrogate",
+  "ketchup",
+  "maintain-formal-verification-skill",
+  "maintain-verification-skill",
+  "make-bot-ui",
+  "no-comments",
+  "poteto-help",
+  "poteto-mode",
+  "principle-attack-the-premise",
+  "principle-boundary-discipline",
+  "principle-build-the-lever",
+  "principle-encode-lessons-in-structure",
+  "principle-exhaust-the-design-space",
+  "principle-experience-first",
+  "principle-explain-the-number",
+  "principle-fix-root-causes",
+  "principle-foundational-thinking",
+  "principle-guard-the-context-window",
+  "principle-laziness-protocol",
+  "principle-make-operations-idempotent",
+  "principle-migrate-callers-then-delete-legacy-apis",
+  "principle-minimize-reader-load",
+  "principle-model-the-domain",
+  "principle-never-block-on-the-human",
+  "principle-outcome-oriented-execution",
+  "principle-prove-it-works",
+  "principle-redesign-from-first-principles",
+  "principle-separate-before-serializing-shared-state",
+  "principle-sequence-verifiable-units",
+  "principle-subtract-before-you-add",
+  "principle-test-behavior-not-implementation",
+  "principle-type-system-discipline",
+  "recall",
+  "reflect",
+  "setup-pstack",
+  "sharpen",
+  "show-me-your-work",
+  "statechart",
+  "swarm",
+  "tdd",
+  "teach",
+  "technical-writing",
+  "typescript-best-practices",
+  "unslop",
+  "why",
+]

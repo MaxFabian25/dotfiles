@@ -85,6 +85,14 @@ class AdaptationAncestryTest(unittest.TestCase):
     def test_cold_cache_acquires_ancestry_of_exact_pins(self):
         self.assert_adapted()
 
+    def test_checkout_does_not_copy_temporary_source_pack_files(self):
+        cache = self.sources.repository(self.url, self.adapted, history=True)
+        temporary_pack = cache / 'objects/pack/tmp_pack_in_progress'
+        temporary_pack.write_bytes(b'An unrelated pack being written.')
+        self.assert_adapted()
+        self.assertFalse((self.checkout / '.git/objects/pack' / temporary_pack.name).exists())
+        self.assertEqual(temporary_pack.read_bytes(), b'An unrelated pack being written.')
+
     def test_disconnected_shallow_seed_is_read_only(self):
         seed = self.root / 'seed'
         seed.mkdir()

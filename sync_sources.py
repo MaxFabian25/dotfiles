@@ -97,7 +97,7 @@ class Sources:
         created = not destination.exists()
         if created:
             destination.parent.mkdir(parents=True, exist_ok=True)
-            run_git(None, 'clone', '--no-checkout', str(repository), str(destination))
+            run_git(None, 'clone', '--no-local', '--no-checkout', str(repository), str(destination))
             run_git(destination, 'remote', 'set-url', 'origin', url)
         elif clone_url(run_git(destination, 'remote', 'get-url', 'origin').decode().strip()) != clone_url(url):
             raise BuildError(f'Checkout has a different origin: {destination}')
