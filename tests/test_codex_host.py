@@ -343,7 +343,7 @@ class ObserveTest(unittest.TestCase):
             kit: hs.PluginValue(True, hs.Released('1.0')),
             key(S.PLUGIN, 'impeccable@personal'): hs.PluginValue(True, hs.Pinned(C1)),
             key(S.PLUGIN, 'rpi@skills'): hs.PluginValue(True, hs.Pinned(C2)),
-            key(S.PLUGIN, 'sharepoint@openai-curated-remote'): hs.PluginValue(True, hs.Unpinned()),
+            key(S.PLUGIN, 'sharepoint@openai-curated-remote'): hs.PluginValue(False, hs.Unpinned()),
             key(S.PLUGIN, 'latex@openai-bundled'): hs.PluginValue(True, hs.Unpinned()),
             key(S.SKILL, 'kit:fix-ci'): M.OFF,
             key(S.SKILL, 'kit:deslop'): M.EXPLICIT,
@@ -361,7 +361,6 @@ class ObserveTest(unittest.TestCase):
                                                          'sharepoint@openai-curated-remote', 'latex@openai-bundled'}))
         self.assertEqual([(n.kind.value, n.subject, n.detail) for n in observation.notes], [
             ('residue', 'personal', '1 marketplace entries without an install: visualize'),
-            ('residue', 'sharepoint@openai-curated-remote', 'config.toml says off, Codex reports on'),
             ('residue', 'gone@openai-curated', 'config.toml has an entry for a plugin Codex does not have'),
             ('residue', 'skills.config', '1 toggles for 1 plugins Codex no longer has: retired'),
             ('residue', 'skills.config', '1 enables on skills of pinned plugins, which are on by default'),
@@ -370,6 +369,26 @@ class ObserveTest(unittest.TestCase):
             ('device-local', 'hook trust hashes', '1 hook trust hashes'),
         ])
         self.assertEqual(observation.unknown, ())
+
+    def test_remote_local_disable_does_not_invent_installs_or_override_account_disable(self):
+        identity = 'sharepoint@openai-curated-remote'
+        for account in (False, True):
+            for local in (None, False, True):
+                with self.subTest(account=account, local=local), Device() as device:
+                    remote = next(p for p in device.inventory if p['pluginId'] == identity)
+                    remote['enabled'] = account
+                    config = device.roots.codex_home / 'config.toml'
+                    block = f'[plugins."{identity}"]\nenabled = false\n'
+                    replacement = '' if local is None else f'[plugins."{identity}"]\nenabled = {str(local).lower()}\n'
+                    config.write_text(config.read_text().replace(block, replacement))
+                    observation = device.state().observe(hs.Request())
+                    self.assertEqual(observation.facts[key(S.PLUGIN, identity)].value.enabled,
+                                     account and local is not False)
+                    self.assertEqual(remote['enabled'], account)
+        with Device() as device:
+            device.inventory = [p for p in device.inventory if p['pluginId'] != identity]
+            observation = device.state().observe(hs.Request())
+            self.assertNotIn(key(S.PLUGIN, identity), observation.facts)
 
     def test_approvals_count_only_hooks_the_installed_plugin_defines(self):
         with Device() as device:

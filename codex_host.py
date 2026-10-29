@@ -1,7 +1,7 @@
 """Every Codex encoding: plugin ids, skills.config, marketplaces, sidecars, agent roles, hooks.
 
-Codex resolves account plugins itself, so the plugin inventory comes from `codex plugin list`, never
-from config.toml; a config entry the CLI contradicts is residue.
+Codex resolves account installations itself. Remote inventory reports account enablement;
+the native loader also honors each profile's local plugin disable switch.
 """
 from __future__ import annotations
 
@@ -269,6 +269,10 @@ class CodexState:
             seen.unread(config_path, error, {Surface.MARKETPLACE, Surface.PLUGIN, Surface.SKILL, Surface.HOOK})
             config = {}
 
+        inventory = [plugin | {'enabled': False}
+                     if (plugin.get('source') or {}).get('source') == 'remote'
+                     and config.get('plugins', {}).get(plugin['pluginId'], {}).get('enabled') is False
+                     else plugin for plugin in inventory]
         installed = {plugin['pluginId']: plugin for plugin in inventory}
         named = defaultdict(list)
         for plugin in inventory:
