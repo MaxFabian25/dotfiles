@@ -125,6 +125,23 @@ class ProfilePolicyTest(unittest.TestCase):
             target.rename(target.with_name('0.9.0'))
             self.assertEqual(profile_policies.inspect(setup, home.roots), ((), ()))
 
+    def test_canonical_cache_links_are_already_owned_but_other_links_are_rejected(self):
+        for canonical in (True, False):
+            with self.subTest(canonical=canonical), Home() as home:
+                setup, target, _ = self.fixture(home)
+                cache = target.parents[2]
+                other = home.roots.codex_home / 'plugins/cache' if canonical else home.roots.home / 'unrelated-cache'
+                other.parent.mkdir(parents=True, exist_ok=True)
+                cache.rename(other)
+                cache.symlink_to(other, target_is_directory=True)
+                repairs, differences = profile_policies.inspect(setup, home.roots)
+                self.assertFalse(repairs)
+                if canonical:
+                    self.assertFalse(differences)
+                else:
+                    self.assertEqual(differences[0].kind.value, 'local-edit')
+                    self.assertIn('Path leaves its source', differences[0].detail)
+
     def test_user_edits_and_concurrent_config_changes_are_preserved(self):
         with Home() as home:
             setup, target, config = self.fixture(home)

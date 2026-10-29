@@ -11,7 +11,7 @@ from drift import Difference, EntryRef, Kind
 from host_state import FileValue, Host, bytes_digest
 from invocation_overrides import skill_paths, transform_policy
 from sync_files import ConcurrentEdit, contents
-from sync_sources import child, plugin_manifest
+from sync_sources import BuildError, child, plugin_manifest
 
 
 @dataclass(frozen=True)
@@ -50,11 +50,14 @@ def inspect(setup, roots):
                 identity = plugin_id(package.name, install, Host.CODEX)
                 if plugins.get(identity, {}).get('enabled') is not True:
                     continue
-                target = child(profile, f'plugins/cache/{install.marketplace}/{package.name}/{tree.version}')
-                if not target.is_dir():
-                    continue
                 entry = EntryRef(package.name, package.visibility)
                 try:
+                    relative = f'plugins/cache/{install.marketplace}/{package.name}/{tree.version}'
+                    if (profile / relative).resolve() == (roots.codex_home / relative).resolve():
+                        continue
+                    target = child(profile, relative)
+                    if not target.is_dir():
+                        continue
                     repo = setup.repos[package.source.repo]
                     source = roots.engine / 'native' / package.name / repo.commit
                     if not source.is_dir() and (installed := roots.installed_engine()) is not None:
@@ -85,7 +88,7 @@ def inspect(setup, roots):
                         differences.append(Difference(Kind.OVERLAY, None, FileValue(bytes_digest(desired)),
                                                       FileValue(bytes_digest(actual)) if actual is not None else None,
                                                       entry, host=Host.CODEX, detail=f'profile policy: {sidecar}'))
-                except (OSError, ValueError, KeyError) as error:
+                except (OSError, ValueError, KeyError, BuildError) as error:
                     differences.append(Difference(Kind.LOCAL_EDIT, None, None, None, entry,
                                                   host=Host.CODEX, detail=str(error)))
     return tuple(repairs), tuple(differences)
