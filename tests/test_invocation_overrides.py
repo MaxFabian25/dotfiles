@@ -12,6 +12,19 @@ spec.loader.exec_module(module)
 
 
 class InvocationOverridesTest(unittest.TestCase):
+    def test_native_manifest_selection_excludes_unselected_skill_directories(self):
+        for manifest in ('plugin.json', '.codex-plugin/plugin.json', '.claude-plugin/plugin.json'):
+            with self.subTest(manifest=manifest), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                for name in ('selected', 'unselected'):
+                    path = root / 'skills' / name / 'SKILL.md'
+                    path.parent.mkdir(parents=True)
+                    path.write_text(f'---\nname: {name}\n---\nA skill.\n')
+                metadata = root / manifest
+                metadata.parent.mkdir(parents=True, exist_ok=True)
+                metadata.write_text('{"name":"kit","skills":["./skills/selected"]}')
+                self.assertEqual(set(module.skill_paths(root)), {'selected'})
+
     def test_managed_system_skill_is_discovered_and_replayed_without_changing_body(self):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory).resolve()

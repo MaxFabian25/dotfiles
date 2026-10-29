@@ -299,7 +299,7 @@ def skill_paths(root):
         manifest = root / relative
         if manifest.is_file():
             data = read_json(manifest)
-            paths = ['./skills/'] if relative == 'plugin.json' else data.get('skills') or ['./skills/']
+            paths = data.get('skills') or ['./skills/']
             break
     if isinstance(paths, str):
         paths = [paths]
