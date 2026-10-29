@@ -30,6 +30,20 @@ def archive(entries):
 
 
 class PortableTest(unittest.TestCase):
+    def test_windows_cli_environment_recovers_missing_executable_extensions(self):
+        for inherited in ({}, {'PATHEXT': ''}):
+            with self.subTest(inherited=inherited), patch.object(portable, 'WINDOWS', True):
+                before = dict(inherited)
+                environment = portable.native_cli_environment(inherited)
+                self.assertIn('.EXE', environment['PATHEXT'].split(';'))
+                self.assertEqual(inherited, before)
+
+    def test_cli_environment_preserves_custom_extensions_and_posix_environment(self):
+        with patch.object(portable, 'WINDOWS', True):
+            self.assertEqual(portable.native_cli_environment({'PATHEXT': '.EXE;.PY'})['PATHEXT'], '.EXE;.PY')
+        with patch.object(portable, 'WINDOWS', False):
+            self.assertNotIn('PATHEXT', portable.native_cli_environment({}))
+
     def test_homes_honour_the_apps_variables_only_for_the_real_home(self):
         with patch.dict(os.environ, {'CODEX_HOME': '/elsewhere/codex', 'CLAUDE_CONFIG_DIR': '/elsewhere/claude'}):
             self.assertEqual(portable.codex_home(), Path('/elsewhere/codex'))

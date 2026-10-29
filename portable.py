@@ -24,6 +24,9 @@ CODEX_APP_CLI = {'darwin': '/Applications/ChatGPT.app/Contents/Resources/codex-c
 
 def native_cli_environment(environment=None):
     environment = dict(os.environ if environment is None else environment)
+    # Windows processes launched from WSL can lack PATHEXT, breaking mise's executable lookup.
+    if WINDOWS and not environment.get('PATHEXT'):
+        environment['PATHEXT'] = '.COM;.EXE;.BAT;.CMD'
     count = int(environment.get('GIT_CONFIG_COUNT') or '0')
     if count < 0:
         raise ValueError('GIT_CONFIG_COUNT cannot be negative')

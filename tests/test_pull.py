@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import shutil
 import sys
 from types import SimpleNamespace
@@ -8,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from pull import install_tools, paired, run, unsigned, update
+from pull import git as pull_git, install_tools, paired, run, unsigned, update
 
 
 def git(root, *args):
@@ -164,6 +165,16 @@ class PairedPullTest(unittest.TestCase):
             # Changes that remain after applying leave the pair unrecorded, so only the last pull writes a receipt.
             self.assertEqual(receipt.exists(), (code, apply) == (0, True))
         self.assertEqual(calls, [(1, True), (0, True)])
+
+
+class PullEnvironmentTest(unittest.TestCase):
+    def test_git_helpers_receive_windows_executable_extensions_when_parent_has_none(self):
+        with tempfile.TemporaryDirectory() as temporary, patch('portable.WINDOWS', True), \
+                patch.dict(os.environ, {'PATHEXT': ''}):
+            extensions = pull_git(Path(temporary), '-c',
+                'alias.dotfiles-pathext=!printf "%s" "$PATHEXT"', 'dotfiles-pathext')
+            self.assertIn('.EXE', extensions.split(';'))
+            self.assertEqual(os.environ['PATHEXT'], '')
 
 
 class WindowsVerifierTest(unittest.TestCase):

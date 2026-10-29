@@ -11,11 +11,12 @@ import subprocess
 import sys
 import tomllib
 
-from portable import GIT, WINDOWS, exclusive_lock
+from portable import GIT, WINDOWS, exclusive_lock, native_cli_environment
 
 
 def git(root, *args):
-    result = subprocess.run([*GIT, '-C', str(root), *args], capture_output=True, text=True, encoding='utf-8', timeout=180)
+    result = subprocess.run([*GIT, '-C', str(root), *args], capture_output=True, text=True, encoding='utf-8',
+                            timeout=180, env=native_cli_environment())
     if result.returncode:
         raise RuntimeError(f'{root.name}: git {args[0]} failed: {result.stderr.strip()}')
     return result.stdout.strip()
