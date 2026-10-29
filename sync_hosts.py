@@ -257,10 +257,7 @@ class Apply:
 
                 def change(data, name=name, mode=mode):
                     overrides = data.setdefault('skillOverrides', {})
-                    if mode in (SkillMode.OFF, SkillMode.ON):
-                        overrides[name] = mode.value
-                    else:
-                        overrides.pop(name, None)
+                    overrides[name] = 'user-invocable-only' if mode == SkillMode.EXPLICIT else mode.value
                 self.files.json(self.roots.claude_home / 'settings.json', change)
 
     def expand(self, value):

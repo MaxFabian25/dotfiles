@@ -313,6 +313,18 @@ class ObserveTest(unittest.TestCase):
         self.assertIn(('residue', 'skillOverrides.gone:skill', 'no single enabled install of that plugin'), notes)
         self.assertFalse([subject for _, subject, _ in notes if subject.startswith('skillOverrides.anthropic-skills')])
 
+    def test_user_invocable_only_settings_are_explicit_for_builtin_and_synced_skills(self):
+        with Device() as device:
+            settings = device.roots.claude_home / 'settings.json'
+            data = json.loads(settings.read_text())
+            data['skillOverrides'] = {'fewer-permission-prompts': 'user-invocable-only',
+                                      'anthropic-skills:morning': 'user-invocable-only', 'morning': 'user-invocable-only'}
+            settings.write_text(json.dumps(data))
+            observation = device.state().observe(hs.Request())
+        for name in data['skillOverrides']:
+            self.assertEqual(observation.facts[key(S.SKILL, name)].value, M.EXPLICIT)
+        self.assertFalse([n for n in observation.notes if n.subject.startswith('skillOverrides.')])
+
     def test_a_disabled_duplicate_reads_at_its_own_old_pin_and_only_named_flags(self):
         with Device() as device:
             observation = device.state().observe(hs.Request())

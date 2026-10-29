@@ -10,6 +10,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 class FileSafetyTest(unittest.TestCase):
+    def test_claude_explicit_host_setting_uses_the_native_user_invocable_only_value(self):
+        from host_state import FactKey, Host, SkillMode, Surface
+        from sync_files import Files
+        from sync_hosts import Apply
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            path = root / 'settings.json'
+            path.write_text('{"skillOverrides":{"unrelated":"off"}}')
+            operation = object.__new__(Apply)
+            operation.roots = SimpleNamespace(claude_home=root)
+            operation.files = Files(root / 'backups')
+            operation.current = SimpleNamespace(changes=[SimpleNamespace(
+                key=FactKey(Host.CLAUDE, Surface.SKILL, 'fewer-permission-prompts'), expected=SkillMode.EXPLICIT)])
+            operation._skills()
+            self.assertEqual(json.loads(path.read_text())['skillOverrides'],
+                             {'unrelated': 'off', 'fewer-permission-prompts': 'user-invocable-only'})
+
     def test_concurrent_edit_is_not_overwritten(self):
         from sync_files import ConcurrentEdit, Files
         with tempfile.TemporaryDirectory() as temp:

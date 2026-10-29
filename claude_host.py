@@ -292,10 +292,10 @@ class ClaudeState:
             if plugin['enabled']:
                 enabled.setdefault(plugin['id'].split('@', 1)[0], []).append(plugin['id'])
         for subject, value in settings.get('skillOverrides', {}).items():
-            if value not in ('on', 'off'):
+            if value not in ('on', 'off', 'user-invocable-only'):
                 seen.note(NoteKind.UNMODELED, f'skillOverrides.{subject}', repr(value))
                 continue
-            mode = SkillMode(value)
+            mode = SkillMode.EXPLICIT if value == 'user-invocable-only' else SkillMode(value)
             plugin, _, skill = subject.partition(':')
             if not skill:
                 seen.add(Surface.SKILL, subject, mode)
