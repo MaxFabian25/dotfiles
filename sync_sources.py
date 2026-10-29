@@ -120,6 +120,7 @@ class Built:
     root: Path
     version: str
     digest: Digest
+    pristine: Path | None = None
 
 
 class Builder:
@@ -168,6 +169,9 @@ class Builder:
             raise BuildError(f'{package.name} is supplied by the application, not built by sync')
         manifest = plugin_manifest(tree)
         result = Built(package.name, tree, str(manifest.get('version', '0.1.0')), self.roots.tree_digest(tree))
+        if package.codex and any(isinstance(i, EngineInstall) and i.enabled for i in package.codex.installs):
+            from codex_exports import export
+            result = export(package, result, self.directory, self.roots)
         if verify:
             locked = self.setup.lock.get(package.name)
             expected = locked.trees.get(Host.CODEX) if locked else None
@@ -243,6 +247,8 @@ class Builder:
             explicit.update(name for name, mode in package.claude.modes.items() if mode == SkillMode.EXPLICIT)
         if host == Host.CODEX:
             paths = skill_paths(root)
+            receipt = root / '.dotfiles-policy.json'
+            exported = json.loads(receipt.read_bytes()).get('explicit', []) if receipt.is_file() else []
             for name in tuple(explicit):
                 if name not in paths:
                     continue
@@ -251,7 +257,7 @@ class Builder:
                 if overlay is not None:
                     text = overlay.pristine(sidecar.resolve(), text)
                 policy = yaml.safe_load(text) if text else {}
-                if (policy or {}).get('policy', {}).get('allow_implicit_invocation') is False:
+                if name not in exported and (policy or {}).get('policy', {}).get('allow_implicit_invocation') is False:
                     explicit.remove(name)
         registry = {'targets': {label: {}}, 'explicitTargets': {label: {identity: sorted(explicit)}}}
         adaptations = {'plugins': {}}
@@ -336,6 +342,7 @@ class Builder:
                     raise BuildError(f'{identity}: aligned plugin has no selected skills')
                 root = catalog / entry['source']
             elif isinstance(install, EngineInstall):
+                collection_source = codex.pristine or codex.root
                 metadata = package.source.metadata if isinstance(package.source, BuildSource) else {}
                 descriptions = metadata.get('claudeDescriptions', {})
                 definitions = []
@@ -345,11 +352,11 @@ class Builder:
                     name = member.name or package.name
                     if name not in descriptions:
                         raise BuildError(f'{identity}: no Claude packaging description in its recipe')
-                    skills = member.skills or tuple(sorted(p.parent.name for p in (codex.root / 'skills').glob('*/SKILL.md')))
+                    skills = member.skills or tuple(sorted(p.parent.name for p in (collection_source / 'skills').glob('*/SKILL.md')))
                     definitions.append({'name': name, 'skills': list(skills), 'description': descriptions[name]})
                 config = {'packagingRevision': metadata.get('claudePackaging', 1), 'collections': {package.name: definitions}}
                 explicit = frozenset(name for name, mode in package.modes.items() if mode == SkillMode.EXPLICIT)
-                packages = build_collection(package.name, codex.root, config, self.directory / 'claude', explicit)
+                packages = build_collection(package.name, collection_source, config, self.directory / 'claude', explicit)
                 root = Path(next(p['release'] for p in packages if p['name'] == (install.name or package.name)))
             else:
                 root = codex.root

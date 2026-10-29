@@ -8,6 +8,7 @@ import portable
 from accepted_installations import AcceptedInstallations, copy_tree, image
 from claude_host import native_marketplace
 import codex_runtime
+import profile_policies
 from description import EngineInstall, MarketplaceMode, plugin_id, via
 from device_sync import changed_packages
 from host_observation import Unread
@@ -36,6 +37,7 @@ class Apply:
 
     def run(self):
         self.owner.preflight(self.prepared)
+        profile_policies.preflight(self.current.profile_repairs)
         self._marketplaces()
         self._runtime()
         self._catalogs()
@@ -43,6 +45,7 @@ class Apply:
             self.owner.apply(artifact, self.files, native=self._install)
         self._plugins()
         self._skills()
+        profile_policies.apply(self.current.profile_repairs, self.files)
 
     def command(self, host, *args):
         state = self.device.host(host)

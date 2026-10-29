@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from typing import Mapping
 
 import codex_runtime
+import profile_policies
 from description import Setup
 from device import Device
 from drift import Diff, Difference, Kind, Verdict, diff
@@ -20,6 +21,7 @@ class Plan:
     unmanaged: tuple[Difference, ...]
     configurations: bool = True
     expected: tuple[Difference, ...] = ()   # unmanaged, and named in this platform's device list
+    profile_repairs: tuple[profile_policies.Repair, ...] = ()
 
     @property
     def exit_code(self):
@@ -40,6 +42,8 @@ def plan(setup: Setup, device: Device, *, configurations=True) -> Plan:
     artifacts, owned = owner.inspect(observations)
     if Host.CODEX in observations:
         owned += codex_runtime.inspect(projected.runtime, device.roots, observations[Host.CODEX].offered)
+    profile_repairs, profile_differences = profile_policies.inspect(projected, device.roots)
+    owned += profile_differences
     stale = setup.stale()
     managed = {key for facts in projects.values() for key, fact in facts.items()
                if fact.entry not in stale and key.surface in
@@ -84,7 +88,7 @@ def plan(setup: Setup, device: Device, *, configurations=True) -> Plan:
     blocked = tuple(d for d in result.differences if d.kind.verdict == Verdict.ATTENTION)
     unmanaged = tuple(d for d in unmanaged if d not in expected)
     changes = tuple(d for d in result.drift() if d not in unmanaged)
-    return Plan(result, observations, changes, blocked, unmanaged, configurations, expected)
+    return Plan(result, observations, changes, blocked, unmanaged, configurations, expected, profile_repairs)
 
 
 def _expected(listed: frozenset[FactKey], unmanaged: tuple[Difference, ...], platform: Platform,

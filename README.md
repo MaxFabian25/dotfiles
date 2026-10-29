@@ -40,6 +40,18 @@ An explicitly reviewed local plan can be applied with `--apply`. Backups and own
 are device-local. A successful repeated apply must leave content and receipt timestamps unchanged.
 Inspect a reported blocker before retrying. Do not reset a checkout or delete a receipt to bypass it.
 
+Personal Codex catalog exports carry explicit-only policy in their files. A changed policy gets a new
+`+explicit.<digest>` version (or `.explicit.<digest>` after existing build metadata), under
+`codex-exports/`; the upstream snapshot stays untouched. Fresh profile installs therefore receive the
+same policy as the canonical cache. Harness adaptations remain a separate installation overlay.
+
+Native publisher plugins keep their publisher versions and catalog ownership. A sync also checks
+already-enabled, pinned native plugins in Orca account homes on this device. It repairs only invocation
+sidecars that still match the verified upstream copy, with backups outside the profile cache. Unknown
+versions, disabled plugins, credentials, roles and profile settings are not installed or adopted. Local
+edits block the repair. Run a sync after a native profile cache refresh to reconcile these sidecars again;
+this does not install a watcher or restart the application.
+
 Claude's validated root `.in_use` leases and `.orphaned_at` timestamp are native cache state, not
 plugin content. This distinction applies only to installed Claude plugins. Unknown entries, malformed
 markers, and links still block reconciliation. A populated lease directory blocks replacement of that
@@ -174,6 +186,7 @@ in a main checkout would stop every pull. Without `--write`, `review` runs on an
 ```sh
 uv run --locked python -m unittest discover -s tests
 uv run --locked python tests/native_smoke.py ./setup ../dotfiles-private/setup
+uv run --locked python tests/native_policy_smoke.py
 ```
 
 The smoke test uses temporary application homes and real native plugin loaders. It does not use a
