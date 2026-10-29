@@ -176,6 +176,16 @@ class Device(homes.Home):
 
 
 class ObserveTest(unittest.TestCase):
+    def test_requested_implicit_skill_is_observed_without_masking_off_explicit_or_missing_skills(self):
+        with Device() as device:
+            device.skill(device.roots.claude_home / 'plugins/cache/codex-aligned/kit/1.0-codex-aligned.x', 'automatic')
+            requested = frozenset('kit@codex-aligned:' + name for name in ('automatic', 'fix-ci', 'poteto-mode', 'missing'))
+            facts = device.state().observe(hs.Request(skills=requested)).facts
+        self.assertEqual(facts[key(S.SKILL, 'kit@codex-aligned:automatic')].value, M.ON)
+        self.assertEqual(facts[key(S.SKILL, 'kit@codex-aligned:fix-ci')].value, M.OFF)
+        self.assertEqual(facts[key(S.SKILL, 'kit@codex-aligned:poteto-mode')].value, M.EXPLICIT)
+        self.assertNotIn(key(S.SKILL, 'kit@codex-aligned:missing'), facts)
+
     maxDiff = None
 
     def test_native_git_pin_comes_from_the_detached_checkout_and_update_policy(self):

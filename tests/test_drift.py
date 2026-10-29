@@ -149,13 +149,24 @@ class DiffTest(unittest.TestCase):
                            f'disabled at {OLD[:7]}; the description pins {device.marketplace_pin[:7]}')])
         self.assertEqual(json.loads(drift.to_json(result))['exit'], 0)
 
-    def test_flipping_one_toggle_yields_exactly_one_missing(self):
+    def test_flipping_one_toggle_yields_exactly_one_changed_mode(self):
         with Device() as device:
             device.toggles = ''
             result = device.diff()
-        self.assertEqual(kinds(result), [(K.MISSING, 'codex', 'kit:fix-ci')])
-        self.assertEqual((result.differences[0].expected, result.differences[0].observed), (M.OFF, None))
+        self.assertEqual(kinds(result), [(K.CHANGED, 'codex', 'kit:fix-ci')])
+        self.assertEqual((result.differences[0].expected, result.differences[0].observed), (M.OFF, M.ON))
         self.assertEqual(result.exit_code, 1)
+
+    def test_model_invocable_source_choice_converges_in_both_hosts(self):
+        with Device() as device:
+            kit = device.setup.packages['kit']
+            kit = replace(kit, modes={**kit.modes, 'weekly-review': M.ON})
+            lock = replace(device.setup.lock['kit'], intent=d.intent(kit, {}))
+            device.setup = replace(device.setup, packages={**device.setup.packages, 'kit': kit},
+                                   lock={**device.setup.lock, 'kit': lock})
+            result = device.diff()
+        self.assertEqual(result.differences, ())
+        self.assertEqual(result.exit_code, 0)
 
     def test_removing_the_receipt_yields_a_local_edit(self):
         with Device() as device:
@@ -254,8 +265,8 @@ class DiffTest(unittest.TestCase):
             role.write_text('name = "kit_reviewer"\nedited = true\n')
             stale = device.diff()
         self.assertEqual(kinds(fresh), [])
-        self.assertEqual(kinds(stale), [(K.STALE_LOCK, None, None), (K.MISSING, 'claude', 'kit@codex-aligned:weekly-review'),
-                                        (K.MISSING, 'codex', 'kit:weekly-review')])
+        self.assertEqual(kinds(stale), [(K.STALE_LOCK, None, None), (K.CHANGED, 'claude', 'kit@codex-aligned:weekly-review'),
+                                        (K.CHANGED, 'codex', 'kit:weekly-review')])
 
     def test_an_overlay_that_cannot_be_replayed_needs_a_person_and_says_why(self):
         with Device() as device:
@@ -278,8 +289,8 @@ class DiffTest(unittest.TestCase):
             stale = device.diff()
         self.assertEqual([(x.kind, x.host) for x in absent.differences], [(K.HOST_ABSENT, hs.Host.CLAUDE)])
         self.assertEqual(absent.exit_code, 2)
-        self.assertEqual(kinds(stale), [(K.STALE_LOCK, None, None), (K.MISSING, 'claude', 'kit@codex-aligned:weekly-review'),
-                                        (K.MISSING, 'codex', 'kit:weekly-review')])
+        self.assertEqual(kinds(stale), [(K.STALE_LOCK, None, None), (K.CHANGED, 'claude', 'kit@codex-aligned:weekly-review'),
+                                        (K.CHANGED, 'codex', 'kit:weekly-review')])
         self.assertEqual(stale.exit_code, 2)
         self.assertIn('host-absent claude  host is not installed here', drift.render(absent))
         self.assertIn('stale-lock  the entry changed after its lock was written', drift.render(stale))

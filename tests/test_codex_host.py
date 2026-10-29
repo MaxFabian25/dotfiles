@@ -250,6 +250,15 @@ trust_level = "trusted"
 
 
 class ObserveTest(unittest.TestCase):
+    def test_requested_implicit_skill_is_observed_without_masking_off_explicit_or_missing_skills(self):
+        with Device() as device:
+            requested = frozenset('kit:' + name for name in ('weekly-review', 'fix-ci', 'deslop', 'missing'))
+            facts = device.state().observe(hs.Request(skills=requested)).facts
+        self.assertEqual(facts[key(S.SKILL, 'kit:weekly-review')].value, M.ON)
+        self.assertEqual(facts[key(S.SKILL, 'kit:fix-ci')].value, M.OFF)
+        self.assertEqual(facts[key(S.SKILL, 'kit:deslop')].value, M.EXPLICIT)
+        self.assertNotIn(key(S.SKILL, 'kit:missing'), facts)
+
     maxDiff = None
     def test_native_registered_local_sources_are_versions_not_owned_releases(self):
         scenarios = ('exact', 'unregistered', 'different-path', 'different-marketplace', 'duplicate',
@@ -504,7 +513,8 @@ class ObserveTest(unittest.TestCase):
             named = device.state().observe(hs.Request(skills=frozenset({'kit:weekly-review', 'solo:x'})))
             unnamed = device.state().observe(hs.Request())
             everything = device.state().observe(hs.Request(everything=True))
-        self.assertNotIn(key(S.SKILL, 'kit:weekly-review'), named.facts)
+        self.assertEqual(named.facts[key(S.SKILL, 'kit:weekly-review')].value, M.ON)
+        self.assertEqual(named.facts[key(S.SKILL, 'kit:weekly-review')].follows, key(S.PLUGIN, 'kit@personal'))
         self.assertEqual(named.facts[key(S.SKILL, 'solo:x')].value, M.EXPLICIT)
         self.assertNotIn(key(S.SKILL, 'solo:x'), unnamed.facts)
         self.assertEqual(everything.facts[key(S.SKILL, 'solo:x')].value, M.EXPLICIT)

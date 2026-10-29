@@ -492,6 +492,7 @@ class CodexState:
                 continue
             try:
                 explicit = self._explicit(root, wanted)
+                implicit = (named_skills.get(plugin['name'], set()) & skill_paths(root).keys()) - explicit
             except Unread as error:
                 seen.unread(root, error, {Surface.SKILL}, {plugin['pluginId']})
                 continue
@@ -499,6 +500,11 @@ class CodexState:
                 key = seen.key(Surface.SKILL, f'{plugin["name"]}:{skill}')
                 if key not in seen.facts:
                     seen.add(Surface.SKILL, key.subject, SkillMode.EXPLICIT, seen.key(Surface.PLUGIN, plugin['pluginId']))
+            if plugin['marketplaceName'] not in CATALOGS:
+                for skill in implicit:
+                    key = seen.key(Surface.SKILL, f'{plugin["name"]}:{skill}')
+                    if key not in seen.facts:
+                        seen.add(Surface.SKILL, key.subject, SkillMode.ON, seen.key(Surface.PLUGIN, plugin['pluginId']))
 
         agents = roots.codex_home / 'agents'
         try:

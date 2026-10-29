@@ -352,6 +352,7 @@ class ClaudeState:
                 continue
             try:
                 explicit = self._explicit(root, wanted, catalogs, plugin['id'])
+                implicit = (named_skills.get(plugin['id'], set()) & skill_paths(loaded).keys()) - explicit
             except Unread as error:
                 seen.unread(root, error, {Surface.SKILL}, {plugin['id']},
                             missing_tree=seen.key(Surface.TREE, plugin['id']) if isinstance(error, MissingCache) else None)
@@ -360,6 +361,11 @@ class ClaudeState:
                 key = seen.key(Surface.SKILL, f'{plugin["id"]}:{skill}')
                 if key not in seen.facts:
                     seen.add(Surface.SKILL, key.subject, SkillMode.EXPLICIT, follows)
+            if marketplace not in CATALOGS:
+                for skill in implicit:
+                    key = seen.key(Surface.SKILL, f'{plugin["id"]}:{skill}')
+                    if key not in seen.facts:
+                        seen.add(Surface.SKILL, key.subject, SkillMode.ON, follows)
 
         # synced/ holds skills the Claude app manages for the account.
         observe_loose(seen, roots.claude_home / 'skills', lambda child: not child.name.startswith('.') and child.name != 'synced')
