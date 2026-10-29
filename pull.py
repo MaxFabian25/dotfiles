@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tomllib
 
-from portable import GIT, exclusive_lock
+from portable import GIT, WINDOWS, exclusive_lock
 
 
 def git(root, *args):
@@ -28,9 +28,16 @@ def signers():
 
 def unsigned(root, old, new, allowed):
     """Return the first commit in old..new without an SSH signature from an allowed signer."""
+    verifier = []
+    if WINDOWS:
+        # Windows OpenSSH can hang on Git's MSYS stdin pipe; verification needs no signing agent.
+        executable = Path(git(root, '--exec-path')).parents[2] / 'usr/bin/ssh-keygen.exe'
+        if not executable.is_file():
+            raise RuntimeError(f'{executable}: Git bundled SSH signature verifier is missing')
+        verifier = ['-c', f'gpg.ssh.program={executable.as_posix()}']
     for commit in git(root, 'rev-list', f'{old}..{new}').split():
         header = git(root, 'cat-file', 'commit', commit).split('\n\n', 1)[0]
-        status = git(root, '-c', f'gpg.ssh.allowedSignersFile={allowed}', 'show', '-s', '--format=%G?', commit)
+        status = git(root, *verifier, '-c', f'gpg.ssh.allowedSignersFile={allowed}', 'show', '-s', '--format=%G?', commit)
         if '\ngpgsig -----BEGIN SSH SIGNATURE-----' not in header or status != 'G':
             return commit
     return None

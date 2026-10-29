@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from pull import install_tools, paired, run, update
+from pull import install_tools, paired, run, unsigned, update
 
 
 def git(root, *args):
@@ -164,6 +164,31 @@ class PairedPullTest(unittest.TestCase):
             # Changes that remain after applying leave the pair unrecorded, so only the last pull writes a receipt.
             self.assertEqual(receipt.exists(), (code, apply) == (0, True))
         self.assertEqual(calls, [(1, True), (0, True)])
+
+
+class WindowsVerifierTest(unittest.TestCase):
+    def test_verification_uses_git_bundled_openssh_with_the_pinned_signers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            executable = root / 'Git with spaces/usr/bin/ssh-keygen.exe'
+            executable.parent.mkdir(parents=True)
+            executable.touch()
+            exec_path = root / 'Git with spaces/mingw64/libexec/git-core'
+            allowed = root / 'allowed_signers'
+            for status, expected in (('G', None), ('U', 'commit')):
+                with self.subTest(status=status), patch('pull.WINDOWS', True), patch('pull.git',
+                        side_effect=[str(exec_path), 'commit', 'tree value\ngpgsig -----BEGIN SSH SIGNATURE-----', status]) as command:
+                    self.assertEqual(unsigned(root, 'old', 'new', allowed), expected)
+                    self.assertEqual(command.call_args.args, (root, '-c',
+                        f'gpg.ssh.program={executable.as_posix()}', '-c',
+                        f'gpg.ssh.allowedSignersFile={allowed}', 'show', '-s', '--format=%G?', 'commit'))
+
+    def test_missing_windows_verifier_stops_before_checking_commits(self):
+        with tempfile.TemporaryDirectory() as temporary, patch('pull.WINDOWS', True), \
+                patch('pull.git', return_value=str(Path(temporary) / 'Git/mingw64/libexec/git-core')) as command:
+            with self.assertRaisesRegex(RuntimeError, 'SSH signature verifier is missing'):
+                unsigned(Path(temporary), 'old', 'new', Path(temporary) / 'allowed_signers')
+            self.assertEqual(command.call_count, 1)
 
 
 class InstallToolsTest(unittest.TestCase):
