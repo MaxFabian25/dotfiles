@@ -5,6 +5,7 @@ import sys
 from types import SimpleNamespace
 import subprocess
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -175,6 +176,23 @@ class PullEnvironmentTest(unittest.TestCase):
                 'alias.dotfiles-pathext=!printf "%s" "$PATHEXT"', 'dotfiles-pathext')
             self.assertIn('.EXE', extensions.split(';'))
             self.assertEqual(os.environ['PATHEXT'], '')
+
+    def test_git_stops_child_processes_at_its_time_limit(self):
+        with tempfile.TemporaryDirectory() as temporary, patch('pull.GIT_TIMEOUT', 1):
+            marker = Path(temporary) / 'grandchild'
+            started = time.monotonic()
+            with self.assertRaisesRegex(RuntimeError, 'did not finish within 1 seconds'):
+                pull_git(Path(temporary), '-c',
+                         f'alias.dotfiles-hang=!sleep 60 & echo $! > "{marker}"; wait', 'dotfiles-hang')
+            self.assertLess(time.monotonic() - started, 15)
+            grandchild = int(marker.read_text())
+            for _ in range(50):
+                try:
+                    os.kill(grandchild, 0)
+                except ProcessLookupError:
+                    return
+                time.sleep(0.1)
+            self.fail('The child process of git outlived the time limit')
 
 
 class WindowsVerifierTest(unittest.TestCase):

@@ -6,20 +6,43 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
+import os
 import shutil
+import signal
 import subprocess
 import sys
 import tomllib
 
 from portable import GIT, WINDOWS, exclusive_lock, native_cli_environment
 
+GIT_TIMEOUT = 180
+
+
+def stop_process_tree(process):
+    if WINDOWS:
+        subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], capture_output=True, timeout=30)
+    else:
+        os.killpg(process.pid, signal.SIGKILL)
+
 
 def git(root, *args):
-    result = subprocess.run([*GIT, '-C', str(root), *args], capture_output=True, text=True, encoding='utf-8',
-                            timeout=180, env=native_cli_environment())
-    if result.returncode:
-        raise RuntimeError(f'{root.name}: git {args[0]} failed: {result.stderr.strip()}')
-    return result.stdout.strip()
+    # subprocess.run's timeout kills only git. On Windows it then waits for the pipes, which git's own children hold
+    # open, so a stalled fetch would keep this pull and its lock alive with no limit.
+    process = subprocess.Popen([*GIT, '-C', str(root), *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               text=True, encoding='utf-8', env=native_cli_environment(),
+                               start_new_session=not WINDOWS)
+    try:
+        stdout, stderr = process.communicate(timeout=GIT_TIMEOUT)
+    except subprocess.TimeoutExpired as error:
+        stop_process_tree(process)
+        try:
+            process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+        raise RuntimeError(f'{root.name}: git {args[0]} did not finish within {GIT_TIMEOUT} seconds') from error
+    if process.returncode:
+        raise RuntimeError(f'{root.name}: git {args[0]} failed: {stderr.strip()}')
+    return stdout.strip()
 
 
 def signers():
