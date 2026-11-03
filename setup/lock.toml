@@ -43,10 +43,10 @@ intent = "sha256:463b16e0f11b4ce1b831fb5a4fe0824a3914ffcd5868451ad13acde08299be5
 placements = { claude = "sha256:8d06274921427a67b5df90791b12842aded871f4578bd3a236d5178b139fd693" }
 
 [impeccable]
-intent = "sha256:81f433a800befff4c5d8e5ee4e437c9044f431d3eb53fb255258cf673a511dc0"
-codex = { version = "4.8.0", tree = "sha256:a993fb3f850658db6394ceae7307790212612f5d9550366e7f5e7c9733bb69b2" }
-claude = { version = "4.8.0", tree = "sha256:a993fb3f850658db6394ceae7307790212612f5d9550366e7f5e7c9733bb69b2" }
-roles = { "impeccable_asset_producer.toml" = "sha256:5da1fb1bd2f6e349024951ea20f89ae5f88d43227f3625d6b4c32fa453607f0e", "impeccable_documenter.toml" = "sha256:42c1ba65e8f1b85e24b1c960d3ca98bdf2eded249f0208fa757b3213b39d4466", "impeccable_finish_reviewer.toml" = "sha256:7b3461059cd046936fa0a198363ed15a7c4c21231b47a3845fcf23c3e682894f", "impeccable_manual_edit_applier.toml" = "sha256:a7dc405b7beb3d5dc1cf4611f4dcd7c52b0215d0f8bada9f717dba499f176166" }
+intent = "sha256:a3a3db577fc6da294f3159ef062af3b1c2d8b32042891ea3853215338f3db640"
+codex = { version = "4.8.0", tree = "sha256:cd30f92db942dbf5eac78dc443d75b10dd3ed0d6253630fd096acf5c3145789d" }
+claude = { version = "4.8.0", tree = "sha256:cd30f92db942dbf5eac78dc443d75b10dd3ed0d6253630fd096acf5c3145789d" }
+roles = { "impeccable_asset_producer.toml" = "sha256:d96523d5671b4b72ee82ac4498568b374a60d0695602a1eadc009aa151917ae4", "impeccable_documenter.toml" = "sha256:c2df69f46034fefc8f4d73e9374bca8bb76c9ec9af95cb9a0f89c79f1104e926", "impeccable_finish_reviewer.toml" = "sha256:c412eb980efce90d5a433fbf213560f4043cd2eef57f009ab53156868e49fad8", "impeccable_manual_edit_applier.toml" = "sha256:6efec2696f8dfd57f365ecf45dd6bd087834841cd969aeb53ab4570762b4011a" }
 hooks = 3
 
 [improve]
