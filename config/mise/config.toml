@@ -1,6 +1,6 @@
 [tools]
 go = "1.27.3"
-node = "24.22.2"
+node = "26.13.0"
 # postinstall runs only when mise installs this Python, so a pin change keeps xlwings importable.
 python = { version = "3.14.10", postinstall = "python -m pip install xlwings==0.37.8" }
 java = "27.0.0"
