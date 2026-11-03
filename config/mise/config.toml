@@ -1,6 +1,6 @@
 [tools]
 go = "1.27.3"
-node = "24.22.1"
+node = "24.22.2"
 # postinstall runs only when mise installs this Python, so a pin change keeps xlwings importable.
 python = { version = "3.14.10", postinstall = "python -m pip install xlwings==0.37.8" }
 java = "27.0.0"
@@ -14,29 +14,29 @@ fzf = "0.74.5"
 bat = "0.26.1"
 delta = "0.20.1"
 just = "1.59.0"
-kubectl = "1.37.1"
+kubectl = "1.37.2"
 docker-cli = "29.9.2"
 docker-compose = "5.6.1"
-uv = "0.13.5"
-pnpm = "12.9.1"
+uv = "0.13.6"
+pnpm = "12.17.0"
 "npm:@yarnpkg/cli-dist" = "4.18.1"
 "npm:npm" = "12.2.1"
-"npm:@openai/codex" = "0.166.0-alpha.5"
-"npm:agent-browser" = "0.39.1"
+"npm:@openai/codex" = "0.166.0"
+"npm:agent-browser" = "0.41.0"
 powershell = { version = "7.6.9", os = ["macos"] }
 bun = { version = "latest", os = ["macos"] }
 supabase = "2.122.0"
-"npm:vercel" = "65.2.0"
-"npm:portless" = "0.15.11"
+"npm:vercel" = "65.9.0"
+"npm:portless" = "0.15.12"
 "npm:ctx7" = "0.8.2"
-"npm:impeccable" = "4.7.0"
-stripe = "1.55.2"
+"npm:impeccable" = "4.8.0"
+stripe = "1.55.6"
 "npm:playwright" = "1.64.1"
-"npm:appium" = { version = "3.8.0", os = ["macos"] }
+"npm:appium" = { version = "3.9.0", os = ["macos"] }
 "npm:pyright" = "1.1.414"
 "npm:typescript" = "7.0.2"
 "npm:typescript-language-server" = "6.0.2"
-"npm:@devcontainers/cli" = "0.89.0"
+"npm:@devcontainers/cli" = "0.90.0"
 
 # Keep the selected npm ahead of Node's bundled npm, including after directory changes.
 # mise resolves an empty entry to config_root, the home folder here, so the else branch names a missing folder.

@@ -43,10 +43,10 @@ intent = "sha256:463b16e0f11b4ce1b831fb5a4fe0824a3914ffcd5868451ad13acde08299be5
 placements = { claude = "sha256:8d06274921427a67b5df90791b12842aded871f4578bd3a236d5178b139fd693" }
 
 [impeccable]
-intent = "sha256:24aed047ce118217c7e0c76904b8dd43bb0f1d4bc6ad4c194de2e0a1d0496eec"
-codex = { version = "4.7.0", tree = "sha256:ad36e5b2bac200e0db2089621b8d44bdbfcd224376c3c520c999200d588e6123" }
-claude = { version = "4.7.0", tree = "sha256:ad36e5b2bac200e0db2089621b8d44bdbfcd224376c3c520c999200d588e6123" }
-roles = { "impeccable_asset_producer.toml" = "sha256:deb85152d890a71bc056f145ff573e752bce42c04b2732a7e6df4b4e6ab78eea", "impeccable_documenter.toml" = "sha256:c7ba02cb97a169caef06a57618bfb2902f9d6cb74eebd595fb091d8e860f5bbf", "impeccable_finish_reviewer.toml" = "sha256:f9a808068d9a3b463b0b6511d263b96dd38041bcaa5e41c57e719d72c10bb4d6", "impeccable_manual_edit_applier.toml" = "sha256:82694501fe788024c1ba2a9bff9f20294174c9d7058a24e1f4771a248577291f" }
+intent = "sha256:81f433a800befff4c5d8e5ee4e437c9044f431d3eb53fb255258cf673a511dc0"
+codex = { version = "4.8.0", tree = "sha256:a993fb3f850658db6394ceae7307790212612f5d9550366e7f5e7c9733bb69b2" }
+claude = { version = "4.8.0", tree = "sha256:a993fb3f850658db6394ceae7307790212612f5d9550366e7f5e7c9733bb69b2" }
+roles = { "impeccable_asset_producer.toml" = "sha256:5da1fb1bd2f6e349024951ea20f89ae5f88d43227f3625d6b4c32fa453607f0e", "impeccable_documenter.toml" = "sha256:42c1ba65e8f1b85e24b1c960d3ca98bdf2eded249f0208fa757b3213b39d4466", "impeccable_finish_reviewer.toml" = "sha256:7b3461059cd046936fa0a198363ed15a7c4c21231b47a3845fcf23c3e682894f", "impeccable_manual_edit_applier.toml" = "sha256:a7dc405b7beb3d5dc1cf4611f4dcd7c52b0215d0f8bada9f717dba499f176166" }
 hooks = 3
 
 [improve]
@@ -64,9 +64,9 @@ intent = "sha256:f96e3fcb12086e815b17687cd745722cf9beefa5950c1cec3bfe45769a302ff
 intent = "sha256:ee4aaa9f84683e296b8a98f79ca5ad19a7ba260a0024caeb5a9b889a7c86c19b"
 
 [mattpocock-skills]
-intent = "sha256:d2926a3d0c84c8371647486f1eb780d2cd92fc80a7cd0676dbc875de18ad8edd"
-codex = { version = "1.3.2+upstream.a496f5513d4a.codex2.explicit.98f602ce4a0ce002", tree = "sha256:ff35bf58126d8839b1f9f28543f8daf62cbf6be6a8d1d87e1898f9711c4150da" }
-claude = { version = "1.3.2+codex-aligned.e84246f677a6", tree = "sha256:0ef0a9c93000d1383594964d1b1d8f7fa5b35b286ff0f032a0eb09371a033ac6" }
+intent = "sha256:0f5d0b982120edfe52a9c356fdf4ce4ccc2e0483e0956f5afe84f60eb604b6a0"
+codex = { version = "1.3.2+upstream.4ae2317ddb22.codex2.explicit.433b1cbef9fc46fc", tree = "sha256:bee7f6688bc6f23f5072365e42174a28f8fe24b7f2d401a589b843aed9c15f2d" }
+claude = { version = "1.3.2+codex-aligned.4b319449876f", tree = "sha256:00541b1f81bb758a68bf87de31eae712a233b450bff52f6ce82096ef36c50810" }
 
 [narrow-react-prop-types]
 intent = "sha256:3bff1fe58adad4228f235b57cd438844bcf1c9eaca0183cebc910556d3cdb1d7"

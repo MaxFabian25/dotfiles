@@ -4,7 +4,7 @@ note = "Upstream's 27 exported skills plus five the user chose on 2026-10-14 fro
 [source]
 build = "generic"
 repository = "https://github.com/mattpocock/skills.git"
-commit = "a496f5513d4a4cf889bc48e189e579f4b0bdf6aa"
+commit = "4ae2317ddb22b046e26455e4f9c9b3aaaf62212d"
 manifest = ".claude-plugin/plugin.json"
 packaging = 2
 display_name = "Matt Pocock skills"
