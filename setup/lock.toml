@@ -4,8 +4,8 @@
 intent = "sha256:aad5072e49324cb0bdb7316bdf12084cb4e6ed47ae9e07e7e7058d64cdaf4a67"
 
 [browser-and-computer-use]
-intent = "sha256:c34d26336c7c2c05896ef8cb0abdca9fb9c6664c607e09472c40a0cc4462026b"
-placements = { agents = "sha256:388b04c1688f15130dabe9fba44d8d350245324ec0d47c4237648d953e5f124c", claude = "sha256:388b04c1688f15130dabe9fba44d8d350245324ec0d47c4237648d953e5f124c" }
+intent = "sha256:e0f380392d13dc17b80303021cf63b13a4ffc5f1d8e2547d6958352ee08ae23c"
+placements = { agents = "sha256:cdf4e5143ac279f1fb5ee3dd316bdc4e5876390a9ba8faada5ca2625e8061d9f", claude = "sha256:cdf4e5143ac279f1fb5ee3dd316bdc4e5876390a9ba8faada5ca2625e8061d9f" }
 
 [build-iterated-agentic-loop]
 intent = "sha256:5a5c900801815c2408c103fd71ee14ae6a2231bf9d6cbe2189139c9835872fa7"
@@ -85,9 +85,9 @@ claude = { version = "0.1.0+codex-aligned.f6c9d03c5fcf", tree = "sha256:7f676898
 intent = "sha256:15c4ab6eb8970ddfb7089ef6a94b6bfbf14f09a36a992fa27fa28a546f918838"
 
 [prose]
-intent = "sha256:255b84c6dd95deee9fcc0b09cfba2f592276924146aba0051ee61920b4d456bd"
-codex = { version = "0.3.9+dotfiles.20261025", tree = "sha256:8205c59e4c79f6ffdd5484232c7dfe2fe10b71551af54a0213f614ea384c1ec1" }
-claude = { version = "0.3.9+codex-aligned.d20dd57da8da", tree = "sha256:ed218a33a231820681fdd7bdfee57322cab0e319ca582c4456f48158985983e5" }
+intent = "sha256:e696ba4d99af6e133427bf5fa1b7474c38a1a752db7aded667b685f6062c0041"
+codex = { version = "0.3.10+dotfiles.20261103", tree = "sha256:cbd93315bbf7aa9a0c621f69b1628991cd4822bf3553ca52df42cbf08e4f84cb" }
+claude = { version = "0.3.10+codex-aligned.aa7bab804113", tree = "sha256:7f692908dfc002ffe9fa6a2652f37d3fa63540d04880d2439c8d3916e9cad296" }
 
 [pstack]
 intent = "sha256:8f4bec13f2fbd4ca9147347aa642f20729313713343065b1c82ab32c09f5ecfa"

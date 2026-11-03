@@ -27,6 +27,17 @@ default when the text sets none. Keep official names,
 source identities, quotations, and technical literals in their governed forms; the applicable
 quotation or citation convention controls permitted transformations.
 
+When the user scopes an edit to all of a body of work, such as a whole repository, list every file
+or document in it before editing, and give each exclusion a reason the user can overrule.
+
+Before a change that cannot be undone, such as an edit outside version control, save a snapshot.
+
+When the user overrides fidelity to a source, such as by asking for a changed quotation, comply in
+the documents they name and keep raw records such as transcripts verbatim unless they name those
+too. Name any clash with a style selected later among the departures from that style. When you
+report a check's result, also say what the check exempted, because a pass says nothing about
+exempted text.
+
 Project, publisher, product, and explicitly selected style requirements control their stated scope.
 Apply language and general prose preferences to the remainder. Keep different languages and styles
 within their requested parts. Resolve overlapping rules by their authority and specific scope;

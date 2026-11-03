@@ -18,6 +18,9 @@ scope](source-evidence/plain-language.md#plain-language) when that designation m
   the request leaves open: the reader and what they already know, whether they want a
   recommendation or a neutral comparison, the options really available, the criteria and features
   in scope, a length budget, and how the document will reach them.
+- In a neutral comparison, keep any favourite out of the scope, labels, and order. When you cut text
+  about how a comparison was produced, also cut any verdict that text supported, unless the author
+  owns that verdict.
 - Lead with the main point and its support. Keep a limiting condition with its claim; put it first
   when the main point would otherwise mislead. Present a narrative sequence chronologically unless
   the requested analytical order serves the reader better.
@@ -74,7 +77,9 @@ Answer in the body any question the gathered sources can answer, for each option
 a list of next steps to actions only the reader can take.
 
 Address the reader directly when useful. Use role names accurately and identify the author group
-or recommending authority when it matters. Describe software, hardware, and services through
+or recommending authority when it matters. When one person drafts for a group, use *we* or *the
+group* only for what the group decided or did, and keep the label *suggested* on a suggestion through
+every summary of it. Describe software, hardware, and services through
 observable functions or states. Present disagreement by stating what a source addresses and where it falls
 short.
 
@@ -99,6 +104,10 @@ summary. State each fact once in a summary. End on the last useful point.
 Remove placeholders, leaked tool output, tracking parameters, and conversational leftovers from a
 finished deliverable. Express a state in words rather than an emoji or status glyph. These are
 textual choices, not evidence of who or what wrote a passage.
+
+From a finished deliverable, remove what only the writing process needs, such as review counts,
+working history, codebook codes, and pointers to files the reader cannot open, unless the reader
+needs them, as in a methods section that reports its codes. Keep any audit trail in a separate check record from the first draft on.
 
 ## Reader testing
 
