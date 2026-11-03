@@ -256,13 +256,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('urls', nargs='+')
     parser.add_argument('--profile', default='Default', help="the Chrome profile directory holding the user's subscriptions")
-    parser.add_argument('--out', type=Path, help='save each page here instead of printing it; macOS only')
+    parser.add_argument('--out', type=Path, help='save each page here instead of printing it')
     parser.add_argument('--cua', default='cua-driver', help='the cua-driver command; cua-driver.exe on WSL')
     parser.add_argument('--wait', type=float, default=7, help='seconds to let each page load')
     parser.add_argument('--expand', action='store_true', help='open collapsed FAQ answers before reading')
     args = parser.parse_args()
-    if args.out and sys.platform != 'darwin':
-        parser.error('--out works only on macOS; the employer manages Windows and WSL, so keep article text out of files there')
     if sum('nytimes.com' in url for url in args.urls) > NYT_LIMIT:
         parser.error(f'read at most {NYT_LIMIT} NYT pages per session')
     if sys.platform == 'win32':

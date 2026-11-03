@@ -1,6 +1,9 @@
 """read_page.py drives the user's own Chrome, never one that automation started."""
 
+import contextlib
+import io
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -188,6 +191,28 @@ class WindowsTest(unittest.TestCase):
         with mock.patch.object(read_page.subprocess, 'run', return_value=mock.Mock(returncode=3)):
             with self.assertRaisesRegex(RuntimeError, 'ask the user to close it'):
                 read_page.close(FakeWindows(), 7, 1)
+
+
+class SaveTest(unittest.TestCase):
+    def test_saves_each_page_on_every_platform(self):
+        for platform in ('darwin', 'linux', 'win32'):
+            with self.subTest(platform=platform), tempfile.TemporaryDirectory() as folder, \
+                    mock.patch.object(read_page.sys, 'platform', platform), \
+                    mock.patch.object(read_page.sys, 'argv', ['read_page', '--out', folder, 'https://example.com/a']), \
+                    mock.patch.object(read_page, 'Driver') as driver, \
+                    mock.patch.object(read_page, 'chrome', return_value=1), \
+                    mock.patch.object(read_page, 'open_window', return_value=2), \
+                    mock.patch.object(read_page, 'close'), \
+                    mock.patch.object(read_page, 'address_bar', return_value=(None, 'https://example.com/a')), \
+                    mock.patch.object(read_page.time, 'sleep'), \
+                    contextlib.redirect_stdout(io.TextIOWrapper(io.BytesIO(), encoding='utf-8')):
+                driver.return_value.uia = False
+                driver.return_value.tree.return_value = {'tree_markdown': WINDOWS_TREE}
+                driver.return_value.windows.return_value = {2: 'A page'}
+                self.assertEqual(read_page.main(), 0)
+                saved = list(Path(folder).iterdir())
+                self.assertEqual(len(saved), 1)
+                self.assertIn('Compare the plans.', saved[0].read_text(encoding='utf-8'))
 
 
 if __name__ == '__main__':
