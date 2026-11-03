@@ -178,21 +178,27 @@ class PullEnvironmentTest(unittest.TestCase):
             self.assertEqual(os.environ['PATHEXT'], '')
 
     def test_git_stops_child_processes_at_its_time_limit(self):
-        with tempfile.TemporaryDirectory() as temporary, patch('pull.GIT_TIMEOUT', 1):
-            marker = Path(temporary) / 'grandchild'
-            started = time.monotonic()
-            with self.assertRaisesRegex(RuntimeError, 'did not finish within 1 seconds'):
-                pull_git(Path(temporary), '-c',
-                         f'alias.dotfiles-hang=!sleep 60 & echo $! > "{marker}"; wait', 'dotfiles-hang')
-            self.assertLess(time.monotonic() - started, 15)
-            grandchild = int(marker.read_text())
-            for _ in range(50):
-                try:
-                    os.kill(grandchild, 0)
-                except ProcessLookupError:
-                    return
-                time.sleep(0.1)
-            self.fail('The child process of git outlived the time limit')
+        # A loaded machine can use up a short limit before Git reaches the alias, so a run with no marker proves nothing.
+        for limit in (1, 5, 30):
+            with tempfile.TemporaryDirectory() as temporary, patch('pull.GIT_TIMEOUT', limit):
+                marker = Path(temporary) / 'grandchild'
+                started = time.monotonic()
+                with self.assertRaisesRegex(RuntimeError, f'did not finish within {limit} seconds'):
+                    pull_git(Path(temporary), '-c',
+                             f'alias.dotfiles-hang=!sleep 60 & echo $! > "{marker}"; wait', 'dotfiles-hang')
+                self.assertLess(time.monotonic() - started, limit + 14)
+                written = marker.read_text().strip() if marker.exists() else ''
+                if not written:
+                    continue
+                grandchild = int(written)
+                for _ in range(50):
+                    try:
+                        os.kill(grandchild, 0)
+                    except ProcessLookupError:
+                        return
+                    time.sleep(0.1)
+                self.fail('The child process of git outlived the time limit')
+        self.fail('Git never reached its alias within the longest limit')
 
 
 class WindowsVerifierTest(unittest.TestCase):
