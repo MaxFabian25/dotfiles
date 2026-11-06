@@ -7,11 +7,9 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from homes import Home
-from description import (CodexPlacement, EngineInstall, LocalSource, Lock, LockedTree, MarketplaceInstall,
-                         Package, RepoSource, Roots, Setup, ToolNotes, Visibility)
+from description import (CodexPlacement, EngineInstall, LocalSource, MarketplaceInstall, Package, Roots, Setup,
+                         ToolNotes, Visibility)
 from host_state import Host, SkillMode
-import profile_policies
-from sync_files import ConcurrentEdit, Files
 from sync_sources import Builder, BuildError
 
 
@@ -103,125 +101,6 @@ class PolicyExportTest(unittest.TestCase):
             effective = builder.effective(native, pristine)
             self.assertIn('disable-model-invocation: false', (effective / 'skills/publish/SKILL.md').read_text())
             self.assertIn('allow_implicit_invocation: true', (effective / 'skills/publish/agents/openai.yaml').read_text())
-
-
-class ProfilePolicyTest(unittest.TestCase):
-    def fixture(self, home):
-        from types import SimpleNamespace
-
-        source = home.roots.engine / 'native/kit' / ('a' * 40)
-        home.skill(source, 'publish')
-        home.write(source / '.codex-plugin/plugin.json', '{"name":"kit","version":"1.0.0"}\n')
-        package = Package('kit', Visibility.PUBLIC, '', RepoSource('publisher'), {'publish': SkillMode.EXPLICIT},
-                          ToolNotes.AUDIT, CodexPlacement((MarketplaceInstall('publisher', True),)), None)
-        lock = Lock('test', {Host.CODEX: LockedTree('1.0.0', home.roots.tree_digest(source))})
-        setup = Setup(Roots(home.roots.home / 'setup', None), {'kit': package},
-                      {'publisher': SimpleNamespace(commit='a' * 40)}, {}, {}, None, (), frozenset(), {'kit': lock})
-        profile = home.roots.home / '.local/share/orca/codex-accounts/example/home'
-        config = home.write(profile / 'config.toml', '[plugins."kit@publisher"]\nenabled = true\n')
-        target = profile / 'plugins/cache/publisher/kit/1.0.0'
-        shutil.copytree(source, target)
-        return setup, target, config
-
-    def test_repair_is_narrow_backed_up_and_survives_cache_rehydration(self):
-        with Home() as home:
-            setup, target, config = self.fixture(home)
-            original_config = config.read_bytes()
-            home.write(target / 'unrelated.txt', 'keep my file')
-            repairs, differences = profile_policies.inspect(setup, home.roots)
-            self.assertEqual((len(repairs), len(differences)), (1, 1))
-            files = Files(home.roots.home / 'backups')
-            profile_policies.apply(repairs, files)
-            self.assertEqual(files.changed, [target / 'skills/publish/agents/openai.yaml'])
-            self.assertEqual(config.read_bytes(), original_config)
-            self.assertEqual((target / 'unrelated.txt').read_text(), 'keep my file')
-            self.assertTrue((files.backup / 'files.json').is_file())
-            self.assertEqual(profile_policies.inspect(setup, home.roots), ((), ()))
-            repairs[0].path.unlink()
-            self.assertEqual(len(profile_policies.inspect(setup, home.roots)[0]), 1)
-
-    def test_disabled_and_unknown_version_are_not_installed_or_adopted(self):
-        with Home() as home:
-            setup, target, config = self.fixture(home)
-            config.write_text('[plugins."kit@publisher"]\nenabled = false\n')
-            self.assertEqual(profile_policies.inspect(setup, home.roots), ((), ()))
-            config.write_text('[plugins."kit@publisher"]\nenabled = true\n')
-            target.rename(target.with_name('0.9.0'))
-            self.assertEqual(profile_policies.inspect(setup, home.roots), ((), ()))
-
-    def test_canonical_cache_links_are_already_owned_but_other_links_are_rejected(self):
-        for canonical in (True, False):
-            with self.subTest(canonical=canonical), Home() as home:
-                setup, target, _ = self.fixture(home)
-                cache = target.parents[2]
-                other = home.roots.codex_home / 'plugins/cache' if canonical else home.roots.home / 'unrelated-cache'
-                other.parent.mkdir(parents=True, exist_ok=True)
-                cache.rename(other)
-                cache.symlink_to(other, target_is_directory=True)
-                repairs, differences = profile_policies.inspect(setup, home.roots)
-                self.assertFalse(repairs)
-                if canonical:
-                    self.assertFalse(differences)
-                else:
-                    self.assertEqual(differences[0].kind.value, 'local-edit')
-                    self.assertIn('Path leaves its source', differences[0].detail)
-
-    def test_user_edits_and_concurrent_config_changes_are_preserved(self):
-        with Home() as home:
-            setup, target, config = self.fixture(home)
-            repairs, _ = profile_policies.inspect(setup, home.roots)
-            config.write_text('[plugins."kit@publisher"]\nenabled = false\n')
-            with self.assertRaises(ConcurrentEdit):
-                profile_policies.apply(repairs, Files(home.roots.home / 'backups'))
-            config.write_text('[plugins."kit@publisher"]\nenabled = true\n')
-            home.write(target / 'skills/publish/agents/openai.yaml', 'interface:\n  display_name: My edit\n')
-            repairs, differences = profile_policies.inspect(setup, home.roots)
-            self.assertFalse(repairs)
-            self.assertEqual(differences[0].kind.value, 'local-edit')
-
-    def test_source_or_skill_edits_block_repair(self):
-        with Home() as home:
-            setup, target, _ = self.fixture(home)
-            (target / 'skills/publish/SKILL.md').write_text('local edit')
-            repairs, differences = profile_policies.inspect(setup, home.roots)
-            self.assertFalse(repairs)
-            self.assertIn('local edits', differences[0].detail)
-
-    def test_implicit_profile_policy_repairs_both_flags_and_rejects_unrelated_edits(self):
-        with Home() as home:
-            setup, target, _ = self.fixture(home)
-            package = replace(setup.packages['kit'], modes={'publish': SkillMode.ON})
-            source = home.roots.engine / 'native/kit' / ('a' * 40)
-            for root in (source, target):
-                home.write(root / 'skills/publish/SKILL.md',
-                           '---\nname: publish\ndescription: Publish\ndisable-model-invocation: true\n---\nKeep body.\n')
-                home.write(root / 'skills/publish/agents/openai.yaml', 'policy:\n  allow_implicit_invocation: false\n')
-            lock = replace(setup.lock['kit'], trees={Host.CODEX: LockedTree('1.0.0', home.roots.tree_digest(source))})
-            setup = replace(setup, packages={'kit': package}, lock={'kit': lock})
-            repairs, differences = profile_policies.inspect(setup, home.roots)
-            self.assertEqual((len(repairs), len(differences)), (2, 2))
-            profile_policies.apply(repairs, Files(home.roots.home / 'backups'))
-            self.assertIn('disable-model-invocation: false', (target / 'skills/publish/SKILL.md').read_text())
-            self.assertIn('allow_implicit_invocation: true', (target / 'skills/publish/agents/openai.yaml').read_text())
-            self.assertEqual(profile_policies.inspect(setup, home.roots), ((), ()))
-            (target / 'skills/publish/SKILL.md').write_text('Unrelated user edit')
-            repairs, differences = profile_policies.inspect(setup, home.roots)
-            self.assertFalse(repairs)
-            self.assertIn('local edits', differences[0].detail)
-
-    def test_profile_can_change_a_previously_reviewed_explicit_policy_to_implicit(self):
-        with Home() as home:
-            setup, target, _ = self.fixture(home)
-            repairs, _ = profile_policies.inspect(setup, home.roots)
-            profile_policies.apply(repairs, Files(home.roots.home / 'backups'))
-            package = replace(setup.packages['kit'], modes={'publish': SkillMode.ON})
-            setup = replace(setup, packages={'kit': package})
-            repairs, differences = profile_policies.inspect(setup, home.roots)
-            self.assertEqual(len(repairs), 1)
-            self.assertTrue(all(d.kind.value == 'overlay' for d in differences))
-            profile_policies.apply(repairs, Files(home.roots.home / 'new-backups'))
-            self.assertIn('allow_implicit_invocation: true', (target / 'skills/publish/agents/openai.yaml').read_text())
-            self.assertEqual(profile_policies.inspect(setup, home.roots), ((), ()))
 
 
 if __name__ == '__main__':

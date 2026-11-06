@@ -219,6 +219,11 @@ class AcceptedInstallations:
     def _path(self, artifact):
         return self.directory / (hashlib.sha256(artifact.identity.encode()).hexdigest() + '.json')
 
+    def accepted(self, identity):
+        """A plugin's accepted record (its path and image), or None when it has none or a replacement is pending."""
+        receipt = self._receipt(_Artifact(identity, None, None, Path(), Path(), (), '', 'plugin'))
+        return receipt['accepted'] if receipt and not receipt.get('pending') else None
+
     def _receipt(self, artifact):
         path = self._path(artifact)
         if not path.exists():

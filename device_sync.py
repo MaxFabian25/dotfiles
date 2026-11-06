@@ -4,8 +4,9 @@ from collections import Counter
 from dataclasses import dataclass, replace
 from typing import Mapping
 
+import codex_host
 import codex_runtime
-import profile_policies
+import profile_plugins
 from description import Setup
 from device import Device
 from drift import Diff, Difference, Kind, Verdict, diff
@@ -21,7 +22,7 @@ class Plan:
     unmanaged: tuple[Difference, ...]
     configurations: bool = True
     expected: tuple[Difference, ...] = ()   # unmanaged, and named in this platform's device list
-    profile_repairs: tuple[profile_policies.Repair, ...] = ()
+    profile_mirrors: tuple[profile_plugins.Mirror, ...] = ()
 
     @property
     def exit_code(self):
@@ -42,7 +43,10 @@ def plan(setup: Setup, device: Device, *, configurations=True) -> Plan:
     artifacts, owned = owner.inspect(observations)
     if Host.CODEX in observations:
         owned += codex_runtime.inspect(projected.runtime, device.roots, observations[Host.CODEX].offered)
-    profile_repairs, profile_differences = profile_policies.inspect(projected, device.roots)
+    codex = next((state for state in device.hosts if state.host == Host.CODEX), None)
+    approved = (lambda home: codex_host._approved_hooks(codex.cli, device.roots.home, codex_home=home)) if codex else None
+    profile_mirrors, profile_differences, profile_notes = profile_plugins.inspect(
+        projected, device.roots, owner.accepted, approved)
     owned += profile_differences
     stale = setup.stale()
     managed = {key for facts in projects.values() for key, fact in facts.items()
@@ -84,11 +88,12 @@ def plan(setup: Setup, device: Device, *, configurations=True) -> Plan:
     unmanaged = tuple(d for d in retained + owned if d.kind == Kind.EXTRA and d.entry is None)
     expected, notes = _expected(setup.expected_unmanaged.get(device.platform, frozenset()), unmanaged,
                                 device.platform, observations.keys())
-    result = replace(result, differences=tuple(d for d in retained + owned if d not in expected), notes=result.notes + notes)
+    result = replace(result, differences=tuple(d for d in retained + owned if d not in expected),
+                     notes=result.notes + notes + profile_notes)
     blocked = tuple(d for d in result.differences if d.kind.verdict == Verdict.ATTENTION)
     unmanaged = tuple(d for d in unmanaged if d not in expected)
     changes = tuple(d for d in result.drift() if d not in unmanaged)
-    return Plan(result, observations, changes, blocked, unmanaged, configurations, expected, profile_repairs)
+    return Plan(result, observations, changes, blocked, unmanaged, configurations, expected, profile_mirrors)
 
 
 def _expected(listed: frozenset[FactKey], unmanaged: tuple[Difference, ...], platform: Platform,

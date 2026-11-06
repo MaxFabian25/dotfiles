@@ -45,12 +45,18 @@ Personal Codex catalog exports carry explicit-only policy in their files. A chan
 `codex-exports/`; the upstream snapshot stays untouched. Fresh profile installs therefore receive the
 same policy as the canonical cache. Harness adaptations remain a separate installation overlay.
 
-Native publisher plugins keep their publisher versions and catalog ownership. A sync also checks
-already-enabled, pinned native plugins in Orca account homes on this device. It repairs only invocation
-sidecars that still match the verified upstream copy, with backups outside the profile cache. Unknown
-versions, disabled plugins, credentials, roles and profile settings are not installed or adopted. Local
-edits block the repair. Run a sync after a native profile cache refresh to reconcile these sidecars again;
-this does not install a watcher or restart the application.
+Native publisher plugins keep their publisher versions and catalog ownership.
+
+Each Orca account home on this device is a separate Codex home with its own plugin cache. When Codex starts
+there, its `plugin/list` call installs a newer catalog version, which lacks the install overlay and harness
+adaptation of the accepted `~/.codex` copy. So for each plugin a home has installed and enabled, a sync
+copies the accepted `~/.codex` copy into that home in place of an older version, the native copy, or its
+own earlier copy (`profile_plugins.py`). The copies it replaces move to the sync backup. A copy with any
+other file blocks the sync as a local edit. A home whose marketplace setting differs from `~/.codex` gets
+a note instead. A sync installs no plugin a home lacks, enables nothing, and leaves settings, credentials
+and roles alone. A cache that is linked to `~/.codex`, as on Windows, is already up to date. A plugin
+whose hooks are `trusted` blocks the sync until its hooks are approved in each home as well; a sync
+never approves them.
 
 Claude's validated root `.in_use` leases and `.orphaned_at` timestamp are native cache state, not
 plugin content. This distinction applies only to installed Claude plugins. Unknown entries, malformed

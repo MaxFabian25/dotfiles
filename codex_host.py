@@ -75,11 +75,13 @@ def _stray_approval(name: str, defined: set[str]) -> bool:
     return not source.is_file() if source.is_absolute() else name not in defined
 
 
-def _approved_hooks(cli: Sequence[str], home: Path, timeout: float = 30) -> frozenset[str]:
+def _approved_hooks(cli: Sequence[str], home: Path, timeout: float = 30, *, codex_home: Path | None = None) -> frozenset[str]:
+    environment = portable.native_cli_environment()
+    if codex_home is not None:
+        environment['CODEX_HOME'] = str(codex_home)
     try:
         process = subprocess.Popen([*cli, 'app-server', '--stdio'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                   stderr=subprocess.DEVNULL, text=True, encoding='utf-8',
-                                   env=portable.native_cli_environment())
+                                   stderr=subprocess.DEVNULL, text=True, encoding='utf-8', env=environment)
     except (OSError, subprocess.SubprocessError) as error:
         raise Unread(f'Native hook state is unreadable: {error}') from error
     result: Queue[frozenset[str] | Unread] = Queue()
