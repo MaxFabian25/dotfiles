@@ -3,10 +3,10 @@
 # ~/.cache/codex-runtimes/codex-primary-runtime and registers its catalog with Codex.
 # `codex_runtime.py review --write` writes this file from LATEST.json and the archive. Do not edit it by hand.
 public = true
-version = "26.1030.10813"
-url = "https://persistent.oaistatic.com/codex-primary-runtime/26.1030.10813/codex-primary-runtime-linux-x64-26.1030.10813.tar.xz"
-archive = "sha256:3cfe121974800a4018624edd22f42a0e57e8728590420cd5306f6fd197f17bb2"
-archive_bytes = 386814568
-tree = "sha256:3c52b741fcb4f2a8cf161ee0186ed93b6988ec338bf46605b75dc6eecee70690"
-tree_bytes = 1670361149
+version = "26.1105.12137"
+url = "https://persistent.oaistatic.com/codex-primary-runtime/26.1105.12137/codex-primary-runtime-linux-x64-26.1105.12137.tar.xz"
+archive = "sha256:6759fd4153948a6cf1d362bc589ef62b36dfc897b0026360afdc860efcfb5164"
+archive_bytes = 385310520
+tree = "sha256:dc9de35066734d1a79be5c98e77372bb28830776eaf4cbe7a6e61f6a864af227"
+tree_bytes = 1662451806
 plugins = ["documents", "pdf", "presentations", "spreadsheets", "template-creator"]
