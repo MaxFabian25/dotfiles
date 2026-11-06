@@ -281,6 +281,35 @@ class InvocationOverridesTest(unittest.TestCase):
             self.assertEqual((root / 'docs/a.md').read_text(), 'one\nTWO\nthree\nfour\nFIVE\n')
             self.assertEqual((root / 'docs/new.md').read_text(), 'added upstream\n')
 
+    def test_adaptation_merges_beside_a_flag_the_policy_export_flipped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory).resolve()
+            repository = directory / 'adaptation'
+            skill = repository / 'skills/sample/SKILL.md'
+            skill.parent.mkdir(parents=True)
+            original = '---\nname: sample\ndescription: Use for samples.\ndisable-model-invocation: true\n---\nBody.\n'
+            skill.write_text(original)
+            git = ['git', '-C', str(repository), '-c', 'user.name=t', '-c', 'user.email=t@t']
+            module.subprocess.run([*git[:3], 'init', '-q', '-b', 'main'], check=True)
+            module.subprocess.run([*git, 'add', '-A'], check=True)
+            module.subprocess.run([*git, 'commit', '-qm', 'upstream'], check=True)
+            module.subprocess.run([*git, 'branch', 'upstream'], check=True)
+            skill.write_text(original.replace('Use for samples.', 'Use when asked for samples by name.'))
+            module.subprocess.run([*git, 'commit', '-qam', 'adapt'], check=True)
+
+            root = directory / 'export'
+            (root / 'skills/sample/agents').mkdir(parents=True)
+            (root / 'skills/sample/SKILL.md').write_text(original.replace('invocation: true', 'invocation: false'))
+            (root / 'skills/sample/agents/openai.yaml').write_text('policy:\n  allow_implicit_invocation: true\n')
+            (root / '.dotfiles-policy.json').write_text('{"schema": 2, "explicit": [], "implicit": ["sample"]}\n')
+            adaptations = {'plugins': {'plugin': {'repository': str(repository), 'baseRef': 'upstream',
+                                                   'adaptedRef': 'main', 'hosts': ['Codex']}}}
+            registry = {'targets': {'Codex': {'plugin@m': ['sample']}, 'Claude': {}}}
+            writes, _ = module.plan(registry, [('Codex', 'plugin@m', root)], None, adaptations)
+            effective = {path.name: after for path, _, after, _, _ in writes}
+            self.assertEqual(effective['SKILL.md'], '---\nname: sample\ndescription: Use when asked for samples by name.\n'
+                                                    'disable-model-invocation: false\n---\nBody.\n')
+
     def test_retired_adaptation_returns_to_original_bytes(self):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory).resolve()

@@ -360,6 +360,24 @@ def installations(registry, plugins=(), adaptations=None):
     return found
 
 
+def exported_policies(root):
+    # A policy export writes invocation flags before the adaptation merges, so the adaptation's base and
+    # adapted copies get the same flags; otherwise an adapted line beside a flag reads as a conflict.
+    receipt = root / '.dotfiles-policy.json'
+    if not receipt.is_file():
+        return {}
+    exported = json.loads(receipt.read_bytes())
+    paths = skill_paths(root)
+    policies = {}
+    for allow, names in ((True, exported.get('implicit', [])), (False, exported.get('explicit', []))):
+        for name in names:
+            folder = paths[name].parent.relative_to(root.resolve())
+            policies[(folder / 'agents/openai.yaml').as_posix()] = lambda text, allow=allow: transform_policy(text, allow)
+            if allow:
+                policies[(folder / 'SKILL.md').as_posix()] = lambda text, name=name: transform_skill(text, name, {})
+    return policies
+
+
 def plan(registry, installs, overlay=None, adaptations=None):
     adaptations = adaptations or {'plugins': {}}
     pristine = overlay.pristine if overlay else (lambda path, text: text)
@@ -382,7 +400,10 @@ def plan(registry, installs, overlay=None, adaptations=None):
 
         adaptation = adapted_here(adaptations, identity, host)
         if adaptation:
+            exported = exported_policies(root)
             for relative, base, adapted in adaptation_files(adaptation):
+                if policy := exported.get(relative):
+                    base, adapted = (None if text is None else policy(text) for text in (base, adapted))
                 label = f'{identity}:{relative}'
                 stage(root / relative, lambda text, base=base, adapted=adapted, label=label:
                       merge_adaptation(text, base, adapted, label))
