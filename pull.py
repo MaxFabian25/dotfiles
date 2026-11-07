@@ -152,6 +152,8 @@ def run(args):
                    '--apply' if args.apply else '--check']
         if private:
             command += ['--private', str(private / 'setup')]
+        if args.notes:
+            command.append('--notes')
         result = subprocess.run(command, cwd=root, timeout=1200)
         # 1 after --apply: sync wrote what it could and nothing blocked it, but some managed changes did not take.
         # The pair is not applied, so it gets no receipt, but the mise config was written, so its tools still install.
@@ -179,6 +181,7 @@ def main():
     parser.add_argument('--private', type=Path)
     parser.add_argument('--update', action='store_true', help='fetch and fast-forward clean paired checkouts')
     parser.add_argument('--apply', action='store_true', help='apply the verified device plan')
+    parser.add_argument('--notes', action='store_true', help="list each of sync's notes in full instead of counting them")
     args = parser.parse_args()
     try:
         return run(args)

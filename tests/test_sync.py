@@ -144,6 +144,13 @@ class PlanTest(unittest.TestCase):
             self.assertEqual([(n.kind, n.subject, n.detail) for n in result.result.notes], [
                 (NoteKind.DEVICE_LOCAL, 'expected unmanaged items', '1 named in devices/linux.toml; sync leaves them alone'),
                 (NoteKind.RESIDUE, gone.subject, 'listed in devices/linux.toml but no longer an unmanaged difference here')])
+            from drift import render
+            counted, listed = render(result.result), render(result.result, notes=True)
+            self.assertIn('notes (not differences; --notes lists each)\n'
+                          '  residue         1  codex 1\n  device-local    1  codex 1\n', counted)
+            self.assertNotIn('no longer an unmanaged difference', counted)
+            self.assertIn(f'  residue       codex   {gone.subject}: listed in devices/linux.toml but no longer an '
+                          'unmanaged difference here\n', listed)
 
 
 def git(root, *args):

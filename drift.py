@@ -320,12 +320,18 @@ def render(diff: Diff, *, full: bool = False, notes: bool = False) -> str:
                          f'{difference.kind.value}  {change}')
             if folded.get(key):
                 lines.append(f'  {"":<30} + {folded[key]} facts follow it')
-    lines += ['', 'notes (not differences; --notes prints each in full)' if not notes else 'notes']
-    for note in sorted(diff.notes, key=lambda n: (list(NoteKind).index(n.kind), n.host)):
-        text = f'{note.subject}: {note.detail}'
-        if not notes and len(text) > 100:
-            text = text[:99] + '…'
-        lines.append(f'  {note.kind.value:<13} {note.host.value:<7} {text}')
+    if notes:
+        lines += ['', 'notes']
+        for note in sorted(diff.notes, key=lambda n: (list(NoteKind).index(n.kind), n.host)):
+            lines.append(f'  {note.kind.value:<13} {note.host.value:<7} {note.subject}: {note.detail}')
+    else:
+        # Notes change nothing, and a busy device has dozens, so by default they are counted, not listed.
+        lines += ['', 'notes (not differences; --notes lists each)']
+        for kind in NoteKind:
+            hosts = Counter(note.host.value for note in diff.notes if note.kind == kind)
+            if hosts:
+                lines.append(f'  {kind.value:<13} {sum(hosts.values()):>3}  '
+                             + ', '.join(f'{host} {count}' for host, count in sorted(hosts.items())))
     if not diff.notes:
         lines.append('  none')
     return '\n'.join(lines) + '\n'

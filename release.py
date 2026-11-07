@@ -39,6 +39,9 @@ SETUP = 'setup/setup.toml'
 LEASE = 'Claude lease: '
 # The public .gitignore is an allowlist: this pattern drops every path that a later ! line does not bring back.
 ALLOWLIST_BASE = '/*'
+# Strings the public tree must never hold, such as host and account names. The list is private, because a public
+# list would publish them.
+DENYLIST = 'config/privacy/public-denylist.txt'
 
 
 def places(args):
@@ -68,6 +71,29 @@ def dropped(root):
         return []
     matches = (line.split('\t', 1) for line in git(root, 'check-ignore', '-v', '--', *ignored).splitlines())
     return [path for source, path in matches if source.split(':', 2)[2] == ALLOWLIST_BASE]
+
+
+def leaks(public, private, message=None):
+    """Where the public tree, as a commit would take it, or its commit message holds a string the private
+    denylist names. One string per line, matched without regard to case; # starts a comment."""
+    listed = private / DENYLIST
+    if not listed.is_file():
+        return []
+    patterns = [line.strip() for line in listed.read_text(encoding='utf-8').splitlines()
+                if line.strip() and not line.strip().startswith('#')]
+    if not patterns:
+        return []
+    found = subprocess.run([*GIT, '-C', str(public), 'grep', '-n', '-I', '-i', '-F', '--untracked', '--full-name',
+                            *(part for pattern in patterns for part in ('-e', pattern)), '--'],
+                           capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=300)
+    if found.returncode not in (0, 1):
+        raise RuntimeError(f'git grep failed in {public}: {found.stderr.strip()}')
+    hits = [':'.join(line.split(':', 2)[:2]) for line in found.stdout.splitlines()]
+    if message is not None:
+        text = message.read_text(encoding='utf-8').casefold()
+        if any(pattern.casefold() in text for pattern in patterns):
+            hits.append('the public commit message')
+    return hits
 
 
 def commit(root, message):
@@ -216,6 +242,9 @@ def finish(args, public_repo, private_repo):
                                'stop on those hooks. Ask the user to approve them again, queue the approval in each '
                                'machine\'s section of maintenance/pending-sync.md, then finish again with '
                                '--hooks-reapproved')
+    if hits := leaks(public, private, args.message):
+        raise RuntimeError(f'{", ".join(hits[:20])} in {public} hold a string that the private {DENYLIST} names; '
+                           'take it out of the public side, then finish again; nothing was committed')
     test_suite(public, base / 'build/tests.log')
     for tree in (public, private):
         if paths := dropped(tree):

@@ -139,7 +139,7 @@ class PairedPullTest(unittest.TestCase):
     def test_repeated_success_does_not_rewrite_release_receipt(self):
         candidate = self.commit(self.public_origin, 'sync.py', 'raise SystemExit(0)\n')
         self.commit(self.private_origin, 'release.toml', f'public_commit = "{candidate}"\n')
-        args = SimpleNamespace(root=self.public, private=self.private, update=True, apply=True)
+        args = SimpleNamespace(root=self.public, private=self.private, update=True, apply=True, notes=False)
         pinned = self.root / 'home/.config/dotfiles/allowed_signers'
         pinned.parent.mkdir(parents=True)
         shutil.copyfile(self.signers, pinned)
@@ -159,7 +159,7 @@ class PairedPullTest(unittest.TestCase):
         for code, apply in ((0, False), (1, False), (2, True), (3, True), (1, True), (0, True)):
             candidate = self.commit(self.public_origin, 'sync.py', f'raise SystemExit({code})\n')
             self.commit(self.private_origin, 'release.toml', f'public_commit = "{candidate}"\n')
-            args = SimpleNamespace(root=self.public, private=self.private, update=True, apply=apply)
+            args = SimpleNamespace(root=self.public, private=self.private, update=True, apply=apply, notes=False)
             with patch('pull.Path.home', return_value=self.root / 'home'), \
                     patch('pull.install_tools', lambda home, state: calls.append((code, apply))):
                 self.assertEqual(run(args), code)

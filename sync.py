@@ -21,6 +21,7 @@ def main(argv=None):
     mode.add_argument('--candidate', action='store_true',
                       help="check from a release worktree's engine before the release is pushed")
     parser.add_argument('--json', action='store_true')
+    parser.add_argument('--notes', action='store_true', help='list each note in full instead of counting them')
     args = parser.parse_args(argv)
     try:
         setup = load(Roots.resolve(args.public, args.private))
@@ -45,11 +46,12 @@ def main(argv=None):
                       f'{", ".join(map(str, holders))}')
         if args.apply:
             if current.blocked and not args.json:
-                print(render(current.result), end='')  # its attention rows name each blocker and its fix
+                print(render(current.result, notes=args.notes), end='')  # its attention rows name each blocker and its fix
             current, backup = apply(setup, device, current)
             if backup:
                 print(f'Backups: {backup}', file=sys.stderr)
-        print(to_json(current.result) if args.json else render(current.result), end='\n' if args.json else '')
+        print(to_json(current.result) if args.json else render(current.result, notes=args.notes),
+              end='\n' if args.json else '')
         if not args.json:
             expected = f', plus {len(current.expected)} this device is expected to have' if current.expected else ''
             print(f'Managed changes: {len(current.changes)}; blocking issues: {len(current.blocked)}; '

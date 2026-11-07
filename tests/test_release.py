@@ -155,6 +155,30 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(release_main(['finish', 'isolated', '--message', str(message), '--push', *self.options()],
                                       self.public), 0)
 
+    def test_finish_stops_on_a_public_line_the_private_denylist_names(self):
+        release_main(['start', 'leak', *self.options()], self.public)
+        tree, private = self.worktrees / 'leak/public', self.worktrees / 'leak/private'
+        (private / 'config/privacy').mkdir(parents=True)
+        (private / 'config/privacy/public-denylist.txt').write_text('# hosts\nsecret-host\n', encoding='utf-8')
+        (tree / 'content').write_text('first\nreach Secret-Host over ssh\n', encoding='utf-8')
+        (tree / 'notes.md').write_text('secret-host, but the allowlist keeps it out\n', encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Document the host\n', encoding='utf-8')
+        finish = ['finish', 'leak', '--message', str(message), '--private-message', str(message), *self.options()]
+        with redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(finish, self.public), 3)
+        self.assertIn('content:2 in ', error.getvalue())
+        self.assertNotIn('notes.md', error.getvalue())
+        self.assertEqual(git(tree, 'rev-parse', 'HEAD'), git(self.public_origin, 'rev-parse', 'main'))
+        (tree / 'notes.md').unlink()
+        (tree / 'content').write_text('second\n', encoding='utf-8')
+        message.write_text('Name secret-host here\n', encoding='utf-8')
+        with redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(finish, self.public), 3)
+        self.assertIn('the public commit message in ', error.getvalue())
+        message.write_text('Change the content\n', encoding='utf-8')
+        self.assertEqual(release_main(finish, self.public), 0)
+
     def test_finish_stops_on_a_new_file_the_allowlist_leaves_out(self):
         release_main(['start', 'notes', *self.options()], self.public)
         tree = self.worktrees / 'notes/public'
