@@ -16,6 +16,7 @@ Use Vercel Labs' `agent-browser` from the shell for browser automation, verifica
 - Close only the sessions you opened, each by name: `agent-browser --session <name> close`.
 - Diagnose with `agent-browser doctor`, and leave its `--fix` repairs to the user, because they touch state that other sessions share.
 - An idle headless session closes after an hour and discards its tabs. Pass `--idle-timeout <time>` on `open` when a human needs longer.
+- A session opened with launch flags, such as `--profile`, `--headed` or `--idle-timeout`, keeps its browser only while every later command passes the same flags, `get url`, `tab list` and `close` included. A command that leaves one out or changes its value restarts the browser and loses the profile's sign-in. On macOS and Linux, run every command through `scripts/ab_session.py`, which saves the flags once per session. On Windows, pass the same flags on every command. Chrome lets one process use a profile folder, so check that the user's own Chrome isn't running on a profile before you pass it to `--profile`.
 - Write screenshots, PDFs, HAR files and recordings to explicit paths in a scratch directory.
 - Scope snapshots with `-s <css>` or `-d <depth>`, and read the full page when the task needs it.
 - To render a page at a set width, such as a 390 px phone, run `set viewport <width> <height>` and then `reload`, and confirm the width with `eval 'window.innerWidth'`. Chrome started headless without agent-browser holds its window at 500 px or wider.
