@@ -50,8 +50,9 @@ Native publisher plugins keep their publisher versions and catalog ownership.
 Each Orca account home on this device is a separate Codex home with its own plugin cache. When Codex starts
 there, its `plugin/list` call installs a newer catalog version, which lacks the install overlay and harness
 adaptation of the accepted `~/.codex` copy. So for each plugin a home has installed and enabled, a sync
-copies the accepted `~/.codex` copy into that home in place of an older version, the native copy, or its
-own earlier copy (`profile_plugins.py`). It decides which homes need a copy after updating `~/.codex`, so a
+copies the accepted `~/.codex` copy into that home in place of an older version, the native copy, its own
+earlier copy, or the `~/.codex` copy a release replaced at the same version, which a home that already
+matched holds without a copy receipt (`profile_plugins.py`). It decides which homes need a copy after updating `~/.codex`, so a
 release that changes the accepted copy reaches every home in the same sync. The copies it replaces move to
 the sync backup. A copy with any other file blocks the sync as a local edit. A home whose marketplace
 setting differs from `~/.codex` gets a note instead. A sync installs no plugin a home lacks, enables nothing, and leaves settings, credentials
@@ -61,8 +62,10 @@ never approves them.
 
 Claude's validated root `.in_use` leases and `.orphaned_at` timestamp are native cache state, not
 plugin content. This distinction applies only to installed Claude plugins. Unknown entries, malformed
-markers, and links still block reconciliation. A populated lease directory blocks replacement of that
-same cache path. Source builds and staged replacements remain strict raw trees.
+markers, and links still block reconciliation. A lease from a running Claude process keeps that cache
+path as it is: the pull leaves its replacement pending, applies the rest of the release, exits 1, and
+replaces the cache at the first pull after those processes exit. Source builds and staged replacements
+remain strict raw trees.
 
 Python writes a `__pycache__` folder beside any module it imports. Comparisons of installed, accepted
 and staged trees leave out these folders and the regular files in them, as the tree digests do, so a

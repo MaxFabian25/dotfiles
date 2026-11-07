@@ -2,8 +2,8 @@
 
 Each Orca account home is a separate Codex home with its own plugin cache. Codex refreshes a plugin there from
 the catalog, which lacks the install overlay and harness adaptation the accepted ~/.codex copy carries. Sync
-replaces that native copy, an older version, or its own earlier copy with the accepted ~/.codex copy, for plugins
-the home already has installed and enabled. It installs nothing new, enables nothing, approves no hook, and leaves
+replaces that native copy, an older version, its own earlier copy, or the ~/.codex copy a release replaced at the
+same version with the accepted ~/.codex copy, for plugins the home already has installed and enabled. It installs nothing new, enables nothing, approves no hook, and leaves
 settings and credentials alone.
 """
 from __future__ import annotations
@@ -92,8 +92,9 @@ def _native(setup, roots, package, install, name):
 
 
 def _known_copy(actual, references):
-    """Whether each entry of a copy is that entry of a reference: the accepted copy, the native release, or the copy
-    sync made. A native copy of the release, one with some of the install overlay, and sync's own copy all pass."""
+    """Whether each entry of a copy is that entry of a reference: the accepted copy, the copy it replaced, the native
+    release, or the copy sync made. A native copy of the release, one with some of the install overlay, sync's own
+    copy, and a copy of the accepted copy a release replaced at the same version all pass."""
     entries = actual.get('entries', {})
     return actual['kind'] == 'tree' and all(any(reference.get('entries', {}).get(path) == value
                                                 for reference in references) for path, value in entries.items())
@@ -139,9 +140,14 @@ def inspect(setup, roots, accepted, approved=None):
                         references = [accepted_image] if accepted_image else []
                         references += [image(native)] if native is not None else []
                         references += [copied['image']] if copied and copied['path'] == str(target) else []
+                        # A home whose copy already matched ~/.codex has no copy receipt, so once a release replaces
+                        # the ~/.codex copy in place, the copy it moved aside is what the home still holds.
+                        replaced = Path(record['backup']) if record and record.get('backup') else None
+                        references += [image(replaced)] if replaced is not None and replaced.is_dir() else []
                         if actual != _ABSENT and not _known_copy(actual, references):
-                            raise ConcurrentEdit(f'{target} has files that are in neither the accepted ~/.codex copy, '
-                                                 'the release Codex installs, nor the copy sync made; preserved for review')
+                            raise ConcurrentEdit(f'{target} has files that are in none of the accepted ~/.codex copy, '
+                                                 'the copy it replaced, the release Codex installs, or the copy sync '
+                                                 'made; preserved for review')
                         others = tuple(path for path in sorted(target.parent.iterdir())
                                        if path != target and not path.name.startswith('.'))
                         if actual == _ABSENT and not others:

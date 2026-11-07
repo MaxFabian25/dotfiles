@@ -807,6 +807,14 @@ class InstallationTest(unittest.TestCase):
         owner = AcceptedInstallations(self.setup.for_platform(self.device.platform), self.device)
         return owner.held_replacements(plan(self.setup, self.device).observations)
 
+    def assert_held(self, destination):
+        """Apply while this test's process holds the cache: the rest of the release applies, and the cache
+        waits as it was for a later pull."""
+        result = self.run_apply()
+        self.assertEqual(result.exit_code, 1)
+        self.assertEqual(result.held, ((destination, (os.getpid(),)),))
+        return result
+
     def test_claude_same_path_replacement_waits_for_a_running_holder(self):
         destination = self._installed_claude()
         lease = own_lease(destination / '.in_use')
@@ -816,8 +824,7 @@ class InstallationTest(unittest.TestCase):
         # The kit applies tool notes, so a changed note changes its cache although its locked tree stays.
         self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
         self.assertEqual(self.held(), [('plugin:claude:kit@personal-collections', destination, (os.getpid(),))])
-        with self.assertRaisesRegex(ConcurrentEdit, f'running Claude processes {os.getpid()};'):
-            self.run_apply()
+        self.assert_held(destination)
         self.assertEqual((destination / 'skills/one/SKILL.md').read_bytes(), before)
         self.assertEqual(lease.read_text(), marker)
         lease.unlink()
@@ -825,20 +832,36 @@ class InstallationTest(unittest.TestCase):
         self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
         self.assertEqual(self.calls, [])
 
+    def test_a_held_claude_cache_leaves_the_rest_of_the_release_to_apply(self):
+        destination = self._installed_claude()
+        lease = own_lease(destination / '.in_use')
+        before = (destination / 'skills/one/SKILL.md').read_bytes()
+        # The plugin comes before the configurations in the apply order, so a stop on it would leave the npm file.
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        config_source = self.public / 'config/npm/npmrc.toml'
+        config_source.parent.mkdir(parents=True)
+        config_source.write_text('min-release-age = 3\n')
+        result = self.assert_held(destination)
+        self.assertEqual((self.roots.home / '.npmrc').read_text(), 'min-release-age=3\n')
+        self.assertEqual((destination / 'skills/one/SKILL.md').read_bytes(), before)
+        self.assertEqual([d.detail for d in result.changes],
+                         ['plugin:claude:kit@personal-collections: Finish a verified pending replacement'])
+        lease.unlink()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
+
     def test_a_newer_release_takes_over_a_replacement_a_running_holder_stopped(self):
         destination = self._installed_claude()
         lease = own_lease(destination / '.in_use')
         before = (destination / 'skills/one/SKILL.md').read_bytes()
         self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the first replacement'),))
-        with self.assertRaisesRegex(ConcurrentEdit, 'running Claude processes'):
-            self.run_apply()
+        self.assert_held(destination)
         stale = json.loads(self._pending_claude_receipt().read_bytes())['pending']
         self.assertTrue(Path(stale['staged']).is_dir())
         # Claude Code marks the work folder as an orphaned version, as it did on WSL on 2026-11-07.
         (Path(stale['staged']).parent / '.orphaned_at').write_text('1794063570885')
         self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the second replacement'),))
-        with self.assertRaisesRegex(ConcurrentEdit, 'running Claude processes'):
-            self.run_apply()
+        self.assert_held(destination)
         self.assertEqual((destination / 'skills/one/SKILL.md').read_bytes(), before)
         self.assertFalse(Path(stale['staged']).parent.exists())
         lease.unlink()
@@ -854,8 +877,7 @@ class InstallationTest(unittest.TestCase):
         lease = own_lease(destination / '.in_use')
         rules = self.setup.note_rules
         self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the first replacement'),))
-        with self.assertRaisesRegex(ConcurrentEdit, 'running Claude processes'):
-            self.run_apply()
+        self.assert_held(destination)
         stale = json.loads(self._pending_claude_receipt().read_bytes())['pending']
         self.setup = replace(self.setup, note_rules=rules)
         self.assertEqual(self.run_apply().exit_code, 0)
@@ -868,8 +890,7 @@ class InstallationTest(unittest.TestCase):
         destination = self._installed_claude()
         lease = own_lease(destination / '.in_use')
         self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the first replacement'),))
-        with self.assertRaisesRegex(ConcurrentEdit, 'running Claude processes'):
-            self.run_apply()
+        self.assert_held(destination)
         stale = json.loads(self._pending_claude_receipt().read_bytes())['pending']
         extra = Path(stale['staged']) / 'ordinary.txt'
         extra.write_text('edited in the stage\n')
@@ -1059,9 +1080,8 @@ class InstallationTest(unittest.TestCase):
                 if writes == 2:
                     lease = own_lease(destination / '.in_use')
 
-        with (patch.object(AcceptedInstallations, '_save', concurrent_lease),
-              self.assertRaisesRegex(ConcurrentEdit, 'running Claude processes')):
-            self.run_apply()
+        with patch.object(AcceptedInstallations, '_save', concurrent_lease):
+            self.assert_held(destination)
         self.assertEqual((destination / 'skills/one/SKILL.md').read_bytes(), before)
         self.assertTrue(lease.exists())
         lease.unlink()

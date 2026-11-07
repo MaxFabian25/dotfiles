@@ -5,7 +5,7 @@ import json
 import subprocess
 
 import portable
-from accepted_installations import AcceptedInstallations, copy_tree, image
+from accepted_installations import AcceptedInstallations, HeldCache, copy_tree, image
 from claude_host import native_marketplace
 import codex_runtime
 import profile_plugins
@@ -30,6 +30,7 @@ class Apply:
                                                         for i in p.placement(host).installs)}
         self.packages = (changed_packages(current) | catalog_packages) & setup.packages.keys()
         self.owner = AcceptedInstallations(setup, device, configurations=current.configurations)
+        self.held = []
 
     def prepare(self):
         self.prepared = self.owner.prepare(self.current.observations, self.builder, packages=self.packages)
@@ -42,7 +43,11 @@ class Apply:
         self._runtime()
         self._catalogs()
         for artifact in self.prepared.artifacts:
-            self.owner.apply(artifact, self.files, native=self._install)
+            try:
+                self.owner.apply(artifact, self.files, native=self._install)
+            except HeldCache as held:
+                # Its replacement stays pending with the cache as it was, so the rest of the release applies now.
+                self.held.append(held)
         self._plugins()
         self._skills()
         # Planned again, because the steps above can replace the accepted ~/.codex copy the homes mirror.

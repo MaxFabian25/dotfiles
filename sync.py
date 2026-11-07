@@ -50,6 +50,9 @@ def main(argv=None):
             current, backup = apply(setup, device, current)
             if backup:
                 print(f'Backups: {backup}', file=sys.stderr)
+            for cache, holders in current.held:
+                print(f'Claude lease: {cache}, held by running Claude processes {", ".join(map(str, holders))}, '
+                      'stays as it is; the first pull after they exit replaces it', file=sys.stderr)
         print(to_json(current.result) if args.json else render(current.result, notes=args.notes),
               end='\n' if args.json else '')
         if not args.json:

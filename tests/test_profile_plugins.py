@@ -124,6 +124,33 @@ class ProfilePluginsTest(unittest.TestCase):
             kit.apply(mirrors, 'second-backup')
             self.assertIn('Readapted.', (kit.target / 'skills/publish/SKILL.md').read_text())
 
+    def test_a_copy_that_already_matched_is_replaced_when_a_release_replaces_the_accepted_copy_in_place(self):
+        for case in ('unchanged', 'edited', 'no backup'):
+            with self.subTest(case), Home() as home:
+                kit = Fixture(home)
+                shutil.copytree(kit.canonical, kit.target)
+                self.assertEqual(kit.inspect(), ((), (), ()))
+                # The release moved the copy aside, as accepted_installations records in the receipt's backup.
+                displaced = kit.canonical.parent / f'.sync-{VERSION}-{"0" * 32}/displaced'
+                shutil.copytree(kit.canonical, displaced)
+                home.write(kit.canonical / 'skills/publish/SKILL.md', '---\nname: publish\ndescription: Released.\n---\nBody.\n')
+                kit.record = {'path': str(kit.canonical), 'image': image(kit.canonical)}
+                if case != 'no backup':
+                    kit.record['backup'] = str(displaced)
+                if case == 'edited':
+                    home.write(kit.target / 'skills/publish/notes.md', 'mine')
+                before = image(kit.target)
+                mirrors, differences, _ = kit.inspect()
+                if case != 'unchanged':
+                    self.assertEqual((mirrors, differences[0].kind.value), ((), 'local-edit'))
+                    self.assertIn('the copy it replaced', differences[0].detail)
+                    self.assertEqual(image(kit.target), before)
+                    continue
+                self.assertEqual([d.kind.value for d in differences], ['tree'])
+                kit.apply(mirrors)
+                self.assertIn('Released.', (kit.target / 'skills/publish/SKILL.md').read_text())
+                self.assertEqual(kit.inspect(), ((), (), ()))
+
     def test_a_release_that_changes_the_accepted_copy_reaches_the_home_in_the_same_sync(self):
         with Home() as home:
             kit = Fixture(home)

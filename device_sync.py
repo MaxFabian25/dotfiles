@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Mapping
 
 import codex_host
@@ -23,6 +24,7 @@ class Plan:
     configurations: bool = True
     expected: tuple[Difference, ...] = ()   # unmanaged, and named in this platform's device list
     profile_mirrors: tuple[profile_plugins.Mirror, ...] = ()
+    held: tuple[tuple[Path, tuple[int, ...]], ...] = ()   # after apply: the Claude caches left for running sessions
 
     @property
     def exit_code(self):
@@ -135,4 +137,6 @@ def apply(setup: Setup, device: Device, current: Plan, *, builder=None, configur
         operation = Apply(setup.for_platform(device.platform), device, current, builder)
         operation.prepare()
         operation.run()
-        return plan(setup, device, configurations=configurations), operation.files.backup if operation.files.backup.exists() else None
+        after = replace(plan(setup, device, configurations=configurations),
+                        held=tuple((held.path, held.holders) for held in operation.held))
+        return after, operation.files.backup if operation.files.backup.exists() else None

@@ -253,18 +253,17 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(release_main([*finish, '--hooks-reapproved'], self.public), 0)
         self.assertIn('"sha256:bb"', git(self.private_origin, 'show', 'main:setup/lock.toml'))
 
-    def test_finish_stops_on_claude_sessions_holding_a_plugin_it_replaces_until_reviewed(self):
+    def test_finish_pushes_and_names_claude_sessions_holding_a_plugin_it_replaces(self):
         release_main(['start', 'held', *self.options()], self.public)
         held = 'print("Claude lease: plugin:claude:kit@m at /cache/kit/1.0.0, held by running Claude processes 4242")\n'
         (self.worktrees / 'held/public/sync.py').write_text(held + SYNC_WITH_CHANGES, encoding='utf-8')
         message = self.root / 'message'
         message.write_text('Hold the plugin\n', encoding='utf-8')
         finish = ['finish', 'held', '--message', str(message), '--push', *self.options()]
-        with redirect_stderr(io.StringIO()) as error:
-            self.assertEqual(release_main(finish, self.public), 3)
-        self.assertIn('plugin:claude:kit@m at /cache/kit/1.0.0, held by running Claude processes 4242', error.getvalue())
-        self.assertEqual(git(self.public_origin, 'show', 'main:sync.py'), SYNC_WITH_CHANGES.strip())
-        self.assertEqual(release_main([*finish, '--leases-reviewed'], self.public), 0)
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(release_main(finish, self.public), 0)
+        self.assertIn('Claude lease: plugin:claude:kit@m at /cache/kit/1.0.0, held by running Claude processes 4242; '
+                      'the pull here applies the rest of the release', output.getvalue())
         self.assertEqual(git(self.public_origin, 'show', 'main:sync.py'), (held + SYNC_WITH_CHANGES).strip())
 
     def test_a_rebase_takes_origins_copy_of_a_regenerated_file_only_where_it_alone_conflicts(self):

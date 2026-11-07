@@ -137,6 +137,16 @@ def copy_tree(source: Path, destination: Path):
     shutil.copytree(source, destination, ignore=shutil.ignore_patterns(_PYTHON_CACHE))
 
 
+class HeldCache(ConcurrentEdit):
+    """A Claude plugin cache that running Claude processes hold, raised before its replacement moves anything.
+    Its replacement stays pending, so the pull applies the rest of the release and the first pull after those
+    processes exit finishes it."""
+
+    def __init__(self, path, holders):
+        super().__init__(f'running Claude processes {", ".join(map(str, holders))} hold {path}')
+        self.path, self.holders = path, holders
+
+
 def _claude_cache_image(path, *, replacing=False):
     if _linked(path) or not path.is_dir():
         return image(path)
@@ -145,8 +155,7 @@ def _claude_cache_image(path, *, replacing=False):
         if entry.name in {'.in_use', '.orphaned_at'}:
             holders = _claude_runtime(entry)
             if holders and replacing:
-                raise ConcurrentEdit(f'Claude cache has lease markers from running Claude processes '
-                                     f'{", ".join(map(str, holders))}; close those sessions before replacement: {path}')
+                raise HeldCache(path, holders)
             continue
         child = image(entry)
         if entry.name == _PYTHON_CACHE:
@@ -558,7 +567,7 @@ class AcceptedInstallations:
 
     def held_replacements(self, observations):
         """The Claude plugin caches the pull would replace in place while running Claude processes hold them, as
-        (identity, cache, PIDs). The pull stops on each one until those processes exit. A cache is replaced in
+        (identity, cache, PIDs). The pull leaves each one as it is until those processes exit. A cache is replaced in
         place when its version stays and what its bytes follow changes, or when a pending replacement is unfinished."""
         held = []
         for artifact in self.artifacts(observations):

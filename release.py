@@ -5,10 +5,9 @@ each repository at origin/main on branch NAME. Edit there. `finish NAME` locks a
 entries, stops on a changed plugin whose Codex hooks are trusted until --hooks-reapproved, runs the public
 test suite, stops on new files the .gitignore allowlist would leave out, commits both worktrees, stops if
 origin/main changed the same files meanwhile, rebases them onto it, pairs the private release.toml with the
-public commit, checks that this device's pull could apply the pair, stopping on Claude sessions that hold a
-plugin it replaces until --leases-reviewed, checks both pushes with --dry-run, pushes, and pulls, after any
-other pull here ends. One finish runs at a time on a machine; another stops and names it. `clean NAME`
-removes the worktrees and branches once origin/main has them. `status` lists what runs here and each open
+public commit, checks that this device's pull could apply the pair, naming each Claude plugin cache that
+running sessions hold, checks both pushes with --dry-run, pushes, and pulls, after any other pull here ends.
+One finish runs at a time on a machine; another stops and names it. `clean NAME` removes the worktrees and branches once origin/main has them. `status` lists what runs here and each open
 release worktree with the files it changes, and `start` lists the others. `wait --timeout SECONDS` returns
 once no release, pull or sync runs on this machine.
 """
@@ -309,21 +308,21 @@ def test_suite(public, log):
                            'pulls use; give the test that wrote it its own engine folder')
 
 
-def device_check(public, private, leases_reviewed=False):
+def device_check(public, private):
     """Stop on a release that would stop the pull, which every device would then hit. Sync exits 1 when it
     only has changes to apply, as every release does, but so does a crash, which skips the closing summary.
-    A Claude session that holds a plugin the release replaces stops only this device's pull, until it exits."""
+    Name each Claude plugin cache that running sessions hold: the pull applies the rest of the release and
+    replaces that cache at the first pull after they exit."""
     result = subprocess.run([sys.executable, '-B', str(public / 'sync.py'), '--candidate', '--public',
                              str(public / 'setup'), '--private', str(private / 'setup')],
                             cwd=public, capture_output=True, text=True, encoding='utf-8', timeout=1800)
     if result.returncode not in (0, 1) or 'Managed changes:' not in result.stdout:
         sys.stderr.write(result.stdout + result.stderr)
         raise RuntimeError(f'the pull on this device would stop on this release (sync exited {result.returncode}); nothing was pushed')
-    held = [line.removeprefix(LEASE) for line in result.stdout.splitlines() if line.startswith(LEASE)]
-    if held and not leases_reviewed:
-        raise RuntimeError('the pull on this device would stop on Claude sessions using plugins this release replaces ('
-                           + '; '.join(held) + '). Ask the user to close them and finish again, or finish with '
-                           '--leases-reviewed and pull again once they exit; nothing was pushed')
+    for line in result.stdout.splitlines():
+        if line.startswith(LEASE):
+            print(f'{line}; the pull here applies the rest of the release and replaces that cache once they exit',
+                  flush=True)
 
 
 def push(root):
@@ -399,7 +398,7 @@ def finish(args, public_repo, private_repo):
             pair(public, private, args.pair_message)
         if not ahead(public) and not ahead(private):
             raise RuntimeError('nothing to release: both branches match origin/main')
-        device_check(public, private, args.leases_reviewed)
+        device_check(public, private)
         if not args.push:
             break
         published = False
@@ -469,8 +468,6 @@ def main(argv=None):
                         help='finish although origin changed files this branch changed, after reading those commits')
     parser.add_argument('--hooks-reapproved', action='store_true',
                         help='finish although a plugin with trusted Codex hooks may change, once the user approved them again')
-    parser.add_argument('--leases-reviewed', action='store_true',
-                        help='push although Claude sessions here hold plugins the release replaces')
     parser.add_argument('--pull', action='store_true', help='then pull and apply the pair on this device')
     parser.add_argument('--force', action='store_true', help='clean: remove unpushed branches too')
     parser.add_argument('--timeout', type=float, default=1800, help='wait: give up after this many seconds')
