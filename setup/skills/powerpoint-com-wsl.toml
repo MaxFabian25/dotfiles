@@ -1,0 +1,9 @@
+public = true
+
+[source]
+local = "skills/powerpoint-com-wsl"
+tree = "sha256:68c92848946cedca5c6b829874d5623cce6ea0d3c8c324221bfb706a60d678ae"
+
+[place]
+agents = true
+claude = true

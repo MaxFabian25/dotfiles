@@ -24,7 +24,7 @@ from urllib.parse import unquote, urlsplit
 from markdown_it import MarkdownIt
 
 REPORT_SCHEMA_VERSION = 1
-EXPECTED_SKILLS = frozenset({"charts", "prose", "prose-maintainer"})
+EXPECTED_SKILLS = frozenset({"charts", "decks", "prose", "prose-maintainer"})
 MAX_FILE_BYTES = 8 * 1024 * 1024
 MAX_FILE_COUNT = 20_000
 MAX_TREE_DEPTH = 64

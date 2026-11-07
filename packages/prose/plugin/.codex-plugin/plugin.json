@@ -1,7 +1,7 @@
 {
   "name": "prose",
-  "version": "0.3.13+dotfiles.20261107",
-  "description": "Scoped English and Danish prose guidance for editorial, academic, technical, interface, citation, and terminology work, with house rules for charts, tables, and dashboards.",
+  "version": "0.3.14+dotfiles.20261107",
+  "description": "Scoped English and Danish prose guidance for editorial, academic, technical, interface, citation, and terminology work, with house rules for charts, tables, dashboards, and slide decks.",
   "author": {
     "name": "MaxFabian25",
     "url": "https://github.com/MaxFabian25"
@@ -16,7 +16,8 @@
     "citations",
     "terminology",
     "charts",
-    "data-visualisation"
+    "data-visualisation",
+    "slide-decks"
   ],
   "skills": "./skills/",
   "interface": {

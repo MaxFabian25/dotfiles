@@ -30,9 +30,9 @@ Clone this repository:
 git clone https://github.com/MaxFabian25/dotfiles.git
 ```
 
-Copy the `prose` and `charts` directories from the cloned `dotfiles/packages/prose/plugin/skills`
+Copy the `prose`, `charts`, and `decks` directories from the cloned `dotfiles/packages/prose/plugin/skills`
 into `.agents/skills` in the project where you want to use them. Keep each `references` directory
-alongside its `SKILL.md`. The charts skill links to Prose's references, so install both.
+alongside its `SKILL.md`. The charts and decks skills link to Prose's references, so install all three.
 Codex loads project skills from `.agents/skills`; see the official
 [local skill documentation](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills).
 
@@ -50,6 +50,10 @@ The [charts skill](plugin/skills/charts/SKILL.md) adds house rules for chart mar
 dashboard layout, and the code that builds a display. Prose supplies the words in and around each
 display.
 
+The [decks skill](plugin/skills/decks/SKILL.md) adds house rules for slide decks: main slides
+and backup, cuts that keep a claim, native charts, fonts outside the app's set, and briefs for a
+fresh reviewer. Charts and Prose govern the displays and words on each slide.
+
 Each rule is maintained in one reference. [Source records](plugin/skills/prose/references/source-manifest.md)
 show where the guidance and terms come from and where that guidance applies. Including a source
 in the library does not make its rules apply to every passage. Quotations, official names, and
@@ -59,7 +63,7 @@ exact technical text keep their required forms.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for editing, checks, and release instructions. The
 `prose-maintainer` skill applies those instructions to repository work. Agents can invoke any of
-the three skills implicitly when a task matches its description.
+the four skills implicitly when a task matches its description.
 
 The current tree contains the writing library and its development tools. Dotfiles contains a
 fresh source import; it does not import Prose's earlier history or retired experiments.

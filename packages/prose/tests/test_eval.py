@@ -31,7 +31,12 @@ class EvalTests(unittest.TestCase):
         )
         self.assertEqual(
             manifest["skills"],
-            ["./skills/charts", "./skills/prose", "./skills/prose-maintainer"],
+            [
+                "./skills/charts",
+                "./skills/decks",
+                "./skills/prose",
+                "./skills/prose-maintainer",
+            ],
         )
         other = self.tmp / "other"
         (other / "skills/prose").mkdir(parents=True)

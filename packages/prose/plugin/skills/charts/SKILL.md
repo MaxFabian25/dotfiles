@@ -41,6 +41,12 @@ charts](references/ibcs-charts.md) before drawing.
   measures each have their own scale, say so on the display.
 - **Axis start.** When a line chart's value axis starts above zero, mark the break on the chart
   with an axis-break symbol or a short note.
+- **Known values only.** Give a mark a length, area or position only for a value you know. Draw an
+  unknown value as an open or dotted outline marked "?", and an item without a price as a labelled
+  gap, so it never reads as a zero that costs nothing. Keep one meaning for each line style and fill
+  across the document, such as solid for counted in the total and dotted for an estimate. Give the
+  most visual weight to what changed, and put only like-for-like values on one axis, such as whole
+  plans with whole plans and add-ons with add-ons.
 
 ## Layout
 
