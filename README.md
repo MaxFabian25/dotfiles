@@ -136,6 +136,8 @@ first in each of these cases:
 
 After a pull that changed skills or packages, it runs `skill_listing.py`, which warns when Claude Code
 lists skills without their descriptions. `clean NAME` removes the worktrees once `origin/main` has them.
+For a skill description change, `skill_triggers.py` counts how often the installed skills load for a set of
+prompts; run it with the same prompts before the release and after the pull.
 
 ```sh
 uv run --locked python release.py finish NAME --message msg.txt --entry prose --refresh-owned --push --pull
@@ -199,7 +201,7 @@ uv run --locked python tests/native_policy_smoke.py
 The smoke test uses temporary application homes and real native plugin loaders. It does not use a
 live installation as its test fixture. It retains its isolated evidence on failure.
 
-Only `build_setup.py`, `codex_runtime.py`, `lock_setup.py`, `sync.py`, `pull.py`, `release.py`, `schedule.py`, and `skill_listing.py` are supported public
+Only `build_setup.py`, `codex_runtime.py`, `lock_setup.py`, `sync.py`, `pull.py`, `release.py`, `schedule.py`, `skill_listing.py`, and `skill_triggers.py` are supported public
 command entry points. Lower-level packaging modules contain compatibility helpers, not a second
 configuration authority. Do not recreate historical JSON registries to drive them.
 

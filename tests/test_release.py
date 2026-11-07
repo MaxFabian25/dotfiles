@@ -265,6 +265,43 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(release_main([*finish, '--leases-reviewed'], self.public), 0)
         self.assertEqual(git(self.public_origin, 'show', 'main:sync.py'), (held + SYNC_WITH_CHANGES).strip())
 
+    def test_a_rebase_takes_origins_copy_of_a_regenerated_file_only_where_it_alone_conflicts(self):
+        lock = 'setup/lock.toml'
+        regenerated = frozenset({lock})
+
+        def commit(root, files, subject, push=False):
+            for relative, text in files.items():
+                (root / relative).parent.mkdir(parents=True, exist_ok=True)
+                (root / relative).write_text(text, encoding='utf-8')
+            git(root, 'add', '-A')
+            git(root, 'commit', '-qm', subject)
+            if push:
+                git(root, 'push', '-q', 'origin', 'HEAD:main')
+
+        commit(self.clone(self.private_origin, 'seed'), {lock: '[kit]\ntree = "a"\n'}, 'Lock', push=True)
+        mine = self.clone(self.private_origin, 'mine')
+        commit(mine, {lock: '[kit]\ntree = "b"\n', 'notes': 'mine\n'}, 'Change the kit')
+        lock_only = self.clone(self.private_origin, 'lock-only')
+        commit(lock_only, {lock: '[kit]\ntree = "d"\n'}, 'Relock the kit')
+        commit(self.clone(self.private_origin, 'theirs'), {lock: '[kit]\ntree = "c"\n'}, 'Their kit', push=True)
+
+        before = git(mine, 'rev-parse', 'HEAD')
+        with self.assertRaisesRegex(RuntimeError, 'rebase it by hand'):
+            release.rebase(mine)
+        self.assertEqual(git(mine, 'rev-parse', 'HEAD'), before)
+        self.assertEqual(git(mine, 'status', '--porcelain'), '')
+        with self.assertRaisesRegex(RuntimeError, 'rebase it by hand'):  # nothing of its own would be left
+            release.rebase(lock_only, regenerated)
+        self.assertEqual(git(lock_only, 'status', '--porcelain'), '')
+
+        self.assertEqual(release.rebase(mine, regenerated), 'regenerate')
+        self.assertEqual((mine / lock).read_text(encoding='utf-8'), '[kit]\ntree = "c"\n')
+        self.assertEqual((mine / 'notes').read_text(encoding='utf-8'), 'mine\n')
+        self.assertEqual(git(mine, 'log', '--format=%B', '-1'), 'Change the kit')
+        self.assertEqual(git(mine, 'log', '--format=%s', '-3').splitlines(), ['Change the kit', 'Their kit', 'Lock'])
+        self.assertIn('gpgsig -----BEGIN SSH SIGNATURE-----', git(mine, 'cat-file', 'commit', 'HEAD'))
+        self.assertEqual(release.rebase(mine, regenerated), '')
+
     def test_finish_without_a_message_stops_before_committing(self):
         release_main(['start', 'quiet', *self.options()], self.public)
         (self.worktrees / 'quiet/public/content').write_text('edited\n', encoding='utf-8')

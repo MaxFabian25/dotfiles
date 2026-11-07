@@ -20,7 +20,7 @@ import subprocess
 import sys
 import tomllib
 
-from portable import GIT
+from portable import GIT, native_cli_environment
 from pull import git
 
 ENGINE = Path(__file__).resolve().parent
@@ -101,18 +101,47 @@ def commit(root, message):
     git(root, 'commit', '-q', '-F', str(message.resolve()))
 
 
-def rebase(root):
-    """Replay this branch onto origin/main, which another session may have moved since start."""
+def rebase(root, regenerated=frozenset()):
+    """Replay this branch onto origin/main, which another session may have moved since start. A conflict only in
+    files the caller rebuilds afterwards, as finish relocks setup/lock.toml, takes origin's copy. Returns '' when
+    the branch already holds origin/main, 'regenerate' when it took such a copy, and 'rebased' otherwise."""
     git(root, 'fetch', '--prune', 'origin')
     if subprocess.run([*GIT, '-C', str(root), 'merge-base', '--is-ancestor', 'origin/main', 'HEAD'],
                       capture_output=True, timeout=60).returncode == 0:
+        return ''
+    # --continue then commits each settled step with its own author and message, minus git's conflict comments.
+    environment = {**native_cli_environment(), 'GIT_EDITOR': 'true'}
+    result, step = 'rebased', ('rebase', '-q', 'origin/main')
+    while subprocess.run([*GIT, '-C', str(root), *step], env=environment, capture_output=True, timeout=600).returncode:
+        try:
+            taken = take_origin(root, regenerated)
+        except RuntimeError:
+            taken = False
+        if not taken:
+            subprocess.run([*GIT, '-C', str(root), 'rebase', '--abort'], capture_output=True, timeout=60)
+            raise RuntimeError(f'{root}: the branch conflicts with origin/main; rebase it by hand, then finish again')
+        result, step = 'regenerate', ('rebase', '--continue')
+    return result
+
+
+def take_origin(root, regenerated):
+    """Settle a stopped rebase step whose conflicts are all in regenerated files by taking origin's copy. False
+    when another file conflicts, or when the step would then change nothing."""
+    conflicted = sorted(set(git(root, 'diff', '--name-only', '--diff-filter=U').splitlines()))
+    if not conflicted or not set(conflicted) <= regenerated:
         return False
-    try:
-        git(root, 'rebase', '-q', 'origin/main')
-    except RuntimeError as error:
-        subprocess.run([*GIT, '-C', str(root), 'rebase', '--abort'], capture_output=True, timeout=60)
-        raise RuntimeError(f'{root}: the branch conflicts with origin/main; rebase it by hand, then finish again') from error
-    return True
+    git(root, 'checkout', '--ours', '--', *conflicted)  # during a rebase, ours is origin/main's side
+    git(root, 'add', '--', *conflicted)
+    return subprocess.run([*GIT, '-C', str(root), 'diff', '--cached', '--quiet'], timeout=60).returncode != 0
+
+
+def amend(root):
+    """Fold the files a relock rewrote into the branch's own release commit."""
+    if not dirty(root):
+        return
+    if not ahead(root):
+        raise RuntimeError(f'{root}: relocking changed files on a branch without its own commit; commit them, then finish again')
+    git(root, 'commit', '-q', '-a', '--amend', '--no-edit')
 
 
 def rewrite(path, pattern, replacement):
@@ -267,12 +296,15 @@ def finish(args, public_repo, private_repo):
                                + '; '.join(shared) + '). Read its commits with git log -p HEAD..origin/main -- FILE, '
                                'reconcile the two designs, then finish again with --overlap-reviewed')
     paired = ahead(public)
+    regenerated = frozenset({LOCK}) if args.entry else frozenset()
     for attempt in range(1, ATTEMPTS + 1):
-        if rebase(public) and args.entry:
+        if rebase(public, regenerated) and args.entry:
             run(lock, public)
-            if dirty(public):
-                git(public, 'commit', '-q', '-a', '--amend', '--no-edit')
-        rebase(private)
+            amend(public)
+        if rebase(private, regenerated) == 'regenerate':
+            run(lock, public)
+            amend(public)
+            amend(private)
         before = git(private, 'rev-parse', 'HEAD')
         if paired:
             pair(public, private, args.pair_message)
