@@ -1,5 +1,6 @@
 from dataclasses import replace
 import json
+import os
 from pathlib import Path
 import shutil
 import sys
@@ -50,6 +51,18 @@ class DiskHost:
         if rules.is_file():
             seen.add(Surface.RULES, 'AGENTS.md', FileValue(bytes_digest(rules.read_bytes())))
         return seen.finish('disk test host', set(self.installed))
+
+
+def own_lease(directory, start=None):
+    """A Claude lease marker naming this test's process, which is running, with its own start time unless start
+    gives another. macOS markers give the start as a date."""
+    if start is None:
+        start = (Path('/proc/self/stat').read_text().rsplit(')', 1)[1].split()[19] if sys.platform.startswith('linux')
+                 else 'Thu Oct 15 12:30:00 2026')
+    directory.mkdir(exist_ok=True)
+    lease = directory / str(os.getpid())
+    lease.write_text(json.dumps({'pid': os.getpid(), 'procStart': start}, separators=(',', ':')))
+    return lease
 
 
 class InstallationTest(unittest.TestCase):
@@ -789,18 +802,24 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual(tuple(lease.parent.iterdir()), ())
         self.assertEqual(self.calls, [])
 
-    def test_claude_same_path_replacement_preserves_populated_lease(self):
+    def held(self):
+        from accepted_installations import AcceptedInstallations
+        owner = AcceptedInstallations(self.setup.for_platform(self.device.platform), self.device)
+        return owner.held_replacements(plan(self.setup, self.device).observations)
+
+    def test_claude_same_path_replacement_waits_for_a_running_holder(self):
         destination = self._installed_claude()
-        lease = destination / '.in_use/17'
-        lease.parent.mkdir()
-        lease.write_text('{"pid":17,"procStart":"42"}')
+        lease = own_lease(destination / '.in_use')
+        marker = lease.read_text()
+        self.assertEqual(self.held(), [])
         before = (destination / 'skills/one/SKILL.md').read_bytes()
+        # The kit applies tool notes, so a changed note changes its cache although its locked tree stays.
         self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
-        with (patch('accepted_installations._lease_held', return_value=True),
-              self.assertRaisesRegex(ConcurrentEdit, 'lease markers from running Claude processes 17;')):
+        self.assertEqual(self.held(), [('plugin:claude:kit@personal-collections', destination, (os.getpid(),))])
+        with self.assertRaisesRegex(ConcurrentEdit, f'running Claude processes {os.getpid()};'):
             self.run_apply()
         self.assertEqual((destination / 'skills/one/SKILL.md').read_bytes(), before)
-        self.assertEqual(lease.read_text(), '{"pid":17,"procStart":"42"}')
+        self.assertEqual(lease.read_text(), marker)
         lease.unlink()
         self.assertEqual(self.run_apply().exit_code, 0)
         self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
@@ -813,6 +832,7 @@ class InstallationTest(unittest.TestCase):
         lease.write_text('{"pid":17,"procStart":"42"}')
         self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
         with patch('accepted_installations._lease_held', return_value=False):
+            self.assertEqual(self.held(), [])
             self.assertEqual(self.run_apply().exit_code, 0)
         self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
         self.assertEqual(self.calls, [])
@@ -946,24 +966,22 @@ class InstallationTest(unittest.TestCase):
         self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
         save = AcceptedInstallations._save
         writes = 0
+        lease = None
 
         def concurrent_lease(owner, artifact, accepted, pending=None):
-            nonlocal writes
+            nonlocal writes, lease
             save(owner, artifact, accepted, pending)
             if pending:
                 writes += 1
                 if writes == 2:
-                    lease = destination / '.in_use/17'
-                    lease.parent.mkdir()
-                    lease.write_text('{"pid":17}')
+                    lease = own_lease(destination / '.in_use')
 
         with (patch.object(AcceptedInstallations, '_save', concurrent_lease),
-              patch('accepted_installations._lease_held', return_value=True),
-              self.assertRaisesRegex(ConcurrentEdit, 'lease markers')):
+              self.assertRaisesRegex(ConcurrentEdit, 'running Claude processes')):
             self.run_apply()
         self.assertEqual((destination / 'skills/one/SKILL.md').read_bytes(), before)
-        self.assertEqual((destination / '.in_use/17').read_text(), '{"pid":17}')
-        (destination / '.in_use/17').unlink()
+        self.assertTrue(lease.exists())
+        lease.unlink()
         self.assertEqual(self.run_apply().exit_code, 0)
         self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
 
@@ -1369,6 +1387,13 @@ class LeaseHolderTest(unittest.TestCase):
         import os
         from accepted_installations import _lease_held
         self.assertFalse(_lease_held({'pid': os.getpid(), 'procStart': '1'}))
+
+    @unittest.skipUnless(Path('/proc/self/stat').exists(), 'only Linux records the start time sync can compare')
+    def test_a_lease_is_held_where_proc_cannot_tell_its_process(self):
+        from accepted_installations import _lease_held
+        with patch('accepted_installations._proc_shows_host', return_value=False):  # a sandbox's own /proc
+            self.assertTrue(_lease_held({'pid': os.getpid(), 'procStart': '1'}))
+        self.assertTrue(_lease_held({'pid': os.getpid(), 'procStart': 'Thu Oct 15 12:30:00 2026'}))
 
 
 if __name__ == '__main__':

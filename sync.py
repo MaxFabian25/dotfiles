@@ -40,6 +40,9 @@ def main(argv=None):
             owner = AcceptedInstallations(setup.for_platform(device.platform), device)
             validate_runtime(owner.configurations, device.roots, proposed=True)
             owner.rehearse(current.observations)
+            for identity, cache, holders in owner.held_replacements(current.observations):
+                print(f'Claude lease: {identity} at {cache}, held by running Claude processes '
+                      f'{", ".join(map(str, holders))}')
         if args.apply:
             if current.blocked and not args.json:
                 print(render(current.result), end='')  # its attention rows name each blocker and its fix

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from functools import cache
 import hashlib
 import json
 import os
@@ -9,12 +10,14 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import uuid
 
 from configuration import (BlockedConfiguration, FileConfiguration, JsonConfiguration, NpmrcConfiguration,
                            desired, patch_fields, read_fields, validate_runtime)
-from description import AlignedInstall, LocalSource, RepoSource, SkillRoot, SnapshotSource, _canonical, plugin_id
+from description import (AlignedInstall, LocalSource, RepoSource, SkillRoot, SnapshotSource, ToolNotes, _canonical,
+                         plugin_id)
 from drift import Difference, EntryRef, Kind
 from host_state import FactKey, Host, InstallDetail, Surface, Unpinned, bytes_digest
 from portable import replace as replace_path
@@ -76,11 +79,24 @@ def image(path: Path, fields=None, syntax='toml'):
     return {'kind': 'tree', 'entries': entries}
 
 
+@cache
+def _proc_shows_host():
+    """Whether /proc lists this machine's processes. A sandbox with its own PID namespace mounts a /proc whose
+    PID 1 is its own launcher, and that /proc hides every process outside it."""
+    try:
+        init = Path('/proc/1/cmdline').read_bytes().split(b'\0', 1)[0].decode('utf-8', 'replace')
+    except OSError:
+        return False
+    return PurePosixPath(init).name in {'init', 'systemd'}
+
+
 def _lease_held(marker):
     """Whether the Claude process a lease marker names still runs. A marker whose process has ended holds nothing,
     and sessions that exit uncleanly leave such markers behind. Where this cannot tell, as on Windows, it is held."""
     if os.name == 'nt':
         return True  # os.kill would end the process there
+    if sys.platform.startswith('linux') and not _proc_shows_host():
+        return True
     pid = marker['pid']
     try:
         os.kill(pid, 0)
@@ -94,7 +110,7 @@ def _lease_held(marker):
         return True  # no /proc, as on macOS, so a reused process ID cannot be told apart
     start = marker.get('procStart')
     # Linux markers record the process's start time in clock ticks, field 22 of /proc/<pid>/stat.
-    return start is None or len(fields) < 20 or fields[19] == start
+    return start is None or not start.isdigit() or len(fields) < 20 or fields[19] == start
 
 
 def _claude_runtime(path):
@@ -172,6 +188,14 @@ def _claude_cache_image(path, *, replacing=False):
         elif child != _ABSENT:
             entries[entry.name] = child
     return {'kind': 'tree', 'entries': entries}
+
+
+def _cache_inputs(provenance, notes):
+    """What a Claude plugin cache's bytes follow in its provenance: the locked Claude tree, the package and its
+    source, and the tool notes when the package applies them. Every plugin's intent names every tool note."""
+    provenance = provenance or {}
+    return [((provenance.get('lock') or {}).get('trees') or {}).get('claude'), provenance.get('package'),
+            provenance.get('repository'), provenance.get('notes') if notes else None]
 
 
 def _fields_image(values, syntax):
@@ -561,6 +585,29 @@ class AcceptedInstallations:
                 raise ConcurrentEdit(f'{artifact.identity}: {detail}')
             if kind is not None:
                 self._prepare_artifact(artifact, self._target(artifact, None, artifact.data), None, artifact.data, None)
+
+    def held_replacements(self, observations):
+        """The Claude plugin caches the pull would replace in place while running Claude processes hold them, as
+        (identity, cache, PIDs). The pull stops on each one until those processes exit. A cache is replaced in
+        place when its version stays and what its bytes follow changes, or when a pending replacement is unfinished."""
+        held = []
+        for artifact in self.artifacts(observations):
+            if not artifact.claude_cache or not artifact.destination.is_dir():
+                continue
+            receipt = self._receipt(artifact) or {}
+            pending, accepted = receipt.get('pending'), receipt.get('accepted')
+            if pending:
+                replacing = (Path(pending['target']['path']) == artifact.destination
+                             and not _same(self._read(artifact, artifact.destination), pending['target']['image']))
+            elif accepted and Path(accepted['path']) == artifact.destination:
+                notes = self.setup.packages[artifact.entry.name].tool_notes == ToolNotes.APPLY
+                replacing = not _same(_cache_inputs(accepted.get('provenance'), notes),
+                                      _cache_inputs(artifact.provenance, notes))
+            else:
+                continue
+            if replacing and (holders := _claude_runtime(artifact.destination / '.in_use')):
+                held.append((artifact.identity, artifact.destination, holders))
+        return held
 
     def _target(self, artifact, source, data):
         if artifact.fields is not None:

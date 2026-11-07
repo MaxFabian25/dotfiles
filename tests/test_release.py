@@ -195,6 +195,42 @@ class ReleaseTest(unittest.TestCase):
                                       self.public), 3)
         self.assertEqual(git(self.public_origin, 'show', 'main:sync.py'), SYNC_WITH_CHANGES.strip())
 
+    def test_finish_stops_on_a_plugin_with_trusted_hooks_whose_content_may_change_until_reapproved(self):
+        seed = self.clone(self.private_origin, 'private-seed')
+        (seed / 'setup').mkdir()
+        (seed / 'setup/lock.toml').write_text(
+            '[hooked]\ncodex = { version = "1.0.0", tree = "sha256:aa" }\nhooks = 2\n\n'
+            '[plain]\ncodex = { version = "1.0.0", tree = "sha256:cc" }\n', encoding='utf-8')
+        git(seed, 'add', '-A')
+        git(seed, 'commit', '-qm', 'Lock the plugins')
+        git(seed, 'push', '-q', 'origin', 'HEAD:main')
+        release_main(['start', 'hooks', *self.options()], self.public)
+        lock = self.worktrees / 'hooks/private/setup/lock.toml'
+        lock.write_text(lock.read_text(encoding='utf-8').replace('aa', 'bb').replace('cc', 'dd'), encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Change both plugins\n', encoding='utf-8')
+        finish = ['finish', 'hooks', '--private-message', str(message), '--push', *self.options()]
+        with redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(finish, self.public), 3)
+        self.assertIn('may change the Codex content of hooked, whose Codex hooks are trusted', error.getvalue())
+        self.assertIn('"sha256:aa"', git(self.private_origin, 'show', 'main:setup/lock.toml'))
+        self.assertEqual(release_main([*finish, '--hooks-reapproved'], self.public), 0)
+        self.assertIn('"sha256:bb"', git(self.private_origin, 'show', 'main:setup/lock.toml'))
+
+    def test_finish_stops_on_claude_sessions_holding_a_plugin_it_replaces_until_reviewed(self):
+        release_main(['start', 'held', *self.options()], self.public)
+        held = 'print("Claude lease: plugin:claude:kit@m at /cache/kit/1.0.0, held by running Claude processes 4242")\n'
+        (self.worktrees / 'held/public/sync.py').write_text(held + SYNC_WITH_CHANGES, encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Hold the plugin\n', encoding='utf-8')
+        finish = ['finish', 'held', '--message', str(message), '--push', *self.options()]
+        with redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(finish, self.public), 3)
+        self.assertIn('plugin:claude:kit@m at /cache/kit/1.0.0, held by running Claude processes 4242', error.getvalue())
+        self.assertEqual(git(self.public_origin, 'show', 'main:sync.py'), SYNC_WITH_CHANGES.strip())
+        self.assertEqual(release_main([*finish, '--leases-reviewed'], self.public), 0)
+        self.assertEqual(git(self.public_origin, 'show', 'main:sync.py'), (held + SYNC_WITH_CHANGES).strip())
+
     def test_finish_without_a_message_stops_before_committing(self):
         release_main(['start', 'quiet', *self.options()], self.public)
         (self.worktrees / 'quiet/public/content').write_text('edited\n', encoding='utf-8')

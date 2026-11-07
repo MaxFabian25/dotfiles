@@ -2,11 +2,12 @@
 
 Run it with the engine's own Python from the canonical public checkout. `start NAME` makes a worktree of
 each repository at origin/main on branch NAME. Edit there. `finish NAME` locks and builds the named
-entries, runs the public test suite, stops on new files the .gitignore allowlist would leave out, commits
-both worktrees, stops if origin/main changed the same files meanwhile, rebases them onto it, pairs the
-private release.toml with the public commit, checks that this device's pull could apply the pair, checks
-both pushes with --dry-run, pushes, and pulls. `clean NAME` removes the worktrees and branches once
-origin/main has them.
+entries, stops on a changed plugin whose Codex hooks are trusted until --hooks-reapproved, runs the public
+test suite, stops on new files the .gitignore allowlist would leave out, commits both worktrees, stops if
+origin/main changed the same files meanwhile, rebases them onto it, pairs the private release.toml with the
+public commit, checks that this device's pull could apply the pair, stopping on Claude sessions that hold a
+plugin it replaces until --leases-reviewed, checks both pushes with --dry-run, pushes, and pulls.
+`clean NAME` removes the worktrees and branches once origin/main has them.
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 
 from portable import GIT
 from pull import git
@@ -32,6 +34,9 @@ ATTEMPTS = 3
 MOVED = re.compile(r'\((?:fetch first|non-fast-forward)\)')
 # Files every release rewrites, so both sides changing them says nothing about clashing work.
 PAIRING_FILES = frozenset({'release.toml', 'setup/lock.toml'})
+LOCK = 'setup/lock.toml'
+SETUP = 'setup/setup.toml'
+LEASE = 'Claude lease: '
 # The public .gitignore is an allowlist: this pattern drops every path that a later ! line does not bring back.
 ALLOWLIST_BASE = '/*'
 
@@ -115,6 +120,35 @@ def overlap(root):
     return sorted((theirs & ours) - PAIRING_FILES)
 
 
+def started(root, path):
+    """A TOML file as this branch found it on origin/main, or {} where it was absent."""
+    fork = git(root, 'merge-base', 'HEAD', 'origin/main')
+    return tomllib.loads(git(root, 'show', f'{fork}:{path}')) if git(root, 'ls-tree', fork, path) else {}
+
+
+def current(root, path):
+    return tomllib.loads((root / path).read_text(encoding='utf-8')) if (root / path).is_file() else {}
+
+
+def reapprovals(public, private):
+    """Plugins with trusted Codex hooks whose installed Codex content this branch may change: their lock entry
+    changed, or they apply tool notes and the notes changed, which the lock leaves out. Codex ties a hook's
+    approval to the plugin's content, so every machine's pull stops on those hooks until the user approves them
+    again."""
+    notes = started(public, SETUP).get('tool_note') != current(public, SETUP).get('tool_note')
+    changed = []
+    for root in (public, private):
+        before = started(root, LOCK)
+        for name, lock in current(root, LOCK).items():
+            if not isinstance(lock, dict) or not lock.get('hooks'):
+                continue
+            old = before.get(name) or {}
+            applies = current(root, f'setup/packages/{name}.toml').get('skills', {}).get('tool_notes') == 'apply'
+            if (lock.get('intent'), lock.get('codex')) != (old.get('intent'), old.get('codex')) or (notes and applies):
+                changed.append(name)
+    return sorted(changed)
+
+
 def test_suite(public, log):
     """Run every public test, not just the ones the change looks like it touches. The config roots point at a
     missing folder, as in CI, because agent sessions export CODEX_HOME at this device's real config."""
@@ -133,15 +167,21 @@ def test_suite(public, log):
                            'pulls use; give the test that wrote it its own engine folder')
 
 
-def device_check(public, private):
+def device_check(public, private, leases_reviewed=False):
     """Stop on a release that would stop the pull, which every device would then hit. Sync exits 1 when it
-    only has changes to apply, as every release does, but so does a crash, which skips the closing summary."""
+    only has changes to apply, as every release does, but so does a crash, which skips the closing summary.
+    A Claude session that holds a plugin the release replaces stops only this device's pull, until it exits."""
     result = subprocess.run([sys.executable, '-B', str(public / 'sync.py'), '--candidate', '--public',
                              str(public / 'setup'), '--private', str(private / 'setup')],
                             cwd=public, capture_output=True, text=True, encoding='utf-8', timeout=1800)
     if result.returncode not in (0, 1) or 'Managed changes:' not in result.stdout:
         sys.stderr.write(result.stdout + result.stderr)
         raise RuntimeError(f'the pull on this device would stop on this release (sync exited {result.returncode}); nothing was pushed')
+    held = [line.removeprefix(LEASE) for line in result.stdout.splitlines() if line.startswith(LEASE)]
+    if held and not leases_reviewed:
+        raise RuntimeError('the pull on this device would stop on Claude sessions using plugins this release replaces ('
+                           + '; '.join(held) + '). Ask the user to close them and finish again, or finish with '
+                           '--leases-reviewed and pull again once they exit; nothing was pushed')
 
 
 def push(root):
@@ -169,6 +209,13 @@ def finish(args, public_repo, private_repo):
     if args.package:
         packages = [part for package in args.package for part in ('--package', package)]
         run([*python, 'build_setup.py', *setups, '--output', str(base / 'build/build'), *packages], public)
+    if not args.hooks_reapproved:
+        if changed := reapprovals(public, private):
+            raise RuntimeError(f'this release may change the Codex content of {", ".join(changed)}, whose Codex hooks '
+                               'are trusted; Codex ties their approval to that content, so every machine\'s pull would '
+                               'stop on those hooks. Ask the user to approve them again, queue the approval in each '
+                               'machine\'s section of maintenance/pending-sync.md, then finish again with '
+                               '--hooks-reapproved')
     test_suite(public, base / 'build/tests.log')
     for tree in (public, private):
         if paths := dropped(tree):
@@ -200,7 +247,7 @@ def finish(args, public_repo, private_repo):
             pair(public, private, args.pair_message)
         if not ahead(public) and not ahead(private):
             raise RuntimeError('nothing to release: both branches match origin/main')
-        device_check(public, private)
+        device_check(public, private, args.leases_reviewed)
         if not args.push:
             break
         published = False
@@ -265,6 +312,10 @@ def main(argv=None):
     parser.add_argument('--push', action='store_true', help='push both branches to origin/main')
     parser.add_argument('--overlap-reviewed', action='store_true',
                         help='finish although origin changed files this branch changed, after reading those commits')
+    parser.add_argument('--hooks-reapproved', action='store_true',
+                        help='finish although a plugin with trusted Codex hooks may change, once the user approved them again')
+    parser.add_argument('--leases-reviewed', action='store_true',
+                        help='push although Claude sessions here hold plugins the release replaces')
     parser.add_argument('--pull', action='store_true', help='then pull and apply the pair on this device')
     parser.add_argument('--force', action='store_true', help='clean: remove unpushed branches too')
     args = parser.parse_args(argv)
