@@ -4,6 +4,8 @@
 !/uv.lock
 !/README.md
 !/AGENTS.md
+!/GLOSSARY.md
+!/GLOSSARY-MAP.md
 !/docs/
 !/docs/**
 !/.gitignore

@@ -1,5 +1,3 @@
 # Issue tracker
 
-Issues about this repository live in the private companion repository's GitHub Issues. Read `docs/agents/issue-tracker.md` in the paired private checkout and follow it. That checkout is the sibling `dotfiles-private`, or `private` beside this `public` folder in a `release.py` worktree.
-
-Without the private checkout, keep the issue as a local draft and report it. This public repository's Issues stay unused.
+Issues about this repository live in the GitHub Issues of `MaxFabian25/dotfiles-private`, so their bodies can name hosts and private paths. Pass `--repo MaxFabian25/dotfiles-private` to every `gh issue` command, and follow `docs/agents/issue-tracker.md` in the paired private checkout for the rest. That checkout is the sibling `dotfiles-private`, or `private` beside this `public` folder in a `release.py` worktree. This public repository's Issues stay unused.

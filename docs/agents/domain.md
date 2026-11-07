@@ -16,4 +16,4 @@ Write glossary entries and ADRs here only when they are safe to publish. Terms a
 
 ## Vocabulary and ADR conflicts
 
-Follow the "Vocabulary and decisions" section of `~/dotfiles-private/config/engineering-skills/domain.md`.
+Follow the "Vocabulary and decisions" section of `config/engineering-skills/domain.md` in the paired private checkout.

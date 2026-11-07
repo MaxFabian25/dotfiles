@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-Issues live in the private companion repository's GitHub Issues, not this public repository's. See `docs/agents/issue-tracker.md`.
+Issues live in the GitHub Issues of `MaxFabian25/dotfiles-private`, not this public repository's. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
