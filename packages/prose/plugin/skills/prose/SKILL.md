@@ -1,6 +1,6 @@
 ---
 name: prose
-description: Draft, edit, or review English or Danish prose, such as reports, academic papers, theses, documentation, READMEs, interface copy, and commit messages. Use for British English or Danish house style, APA or Chicago citations and references, terminology, numbers, tables and figures, and editorial review. Excludes Prose maintenance.
+description: Draft, edit, or review English or Danish prose, such as reports, academic papers, theses, documentation, READMEs, interface copy, commit messages, messages sent in the user's name, and the text in HTML pages, charts, slides and images. Use for British English or Danish house style, a proofread or language check (sprogtjek), APA or Chicago citations and references, terminology, numbers, tables and figures, and editorial review. Excludes Prose maintenance.
 ---
 
 # Prose

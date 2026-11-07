@@ -49,3 +49,7 @@ note = " (Codex: the web tool's `search_query`)"
 [[tool_note]]
 match = "\\bWebFetch\\b"
 note = " (Codex: the web tool's `open`)"
+
+[[tool_note]]
+match = "\\bWhen the design hook is active"
+note = " (it sees only edits made with the file-edit tools, so after an edit through the shell, run `scripts/impeccable detect --json <file>` on the shipped file before you report a pass)"
