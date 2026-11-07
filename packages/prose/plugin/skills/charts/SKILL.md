@@ -69,6 +69,8 @@ charts](references/ibcs-charts.md) before drawing.
   made the data. When the request does not name it, write a marked placeholder in its place, such
   as `Source: [producer to confirm], September 2026`, keep any file name as an extra detail, and
   ask the user for the producer in your reply.
+  A share card posted with a link to the publication that cites its source needs neither the
+  source line nor the date, because the linked page carries both.
 - **Findings from the data.** Check each finding against the data, including when the pattern it
   describes starts and ends. When a script writes a title, note, or text alternative, compute its
   figures and findings from the data in that script, so a rerun keeps them true.
