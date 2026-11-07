@@ -104,7 +104,7 @@ claude = { version = "0.15.36+codex-aligned.2bc968981950", tree = "sha256:987a70
 roles = { "comment-sicko.toml" = "sha256:6f3ea8222b5e7abf65decd3712a9d32f5804953e0539e61b2a9f92e11148d56e", "poteto-agent.toml" = "sha256:3d113f3faefd9ee007f001bedc51aa9227b46bb5a233567e87eba1f56e89c206", "pstack-reader.toml" = "sha256:e1ce58630b65ea7ce264d6590d4209a525ae2df8ba422fafdc2a6fc3a55a885a" }
 
 [show-me]
-intent = "sha256:edd3741fb987eaca01fc8a8ca966e966b15024d3265243a8e18b26f805c19d6c"
+intent = "sha256:253f099a772c33a23935094f166c8fc4a61c224b4a7badedb858d418e70dbc27"
 codex = { version = "1.0.1", tree = "sha256:c309b44dd0292b87989c1c9c3691e3c411151bdeead0527240ada2b4fa19b69f" }
 claude = { version = "1.0.1", tree = "sha256:c309b44dd0292b87989c1c9c3691e3c411151bdeead0527240ada2b4fa19b69f" }
 

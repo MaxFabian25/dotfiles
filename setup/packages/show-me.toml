@@ -5,6 +5,7 @@ repo = "skills"
 
 [skills]
 on = ["show-me"]
+tool_notes = "apply"
 
 [codex]
 install = [{ via = "skills", enabled = true }]

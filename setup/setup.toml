@@ -51,5 +51,9 @@ match = "\\bWebFetch\\b"
 note = " (Codex: the web tool's `open`)"
 
 [[tool_note]]
+match = "\\bHelp the user understand the current topic of conversation visually\\."
+note = " In a T3 Code session, a Mermaid block in your reply shows as code rather than a diagram, and `open` shows nothing, so draw a diagram or visual as HTML and show it with `html_preview` and then `html_render`."
+
+[[tool_note]]
 match = "\\bWhen the design hook is active"
 note = " (it sees only edits made with the file-edit tools, so after an edit through the shell, run `scripts/impeccable detect --json <file>` on the shipped file before you report a pass)"
