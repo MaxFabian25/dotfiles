@@ -3,6 +3,9 @@
 !/pyproject.toml
 !/uv.lock
 !/README.md
+!/AGENTS.md
+!/docs/
+!/docs/**
 !/.gitignore
 !/.gitattributes
 !/.github/
