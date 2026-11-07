@@ -45,7 +45,9 @@ class Apply:
             self.owner.apply(artifact, self.files, native=self._install)
         self._plugins()
         self._skills()
-        profile_plugins.apply(self.current.profile_mirrors, self.roots, self.owner.accepted, self.files)
+        # Planned again, because the steps above can replace the accepted ~/.codex copy the homes mirror.
+        mirrors, _, _ = profile_plugins.inspect(self.setup, self.roots, self.owner.accepted)
+        profile_plugins.apply(mirrors, self.roots, self.owner.accepted, self.files)
 
     def command(self, host, *args):
         state = self.device.host(host)

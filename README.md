@@ -51,9 +51,10 @@ Each Orca account home on this device is a separate Codex home with its own plug
 there, its `plugin/list` call installs a newer catalog version, which lacks the install overlay and harness
 adaptation of the accepted `~/.codex` copy. So for each plugin a home has installed and enabled, a sync
 copies the accepted `~/.codex` copy into that home in place of an older version, the native copy, or its
-own earlier copy (`profile_plugins.py`). The copies it replaces move to the sync backup. A copy with any
-other file blocks the sync as a local edit. A home whose marketplace setting differs from `~/.codex` gets
-a note instead. A sync installs no plugin a home lacks, enables nothing, and leaves settings, credentials
+own earlier copy (`profile_plugins.py`). It decides which homes need a copy after updating `~/.codex`, so a
+release that changes the accepted copy reaches every home in the same sync. The copies it replaces move to
+the sync backup. A copy with any other file blocks the sync as a local edit. A home whose marketplace
+setting differs from `~/.codex` gets a note instead. A sync installs no plugin a home lacks, enables nothing, and leaves settings, credentials
 and roles alone. A cache that is linked to `~/.codex`, as on Windows, is already up to date. A plugin
 whose hooks are `trusted` blocks the sync until its hooks are approved in each home as well; a sync
 never approves them.

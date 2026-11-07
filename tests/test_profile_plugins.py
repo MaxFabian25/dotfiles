@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import shutil
 import sys
+from types import SimpleNamespace
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -13,6 +14,7 @@ from host_observation import Unread
 from host_state import Host
 import profile_plugins
 from sync_files import ConcurrentEdit, Files
+import sync_hosts
 
 VERSION = '2.0.0+explicit.abc'
 MARKETPLACE = '[marketplaces.personal]\nsource_type = "local"\nsource = "/home/user"\n'
@@ -121,6 +123,30 @@ class ProfilePluginsTest(unittest.TestCase):
             self.assertEqual([d.kind.value for d in differences], ['tree'])
             kit.apply(mirrors, 'second-backup')
             self.assertIn('Readapted.', (kit.target / 'skills/publish/SKILL.md').read_text())
+
+    def test_a_release_that_changes_the_accepted_copy_reaches_the_home_in_the_same_sync(self):
+        with Home() as home:
+            kit = Fixture(home)
+            kit.install('1.0.0')
+            kit.apply(kit.inspect()[0])
+            planned = kit.inspect()[0]
+            self.assertEqual(planned, ())
+
+            def release(artifact, files, native):
+                home.write(kit.canonical / 'skills/publish/SKILL.md', '---\nname: publish\ndescription: Released.\n---\nBody.\n')
+                kit.record = {'path': str(kit.canonical), 'image': image(kit.canonical)}
+
+            operation = sync_hosts.Apply.__new__(sync_hosts.Apply)
+            operation.setup, operation.roots = kit.setup, home.roots
+            operation.current = SimpleNamespace(profile_mirrors=planned)
+            operation.files = Files(home.roots.home / 'backup')
+            operation.owner = SimpleNamespace(preflight=lambda prepared: None, apply=release, accepted=kit.accepted)
+            operation.prepared = SimpleNamespace(artifacts=('kit',))
+            for step in ('_marketplaces', '_runtime', '_catalogs', '_plugins', '_skills'):
+                setattr(operation, step, lambda: None)
+            operation.run()
+            self.assertIn('Released.', (kit.target / 'skills/publish/SKILL.md').read_text())
+            self.assertEqual(kit.inspect(), ((), (), ()))
 
     def test_homes_that_disable_lack_or_configure_the_plugin_differently_are_left_alone(self):
         with Home() as home:
