@@ -796,12 +796,24 @@ class InstallationTest(unittest.TestCase):
         lease.write_text('{"pid":17,"procStart":"42"}')
         before = (destination / 'skills/one/SKILL.md').read_bytes()
         self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
-        with self.assertRaisesRegex(ConcurrentEdit, 'lease markers'):
+        with (patch('accepted_installations._lease_held', return_value=True),
+              self.assertRaisesRegex(ConcurrentEdit, 'lease markers from running Claude processes 17;')):
             self.run_apply()
         self.assertEqual((destination / 'skills/one/SKILL.md').read_bytes(), before)
         self.assertEqual(lease.read_text(), '{"pid":17,"procStart":"42"}')
         lease.unlink()
         self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(self.calls, [])
+
+    def test_claude_same_path_replacement_ignores_a_finished_session_lease(self):
+        destination = self._installed_claude()
+        lease = destination / '.in_use/17'
+        lease.parent.mkdir()
+        lease.write_text('{"pid":17,"procStart":"42"}')
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        with patch('accepted_installations._lease_held', return_value=False):
+            self.assertEqual(self.run_apply().exit_code, 0)
         self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
         self.assertEqual(self.calls, [])
 
@@ -945,7 +957,9 @@ class InstallationTest(unittest.TestCase):
                     lease.parent.mkdir()
                     lease.write_text('{"pid":17}')
 
-        with patch.object(AcceptedInstallations, '_save', concurrent_lease), self.assertRaisesRegex(ConcurrentEdit, 'lease markers'):
+        with (patch.object(AcceptedInstallations, '_save', concurrent_lease),
+              patch('accepted_installations._lease_held', return_value=True),
+              self.assertRaisesRegex(ConcurrentEdit, 'lease markers')):
             self.run_apply()
         self.assertEqual((destination / 'skills/one/SKILL.md').read_bytes(), before)
         self.assertEqual((destination / '.in_use/17').read_text(), '{"pid":17}')
@@ -1331,6 +1345,30 @@ class InstallationTest(unittest.TestCase):
             self.assertEqual(self.run_apply().exit_code, 0)
         self.assertIn('node = "25"', live.read_text())
         self.assertIn('SECRET = "test-only-concurrent-value"', live.read_text())
+
+
+class LeaseHolderTest(unittest.TestCase):
+    """Real processes, because the point is telling a running Claude session from one that has exited."""
+
+    def test_a_running_process_holds_its_lease(self):
+        import os
+        from accepted_installations import _lease_held
+        stat = Path('/proc/self/stat')
+        start = {'procStart': stat.read_text().rsplit(')', 1)[1].split()[19]} if stat.exists() else {}
+        self.assertTrue(_lease_held({'pid': os.getpid(), **start}))
+
+    def test_a_finished_process_holds_no_lease(self):
+        import subprocess
+        from accepted_installations import _lease_held
+        child = subprocess.run([sys.executable, '-c', 'import os; print(os.getpid())'],
+                               capture_output=True, text=True, check=True)
+        self.assertFalse(_lease_held({'pid': int(child.stdout)}))
+
+    @unittest.skipUnless(Path('/proc/self/stat').exists(), 'only Linux records the start time sync can compare')
+    def test_a_reused_process_id_holds_no_lease(self):
+        import os
+        from accepted_installations import _lease_held
+        self.assertFalse(_lease_held({'pid': os.getpid(), 'procStart': '1'}))
 
 
 if __name__ == '__main__':

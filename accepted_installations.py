@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import hashlib
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
@@ -75,7 +76,29 @@ def image(path: Path, fields=None, syntax='toml'):
     return {'kind': 'tree', 'entries': entries}
 
 
+def _lease_held(marker):
+    """Whether the Claude process a lease marker names still runs. A marker whose process has ended holds nothing,
+    and sessions that exit uncleanly leave such markers behind. Where this cannot tell, as on Windows, it is held."""
+    if os.name == 'nt':
+        return True  # os.kill would end the process there
+    pid = marker['pid']
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    try:
+        fields = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
+    except (OSError, IndexError):
+        return True  # no /proc, as on macOS, so a reused process ID cannot be told apart
+    start = marker.get('procStart')
+    # Linux markers record the process's start time in clock ticks, field 22 of /proc/<pid>/stat.
+    return start is None or len(fields) < 20 or fields[19] == start
+
+
 def _claude_runtime(path):
+    """The process IDs whose live lease markers hold this Claude cache folder."""
     try:
         info = path.lstat()
         if _linked(path):
@@ -86,15 +109,15 @@ def _claude_runtime(path):
             data = path.read_bytes()
             if not re.fullmatch(rb'[1-9][0-9]{0,15}', data) or int(data) > 8640000000000000:
                 raise ConcurrentEdit(f'Invalid Claude orphan marker: {path}')
-            return False
+            return ()
         if not stat.S_ISDIR(info.st_mode):
             raise ConcurrentEdit(f'Claude lease path is not a directory: {path}')
         leases = tuple(path.iterdir())
     except FileNotFoundError:
         if path.exists() or _linked(path):
             raise ConcurrentEdit(f'Claude runtime metadata changed during read: {path}')
-        return False
-    present = False
+        return ()
+    holders = set()
     for lease in leases:
         try:
             info = lease.lstat()
@@ -119,8 +142,9 @@ def _claude_runtime(path):
                 or marker['pid'] != int(name[1])
                 or any(not isinstance(value, str) for key, value in marker.items() if key != 'pid')):
             raise ConcurrentEdit(f'Invalid Claude lease marker: {lease}')
-        present = True
-    return present
+        if _lease_held(marker):
+            holders.add(marker['pid'])
+    return tuple(sorted(holders))
 
 
 def copy_tree(source: Path, destination: Path):
@@ -134,8 +158,10 @@ def _claude_cache_image(path, *, replacing=False):
     entries = {}
     for entry in sorted(path.iterdir()):
         if entry.name in {'.in_use', '.orphaned_at'}:
-            if _claude_runtime(entry) and replacing:
-                raise ConcurrentEdit(f'Claude cache has lease markers; let Claude release them before replacement: {path}')
+            holders = _claude_runtime(entry)
+            if holders and replacing:
+                raise ConcurrentEdit(f'Claude cache has lease markers from running Claude processes '
+                                     f'{", ".join(map(str, holders))}; close those sessions before replacement: {path}')
             continue
         child = image(entry)
         if entry.name == _PYTHON_CACHE:

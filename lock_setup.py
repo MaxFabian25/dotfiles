@@ -5,11 +5,27 @@ import argparse
 from dataclasses import replace
 from pathlib import Path
 
+import yaml
+
 from description import LocalSource, Lock, LockedTree, Package, Roots, SnapshotSource, Visibility, intent
 from description_toml import load, render_root
 from host_state import DeviceRoots, Host
+from portable import read_utf8
 from sync_files import Files, contents
-from sync_sources import Builder, Sources, child
+from sync_sources import BuildError, Builder, Sources, child
+
+DESCRIPTION_LIMIT = 1024  # the longest skill description Codex and the Agent Skills format accept
+
+
+def check_descriptions(tree):
+    """Refuse an edited owned tree with a skill description over the limit, before its digest is accepted."""
+    for skill in sorted(tree.rglob('SKILL.md')):
+        parts = read_utf8(skill).split('---', 2)
+        front = yaml.safe_load(parts[1]) if len(parts) == 3 else None
+        description = front.get('description') if isinstance(front, dict) else None
+        if isinstance(description, str) and len(description) > DESCRIPTION_LIMIT:
+            raise BuildError(f'{skill}: the description has {len(description)} characters; the limit is '
+                             f'{DESCRIPTION_LIMIT}, so shorten it before locking')
 
 
 def refresh(setup, builder, names, *, owned=False):
@@ -18,6 +34,7 @@ def refresh(setup, builder, names, *, owned=False):
         entry = packages.get(name) or loose[name]
         if owned and isinstance(entry.source, LocalSource):
             tree = child(setup.roots.of(entry.visibility).parent, entry.source.path)
+            check_descriptions(tree)
             entry = replace(entry, source=replace(entry.source, digest=builder.roots.tree_digest(tree)))
             (packages if isinstance(entry, Package) else loose)[name] = entry
         if isinstance(entry, Package):

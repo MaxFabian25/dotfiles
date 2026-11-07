@@ -163,6 +163,28 @@ class PinnedBuildTest(unittest.TestCase):
         self.assertEqual(updated.lock['drive'], Lock(intent(package, {})))
         builder.codex.assert_not_called()
 
+    def test_refreshing_an_owned_skill_stops_on_a_description_over_the_limit(self):
+        from description import LocalSource, LooseSkill, Roots, Setup, SkillRoot, Visibility
+        from host_state import Digest
+        from lock_setup import check_descriptions, refresh
+        from sync_sources import BuildError
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            skill = root / 'private/skills/mine/SKILL.md'
+            skill.parent.mkdir(parents=True)
+            mine = LooseSkill('mine', Visibility.PRIVATE, '', LocalSource('skills/mine', Digest('sha256:' + '0' * 64)),
+                              {SkillRoot.CLAUDE: True})
+            setup = Setup(Roots(root / 'public/setup', root / 'private/setup'), {}, {}, {'mine': mine}, {}, None, (),
+                          frozenset(), {})
+            skill.write_text('---\nname: mine\ndescription: ' + 'x' * 1024 + '\n---\nBody\n')
+            check_descriptions(skill.parent)
+            skill.write_text('---\nname: mine\ndescription: ' + 'x' * 1025 + '\n---\nBody\n')
+            builder = Mock()
+            with self.assertRaisesRegex(BuildError, 'SKILL.md: the description has 1025 characters; the limit is 1024'):
+                refresh(setup, builder, ['mine'], owned=True)
+            builder.roots.tree_digest.assert_not_called()
+
     def test_rebuild_uses_the_pin_even_after_upstream_moves_and_rejects_changed_output(self):
         from dataclasses import replace
         from description import BuildSource, CodexPlacement, EngineInstall, GenericRecipe, Lock, LockedTree, Package, Roots, Setup, ToolNotes, Visibility, intent
