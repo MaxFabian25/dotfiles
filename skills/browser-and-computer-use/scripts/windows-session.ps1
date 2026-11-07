@@ -40,13 +40,9 @@ $script = "`$opener = Start-Process -FilePath $(Quote $cli) -ArgumentList @($($a
           "`$opener.WaitForExit(); Set-Content $(Quote "$log.exit") `$opener.ExitCode"
 $shell = [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
 $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
-# Without this the opener's console appears on the user's desktop in Windows Terminal, where a
-# Ctrl+C or closing the window ends the opener and leaves Chrome holding the profile.
-$hidden = New-CimInstance -CimClass (Get-CimClass Win32_ProcessStartup) -ClientOnly -Property @{ ShowWindow = [uint16]0 }
 $created = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
     CommandLine = "`"$shell`" -NoProfile -NonInteractive -EncodedCommand $encoded"
     CurrentDirectory = (Get-Location).ProviderPath
-    ProcessStartupInformation = $hidden
 }
 if ($created.ReturnValue) { throw "Cannot start the session outside SSH (WMI error $($created.ReturnValue))" }
 
