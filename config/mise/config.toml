@@ -20,11 +20,12 @@ docker-compose = "5.7.0"
 uv = "0.13.7"
 pnpm = "12.17.0"
 "npm:@yarnpkg/cli-dist" = "4.18.1"
-"npm:npm" = "12.2.1"
+"npm:npm" = "12.2.2"
 "npm:@openai/codex" = "0.167.0"
 "npm:agent-browser" = "0.41.2"
 powershell = { version = "7.6.9", os = ["macos"] }
-bun = { version = "latest", os = ["macos"] }
+# bun does not read ~/.npmrc, so each machine sets the same three-day limit as minimumReleaseAge in ~/.bunfig.toml.
+bun = "1.4.4"
 supabase = "2.122.1"
 "npm:vercel" = "65.11.0"
 "npm:portless" = "0.16.0"
