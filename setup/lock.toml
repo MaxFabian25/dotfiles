@@ -4,8 +4,8 @@
 intent = "sha256:aad5072e49324cb0bdb7316bdf12084cb4e6ed47ae9e07e7e7058d64cdaf4a67"
 
 [browser-and-computer-use]
-intent = "sha256:e69ffdc7be8515b2f2313c436a44d787e029ea32d4fbde0586de0e4173c5cc33"
-placements = { agents = "sha256:112f9b5adf72cc034c88d9faf3e0757a749b3e3c9e32378682af8cc1cb20de1d", claude = "sha256:112f9b5adf72cc034c88d9faf3e0757a749b3e3c9e32378682af8cc1cb20de1d" }
+intent = "sha256:63d6802e6c643900ab55cc37b4d671791aa5fdb4c1426c4e18fdbfa60687dbd9"
+placements = { agents = "sha256:3416691403b59cb2f843c5747b205637e90d49b5d5ba378c7ddd25d951086ee9", claude = "sha256:3416691403b59cb2f843c5747b205637e90d49b5d5ba378c7ddd25d951086ee9" }
 
 [build-iterated-agentic-loop]
 intent = "sha256:5a5c900801815c2408c103fd71ee14ae6a2231bf9d6cbe2189139c9835872fa7"
@@ -81,13 +81,21 @@ intent = "sha256:621d7f8619666f01379d7f3269140ac5ff2df30e61ef8e9a59b116cd37846e3
 codex = { version = "0.1.0+upstream.ced39776fdf8.codex1", tree = "sha256:dd58dba4fb75b6bf0844de8a01fa643f8039f0e5dda0825a83f5e35d1986a371" }
 claude = { version = "0.1.0+codex-aligned.f6c9d03c5fcf", tree = "sha256:7f6768983aa85ee443f728165e7065076ccb34b10e442535e68f7380419730fc" }
 
+[planted-error-checks]
+intent = "sha256:2ef2b179550587e56877e64347fa8284daf2af6925ff8bdcb73d50c643e46dc2"
+placements = { agents = "sha256:2a1be92ecb008c06afe873118e5f1235f37c396443859dde9cab19a3cf499944", claude = "sha256:2a1be92ecb008c06afe873118e5f1235f37c396443859dde9cab19a3cf499944" }
+
+[powerpoint-com-wsl]
+intent = "sha256:40c6d4a27fde9f0db75aa7350aa29dcd477e5b71c32fbd2f741e918cae73f57a"
+placements = { agents = "sha256:68c92848946cedca5c6b829874d5623cce6ea0d3c8c324221bfb706a60d678ae", claude = "sha256:68c92848946cedca5c6b829874d5623cce6ea0d3c8c324221bfb706a60d678ae" }
+
 [private-equity]
 intent = "sha256:15c4ab6eb8970ddfb7089ef6a94b6bfbf14f09a36a992fa27fa28a546f918838"
 
 [prose]
-intent = "sha256:750b4d773ef0553e25d4512ea09e965d06014af4218394524b72610d1a325e87"
-codex = { version = "0.3.13+dotfiles.20261107", tree = "sha256:1f73ed3d94bcd18e825aa3482544e057d60eb3f574d8afed7b88e2f16fab6350" }
-claude = { version = "0.3.13+codex-aligned.20b7e604925a", tree = "sha256:fda22d5f989f7fe086729523033521f9c246fa2ae41b404d8f55446912ede515" }
+intent = "sha256:ac2f989086a4f2bb306354c40700c965c9c8b2127aa772bfce7ff6371eff2f9c"
+codex = { version = "0.3.14+dotfiles.20261107", tree = "sha256:6d0a56031205cce05c317e31f58d3e4547ff65ca39277268847129649cfe3d6c" }
+claude = { version = "0.3.14+codex-aligned.11eb2fbed39d", tree = "sha256:a86bc43a51989e2fa8e39d4225414cb664412c337ef0b19c9818336073429800" }
 
 [pstack]
 intent = "sha256:056dff22824e8c890d3aa7db22d6aeab70b3d9a85a5a4dd00dc738eebbfec3fe"
