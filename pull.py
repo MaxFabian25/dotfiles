@@ -144,7 +144,7 @@ def run(args):
     root = args.root.resolve()
     private = args.private.resolve() if args.private else None
     state = Path.home() / '.local/state/dotfiles'
-    with exclusive_lock(state / 'pull.lock'):
+    with exclusive_lock(state / 'pull.lock', record=True):
         if args.update:
             update(root, private, signers())
         paired(root, private)

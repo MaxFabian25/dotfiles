@@ -1,5 +1,7 @@
 from contextlib import redirect_stderr, redirect_stdout
 import io
+import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -302,6 +304,54 @@ class ReleaseTest(unittest.TestCase):
         self.assertIn('gpgsig -----BEGIN SSH SIGNATURE-----', git(mine, 'cat-file', 'commit', 'HEAD'))
         self.assertEqual(release.rebase(mine, regenerated), '')
 
+    def test_finish_stops_while_another_release_finishes_on_this_machine(self):
+        import portable
+        release_main(['start', 'second', *self.options()], self.public)
+        (self.worktrees / 'second/public/content').write_text('second\n', encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Change the content\n', encoding='utf-8')
+        finish = ['finish', 'second', '--message', str(message), '--push', *self.options()]
+        with portable.exclusive_lock(self.root / 'state/release.lock', record=True):
+            with redirect_stderr(io.StringIO()) as error:
+                self.assertEqual(release_main(finish, self.public), 3)
+        self.assertIn(f'another release is finishing on this machine (release PID {os.getpid()} since', error.getvalue())
+        self.assertIn('release.py wait --timeout SECONDS', error.getvalue())
+        self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'first')
+        self.assertEqual(release_main(finish, self.public), 0)
+        self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'second')
+
+    def test_wait_returns_once_no_release_pull_or_sync_runs_here(self):
+        import portable
+        with portable.exclusive_lock(self.root / 'state/pull.lock', record=True):
+            with redirect_stderr(io.StringIO()) as error:
+                self.assertEqual(release_main(['wait', '--timeout', '0'], self.public), 3)
+        self.assertIn(f'pull PID {os.getpid()} since', error.getvalue())
+        child = subprocess.run([sys.executable, '-c', 'import os; print(os.getpid())'],
+                               capture_output=True, text=True, check=True)
+        (self.root / 'state/pull.lock.holder').write_text(json.dumps({'pid': int(child.stdout), 'command': 'pull.py'}))
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(release_main(['wait', '--timeout', '5'], self.public), 0)
+        self.assertIn('No release, pull or sync runs on this machine.', output.getvalue())
+
+    def test_status_and_start_list_the_open_releases(self):
+        release_main(['start', 'first', *self.options()], self.public)
+        (self.worktrees / 'first/public/content').write_text('edited\n', encoding='utf-8')
+        (self.worktrees / 'first/public/tests/notes.py').write_text('', encoding='utf-8')
+        with redirect_stdout(io.StringIO()) as output:
+            release_main(['start', 'later', *self.options()], self.public)
+        self.assertIn('Other open releases; read them before you edit the same files:\n'
+                      '  first/public: 2 uncommitted: content, tests/notes.py', output.getvalue())
+        self.assertNotIn('first/private', output.getvalue())
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(release_main(['status', *self.options()], self.public), 0)
+        self.assertEqual(output.getvalue().splitlines(), [
+            'Running on this machine: no release, pull or sync',
+            f'Release worktrees under {self.worktrees}:',
+            '  first/private: on origin/main and clean',
+            '  first/public: 2 uncommitted: content, tests/notes.py',
+            '  later/private: on origin/main and clean',
+            '  later/public: on origin/main and clean'])
+
     def test_finish_without_a_message_stops_before_committing(self):
         release_main(['start', 'quiet', *self.options()], self.public)
         (self.worktrees / 'quiet/public/content').write_text('edited\n', encoding='utf-8')
@@ -313,13 +363,13 @@ class ReleaseTest(unittest.TestCase):
 
 
 def release_main(argv, engine):
-    """release.main with ENGINE set to the test's canonical public clone."""
-    original = release.ENGINE
-    release.ENGINE = engine
+    """release.main with ENGINE set to the test's canonical public clone, and this machine's locks in its folder."""
+    original = release.ENGINE, release.STATE
+    release.ENGINE, release.STATE = engine, Path(engine).parent / 'state'
     try:
         return release.main(argv)
     finally:
-        release.ENGINE = original
+        release.ENGINE, release.STATE = original
 
 
 if __name__ == '__main__':

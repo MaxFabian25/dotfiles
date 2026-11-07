@@ -127,7 +127,7 @@ def apply(setup: Setup, device: Device, current: Plan, *, builder=None, configur
     configurations = current.configurations if configurations is None else configurations
     if configurations != current.configurations:
         raise ValueError('The apply configuration scope must match the reviewed plan')
-    with exclusive_lock(device.roots.codex_home / 'dotfiles/sync.lock'):
+    with exclusive_lock(device.roots.codex_home / 'dotfiles/sync.lock', record=True):
         checked = plan(setup, device, configurations=configurations)
         if checked.result.differences != current.result.differences:
             raise RuntimeError('The device changed after planning; run sync again to review its current state')

@@ -1391,7 +1391,7 @@ class LeaseHolderTest(unittest.TestCase):
     @unittest.skipUnless(Path('/proc/self/stat').exists(), 'only Linux records the start time sync can compare')
     def test_a_lease_is_held_where_proc_cannot_tell_its_process(self):
         from accepted_installations import _lease_held
-        with patch('accepted_installations._proc_shows_host', return_value=False):  # a sandbox's own /proc
+        with patch('portable._proc_shows_host', return_value=False):  # a sandbox's own /proc
             self.assertTrue(_lease_held({'pid': os.getpid(), 'procStart': '1'}))
         self.assertTrue(_lease_held({'pid': os.getpid(), 'procStart': 'Thu Oct 15 12:30:00 2026'}))
 

@@ -6,7 +6,10 @@ archive extraction without symlinks. Codex honours CODEX_HOME and Claude honours
 as the apps do; an explicit home other than the real one (tests, sandboxes) ignores both.
 """
 import contextlib
+from datetime import datetime
+import functools
 import io
+import json
 import os
 from pathlib import Path, PurePath, PurePosixPath
 import shutil
@@ -121,9 +124,66 @@ def replace(source, target, attempts=20, delay=0.25):
             time.sleep(delay)
 
 
+@functools.cache
+def _proc_shows_host():
+    """Whether /proc lists this machine's processes. A sandbox with its own PID namespace mounts a /proc whose
+    PID 1 is its own launcher, and that /proc hides every process outside it."""
+    try:
+        init = Path('/proc/1/cmdline').read_bytes().split(b'\0', 1)[0].decode('utf-8', 'replace')
+    except OSError:
+        return False
+    return PurePosixPath(init).name in {'init', 'systemd'}
+
+
+def process_start():
+    """This process's start time in clock ticks, as field 22 of Linux /proc/self/stat gives it, or None."""
+    try:
+        return Path('/proc/self/stat').read_text().rsplit(')', 1)[1].split()[19]
+    except (OSError, IndexError):
+        return None
+
+
+def process_running(pid, start=None):
+    """Whether the process with this PID still runs, and on Linux is the one that started at start, a clock-tick
+    count from process_start. A process that later reuses the PID has another start time. Where this cannot
+    tell, as on Windows, it counts as running."""
+    if WINDOWS:
+        return True  # os.kill would end the process there
+    if sys.platform.startswith('linux') and not _proc_shows_host():
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    try:
+        fields = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
+    except (OSError, IndexError):
+        return True  # no /proc, as on macOS, so a reused process ID cannot be told apart
+    return start is None or not start.isdigit() or len(fields) < 20 or fields[19] == start
+
+
+def _holder_note(path):
+    return path.with_name(path.name + '.holder')
+
+
+def lock_holder(path):
+    """The process a recording exclusive_lock names for path, as its pid, procStart, command and since fields,
+    while that process still runs, or None."""
+    try:
+        holder = json.loads(_holder_note(Path(path)).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(holder, dict) or type(holder.get('pid')) is not int:
+        return None
+    return holder if process_running(holder['pid'], holder.get('procStart')) else None
+
+
 @contextlib.contextmanager
-def exclusive_lock(path):
-    """Hold a non-blocking exclusive lock; raise BlockingIOError while another run holds it."""
+def exclusive_lock(path, *, record=False):
+    """Hold a non-blocking exclusive lock; raise BlockingIOError while another run holds it. With record, name
+    this process in a file beside the lock while it holds it, which lock_holder reads."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open('a+b') as handle:
@@ -134,15 +194,23 @@ def exclusive_lock(path):
                 msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
             except OSError as error:
                 raise BlockingIOError(f'Another run holds {path}') from error
-            try:
-                yield
-            finally:
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
         else:
             import fcntl
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        note = _holder_note(path)
+        try:
+            if record:
+                note.write_text(json.dumps({'pid': os.getpid(), 'procStart': process_start(),
+                                            'command': ' '.join(sys.argv)[:300],
+                                            'since': datetime.now().astimezone().isoformat(timespec='seconds')}),
+                                encoding='utf-8')
             yield
+        finally:
+            if record:
+                note.unlink(missing_ok=True)
+            if WINDOWS:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
 
 
 def _is_junction(path):

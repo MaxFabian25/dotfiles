@@ -6,24 +6,31 @@ entries, stops on a changed plugin whose Codex hooks are trusted until --hooks-r
 test suite, stops on new files the .gitignore allowlist would leave out, commits both worktrees, stops if
 origin/main changed the same files meanwhile, rebases them onto it, pairs the private release.toml with the
 public commit, checks that this device's pull could apply the pair, stopping on Claude sessions that hold a
-plugin it replaces until --leases-reviewed, checks both pushes with --dry-run, pushes, and pulls.
-`clean NAME` removes the worktrees and branches once origin/main has them.
+plugin it replaces until --leases-reviewed, checks both pushes with --dry-run, pushes, and pulls, after any
+other pull here ends. One finish runs at a time on a machine; another stops and names it. `clean NAME`
+removes the worktrees and branches once origin/main has them. `status` lists what runs here and each open
+release worktree with the files it changes, and `start` lists the others. `wait --timeout SECONDS` returns
+once no release, pull or sync runs on this machine.
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
+import time
 import tomllib
 
-from portable import GIT, native_cli_environment
+from portable import GIT, codex_home, exclusive_lock, lock_holder, native_cli_environment
 from pull import git
 
 ENGINE = Path(__file__).resolve().parent
+STATE = Path.home() / '.local/state/dotfiles'
+WAIT_FOR_PULL = 1200  # seconds a finish waits for another pull on this machine before its own
 PUBLIC_COMMIT = re.compile(r'^public_commit = ".*"$', re.MULTILINE)
 # Push over HTTPS with the GitHub CLI's login, which the Mac and WSL hold, whatever helper or SSH origin the
 # checkout configures. The private checkout's SSH origin uses a read-only deploy key.
@@ -42,6 +49,84 @@ ALLOWLIST_BASE = '/*'
 # Strings the public tree must never hold, such as host and account names. The list is private, because a public
 # list would publish them.
 DENYLIST = 'config/privacy/public-denylist.txt'
+
+
+def machine_locks():
+    """The locks a release finish, a pull and a sync hold on this machine."""
+    return {'release': STATE / 'release.lock', 'pull': STATE / 'pull.lock', 'sync': codex_home() / 'dotfiles/sync.lock'}
+
+
+def running(names=None):
+    """The runs that hold this machine's locks now, each as a line naming its process and command."""
+    return [f'{name} PID {holder["pid"]} since {str(holder.get("since", ""))[11:16]}: {str(holder.get("command", ""))[:160]}'
+            for name, path in machine_locks().items() if (names is None or name in names) and (holder := lock_holder(path))]
+
+
+def wait(names, timeout):
+    """Block until no run holds the named locks: True once they are free, False after timeout seconds."""
+    deadline, shown = time.monotonic() + timeout, None
+    while busy := running(names):
+        if busy != shown:
+            print('Waiting for ' + '; '.join(busy), file=sys.stderr, flush=True)
+            shown = busy
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(2)
+    return True
+
+
+def hold(path):
+    """This finish's hold on the machine's release lock, or a stop that names the release holding it."""
+    stack = contextlib.ExitStack()
+    try:
+        stack.enter_context(exclusive_lock(path, record=True))
+    except BlockingIOError as error:
+        who = '; '.join(running(('release',))) or f'it holds {path}'
+        raise RuntimeError(f'another release is finishing on this machine ({who}); run release.py wait --timeout '
+                           'SECONDS, then finish again') from error
+    return stack
+
+
+def summary(tree):
+    """How a release worktree stands against origin/main: its own commits, its uncommitted files, and the files
+    it changes."""
+    commits = int(git(tree, 'rev-list', '--count', 'origin/main..HEAD'))
+    uncommitted = len(git(tree, 'status', '--porcelain').splitlines())
+    if not commits and not uncommitted:
+        return 'on origin/main and clean'
+    fork = git(tree, 'merge-base', 'HEAD', 'origin/main')
+    files = sorted(set(git(tree, 'diff', '--name-only', fork).splitlines())
+                   | set(git(tree, 'ls-files', '--others', '--exclude-standard').splitlines()))
+    counts = [f'{commits} commit{"s" * (commits != 1)} not on origin/main' if commits else '',
+              f'{uncommitted} uncommitted' if uncommitted else '']
+    shown = ', '.join(files[:8]) + (f' and {len(files) - 8} more' if len(files) > 8 else '')
+    return ', '.join(part for part in counts if part) + (f': {shown}' if shown else '')
+
+
+def releases(args, public_repo, private_repo):
+    """Each release worktree under --worktrees as (name, side, summary), from both repositories' worktree lists."""
+    root = args.worktrees.resolve()
+    found = []
+    for repo in (public_repo, private_repo):
+        for line in git(repo, 'worktree', 'list', '--porcelain').splitlines():
+            path = Path(line.removeprefix('worktree ')) if line.startswith('worktree ') else None
+            if path is None or path.parent.parent != root or path.name not in ('public', 'private'):
+                continue
+            try:
+                found.append((path.parent.name, path.name, summary(path)))
+            except RuntimeError as error:
+                found.append((path.parent.name, path.name, f'unreadable: {error}'))
+    return sorted(found)
+
+
+def status(args, public_repo, private_repo):
+    busy = running()
+    print('Running on this machine: ' + ('; '.join(busy) if busy else 'no release, pull or sync'))
+    found = releases(args, public_repo, private_repo)
+    print(f'Release worktrees under {args.worktrees}:' if found else f'No release worktrees under {args.worktrees}.')
+    for name, side, text in found:
+        print(f'  {name}/{side}: {text}')
+    return 0
 
 
 def places(args):
@@ -251,6 +336,10 @@ def start(args, public_repo, private_repo):
         git(repo, 'fetch', '--prune', 'origin')
         git(repo, 'worktree', 'add', '-q', '-b', args.name, str(tree), 'origin/main')
     print(f'Edit {public} and {private}, then run release.py finish {args.name} --message FILE')
+    others = [f'  {name}/{side}: {text}' for name, side, text in releases(args, public_repo, private_repo)
+              if name != args.name and text != 'on origin/main and clean']
+    if others:
+        print('Other open releases; read them before you edit the same files:', *others, sep='\n')
     return 0
 
 
@@ -332,6 +421,9 @@ def finish(args, public_repo, private_repo):
     print(f'public {git(public, "rev-parse", "--short", "HEAD")}  private {git(private, "rev-parse", "--short", "HEAD")}'
           + ('  pushed' if args.push else '  not pushed'), flush=True)
     if args.pull:
+        if not wait(('pull', 'sync'), WAIT_FOR_PULL):
+            raise RuntimeError(f'pushed, but another pull still runs here after {WAIT_FOR_PULL // 60} minutes; '
+                               'pull once it ends')
         result = subprocess.run([*python, str(public_repo / 'pull.py'), '--root', str(public_repo),
                                  '--private', str(private_repo), '--update', '--apply'], cwd=public_repo, timeout=1800)
         if result.returncode == 0 and (args.entry or args.package):
@@ -362,8 +454,8 @@ def clean(args, public_repo, private_repo):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('action', choices=('start', 'finish', 'clean'))
-    parser.add_argument('name', help='branch name, also the folder under --worktrees')
+    parser.add_argument('action', choices=('start', 'finish', 'clean', 'status', 'wait'))
+    parser.add_argument('name', nargs='?', help='branch name, also the folder under --worktrees')
     parser.add_argument('--private', type=Path, default=ENGINE.parent / 'dotfiles-private', help='canonical private checkout')
     parser.add_argument('--worktrees', type=Path, default=Path.home() / 'worktrees')
     parser.add_argument('--message', type=Path, help='file with the public commit message')
@@ -381,9 +473,21 @@ def main(argv=None):
                         help='push although Claude sessions here hold plugins the release replaces')
     parser.add_argument('--pull', action='store_true', help='then pull and apply the pair on this device')
     parser.add_argument('--force', action='store_true', help='clean: remove unpushed branches too')
+    parser.add_argument('--timeout', type=float, default=1800, help='wait: give up after this many seconds')
     args = parser.parse_args(argv)
+    if args.action in ('start', 'finish', 'clean') and not args.name:
+        parser.error(f'{args.action} needs a NAME')
     try:
-        action = {'start': start, 'finish': finish, 'clean': clean}[args.action]
+        if args.action == 'wait':
+            if wait(None, args.timeout):
+                print('No release, pull or sync runs on this machine.')
+                return 0
+            print(f'Still running after {args.timeout:g} seconds: ' + '; '.join(running()), file=sys.stderr)
+            return 3
+        if args.action == 'finish':
+            with hold(machine_locks()['release']):
+                return finish(args, ENGINE, args.private.resolve())
+        action = {'start': start, 'clean': clean, 'status': status}[args.action]
         return action(args, ENGINE, args.private.resolve())
     except (RuntimeError, OSError, subprocess.SubprocessError) as error:
         print(f'Release stopped: {error}', file=sys.stderr)

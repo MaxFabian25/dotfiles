@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from functools import cache
 import hashlib
 import json
-import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
 import stat
 import subprocess
-import sys
 import tempfile
 import uuid
 
@@ -20,7 +17,7 @@ from description import (AlignedInstall, LocalSource, RepoSource, SkillRoot, Sna
                          plugin_id)
 from drift import Difference, EntryRef, Kind
 from host_state import FactKey, Host, InstallDetail, Surface, Unpinned, bytes_digest
-from portable import replace as replace_path
+from portable import process_running, replace as replace_path
 from sync_files import ConcurrentEdit, contents
 from sync_sources import BuildError
 
@@ -79,38 +76,10 @@ def image(path: Path, fields=None, syntax='toml'):
     return {'kind': 'tree', 'entries': entries}
 
 
-@cache
-def _proc_shows_host():
-    """Whether /proc lists this machine's processes. A sandbox with its own PID namespace mounts a /proc whose
-    PID 1 is its own launcher, and that /proc hides every process outside it."""
-    try:
-        init = Path('/proc/1/cmdline').read_bytes().split(b'\0', 1)[0].decode('utf-8', 'replace')
-    except OSError:
-        return False
-    return PurePosixPath(init).name in {'init', 'systemd'}
-
-
 def _lease_held(marker):
     """Whether the Claude process a lease marker names still runs. A marker whose process has ended holds nothing,
-    and sessions that exit uncleanly leave such markers behind. Where this cannot tell, as on Windows, it is held."""
-    if os.name == 'nt':
-        return True  # os.kill would end the process there
-    if sys.platform.startswith('linux') and not _proc_shows_host():
-        return True
-    pid = marker['pid']
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except OSError:
-        return True
-    try:
-        fields = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
-    except (OSError, IndexError):
-        return True  # no /proc, as on macOS, so a reused process ID cannot be told apart
-    start = marker.get('procStart')
-    # Linux markers record the process's start time in clock ticks, field 22 of /proc/<pid>/stat.
-    return start is None or not start.isdigit() or len(fields) < 20 or fields[19] == start
+    and sessions that exit uncleanly leave such markers behind. Linux markers record the process's start time."""
+    return process_running(marker['pid'], marker.get('procStart'))
 
 
 def _claude_runtime(path):

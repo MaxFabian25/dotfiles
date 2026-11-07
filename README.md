@@ -116,9 +116,11 @@ uv run --locked python pull.py --root . --private ../dotfiles-private --update -
 `release.py` runs a whole delivery from this checkout. `start NAME` makes a worktree of each repository
 at `origin/main` under `~/worktrees/NAME`. After editing there, `finish NAME --message FILE --push --pull`
 locks and builds any `--entry` and `--package`, commits both worktrees, rebases them onto a newer
-`origin/main` if another session pushed meanwhile, pairs `release.toml`, pushes, and pulls. It stops
-first in each of these cases:
+`origin/main` if another session pushed meanwhile, pairs `release.toml`, pushes, and pulls, once any other
+pull on the machine has ended. It stops first in each of these cases:
 
+- Another release is finishing on this machine. It names that run's process and command;
+  `release.py wait --timeout SECONDS` returns once no release, pull or sync runs here.
 - A test fails, or the suite writes into the worktree's `.sync/`, the engine cache that real pulls use
   in the canonical checkout. It runs the whole public suite, in about 75 seconds, with the output in the
   release's `build/tests.log`. `CODEX_HOME` and `CLAUDE_CONFIG_DIR` point at a missing folder, as in CI,
@@ -136,6 +138,8 @@ first in each of these cases:
 
 After a pull that changed skills or packages, it runs `skill_listing.py`, which warns when Claude Code
 lists skills without their descriptions. `clean NAME` removes the worktrees once `origin/main` has them.
+`status` names what runs on the machine and lists every open release worktree with its commits, uncommitted
+files and the files it changes; `start` lists the other open releases.
 For a skill description change, `skill_triggers.py` counts how often the installed skills load for a set of
 prompts; run it with the same prompts before the release and after the pull.
 

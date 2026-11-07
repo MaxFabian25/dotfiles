@@ -84,6 +84,25 @@ class PortableTest(unittest.TestCase):
             with portable.exclusive_lock(lock):
                 pass
 
+    def test_a_recording_lock_names_its_holder_only_while_it_runs(self):
+        import json
+        import subprocess
+        import sys
+        with tempfile.TemporaryDirectory() as directory:
+            lock = Path(directory) / 'state/pull.lock'
+            with portable.exclusive_lock(lock, record=True):
+                holder = portable.lock_holder(lock)
+                self.assertEqual(holder['pid'], os.getpid())
+                self.assertIn(Path(sys.argv[0]).name, holder['command'])
+            self.assertIsNone(portable.lock_holder(lock))
+            self.assertFalse(lock.with_name('pull.lock.holder').exists())
+            child = subprocess.run([sys.executable, '-c', 'import os; print(os.getpid())'],
+                                   capture_output=True, text=True, check=True)
+            # A holder file a crashed run left behind names a process that has ended.
+            lock.with_name('pull.lock.holder').write_text(json.dumps({'pid': int(child.stdout), 'command': 'pull.py'}))
+            if os.name != 'nt':
+                self.assertIsNone(portable.lock_holder(lock))
+
     def test_pointer_swaps_between_sibling_releases(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
