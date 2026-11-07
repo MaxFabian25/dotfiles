@@ -1,6 +1,6 @@
 ---
 name: charts
-description: House rules for charts and the code that draws them, analytical tables, dashboards, and slide pages that show data, in matplotlib, Plotly, Vega-Lite, Excel, PowerPoint, or HTML. Use when making, reviewing, or fixing any data display, alongside any general chart skill, including IBCS business reports.
+description: House rules for charts and the code that draws them, analytical tables, dashboards, and slide pages that show data, in matplotlib, Plotly, Vega-Lite, Excel, PowerPoint, pptxgenjs, or HTML. Use when making, reviewing, or fixing any data display, alongside any general chart skill, including IBCS business reports and a visual pass on a deck or presentation, such as consulting-style or MBB-style chart pages.
 ---
 
 # Charts
