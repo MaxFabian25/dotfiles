@@ -825,6 +825,89 @@ class InstallationTest(unittest.TestCase):
         self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
         self.assertEqual(self.calls, [])
 
+    def test_a_newer_release_takes_over_a_replacement_a_running_holder_stopped(self):
+        destination = self._installed_claude()
+        lease = own_lease(destination / '.in_use')
+        before = (destination / 'skills/one/SKILL.md').read_bytes()
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the first replacement'),))
+        with self.assertRaisesRegex(ConcurrentEdit, 'running Claude processes'):
+            self.run_apply()
+        stale = json.loads(self._pending_claude_receipt().read_bytes())['pending']
+        self.assertTrue(Path(stale['staged']).is_dir())
+        # Claude Code marks the work folder as an orphaned version, as it did on WSL on 2026-11-07.
+        (Path(stale['staged']).parent / '.orphaned_at').write_text('1794063570885')
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the second replacement'),))
+        with self.assertRaisesRegex(ConcurrentEdit, 'running Claude processes'):
+            self.run_apply()
+        self.assertEqual((destination / 'skills/one/SKILL.md').read_bytes(), before)
+        self.assertFalse(Path(stale['staged']).parent.exists())
+        lease.unlink()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        installed = (destination / 'skills/one/SKILL.md').read_text()
+        self.assertIn('use the second replacement', installed)
+        self.assertNotIn('use the first replacement', installed)
+        self.assertIsNone(json.loads(self._pending_claude_receipt().read_bytes())['pending'])
+        self.assertEqual(self.calls, [])
+
+    def test_a_newer_release_takes_over_a_stopped_replacement_of_content_it_restores(self):
+        destination = self._installed_claude()
+        lease = own_lease(destination / '.in_use')
+        rules = self.setup.note_rules
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the first replacement'),))
+        with self.assertRaisesRegex(ConcurrentEdit, 'running Claude processes'):
+            self.run_apply()
+        stale = json.loads(self._pending_claude_receipt().read_bytes())['pending']
+        self.setup = replace(self.setup, note_rules=rules)
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertTrue(lease.exists())
+        self.assertNotIn('use the first replacement', (destination / 'skills/one/SKILL.md').read_text())
+        self.assertFalse(Path(stale['staged']).parent.exists())
+        self.assertIsNone(json.loads(self._pending_claude_receipt().read_bytes())['pending'])
+
+    def test_a_stopped_replacement_keeps_a_stage_it_does_not_recognise(self):
+        destination = self._installed_claude()
+        lease = own_lease(destination / '.in_use')
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the first replacement'),))
+        with self.assertRaisesRegex(ConcurrentEdit, 'running Claude processes'):
+            self.run_apply()
+        stale = json.loads(self._pending_claude_receipt().read_bytes())['pending']
+        extra = Path(stale['staged']) / 'ordinary.txt'
+        extra.write_text('edited in the stage\n')
+        lease.unlink()
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the second replacement'),))
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the second replacement', (destination / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(extra.read_text(), 'edited in the stage\n')
+
+    def test_a_replacement_that_began_its_swap_finishes_before_a_newer_release(self):
+        destination = self._installed_claude()
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the first replacement'),))
+        rename = Path.rename
+
+        def crash(path, target):
+            if path.name == 'staged':
+                raise RuntimeError('between tree renames')
+            return rename(path, target)
+
+        with patch.object(Path, 'rename', crash), self.assertRaisesRegex(RuntimeError, 'between tree renames'):
+            self.run_apply()
+        pending = json.loads(self._pending_claude_receipt().read_bytes())['pending']
+        self.assertFalse(destination.exists())
+        self.assertTrue(Path(pending['displaced']).is_dir())
+        first = replace(self.setup)
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the second replacement'),))
+        current = plan(self.setup, self.device)
+        self.assertEqual([d.detail for d in current.blocked],
+                         [f'{{claude_home}}/plugins/cache/personal-collections/kit/1.0.0: cache not on disk: '
+                          f'{{claude_home}}/plugins/cache/personal-collections/kit/1.0.0'])
+        with self.assertRaisesRegex(RuntimeError, 'blocked'):
+            self.run_apply(current)
+        self.assertFalse(destination.exists())
+        self.assertTrue(Path(pending['staged']).is_dir())
+        self.setup = first
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the first replacement', (destination / 'skills/one/SKILL.md').read_text())
+
     def test_claude_same_path_replacement_ignores_a_finished_session_lease(self):
         destination = self._installed_claude()
         lease = destination / '.in_use/17'

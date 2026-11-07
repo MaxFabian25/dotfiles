@@ -217,6 +217,7 @@ class _PreparedArtifact:
     source: Path | None = None
     data: bytes | None = None
     pending: dict | None = None
+    stale: dict | None = None       # an unstarted pending replacement of older desired inputs, which this one replaces
 
 
 @dataclass(frozen=True)
@@ -590,15 +591,54 @@ class AcceptedInstallations:
             raise BuildError(f'Excluded source content is not ownership evidence: {artifact.identity}')
         return target
 
+    def _unstarted(self, artifact, pending):
+        """Whether a pending replacement stopped before it changed anything, as one does on a held Claude cache:
+        nothing displaced, its destination as it found it, and the previous installation where it was."""
+        displaced, old = Path(pending['displaced']), Path(pending['before_path'])
+        if displaced.exists() or _linked(displaced):
+            return False
+        if not _same(self._read(artifact, Path(pending['target']['path'])), pending['destination_before']):
+            return False
+        return str(old) == pending['target']['path'] or _same(self._read(artifact, old), pending['before'])
+
+    def _discard(self, artifact, stale):
+        """Remove the work folder of a replacement a newer release took over, once its receipt no longer names it.
+        The folder goes only when it holds nothing but that replacement's own staged tree, plus in a Claude cache
+        the orphan marker Claude Code writes into every folder there that is not an installed version."""
+        staged = Path(stale['staged'])
+        work, destination = staged.parent, Path(stale['target']['path'])
+        suffix = work.name.removeprefix('.sync-' + destination.name + '-')
+        if (work.parent != destination.parent or suffix == work.name or not re.fullmatch('[0-9a-f]{32}', suffix)
+                or staged != work / 'staged' or Path(stale['displaced']) != work / 'displaced'
+                or _linked(work) or not work.is_dir()):
+            return
+        allowed = {'staged', '.orphaned_at'} if artifact.claude_cache else {'staged'}
+        try:
+            names = {entry.name for entry in work.iterdir()}
+            if names - allowed:
+                return
+            if '.orphaned_at' in names:
+                _claude_runtime(work / '.orphaned_at')
+            if staged.exists() and not _same(image(staged), stale['target']['image']):
+                return
+        except ConcurrentEdit:
+            return
+        shutil.rmtree(work)
+
     def _prepare_artifact(self, artifact, target, source, data, pristine):
         receipt = self._receipt(artifact)
         pending = receipt and receipt.get('pending')
+        stale = None
         if pending:
-            if pending['target']['intent'] != artifact.intent or not _same(pending['target']['image'], target):
+            if pending['target']['intent'] == artifact.intent and _same(pending['target']['image'], target):
+                self._known_pending(artifact, pending)
+                return _PreparedArtifact(artifact, target, pending['before'], Path(pending['before_path']),
+                                         pending['bindings'], pending['destination_before'], pristine, source, data,
+                                         pending)
+            if not self._unstarted(artifact, pending):
                 raise ConcurrentEdit(f'Finish the pending release before changing desired inputs: {artifact.identity}')
-            self._known_pending(artifact, pending)
-            return _PreparedArtifact(artifact, target, pending['before'], Path(pending['before_path']),
-                                     pending['bindings'], pending['destination_before'], pristine, source, data, pending)
+            # It changed nothing, so the newer release prepares from the accepted installation as if it never ran.
+            stale = pending
         actual = self._read(artifact)
         at_target = self._read(artifact, artifact.destination)
         accepted = receipt and receipt.get('accepted')
@@ -619,7 +659,8 @@ class AcceptedInstallations:
                                           for part in Path(path).parts) and not _same(at_target, target):
             raise ConcurrentEdit(f'Unowned tree content preserved: {artifact.destination}')
         return _PreparedArtifact(artifact, target, before, artifact.current,
-                                 _bindings((*artifact.aliases, artifact.current)), at_target, pristine, source, data)
+                                 _bindings((*artifact.aliases, artifact.current)), at_target, pristine, source, data,
+                                 stale=stale)
 
     def _check(self, prepared):
         artifact = prepared.artifact
@@ -661,8 +702,14 @@ class AcceptedInstallations:
         destination = artifact.destination
         record = {'path': str(destination), 'bindings': _bindings(artifact.aliases),
                   'intent': artifact.intent, 'image': prepared.target, 'provenance': artifact.provenance}
+        if prepared.stale:
+            receipt = self._receipt(artifact)
+            if not (receipt and _same(receipt.get('pending'), prepared.stale) and self._unstarted(artifact, prepared.stale)):
+                raise ConcurrentEdit(f'Pending replacement changed after preparation: {artifact.identity}')
         if _same(self._read(artifact, destination), prepared.target):
             self._save(artifact, record)
+            if prepared.stale:
+                self._discard(artifact, prepared.stale)
             return
         receipt = self._receipt(artifact)
         accepted = receipt and receipt.get('accepted')
@@ -673,6 +720,8 @@ class AcceptedInstallations:
                                        'staged': str(work / 'staged'), 'displaced': str(work / 'displaced'),
                                        'swap_before': prepared.destination_before}
         self._save(artifact, accepted, pending)
+        if prepared.stale:
+            self._discard(artifact, prepared.stale)
         self._check(prepared)
         actual = self._known_pending(artifact, pending)
         displaced = actual == _ABSENT and Path(pending['displaced']).exists()
