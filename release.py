@@ -188,6 +188,8 @@ def test_suite(public, log):
                                 env=environment, stdout=output, stderr=subprocess.STDOUT, timeout=1800)
     if result.returncode:
         raise RuntimeError(f'the test suite failed; read {log}')
+    ran = next((line for line in reversed(log.read_text(encoding='utf-8').splitlines()) if line.startswith('Ran ')), 'Ran')
+    print(f'{ran}: OK; log {log}', flush=True)
     if cache.exists() and not cached:
         raise RuntimeError(f'the test suite wrote into {cache}, which in the canonical checkout is the cache real '
                            'pulls use; give the test that wrote it its own engine folder')

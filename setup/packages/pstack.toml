@@ -137,7 +137,7 @@ tool_notes = "exempt"
 
 [codex]
 install = [{ via = "personal", enabled = true }]
-adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "5568d87290548bcf913bce23dcd313e5d29ba796", adapted = "d1664125383a27a97de56874a48cebdde115a416", harness = "skills/poteto-mode/references/harnesses.md" }
+adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "5568d87290548bcf913bce23dcd313e5d29ba796", adapted = "4f1b2c2e8658c1f5cfff8327457296e59d8ed85d", harness = "skills/poteto-mode/references/harnesses.md" }
 
 [codex.roles]
 from = "plugin"

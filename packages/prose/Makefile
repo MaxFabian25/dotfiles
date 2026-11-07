@@ -8,7 +8,11 @@ setup:
 
 check: lint test validate
 
-lint:
+# npm ci writes this file, so a fresh checkout or worktree installs the Markdown linter before its first lint.
+node_modules/.package-lock.json: package-lock.json
+	npm ci
+
+lint: node_modules/.package-lock.json
 	uv run --locked ruff check .
 	uv run --locked ruff format --check .
 	npm run lint:markdown

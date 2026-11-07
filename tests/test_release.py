@@ -1,4 +1,4 @@
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 import io
 from pathlib import Path
 import subprocess
@@ -178,6 +178,16 @@ class ReleaseTest(unittest.TestCase):
         self.assertIn('the public commit message in ', error.getvalue())
         message.write_text('Change the content\n', encoding='utf-8')
         self.assertEqual(release_main(finish, self.public), 0)
+
+    def test_finish_reports_the_suite_result_and_its_log(self):
+        release_main(['start', 'report', *self.options()], self.public)
+        (self.worktrees / 'report/public/content').write_text('second\n', encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Change the content\n', encoding='utf-8')
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(release_main(['finish', 'report', '--message', str(message), *self.options()], self.public), 0)
+        self.assertIn('Ran 1 test in', output.getvalue())
+        self.assertIn(str(self.worktrees / 'report/build/tests.log'), output.getvalue())
 
     def test_finish_stops_on_a_new_file_the_allowlist_leaves_out(self):
         release_main(['start', 'notes', *self.options()], self.public)
