@@ -27,6 +27,22 @@ class FileSafetyTest(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text())['skillOverrides'],
                              {'unrelated': 'off', 'fewer-permission-prompts': 'user-invocable-only'})
 
+    def test_claude_override_for_a_skill_the_description_dropped_is_removed(self):
+        from host_state import FactKey, Host, Surface
+        from sync_files import Files
+        from sync_hosts import Apply
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            path = root / 'settings.json'
+            path.write_text('{"skillOverrides":{"unrelated":"off","kit:dropped":"off"}}')
+            operation = object.__new__(Apply)
+            operation.roots = SimpleNamespace(claude_home=root)
+            operation.files = Files(root / 'backups')
+            operation.current = SimpleNamespace(changes=[SimpleNamespace(
+                key=FactKey(Host.CLAUDE, Surface.SKILL, 'kit@personal-collections:dropped'), expected=None)])
+            operation._skills()
+            self.assertEqual(json.loads(path.read_text())['skillOverrides'], {'unrelated': 'off'})
+
     def test_concurrent_edit_is_not_overwritten(self):
         from sync_files import ConcurrentEdit, Files
         with tempfile.TemporaryDirectory() as temp:
