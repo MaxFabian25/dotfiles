@@ -1,6 +1,7 @@
 from pathlib import Path
 import sys
 import tempfile
+import tomllib
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -179,6 +180,43 @@ class PstackPolicyTests(unittest.TestCase):
                          'spawn_overrides = true\nunknown = []\n'):
             with self.subTest(settings=settings), self.assertRaises(ValueError):
                 self.configure(settings)
+
+
+class CodexSettingsTests(unittest.TestCase):
+    FIELD = ('skills', 'max_context_tokens')
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        self.private = root / 'private'
+        (self.private / 'config/codex').mkdir(parents=True)
+        self.settings = self.private / 'config/codex/settings.toml'
+        home = root / 'home'
+        self.roots = DeviceRoots(home, home / '.codex', home / '.claude', home / '.agents', root / 'engine')
+
+    def test_private_settings_become_fields_of_the_codex_config(self):
+        self.settings.write_text('[skills]\nmax_context_tokens = 10000\n')
+        [configuration] = desired(None, self.private, self.roots, Platform.LINUX)
+        self.assertEqual(configuration.destination, self.roots.codex_home / 'config.toml')
+        self.assertEqual(configuration.fields, {self.FIELD: 10000})
+
+    def test_a_device_without_settings_gets_no_codex_configuration(self):
+        self.assertEqual(desired(None, self.private, self.roots, Platform.LINUX), ())
+
+    def test_settings_that_name_no_key_are_rejected(self):
+        self.settings.write_text('# nothing yet\n')
+        with self.assertRaisesRegex(ValueError, 'Codex settings'):
+            desired(None, self.private, self.roots, Platform.LINUX)
+
+    def test_ceiling_is_written_without_disturbing_the_skill_switches(self):
+        before = b'[skills]\n\n[[skills.config]]\nname = "a"\nenabled = false\n\n[[skills.config]]\nname = "b"\nenabled = true\n'
+        fields = {self.FIELD: 10000}
+        after = patch_fields(before, fields)
+        parsed = tomllib.loads(after.decode())
+        self.assertEqual(parsed['skills']['max_context_tokens'], 10000)
+        self.assertEqual([entry['name'] for entry in parsed['skills']['config']], ['a', 'b'])
+        self.assertEqual(patch_fields(after, fields), after)
 
 
 if __name__ == '__main__':

@@ -100,6 +100,12 @@ def desired(public: Path | None, private: Path | None, roots: DeviceRoots, platf
             TomlConfiguration('pstack-runtime', roots.codex_home / 'config.toml',
                               {('features', 'multi_agent_v2', OVERRIDE_KEY): settings['spawn_overrides']}),
         ])
+    codex = private / 'config/codex/settings.toml' if private else None
+    if codex and codex.is_file():
+        fields = _leaf_fields(tomllib.loads(codex.read_text(encoding='utf-8')), ())
+        if not fields:
+            raise ValueError('Private Codex settings must name at least one key')
+        result.append(TomlConfiguration('codex-settings', roots.codex_home / 'config.toml', fields))
     return tuple(result)
 
 
