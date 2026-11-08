@@ -815,89 +815,148 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual(result.held, ((destination, (os.getpid(),)),))
         return result
 
+    def revise_release(self, text):
+        """Release new bytes for the kit's file outside its skills at the same version, a change running Claude
+        sessions hold its cache against."""
+        (self.source / 'ordinary.txt').write_text(text)
+        digest = self.roots.tree_digest(self.source)
+        package = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
+        lock = replace(self.setup.lock['kit'], intent=intent(package, {}), trees={Host.CLAUDE: LockedTree('1.0.0', digest)})
+        self.setup = replace(self.setup, packages={'kit': package}, lock={'kit': lock})
+
     def test_claude_same_path_replacement_waits_for_a_running_holder(self):
         destination = self._installed_claude()
         lease = own_lease(destination / '.in_use')
         marker = lease.read_text()
         self.assertEqual(self.held(), [])
-        before = (destination / 'skills/one/SKILL.md').read_bytes()
-        # The kit applies tool notes, so a changed note changes its cache although its locked tree stays.
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
-        self.assertEqual(self.held(), [('plugin:claude:kit@personal-collections', destination, (os.getpid(),))])
+        self.revise_release('revised release bytes\n')
+        holder = [('plugin:claude:kit@personal-collections', destination, (os.getpid(),))]
+        self.assertEqual(self.held(), holder)
         self.assert_held(destination)
-        self.assertEqual((destination / 'skills/one/SKILL.md').read_bytes(), before)
+        self.assertEqual(self.held(), holder)
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
         self.assertEqual(lease.read_text(), marker)
         lease.unlink()
         self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'revised release bytes\n')
         self.assertEqual(self.calls, [])
 
     def test_a_held_claude_cache_leaves_the_rest_of_the_release_to_apply(self):
         destination = self._installed_claude()
         lease = own_lease(destination / '.in_use')
-        before = (destination / 'skills/one/SKILL.md').read_bytes()
         # The plugin comes before the configurations in the apply order, so a stop on it would leave the npm file.
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.revise_release('revised release bytes\n')
         config_source = self.public / 'config/npm/npmrc.toml'
         config_source.parent.mkdir(parents=True)
         config_source.write_text('min-release-age = 3\n')
         result = self.assert_held(destination)
         self.assertEqual((self.roots.home / '.npmrc').read_text(), 'min-release-age=3\n')
-        self.assertEqual((destination / 'skills/one/SKILL.md').read_bytes(), before)
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
         self.assertEqual([d.detail for d in result.changes],
                          ['plugin:claude:kit@personal-collections: Finish a verified pending replacement'])
         lease.unlink()
         self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'revised release bytes\n')
+
+    def test_a_change_to_skill_text_alone_replaces_a_held_cache_and_keeps_its_leases(self):
+        destination = self._installed_claude()
+        lease = own_lease(destination / '.in_use')
+        marker = lease.read_text()
+        # Claude Code writes a marker under a temporary name and renames it in its folder, so that one stays.
+        writing = destination / '.in_use/29.tmp.0123abcd'
+        writing.write_text('{"pid":29,"procStartFt":"134044866000000000"}')
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        result = self.run_apply()
+        self.assertEqual((result.exit_code, result.held), (0, ()))
         self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(lease.read_text(), marker)
+        backup = Path(json.loads(self._pending_claude_receipt().read_bytes())['accepted']['backup'])
+        self.assertEqual([path.name for path in (backup / '.in_use').iterdir()], [writing.name])
+        self.assertEqual(self.calls, [])
+        # The moved lease still holds the new folder against a change beyond the skill text.
+        self.revise_release('revised release bytes\n')
+        self.assert_held(destination)
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
+
+    def test_a_pending_change_to_skill_text_alone_is_not_held(self):
+        destination = self._installed_claude()
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        rename = Path.rename
+
+        def crash(path, target):
+            if path == destination:
+                raise RuntimeError('before the swap')
+            return rename(path, target)
+
+        with patch.object(Path, 'rename', crash), self.assertRaisesRegex(RuntimeError, 'before the swap'):
+            self.run_apply()
+        self.assertIsNotNone(json.loads(self._pending_claude_receipt().read_bytes())['pending'])
+        lease = own_lease(destination / '.in_use')
+        self.assertEqual(self.held(), [])
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
+        self.assertTrue(lease.exists())
+
+    def test_only_markdown_files_under_skills_that_both_caches_hold_count_as_skill_text(self):
+        from accepted_installations import _skill_text_only
+
+        def tree(entries):
+            return {'kind': 'tree', 'entries': {path: {'kind': 'directory'} if digest is None else {'kind': 'file', 'sha256': digest}
+                                                for path, digest in entries.items()}}
+
+        installed = {'skills': None, 'skills/one': None, 'skills/one/SKILL.md': 'a', 'skills/one/run.sh': 'b', 'README.md': 'c'}
+        self.assertTrue(_skill_text_only(tree(installed), tree({**installed, 'skills/one/SKILL.md': 'z'})))
+        without = {path: digest for path, digest in installed.items() if path != 'skills/one/SKILL.md'}
+        for changed in [{**installed, 'README.md': 'z'}, {**installed, 'skills/one/run.sh': 'z'},
+                        {**installed, 'skills/one/SKILL.md': None}, {**installed, 'skills/one/OTHER.md': 'd'}, without]:
+            with self.subTest(changed=changed):
+                self.assertFalse(_skill_text_only(tree(installed), tree(changed)))
+        self.assertFalse(_skill_text_only(tree(installed), {'kind': 'absent'}))
 
     def test_a_newer_release_takes_over_a_replacement_a_running_holder_stopped(self):
         destination = self._installed_claude()
         lease = own_lease(destination / '.in_use')
-        before = (destination / 'skills/one/SKILL.md').read_bytes()
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the first replacement'),))
+        self.revise_release('first revision\n')
         self.assert_held(destination)
         stale = json.loads(self._pending_claude_receipt().read_bytes())['pending']
         self.assertTrue(Path(stale['staged']).is_dir())
         # Claude Code marks the work folder as an orphaned version, as it did on WSL on 2026-11-07.
         (Path(stale['staged']).parent / '.orphaned_at').write_text('1794063570885')
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the second replacement'),))
+        self.revise_release('second revision\n')
         self.assert_held(destination)
-        self.assertEqual((destination / 'skills/one/SKILL.md').read_bytes(), before)
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
         self.assertFalse(Path(stale['staged']).parent.exists())
         lease.unlink()
         self.assertEqual(self.run_apply().exit_code, 0)
-        installed = (destination / 'skills/one/SKILL.md').read_text()
-        self.assertIn('use the second replacement', installed)
-        self.assertNotIn('use the first replacement', installed)
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'second revision\n')
         self.assertIsNone(json.loads(self._pending_claude_receipt().read_bytes())['pending'])
         self.assertEqual(self.calls, [])
 
     def test_a_newer_release_takes_over_a_stopped_replacement_of_content_it_restores(self):
         destination = self._installed_claude()
         lease = own_lease(destination / '.in_use')
-        rules = self.setup.note_rules
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the first replacement'),))
+        self.revise_release('first revision\n')
         self.assert_held(destination)
         stale = json.loads(self._pending_claude_receipt().read_bytes())['pending']
-        self.setup = replace(self.setup, note_rules=rules)
+        self.revise_release('ordinary release bytes\n')
         self.assertEqual(self.run_apply().exit_code, 0)
         self.assertTrue(lease.exists())
-        self.assertNotIn('use the first replacement', (destination / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
         self.assertFalse(Path(stale['staged']).parent.exists())
         self.assertIsNone(json.loads(self._pending_claude_receipt().read_bytes())['pending'])
 
     def test_a_stopped_replacement_keeps_a_stage_it_does_not_recognise(self):
         destination = self._installed_claude()
         lease = own_lease(destination / '.in_use')
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the first replacement'),))
+        self.revise_release('first revision\n')
         self.assert_held(destination)
         stale = json.loads(self._pending_claude_receipt().read_bytes())['pending']
         extra = Path(stale['staged']) / 'ordinary.txt'
         extra.write_text('edited in the stage\n')
         lease.unlink()
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the second replacement'),))
+        self.revise_release('second revision\n')
         self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the second replacement', (destination / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'second revision\n')
         self.assertEqual(extra.read_text(), 'edited in the stage\n')
 
     def test_a_replacement_that_began_its_swap_finishes_before_a_newer_release(self):
@@ -934,11 +993,11 @@ class InstallationTest(unittest.TestCase):
         lease = destination / '.in_use/17'
         lease.parent.mkdir()
         lease.write_text('{"pid":17,"procStart":"42"}')
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.revise_release('revised release bytes\n')
         with patch('accepted_installations._lease_held', return_value=False):
             self.assertEqual(self.held(), [])
             self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'revised release bytes\n')
         self.assertEqual(self.calls, [])
 
     def test_claude_lease_replaced_during_disappearance_check_is_not_ignored(self):
@@ -1066,8 +1125,7 @@ class InstallationTest(unittest.TestCase):
         from accepted_installations import AcceptedInstallations
 
         destination = self._installed_claude()
-        before = (destination / 'skills/one/SKILL.md').read_bytes()
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.revise_release('revised release bytes\n')
         save = AcceptedInstallations._save
         writes = 0
         lease = None
@@ -1082,11 +1140,11 @@ class InstallationTest(unittest.TestCase):
 
         with patch.object(AcceptedInstallations, '_save', concurrent_lease):
             self.assert_held(destination)
-        self.assertEqual((destination / 'skills/one/SKILL.md').read_bytes(), before)
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
         self.assertTrue(lease.exists())
         lease.unlink()
         self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'revised release bytes\n')
 
     def test_claude_historical_receipt_metadata_is_not_silently_normalized(self):
         destination = self._installed_claude()

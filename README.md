@@ -64,8 +64,10 @@ Claude's validated root `.in_use` leases and `.orphaned_at` timestamp are native
 plugin content. This distinction applies only to installed Claude plugins. Unknown entries, malformed
 markers, and links still block reconciliation. A lease from a running Claude process keeps that cache
 path as it is: the pull leaves its replacement pending, applies the rest of the release, exits 1, and
-replaces the cache at the first pull after those processes exit. Source builds and staged replacements
-remain strict raw trees.
+replaces the cache at the first pull after those processes exit. A replacement that changes only
+Markdown files under `skills/`, as tool notes and invocation choices do, goes ahead at once, since a
+session reads those files when it uses the skill; the swap moves the sessions' leases into the new
+folder. Source builds and staged replacements remain strict raw trees.
 
 Python writes a `__pycache__` folder beside any module it imports. Comparisons of installed, accepted
 and staged trees leave out these folders and the regular files in them, as the tree digests do, so a

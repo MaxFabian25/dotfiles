@@ -168,6 +168,34 @@ def _claude_cache_image(path, *, replacing=False):
     return {'kind': 'tree', 'entries': entries}
 
 
+def _skill_text_only(before, after):
+    """Whether two images of a Claude plugin cache differ only in the bytes of Markdown files under skills/ that both
+    hold, as tool notes and skill invocation choices change them. A running Claude session reads such a file when it
+    uses the skill, so it gets the new text the next time it opens the file, and it keeps the skill list and hook
+    settings it loaded at startup either way."""
+    if before.get('kind') != 'tree' or after.get('kind') != 'tree':
+        return False
+    old, new = before['entries'], after['entries']
+    if old.keys() != new.keys():
+        return False
+    return all(old[path] == new[path] or (old[path]['kind'] == new[path]['kind'] == 'file' and path.endswith('.md')
+                                          and PurePosixPath(path).parts[0] == 'skills')
+               for path in old)
+
+
+def _carry_leases(old, new):
+    """Move the lease markers from the cache folder a swap moved aside to the folder now at its path, where the
+    Claude sessions that wrote them still read it, so a later replacement there still sees them. A marker still
+    being written, a .tmp file, stays, because Claude Code renames it in place."""
+    leases = old / '.in_use'
+    if _linked(leases) or not leases.is_dir():
+        return
+    (new / '.in_use').mkdir(exist_ok=True)
+    for marker in leases.iterdir():
+        if '.tmp.' not in marker.name and not (new / '.in_use' / marker.name).exists():
+            marker.rename(new / '.in_use' / marker.name)
+
+
 def _cache_inputs(provenance, notes):
     """What a Claude plugin cache's bytes follow in its provenance: the locked Claude tree, the package and its
     source, and the tool notes when the package applies them. Every plugin's intent names every tool note."""
@@ -568,7 +596,9 @@ class AcceptedInstallations:
     def held_replacements(self, observations):
         """The Claude plugin caches the pull would replace in place while running Claude processes hold them, as
         (identity, cache, PIDs). The pull leaves each one as it is until those processes exit. A cache is replaced in
-        place when its version stays and what its bytes follow changes, or when a pending replacement is unfinished."""
+        place when its version stays and what its bytes follow changes, or when a pending replacement is unfinished.
+        A pending replacement of only its skills' Markdown text is left out, because the pull swaps it at once; an
+        unprepared one may be such a change too, which the pull finds out only once it has built the target."""
         held = []
         for artifact in self.artifacts(observations):
             if not artifact.claude_cache or not artifact.destination.is_dir():
@@ -576,8 +606,9 @@ class AcceptedInstallations:
             receipt = self._receipt(artifact) or {}
             pending, accepted = receipt.get('pending'), receipt.get('accepted')
             if pending:
-                replacing = (Path(pending['target']['path']) == artifact.destination
-                             and not _same(self._read(artifact, artifact.destination), pending['target']['image']))
+                current, target = self._read(artifact, artifact.destination), pending['target']['image']
+                replacing = (Path(pending['target']['path']) == artifact.destination and not _same(current, target)
+                             and not _skill_text_only(current, target))
             elif accepted and Path(accepted['path']) == artifact.destination:
                 notes = self.setup.packages[artifact.entry.name].tool_notes == ToolNotes.APPLY
                 replacing = not _same(_cache_inputs(accepted.get('provenance'), notes),
@@ -776,11 +807,13 @@ class AcceptedInstallations:
             copy_tree(prepared.source, staged)
         if not _same(image(staged), prepared.target):
             raise ConcurrentEdit(f'Prepared stage failed verification: {staged}')
-        if not _same(self._read(artifact, destination, replacing=True), actual):
+        # Running sessions hold a cache only against a change beyond its skills' Markdown text.
+        text = artifact.claude_cache and _skill_text_only(actual, prepared.target)
+        if not _same(self._read(artifact, destination, replacing=not text), actual):
             raise ConcurrentEdit(f'Tree changed before replacement: {destination}')
         pending['swap_before'] = actual if actual != _ABSENT else pending['swap_before']
         self._save(artifact, accepted, pending)
-        if not _same(self._read(artifact, destination, replacing=True), actual):
+        if not _same(self._read(artifact, destination, replacing=not text), actual):
             raise ConcurrentEdit(f'Tree changed before replacement: {destination}')
         destination.parent.mkdir(parents=True, exist_ok=True)
         if destination.exists():
@@ -788,6 +821,8 @@ class AcceptedInstallations:
                 raise ConcurrentEdit(f'Displaced tree already exists: {displaced}')
             destination.rename(displaced)
         staged.rename(destination)
+        if text:
+            _carry_leases(displaced, destination)
 
     def expand(self, value):
         for token in ('home', 'codex_home', 'claude_home', 'agents_home', 'engine'):

@@ -263,7 +263,7 @@ class ReleaseTest(unittest.TestCase):
         with redirect_stdout(io.StringIO()) as output:
             self.assertEqual(release_main(finish, self.public), 0)
         self.assertIn('Claude lease: plugin:claude:kit@m at /cache/kit/1.0.0, held by running Claude processes 4242; '
-                      'the pull here applies the rest of the release', output.getvalue())
+                      'the pull here swaps it at once if only skill text changes', output.getvalue())
         self.assertEqual(git(self.public_origin, 'show', 'main:sync.py'), (held + SYNC_WITH_CHANGES).strip())
 
     def test_a_rebase_takes_origins_copy_of_a_regenerated_file_only_where_it_alone_conflicts(self):
