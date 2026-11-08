@@ -34,7 +34,7 @@ codex = { version = "1.0.0", tree = "sha256:8eff7791a0b3efdec3ba926a64d727ef3ffd
 claude = { version = "1.0.0", tree = "sha256:8eff7791a0b3efdec3ba926a64d727ef3ffde57f43f0a24f522c791f0ad8efd8" }
 
 [emil-motion-skills]
-intent = "sha256:8d899712d3104177d6f80d5b539252bc52e75b49b610a38de9b65b068a12b335"
+intent = "sha256:e144dc9d2785d29cc562f2daefc1ea56247e4732940c0fbd312cb276c95018be"
 codex = { version = "0.1.0+upstream.5206a950b715.codex1", tree = "sha256:c1435560eca36e89813482447a95be829464011cc21ad1c0601b1944ec49b95f" }
 claude = { version = "0.1.0+codex-aligned.244cc31955af", tree = "sha256:11c2feeb5450097f24d79a232992fc288c64217f0e8767c22c6b179b3b21db79" }
 

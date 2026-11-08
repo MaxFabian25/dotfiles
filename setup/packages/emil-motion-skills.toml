@@ -1,5 +1,5 @@
 public = true
-note = "Five skills from emilkowalski/skills that the user added on 2026-11-08. The separate Emil Public Skills plugin stays retired, so keep the selection to these five."
+note = "Five skills from emilkowalski/skills that the user added on 2026-11-08. Turned off the same day, because the user asked to reduce overlap and what these skills add beyond the user's other Emil skills now lives in those. The separate Emil Public Skills plugin stays retired."
 
 [source]
 build = "public-emil"
@@ -22,7 +22,7 @@ repository = "emilkowalski/skills"
 branch = "main"
 
 [codex]
-install = [{ via = "personal", enabled = true }]
+install = [{ via = "personal", enabled = false }]
 
 [claude]
-install = [{ via = "codex-aligned", enabled = true }]
+install = [{ via = "codex-aligned", enabled = false }]
