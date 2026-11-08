@@ -1,5 +1,5 @@
 public = true
-note = "Upstream's 27 exported skills plus five the user chose on 2026-10-14 from upstream's in-progress and misc folders: chief-of-staff, scaffold-exercises, setup-ts-deep-modules and setup-pre-commit are explicit-only in both hosts; claude-handoff is explicit-only and Claude-only (off in Codex). Listed by path so other upstream additions stay out."
+note = "Upstream's exported skills, except setup-matt-pocock-skills, which a patched copy replaces, plus five the user chose on 2026-10-14 from upstream's in-progress and misc folders: chief-of-staff, scaffold-exercises, setup-ts-deep-modules and setup-pre-commit are explicit-only in both hosts; claude-handoff is explicit-only and Claude-only (off in Codex). Listed by path so other upstream additions stay out."
 
 [source]
 build = "generic"
@@ -14,7 +14,6 @@ select = [
   "./skills/engineering/grill-with-docs",
   "./skills/engineering/triage",
   "./skills/engineering/improve-codebase-architecture",
-  "./skills/engineering/setup-matt-pocock-skills",
   "./skills/engineering/tdd",
   "./skills/engineering/to-spec",
   "./skills/engineering/to-tickets",
@@ -62,7 +61,6 @@ explicit = [
   "research",
   "retro",
   "scaffold-exercises",
-  "setup-matt-pocock-skills",
   "setup-pre-commit",
   "setup-ts-deep-modules",
   "teach",
