@@ -57,3 +57,7 @@ note = " In a T3 Code session, a Mermaid block in your reply shows as code rathe
 [[tool_note]]
 match = "\\bWhen the design hook is active"
 note = " (it sees only edits made with the file-edit tools, so after an edit through the shell, run `scripts/impeccable detect --json <file>` on the shipped file before you report a pass)"
+
+[[tool_note]]
+match = "\\bexcept assets the user must provide\\."
+note = " The deliverable's words count too: before you write or change any text on the page, load the `unslop` skill, and the `prose` skill for English or Danish house style."
