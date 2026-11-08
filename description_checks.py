@@ -170,6 +170,7 @@ def check_invariants(setup: Setup, errors: list[str]) -> None:
             for skill in sorted(set(package.modes) - set(selected)):
                 errors.append(f'{path}:skills: {skill} is not a selected skill')
         _check_claude_modes(package, path, selected, errors)
+        _check_claude_off(package, path, errors)
     for host, modes in setup.host_skills.items():
         path = (roots.private or roots.public) / 'hosts' / f'{host.value}.toml'
         for key in sorted(modes):
@@ -187,6 +188,20 @@ def check_invariants(setup: Setup, errors: list[str]) -> None:
                           'names a snapshot for each place the skill goes, and only those')
     for name in sorted(set(setup.packages) & set(setup.loose)):
         errors.append(f'{name}:: a package and a loose skill share the name, and the lock keys both by name')
+
+
+def _check_claude_off(package: Package, path: Path, errors: list[str]) -> None:
+    """Claude Code 2.1.319 kept offering a personal-collections skill that skillOverrides turned off, with no drift
+    reported, so the only way to drop one is to leave it out of the build."""
+    off = {skill for skill, mode in package.modes.items() if mode == SkillMode.OFF}
+    stuck = set()
+    for install in package.claude.installs if package.claude else ():
+        if isinstance(install, EngineInstall) and install.enabled:
+            stuck |= off & set(install.skills) if install.skills else off
+    if stuck:
+        errors.append(f'{path}:skills.off: {", ".join(sorted(stuck))} stay offered in Claude Code, which ignores '
+                      'skillOverrides for a personal-collections install; remove them from source.select and raise '
+                      'source.packaging')
 
 
 def _check_claude_modes(package: Package, path: Path, selected: tuple[str, ...], errors: list[str]) -> None:

@@ -366,13 +366,32 @@ class InvariantTest(unittest.TestCase):
                 'claude.skills.explicit: deslop is explicit for the package; a Claude mode needs an off skill, or is on for an explicit one',
             ('explicit = ["fix-ci"]', 'on = ["control-tower"]'): 'claude.skills.on: control-tower is not a selected skill',
             ('explicit = ["fix-ci"]', 'off = ["fix-ci"]'): 'claude.skills.off: a Claude mode is explicit or on',
-            ('via = "codex-aligned", enabled = true, agents = []', 'via = "personal-collections", enabled = true'):
+            ('via = "codex-aligned", enabled = true, agents = []', 'via = "personal-collections", enabled = false'):
                 'claude.skills: a Claude mode needs an aligned Claude install',
         }
         for (old, new), problem in cases.items():
             with Roots() as roots, self.subTest(new):
                 path = self.edit(roots, 'packages/cursor-team-kit.toml', old, new)
                 self.assertEqual(roots.problems(), [f'{path}:{problem}'])
+
+    def engine_install(self, roots, enabled):
+        self.edit(roots, 'packages/cursor-team-kit.toml', '\n[claude.skills]\nexplicit = ["fix-ci"]\n', '')
+        return self.edit(roots, 'packages/cursor-team-kit.toml', 'via = "codex-aligned", enabled = true, agents = []',
+                         f'via = "personal-collections", enabled = {enabled}')
+
+    def test_an_off_skill_is_rejected_in_an_enabled_claude_engine_install(self):
+        with Roots() as roots:
+            path = self.engine_install(roots, 'true')
+            [problem] = roots.problems()
+        self.assertTrue(problem.startswith(f'{path}:skills.off: check-compiler-errors, fix-ci, '), problem)
+        self.assertTrue(problem.endswith('remove them from source.select and raise source.packaging'), problem)
+
+    def test_an_off_skill_stays_allowed_where_it_takes_effect(self):
+        with Roots() as roots:
+            description_toml.load(roots.roots())  # the fixture's enabled aligned install
+        with Roots() as roots:
+            self.engine_install(roots, 'false')
+            description_toml.load(roots.roots())
 
     def test_a_claude_on_mode_takes_a_package_explicit_skill(self):
         with Roots() as roots:

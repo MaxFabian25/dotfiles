@@ -1,7 +1,9 @@
 """Every Claude encoding: plugin ids, settings.json, install records, frontmatter, aligned copies.
 
-Claude has no per-plugin skill toggle, so an off skill is spelled per install: an aligned copy leaves the
-skill out, any other enabled install turns it off in skillOverrides, and a disabled install has no off skills.
+Claude has no per-plugin skill toggle, so an off skill is spelled per install: an aligned copy leaves the skill out,
+a marketplace install turns it off in skillOverrides, and a disabled install has no off skills. An enabled
+personal-collections install cannot have one, because Claude Code ignored that override and description_checks
+rejects it.
 An aligned copy keeps a skill the package has off when the package gives it a Claude mode, and takes that mode.
 """
 from __future__ import annotations
