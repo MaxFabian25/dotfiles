@@ -1,0 +1,28 @@
+public = true
+note = "Five skills from emilkowalski/skills that the user added on 2026-11-08. The separate Emil Public Skills plugin stays retired, so keep the selection to these five."
+
+[source]
+build = "public-emil"
+repository = "https://github.com/emilkowalski/skills.git"
+commit = "5206a950b715e0cabe7043ea0b2304332b91494e"
+packaging = 1
+display_name = "Emil Kowalski · Motion Skills"
+select = [
+  "skills/animation-performance",
+  "skills/choreograph",
+  "skills/gestures",
+  "skills/improve-animations",
+  "skills/remove-animations",
+]
+
+[source.metadata]
+url = "https://github.com/emilkowalski/skills"
+description = "5 motion skills from emilkowalski/skills"
+repository = "emilkowalski/skills"
+branch = "main"
+
+[codex]
+install = [{ via = "personal", enabled = true }]
+
+[claude]
+install = [{ via = "codex-aligned", enabled = true }]
