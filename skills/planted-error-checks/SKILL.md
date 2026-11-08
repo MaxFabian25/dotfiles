@@ -1,6 +1,6 @@
 ---
 name: planted-error-checks
-description: Prove that the checks on a generated document, such as a deck, report, site, or data export, catch real errors, by planting known errors in copies and running every check on each copy. Use when writing or trusting fact, figure, link, or layout checks for a document, when a check suite passes but a reviewer or user still finds errors, or when someone asks for mutation testing of a document build.
+description: Prove that a set of checks catches real errors by planting known errors in copies and running every check on each copy. Use for checks on a generated document, such as a deck, report, site, or data export, and for a code repository's test suite. Use when writing or trusting fact, figure, link, or layout checks, when checks pass but a reviewer, user or production still finds errors, when deciding which tests earn their keep or whether to delete a class of tests, and when someone asks for mutation testing of a document build or a test suite.
 ---
 
 # Planted-error checks
@@ -52,6 +52,24 @@ blind to it.
   On WSL, `/tmp` is emptied at every boot.
 - For a new check, first plant its error with the check absent and see it pass, then add the check
   and see it fail. A check you never saw fail may be unable to.
+
+## Test suites
+
+The same method shows which tests in a code repository earn their keep. The source code is where the
+faults go, and each test is a check.
+
+- Choose faults at random from points in the code, such as a flipped comparison, a negated condition
+  or a dropped return value, so the sample holds more than the faults you thought of. Record which
+  tests fail for each one.
+- Judge a class of tests by the faults only it caught, as well as by its time.
+- Run each code fault in a sandbox with a read-only root and no network, such as
+  `bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --bind <copy> <copy> --unshare-all --die-with-parent`,
+  with `HOME` at a folder of its own, because a fault can flip a guard in code that manages real config.
+- Run the clean copy in that sandbox first and leave the tests that fail there out of every score,
+  because the sandbox made them fail. Add one copy with a crash planted, which proves the harness
+  sees a failure.
+- `maintenance/ci-census/mutate.py` in the private dotfiles repository does this for the public
+  dotfiles suite.
 
 ## Report
 

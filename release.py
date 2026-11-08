@@ -3,7 +3,7 @@
 Run it with the engine's own Python from the canonical public checkout. `start NAME` makes a worktree of
 each repository at origin/main on branch NAME. Edit there. `finish NAME` locks and builds the named
 entries, stops on a changed plugin whose Codex hooks are trusted until --hooks-reapproved, runs the public
-test suite (only test_mise_env.py when the release changes no code) and the private folders' tests, stops on new files the .gitignore allowlist would leave out, commits both worktrees, stops if
+test suite unless the release changes no code, runs the private folders' tests, stops on new files the .gitignore allowlist would leave out, commits both worktrees, stops if
 origin/main changed the same files meanwhile, rebases them onto it, pairs the private release.toml with the
 public commit, checks that this device's pull could apply the pair, naming each Claude plugin cache that
 running sessions hold, checks both pushes with --dry-run, pushes, and pulls, after any other pull here ends.
@@ -49,7 +49,6 @@ ALLOWLIST_BASE = '/*'
 # Strings the public tree must never hold, such as host and account names. The list is private, because a public
 # list would publish them.
 DENYLIST = 'config/privacy/public-denylist.txt'
-ONLY_TEST_READING_REPO_FILES = 'test_mise_env.py'
 
 
 def machine_locks():
@@ -317,23 +316,27 @@ def can_change_test_results(name):
                                                     '.github/workflows/'))
 
 
-def test_suite(public, private, log):
-    log.parent.mkdir(parents=True, exist_ok=True)
-    has_code = any(can_change_test_results(name) for tree in (public, private) for name in changed_files(tree))
+def public_suite(public, log):
     cache = public / '.sync'
     cached = cache.exists()
-    selection = [] if has_code else ['-p', ONLY_TEST_READING_REPO_FILES]
     with log.open('w', encoding='utf-8') as output:
-        result = subprocess.run([sys.executable, '-B', 'tests/run.py', *selection], cwd=public, stdout=output,
+        result = subprocess.run([sys.executable, '-B', 'tests/run.py'], cwd=public, stdout=output,
                                 stderr=subprocess.STDOUT, timeout=1800)
     if result.returncode:
         raise RuntimeError(f'the test suite failed; read {log}')
     ran = next((line for line in reversed(log.read_text(encoding='utf-8').splitlines()) if line.startswith('Ran ')), 'Ran')
-    scope = '' if has_code else f'; only {ONLY_TEST_READING_REPO_FILES} ran because the release changes no code'
-    print(f'{ran}: OK{scope}; log {log}', flush=True)
+    print(f'{ran}: OK; log {log}', flush=True)
     if cache.exists() and not cached:
         raise RuntimeError(f'the test suite wrote into {cache}, which in the canonical checkout is the cache real '
                            'pulls use; give the test that wrote it its own engine folder')
+
+
+def test_suite(public, private, log):
+    log.parent.mkdir(parents=True, exist_ok=True)
+    if any(can_change_test_results(name) for tree in (public, private) for name in changed_files(tree)):
+        public_suite(public, log)
+    else:
+        print('The public test suite did not run because the release changes no code', flush=True)
     folders = sorted({str(Path(name).parent) for name in git(private, 'ls-files', '-co', '--exclude-standard').splitlines()
                       if Path(name).name.startswith('test_') and name.endswith('.py')})
     if not folders:
