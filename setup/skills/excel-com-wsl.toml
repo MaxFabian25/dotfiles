@@ -1,0 +1,9 @@
+public = true
+
+[source]
+local = "skills/excel-com-wsl"
+tree = "sha256:b77065f0b1b18d33f1ed41334ca533b0603dd3c4d5e4cb3bf55496f753cc298f"
+
+[place]
+agents = true
+claude = true
