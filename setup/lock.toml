@@ -3,6 +3,10 @@
 [academic-writing-toolkit]
 intent = "sha256:aad5072e49324cb0bdb7316bdf12084cb4e6ed47ae9e07e7e7058d64cdaf4a67"
 
+[agent-tool-study]
+intent = "sha256:2960e896b215e78dfeea3eaec4b6ea2d7b2b180bfaa89aedb2ffc2dcdf0fadac"
+placements = { agents = "sha256:4533a6d5a95280f3dd381b0e7366d9bbaa70c657935e026972631cfdb71c62a0", claude = "sha256:4533a6d5a95280f3dd381b0e7366d9bbaa70c657935e026972631cfdb71c62a0" }
+
 [browser-and-computer-use]
 intent = "sha256:d28d60ccb0f913ccd449bbceb7766a55f6fd856a279bd4446663fccf852fdc8d"
 placements = { agents = "sha256:fffae5969678099a6975984a6433796f8b7a53678c3097793f22825fa84ed975", claude = "sha256:fffae5969678099a6975984a6433796f8b7a53678c3097793f22825fa84ed975" }

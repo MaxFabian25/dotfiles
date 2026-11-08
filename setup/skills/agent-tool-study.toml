@@ -1,0 +1,9 @@
+public = true
+
+[source]
+local = "skills/agent-tool-study"
+tree = "sha256:4533a6d5a95280f3dd381b0e7366d9bbaa70c657935e026972631cfdb71c62a0"
+
+[place]
+agents = true
+claude = true
