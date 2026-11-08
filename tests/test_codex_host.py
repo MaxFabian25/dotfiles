@@ -709,8 +709,9 @@ class NativeHookReadTest(unittest.TestCase):
                                          frozenset({'kit@personal:hooks/hooks.json:stop:0:0'}))
                     else:
                         reason = 'timed out' if mode in ('timeout', 'ignore-terminate') else 'unreadable'
+                        # The limit also covers the fake server's Python startup, which can pass a second on a busy machine.
                         with self.assertRaisesRegex(codex_host.Unread, reason):
-                            codex_host._approved_hooks(cli, home.roots.home, timeout=1)
+                            codex_host._approved_hooks(cli, home.roots.home, timeout=5)
                 self.assertEqual([json.loads(line) for line in log.read_text().splitlines()], [
                     {'id': 1, 'method': 'initialize', 'params': {
                         'clientInfo': {'name': 'dotfiles_observer', 'version': '1.0.0'},
