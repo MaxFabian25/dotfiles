@@ -83,6 +83,20 @@ class Files:
         after = tomlkit.dumps(data).encode('utf-8')
         self.write(path, after, expected=before)
 
+
+class RehearsalFiles(Files):
+    """Runs each edit on the real files' contents and writes nothing."""
+
+    def __init__(self):
+        super().__init__(Path())
+
+    def remember(self, path: Path) -> bytes | None:
+        return contents(path)
+
+    def write(self, path: Path, data: bytes, *, expected: bytes | None) -> bool:
+        return contents(path) != data
+
+
 def backup_directory(roots) -> Path:
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     return roots.codex_home / 'sync-backups/dotfiles' / stamp

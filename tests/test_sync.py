@@ -487,7 +487,51 @@ class NativeGitMarketplaceTest(unittest.TestCase):
                 self.registry.write_bytes(before[1])
 
 
+class RehearsalTest(unittest.TestCase):
+    def operation(self, root, expected):
+        from host_state import FactKey, Host, Surface
+        from sync_files import RehearsalFiles
+        from sync_hosts import Rehearsal
+        operation = object.__new__(Rehearsal)
+        operation.roots = SimpleNamespace(claude_home=root)
+        operation.device = SimpleNamespace(hosts=())
+        operation.packages = set()
+        operation.files = RehearsalFiles()
+        operation.current = SimpleNamespace(changes=[SimpleNamespace(
+            key=FactKey(Host.CLAUDE, Surface.SKILL, 'kit@personal-collections:dropped'), expected=expected)])
+        return operation
+
+    def test_a_settings_edit_runs_against_the_real_file_and_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            path = root / 'settings.json'
+            path.write_text('{"skillOverrides":{"kit:dropped":"off"}}')
+            before = path.read_bytes()
+            self.operation(root, None).run()
+            self.assertEqual(path.read_bytes(), before)
+            self.assertEqual(sorted(item.name for item in root.iterdir()), ['settings.json'])
+
+    def test_a_crash_in_a_settings_edit_reaches_the_caller(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'settings.json').write_text('{}')
+            with self.assertRaises(AttributeError):
+                self.operation(root, object()).run()
+
+
 class SyncMainTest(unittest.TestCase):
+    def test_a_candidate_stops_when_the_settings_rehearsal_crashes(self):
+        from unittest import mock
+        import sync
+        device = mock.Mock()
+        device.roots.installed_engine.return_value = None
+        with mock.patch('sync.load'), mock.patch('sync.Device.current', return_value=device), \
+                mock.patch('sync.plan'), mock.patch('accepted_installations.AcceptedInstallations'), \
+                mock.patch('configuration.validate_runtime'), mock.patch('sync_hosts.Rehearsal') as rehearsal:
+            rehearsal.return_value.run.side_effect = AttributeError('mode is None')
+            with self.assertRaises(AttributeError):
+                sync.main(['--candidate'])
+
     def test_a_blocked_apply_prints_the_rows_that_block_it(self):
         from unittest import mock
         import sync

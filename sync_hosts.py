@@ -13,7 +13,7 @@ from description import EngineInstall, MarketplaceMode, plugin_id, via
 from device_sync import changed_packages
 from host_observation import Unread
 from host_state import EngineMarketplace, FactKey, Host, PluginValue, Released, SkillMode, Surface, clone_url
-from sync_files import Files, ConcurrentEdit, backup_directory
+from sync_files import Files, ConcurrentEdit, RehearsalFiles, backup_directory
 from sync_sources import child
 
 
@@ -276,6 +276,23 @@ class Apply:
             if value == prefix or value.startswith(prefix + '/'):
                 return child(getattr(self.roots, token), value[len(prefix):].lstrip('/'))
         raise ValueError(f'Not a managed device-relative path: {value}')
+
+
+class Rehearsal(Apply):
+    """The pull's plugin and skill switches, run on this device's real settings with nothing written and no native
+    command run. They come after the build in a pull, so without this a crash in one first shows once the release is
+    pushed. Marketplaces, catalogs and installed files are not rehearsed here."""
+
+    def __init__(self, setup, device, current):
+        super().__init__(setup, device, current, builder=None)
+        self.files = RehearsalFiles()
+
+    def command(self, host, *args):
+        return ''
+
+    def run(self):
+        self._plugins()
+        self._skills()
 
 
 def _behind(wanted: PluginValue | None, installed: PluginValue) -> bool:
