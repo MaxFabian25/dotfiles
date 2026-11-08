@@ -6,7 +6,7 @@ build = "generic"
 repository = "https://github.com/mattpocock/skills.git"
 commit = "4ae2317ddb22b046e26455e4f9c9b3aaaf62212d"
 manifest = ".claude-plugin/plugin.json"
-packaging = 2
+packaging = 3
 display_name = "Matt Pocock skills"
 select = [
   "./skills/engineering/ask-matt",
