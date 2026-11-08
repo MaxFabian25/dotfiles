@@ -23,6 +23,10 @@ the words on and around it.
   carries, such as billed against used, an estimate against a count, or who covers for whom. When a
   cut would change the claim, change the layout instead: widen or split the box, or move the detail
   to the notes or a backup slide. Reread each shortened line for its meaning as well as its fit.
+- **A word alone on a line.** When a box's last line holds one word, join its last two words with a
+  non-breaking space before you reword anything, and check every box in the presenting app's own
+  render, not only the one someone flagged. Reword only when that fails, and check a swapped or
+  added word against the claim as you would a cut.
 
 ## Build
 
@@ -31,7 +35,8 @@ the words on and around it.
   the chart part's XML, so checks are no reason to draw a chart as shapes. When you draw one as
   shapes or as a picture, tell the user in your reply what you did and why.
 - **Fonts outside the app's set.** Before you switch a deck to a font the presenting app does not
-  ship:
+  ship, and before you tune line breaks in a deck that uses one while the choice between embedding
+  and installing it is still open:
   - list every character the deck uses that the font lacks, from the font's character map, for
     example with fontTools `TTFont(path).getBestCmap()`, and choose a replacement for each with the
     user;

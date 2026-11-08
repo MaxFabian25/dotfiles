@@ -47,6 +47,9 @@ charts](references/ibcs-charts.md) before drawing.
   across the document, such as solid for counted in the total and dotted for an estimate. Give the
   most visual weight to what changed, and put only like-for-like values on one axis, such as whole
   plans with whole plans and add-ons with add-ons.
+- **Few events.** With only a few events, draw them in order, such as a strip of runs by day,
+  rather than at positions on an axis such as time of day, where two marks in one row read as a
+  pattern that two events cannot show.
 
 ## Layout
 

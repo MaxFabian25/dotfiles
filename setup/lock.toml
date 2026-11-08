@@ -93,14 +93,14 @@ placements = { agents = "sha256:68c92848946cedca5c6b829874d5623cce6ea0d3c8c32422
 intent = "sha256:15c4ab6eb8970ddfb7089ef6a94b6bfbf14f09a36a992fa27fa28a546f918838"
 
 [prose]
-intent = "sha256:ac2f989086a4f2bb306354c40700c965c9c8b2127aa772bfce7ff6371eff2f9c"
-codex = { version = "0.3.14+dotfiles.20261107", tree = "sha256:6d0a56031205cce05c317e31f58d3e4547ff65ca39277268847129649cfe3d6c" }
-claude = { version = "0.3.14+codex-aligned.11eb2fbed39d", tree = "sha256:a86bc43a51989e2fa8e39d4225414cb664412c337ef0b19c9818336073429800" }
+intent = "sha256:e039ca591d15bb08f4670d41138522662b33c93d24a409e16de7cadc56d4e51f"
+codex = { version = "0.3.15+dotfiles.20261108", tree = "sha256:8c1a6b560d82d52be76261b3f94e667278e50b13fbae65523b5e4c2849ee2a2e" }
+claude = { version = "0.3.15+codex-aligned.695595d8fa9d", tree = "sha256:83c765e337d36c8179fed8943b97b1f0dbd57592d591403bcd7a3809a4e47d3d" }
 
 [pstack]
-intent = "sha256:43932ed0a2a268810c2e0d8c05b0f78cacda66ebcbd129146bcc0055b73bae46"
+intent = "sha256:f0388786a714c192fa12787e7cfcf2981be3ae8c7b439855eaf752ed5509ec19"
 codex = { version = "0.15.36+upstream.1ba91fc25c09.codex1.explicit.485d0d3dad92b342", tree = "sha256:79109410786f2b00aea547c430f68d51afe23b8ff879289c6da0d662465623f0" }
-claude = { version = "0.15.36+codex-aligned.2bc968981950", tree = "sha256:987a700fd6652ed5281824055c37fe863ab5b736ebce8154028bc7c117b0d5a8" }
+claude = { version = "0.15.36+codex-aligned.1854d4902a27", tree = "sha256:bd561b7f0a64d1f996d9a7f7dfac4b1df842a86e41d5df1d40587c1f2634b638" }
 roles = { "comment-sicko.toml" = "sha256:6f3ea8222b5e7abf65decd3712a9d32f5804953e0539e61b2a9f92e11148d56e", "poteto-agent.toml" = "sha256:3d113f3faefd9ee007f001bedc51aa9227b46bb5a233567e87eba1f56e89c206", "pstack-reader.toml" = "sha256:e1ce58630b65ea7ce264d6590d4209a525ae2df8ba422fafdc2a6fc3a55a885a" }
 
 [show-me]
