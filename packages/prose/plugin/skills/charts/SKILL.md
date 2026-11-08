@@ -82,7 +82,8 @@ charts](references/ibcs-charts.md) before drawing.
   source line nor the date, because the linked page carries both.
 - **Findings from the data.** Check each finding against the data, including when the pattern it
   describes starts and ends. When a script writes a title, note, or text alternative, compute its
-  figures and findings from the data in that script, so a rerun keeps them true.
+  figures and findings from the data in that script, so a rerun keeps them true. A title that
+  restates a finding from the text uses the text's baseline and multiple.
 - **Rounding.** Compute derived figures from unrounded values, such as counts rather than a
   supplied rounded rate, and pass unrounded values to charts, tooltips, and tables. Round each
   figure once, when you format it for display, to the precision the reader needs.
