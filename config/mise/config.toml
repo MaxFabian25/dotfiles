@@ -27,7 +27,6 @@ powershell = { version = "7.6.9", os = ["macos"] }
 # bun does not read ~/.npmrc, so each machine sets the same three-day limit as minimumReleaseAge in ~/.bunfig.toml.
 bun = "1.4.4"
 supabase = "3.0.0"
-"npm:vercel" = "65.11.0"
 "npm:portless" = "0.16.0"
 "npm:ctx7" = "0.9.0"
 "npm:impeccable" = "4.8.0"
