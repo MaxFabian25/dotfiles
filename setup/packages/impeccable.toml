@@ -10,6 +10,8 @@ tool_notes = "apply"
 [codex]
 install = [{ via = "personal", enabled = true }]
 hooks = "trusted"
+windows_hook_command = 'cmd /c if exist "${CLAUDE_PLUGIN_ROOT}\skills\impeccable\scripts\impeccable.cmd" "${CLAUDE_PLUGIN_ROOT}\skills\impeccable\scripts\impeccable.cmd" hook'
+windows_replace = [{ path = "skills/impeccable/scripts/impeccable.cmd", find = '"%~1" engine-probe >"%probe_tmp%" 2>nul', replace = 'call "%~1" engine-probe >"%probe_tmp%" 2>nul' }, { path = "skills/impeccable/scripts/impeccable.cmd", find = 'where curl.exe >nul 2>nul', replace = 'echo impeccable: no engine found, and this setup never downloads one on Windows; install the pinned npm:impeccable with mise. 1>&2 & exit /b 1' }]
 
 [codex.roles]
 from = "repo"

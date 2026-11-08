@@ -244,6 +244,36 @@ def add_tool_notes(text, rules):
     return text[:start] + body
 
 
+def add_windows_hook_command(text, command):
+    # Codex on Windows reads a hook's commandWindows and ignores the `windows` key other hosts read. An upstream
+    # manifest that sets commandWindows itself keeps its own, because that is the fix this overlay stands in for.
+    if text is None:
+        return text
+    manifest = json.loads(text)
+    for groups in manifest['hooks'].values():
+        for group in groups:
+            for handler in group['hooks']:
+                if handler.get('type') == 'command':
+                    handler.setdefault('commandWindows', command)
+    return json.dumps(manifest, indent=2, ensure_ascii=False) + '\n'
+
+
+def windows_overlay(hook_command, replaces):
+    # The Windows-only Codex edits a caller adds to its adaptations for this plugin, or None when it declares none.
+    if not hook_command and not replaces:
+        return None
+    return {'hookCommand': hook_command, 'replace': [(r.path, r.find, r.replace) for r in replaces]}
+
+
+def replace_on_windows(text, find, replacement, label):
+    # A patch to an upstream file, for a bug only a Windows launcher has. An upstream that fixed it needs no patch.
+    if text is None or replacement in text:
+        return text
+    if text.count(find) != 1:
+        raise ValueError(f'Review upstream change to an adapted file: {label}')
+    return text.replace(find, replacement)
+
+
 def note_files(root):
     folders = {path.parent for path in skill_paths(root).values()}
     return sorted({path for folder in folders for path in folder.rglob('*.md')
@@ -407,6 +437,12 @@ def plan(registry, installs, overlay=None, adaptations=None):
                 label = f'{identity}:{relative}'
                 stage(root / relative, lambda text, base=base, adapted=adapted, label=label:
                       merge_adaptation(text, base, adapted, label))
+        windows = adaptations.get('windows', {}).get(plugin, {})
+        if command := windows.get('hookCommand'):
+            stage(root / 'hooks/hooks.json', lambda text, command=command: add_windows_hook_command(text, command))
+        for relative, find, replacement in windows.get('replace', ()):
+            stage(root / relative, lambda text, find=find, replacement=replacement, label=f'{identity}:{relative}':
+                  replace_on_windows(text, find, replacement, label))
         rules = noted_here(adaptations, identity)
         if rules:
             for path in note_files(root):

@@ -222,11 +222,21 @@ class Adaptation:
 
 
 @dataclass(frozen=True)
+class WindowsReplace:
+    path: str                        # a file in the plugin, which must hold `find` once
+    find: str
+    replace: str
+
+
+@dataclass(frozen=True)
 class CodexPlacement:
     installs: tuple[EngineInstall | MarketplaceInstall, ...]
     hooks: Hooks = Hooks.OFF
     roles: CodexRoles | None = None
     adaptation: Adaptation | None = None
+    # The commandWindows a pull on Windows gives the plugin's hooks. Absent from the intent of every other package.
+    windows_hook_command: str | None = field(default=None, metadata={'intent': 'when-set'})
+    windows_replace: tuple[WindowsReplace, ...] = field(default=(), metadata={'intent': 'when-set'})
 
 
 @dataclass(frozen=True)
@@ -368,7 +378,7 @@ class Setup:
                 if placement is not None:
                     changes = {'installs': tuple(replace(i, enabled=False) for i in placement.installs)}
                     if host == Host.CODEX:
-                        changes.update(hooks=Hooks.OFF, roles=None, adaptation=None)
+                        changes.update(hooks=Hooks.OFF, roles=None, adaptation=None, windows_hook_command=None, windows_replace=())
                     else:
                         changes['modes'] = {}
                     placements[host.value] = replace(placement, **changes)

@@ -141,6 +141,24 @@ class RenderTest(unittest.TestCase):
             changed = description_toml.load(roots.roots()).packages['combined']
             self.assertNotEqual(description.intent(package, setup.repos), description.intent(changed, setup.repos))
 
+    def test_a_windows_hook_command_round_trips_and_changes_intent(self):
+        with Roots() as roots:
+            path = roots.public / 'packages/hooked.toml'
+            command = r'cmd /c if exist "${CLAUDE_PLUGIN_ROOT}\skills\run.cmd" "${CLAUDE_PLUGIN_ROOT}\skills\run.cmd" hook'
+            path.write_text('public = true\n[source]\nrepo = "impeccable"\n[codex]\ninstall = [{ via = "personal", enabled = true }]\n'
+                            f"windows_hook_command = '{command}'\n"
+                            f"windows_replace = [{{ path = 'a/run.cmd', find = '\"%~1\" engine-probe >', replace = 'call \"%~1\" engine-probe >' }}]\n")
+            setup = description_toml.load(roots.roots())
+            package = setup.packages['hooked']
+            self.assertEqual(package.codex.windows_hook_command, command)
+            self.assertEqual(package.codex.windows_replace, (description.WindowsReplace('a/run.cmd', '"%~1" engine-probe >', 'call "%~1" engine-probe >'),))
+            files = description_toml.render_root(setup, description.Visibility.PUBLIC, None)
+            path.write_bytes(files['packages/hooked.toml'])
+            self.assertEqual(description_toml.load(roots.roots()).packages['hooked'], package)
+            path.write_text(path.read_text().replace('run.cmd', 'other.cmd'))
+            changed = description_toml.load(roots.roots()).packages['hooked']
+            self.assertNotEqual(description.intent(package, setup.repos), description.intent(changed, setup.repos))
+
     def test_an_unchanged_entry_keeps_its_bytes_comments_and_all(self):
         with Roots() as roots:
             setup = description_toml.load(roots.roots())

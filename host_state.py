@@ -282,6 +282,8 @@ class OverlaySpec:
     rules: tuple[NoteRule, ...]      # empty unless the package applies tool notes
     adaptation: Adaptation | None
     explicit: tuple[str, ...] = ()   # the install's explicit skills, which the overlay also writes
+    windows_hook_command: str | None = None  # the commandWindows the overlay writes on Windows only
+    windows_replace: tuple = ()      # text patches to plugin files the overlay makes on Windows only
 
 
 @dataclass(frozen=True)

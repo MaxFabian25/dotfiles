@@ -16,6 +16,7 @@ import homes
 import host_state
 import description
 import codex_host
+import portable
 from runtime_pin import RuntimePin
 d, hs = description, host_state
 S, M = hs.Surface, hs.SkillMode
@@ -753,6 +754,33 @@ class TreeTest(unittest.TestCase):
             path = device.roots.codex_home / 'plugins/cache/personal/impeccable/4.5.2/skills/impeccable/SKILL.md'
             path.write_text(path.read_text().replace('TodoWrite', 'TodoWrite (Codex: `update_plan`)'))
             self.assertEqual(device.state().observe(expected).facts[overlay].value, spec)
+
+    def test_overlay_writes_the_windows_hook_command_on_windows_only(self):
+        command = 'cmd /c "${CLAUDE_PLUGIN_ROOT}\\run.cmd" hook'
+        hook_file = {'hooks': {'Stop': [{'hooks': [{'type': 'command', 'command': 'sh run hook', 'timeout': 5}]}]}}
+        with Device() as device:
+            cache = device.roots.codex_home / 'plugins/cache/personal/impeccable/4.5.2'
+            device.write(cache / 'hooks/hooks.json', json.dumps(hook_file, indent=2) + '\n')
+            skill = cache / 'skills/impeccable/SKILL.md'
+            skill.write_text(skill.read_text().replace('TodoWrite', 'TodoWrite (Codex: `update_plan`)'))
+            overlay = key(S.OVERLAY, 'impeccable@personal')
+            launcher = cache / 'skills/impeccable/scripts/impeccable.cmd'
+            device.write(launcher, '"%~1" engine-probe\n')
+            spec = hs.OverlaySpec(NOTES, None, (), command, (d.WindowsReplace('skills/impeccable/scripts/impeccable.cmd', '"%~1" engine-probe', 'call "%~1" engine-probe'),))
+            expected = hs.Request(overlays={'impeccable@personal': spec})
+            with patch.object(portable, 'WINDOWS', False):
+                self.assertEqual(device.state().observe(expected).facts[overlay].value, spec)
+            with patch.object(portable, 'WINDOWS', True):
+                self.assertEqual(device.state().observe(expected).facts[overlay].value, hs.OverlayPending(2))
+
+    def test_a_windows_hook_command_is_part_of_the_overlay_spec(self):
+        command = 'cmd /c "${CLAUDE_PLUGIN_ROOT}\\run.cmd" hook'
+        replace = d.WindowsReplace('a.cmd', 'find', 'put')
+        adapted = package('impeccable', d.RepoSource('impeccable', 'plugin'),
+                          d.CodexPlacement((d.EngineInstall(True),), windows_hook_command=command, windows_replace=(replace,)))
+        facts = codex_host.CodexState(homes.projection_roots(), 'codex').project(setup(
+            [adapted], [IMPECCABLE_REPO], [], {}, d.Rules(b''), {'impeccable': d.Lock(D1, {})}))
+        self.assertEqual(facts[key(S.OVERLAY, 'impeccable@personal')].value, hs.OverlaySpec((), None, (), command, (replace,)))
 
     def test_overlay_checks_the_adaptation_against_its_clone(self):
         with Device() as device:

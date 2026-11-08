@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 from typing import Callable, Mapping
 
-from invocation_overrides import Overlay, plan
+from invocation_overrides import Overlay, plan, windows_overlay
 import portable
 from host_state import (Commit, Detail, DeviceRoots, Fact, FactKey, FactValue, FileValue, FolderDetail, Host, Note, NoteKind,
                         Observation, OverlayBlocked, OverlayPending, OverlaySpec, Surface, TreeValue, Unknown, WorkingCopy,
@@ -123,6 +123,8 @@ def overlay_state(roots: DeviceRoots, host: Host, identity: str, root: Path,
                                         'adaptedRef': spec.adaptation.adapted, 'hosts': [label], 'identities': [identity]}
     if spec.rules:
         adaptations['toolNotes'] = {'plugins': [name], 'rules': [{'match': r.match, 'note': r.note} for r in spec.rules]}
+    if portable.WINDOWS and (windows := windows_overlay(spec.windows_hook_command, spec.windows_replace)):
+        adaptations['windows'] = {name: windows}
     overlay = Overlay(roots.codex_home / 'skill-updates/invocation-overrides')
     try:
         writes, _ = plan(registry, [(label, identity, root)], overlay, adaptations)

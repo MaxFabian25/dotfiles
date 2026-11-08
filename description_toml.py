@@ -17,7 +17,7 @@ from description import (AcademicRecipe, Adaptation, AlignedInstall, BUILDS, Bui
                          Hooks, HostMarketplace, Install, Lock, LockedTree, LocalSource, LooseSkill, MarketplaceInstall, MarketplaceMode,
                          NoteRule, Origin, Package, PluginRoles, PublicEmilRecipe, Recipe, Repo, RepoName, RepoRoles,
                          RepoSource, Roots, Rules, SCHEMA, Setup, SkillRoot, SnapshotRecipe, SnapshotSource, Source,
-                         ToolNotes, Visibility, entry_path, via)
+                         ToolNotes, Visibility, entry_path, via, WindowsReplace)
 from description_checks import check_invariants, check_placement, check_privacy, check_references
 from host_state import (ALIGNED_MARKETPLACE, ENGINE_MARKETPLACE, Commit, EntryName, FactKey, Host, Platform, SkillMode, Surface,
                         parse_commit, parse_digest)
@@ -165,6 +165,16 @@ def _parse_installs(table: _Table, host: Host) -> tuple[Install, ...]:
                  if (install := _parse_install(table, index, item, host)) is not None)
 
 
+def _parse_windows_replace(table: _Table) -> tuple[WindowsReplace, ...]:
+    replaces = []
+    for index, item in enumerate(table.get('windows_replace', list, [])):
+        if isinstance(item, dict) and set(item) == {'path', 'find', 'replace'} and all(isinstance(v, str) and v for v in item.values()):
+            replaces.append(WindowsReplace(item['path'], item['find'], item['replace']))
+        else:
+            table.error(f'windows_replace[{index}]', 'expected path, find and replace strings')
+    return tuple(replaces)
+
+
 def _parse_roles(table: _Table | None) -> CodexRoles | None:
     if table is None:
         return None
@@ -238,7 +248,8 @@ def _parse_package(path: Path, data: Mapping, visibility: Visibility, errors: li
             adaptation_table.done()
         codex = CodexPlacement(_parse_installs(codex_table, Host.CODEX),
                                codex_table.parse('hooks', Hooks, codex_table.get('hooks', str, Hooks.OFF.value)),
-                               _parse_roles(codex_table.sub('roles')), adaptation)
+                               _parse_roles(codex_table.sub('roles')), adaptation,
+                               codex_table.get('windows_hook_command', str, None), _parse_windows_replace(codex_table))
         codex_table.done()
     claude_table = table.sub('claude')
     if claude_table:
@@ -615,6 +626,10 @@ def _dump_package(package: Package) -> dict:
             codex['adaptation'] = _Inline({'repository': adaptation.repository, 'base': adaptation.base,
                                            'adapted': adaptation.adapted,
                                            **({'harness': adaptation.harness} if adaptation.harness else {})})
+        if package.codex.windows_hook_command:
+            codex['windows_hook_command'] = package.codex.windows_hook_command
+        if package.codex.windows_replace:
+            codex['windows_replace'] = [_Inline({'path': r.path, 'find': r.find, 'replace': r.replace}) for r in package.codex.windows_replace]
         roles = package.codex.roles
         if isinstance(roles, RepoRoles):
             codex['roles'] = {'from': 'repo', 'directory': roles.directory, 'pattern': roles.pattern,

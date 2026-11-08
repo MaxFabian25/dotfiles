@@ -13,7 +13,7 @@ from description import (AcademicRecipe, AlignedInstall, BuildSource, CourseReci
                          GeneratedRoles, GenericRecipe, LocalSource, Package, PluginRoles, PublicEmilRecipe,
                          RepoRoles, RepoSource, Setup, SnapshotRecipe, ToolNotes, plugin_id, via)
 from host_state import DeviceRoots, Digest, Host, SkillMode, bytes_digest, clone_url, parse_commit
-from portable import GIT, extract_tar, read_utf8
+from portable import GIT, WINDOWS, extract_tar, read_utf8
 
 
 class BuildError(RuntimeError):
@@ -241,7 +241,7 @@ class Builder:
         return build_package(package.name, recipe.commit, config=config, output_root=self.directory)[0]
 
     def overlay(self, package: Package, host: Host, identity: str, root: Path, *, overlay=None):
-        from invocation_overrides import plan, read_text, skill_paths
+        from invocation_overrides import plan, read_text, skill_paths, windows_overlay
         import yaml
 
         label = host.value.capitalize()
@@ -289,6 +289,9 @@ class Builder:
         if package.tool_notes == ToolNotes.APPLY:
             adaptations['toolNotes'] = {'plugins': [package.name],
                                          'rules': [{'match': r.match, 'note': r.note} for r in self.setup.note_rules]}
+        if host == Host.CODEX and package.codex and WINDOWS:
+            if windows := windows_overlay(package.codex.windows_hook_command, package.codex.windows_replace):
+                adaptations['windows'] = {package.name: windows}
         return plan(registry, [(label, identity, root)], overlay=overlay, adaptations=adaptations)[0]
 
     def effective(self, package: Package, built: Built) -> Path:

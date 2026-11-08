@@ -221,10 +221,11 @@ class CodexState:
                 owner = key
                 if tree:
                     add(Surface.TREE, plugin, TreeValue(tree.digest), package.name, key)
-                if package.tool_notes == ToolNotes.APPLY or placement.adaptation:
+                if package.tool_notes == ToolNotes.APPLY or placement.adaptation or placement.windows_hook_command or placement.windows_replace:
                     rules = setup.note_rules if package.tool_notes == ToolNotes.APPLY else ()
                     explicit = tuple(sorted(s for s, mode in package.modes.items() if mode == SkillMode.EXPLICIT))
-                    add(Surface.OVERLAY, plugin, OverlaySpec(rules, placement.adaptation, explicit), package.name, key)
+                    add(Surface.OVERLAY, plugin, OverlaySpec(rules, placement.adaptation, explicit, placement.windows_hook_command,
+                                                             placement.windows_replace), package.name, key)
                 if placement.hooks == Hooks.TRUSTED and lock and lock.hooks:
                     add(Surface.HOOK, plugin, Approved(lock.hooks), package.name, key)
                 for role, digest in (lock.roles if lock else {}).items():

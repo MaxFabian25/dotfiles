@@ -47,7 +47,7 @@ intent = "sha256:463b16e0f11b4ce1b831fb5a4fe0824a3914ffcd5868451ad13acde08299be5
 placements = { claude = "sha256:8d06274921427a67b5df90791b12842aded871f4578bd3a236d5178b139fd693" }
 
 [impeccable]
-intent = "sha256:ad8e527ad057548c3d45aaa90acbc3838e0d038ba0476d114f7775ec7d4dc806"
+intent = "sha256:3111e48f00e9c860e6cbda3b1369bbe088545e21e64328487b219323d7825b31"
 codex = { version = "4.8.1", tree = "sha256:6a72b80f8000af4f9752d1b0a86d0d4442f42bd9dfff702b20c14eacf1fe1bfc" }
 claude = { version = "4.8.1", tree = "sha256:6a72b80f8000af4f9752d1b0a86d0d4442f42bd9dfff702b20c14eacf1fe1bfc" }
 roles = { "impeccable_asset_producer.toml" = "sha256:9e58f678d368ac2e43a6e1ab8ede183b2b389360dc062f773c357e8d6fbf99dd", "impeccable_documenter.toml" = "sha256:f81e6f10c56847b7784155b6c44439e04ae49c19fb1267efc94a77b92d1c6269", "impeccable_finish_reviewer.toml" = "sha256:66ffaf09c7c89edacee0e053d15af6f75908684eb6900382a3cd285ebed89f05", "impeccable_manual_edit_applier.toml" = "sha256:570047a36789675fc89dc7f4a8304962b8d65b1f0b85b419fae75cf79807bb91" }
