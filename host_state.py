@@ -264,6 +264,7 @@ Pin = Pinned | Released | Unpinned
 class PluginValue:
     enabled: bool
     pin: Pin
+    file_on: bool = False            # Codex: off in effect, while config.toml still says on
 
 
 class SkillMode(enum.StrEnum):

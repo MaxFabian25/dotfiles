@@ -357,6 +357,27 @@ class RuntimeCatalogPluginTest(unittest.TestCase):
             with self.subTest(changes=changes):
                 self.assertEqual(self.installs(changes, Released('26.1')), [])
 
+    def test_a_stale_on_in_the_file_is_turned_off_for_a_plugin_the_description_wants_off(self):
+        from description import CodexPlacement, MarketplaceInstall, Package, ToolNotes, Visibility
+        from host_state import Fact, FactKey, Host, PluginValue, Surface, Unpinned
+        from sync_hosts import Apply
+        identity = 'pdf@openai-curated-remote'
+        key = FactKey(Host.CODEX, Surface.PLUGIN, identity)
+        for file_on, expected in ((True, [(Host.CODEX, identity, False)]), (False, [])):
+            with self.subTest(file_on=file_on):
+                operation = Apply.__new__(Apply)
+                operation.device = SimpleNamespace(hosts=(SimpleNamespace(host=Host.CODEX),))
+                operation.current = SimpleNamespace(changes=(), observations={Host.CODEX: SimpleNamespace(
+                    facts={key: Fact(key, PluginValue(False, Unpinned(), file_on))})})
+                operation.packages = {'pdf'}
+                operation.setup = SimpleNamespace(packages={'pdf': Package(
+                    'pdf', Visibility.PRIVATE, '', None, {}, ToolNotes.AUDIT,
+                    CodexPlacement((MarketplaceInstall('openai-curated-remote', False),)), None)})
+                written = []
+                operation._enabled = lambda *change: written.append(change)
+                operation._plugins()
+                self.assertEqual(written, expected)
+
 
 class NativeGitMarketplaceTest(unittest.TestCase):
     def setUp(self):

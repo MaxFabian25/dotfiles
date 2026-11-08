@@ -7,7 +7,7 @@ repository = "https://github.com/cursor/plugins.git"
 commit = "e5136d82418d2db3165ea1050d17577cd618cc05"
 subdirectory = "cursor-team-kit"
 manifest = ".cursor-plugin/plugin.json"
-packaging = 2
+packaging = 3
 display_name = "Cursor Team Kit"
 select = [
   "./skills/check-compiler-errors",

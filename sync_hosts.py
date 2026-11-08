@@ -217,7 +217,7 @@ class Apply:
                     key = FactKey(host, Surface.PLUGIN, identity)
                     existing = observation.facts.get(key)
                     if not install.enabled:
-                        if existing and existing.value.enabled:
+                        if existing and (existing.value.enabled or existing.value.file_on):
                             self._enabled(host, identity, False)
                         continue
                     if package.source is None and (existing is None or _behind(wanted.get(key), existing.value)):

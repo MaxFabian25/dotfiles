@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 
@@ -33,6 +34,23 @@ def require_clean(repository):
     if git(repository, 'rev-parse', '--is-bare-repository').strip() != b'true':
         if git(repository, 'status', '--porcelain').strip():
             raise RuntimeError(f'Upstream checkout has local changes: {repository}')
+
+
+def export_root(stage, selected):
+    """Codex's skill list gives each root a plugin names its own row of about 160 characters, and every description
+    shares what the rows leave. So a selection under skills/ is exported as that one folder, and the skills it leaves
+    out are removed, because Codex lists everything under a root. Returns the exported roots and the files removed."""
+    base = stage.resolve()
+    root = base / 'skills'
+    chosen = [(stage / path).resolve() for path in selected]
+    if not all(path.is_relative_to(root) for path in chosen):
+        return selected, set()
+    omitted = set()
+    for skill in list(root.rglob('SKILL.md')):
+        if skill.exists() and not any(skill.parent.is_relative_to(path) for path in chosen):
+            omitted |= {posix(path.relative_to(base)) for path in skill.parent.rglob('*') if path.is_file()}
+            shutil.rmtree(skill.parent)
+    return ['./skills/'], omitted
 
 
 def package(name, revision='HEAD', *, config=None, output_root=None):
@@ -71,6 +89,7 @@ def package(name, revision='HEAD', *, config=None, output_root=None):
         for skill in skills:
             if not (stage / skill).is_dir():
                 raise RuntimeError(f'Missing selected skill directory: {skill}')
+        exported, omitted = export_root(stage, skills)
         # Codex reads agents/openai.yaml for invocation policy. Preserve all
         # upstream files, adding a sidecar only where upstream has none.
         for skill in (stage / 'skills').rglob('SKILL.md'):
@@ -88,7 +107,7 @@ def package(name, revision='HEAD', *, config=None, output_root=None):
         manifest.update({
             'name': name,
             'version': version,
-            'skills': skills,
+            'skills': exported,
             'interface': {
                 'displayName': config['displayName'],
                 'shortDescription': 'Original upstream skills',
@@ -110,7 +129,7 @@ def package(name, revision='HEAD', *, config=None, output_root=None):
             write_utf8(stage / 'plugin.json', json.dumps(manifest, indent=2) + '\n')
         write_utf8(metadata / 'plugin.json', json.dumps(manifest, indent=2) + '\n')
         actual = files(stage)
-        assert all(actual.get(preserved.get(path, path)) == digest for path, digest in original.items()), 'Upstream file changed'
+        assert all(actual.get(preserved.get(path, path)) == digest for path, digest in original.items() if path not in omitted), 'Upstream file changed'
         receipt = {
             'repository': config['url'], 'commit': commit,
             'subdirectory': config['subdirectory'], 'version': version,
@@ -118,6 +137,8 @@ def package(name, revision='HEAD', *, config=None, output_root=None):
             'upstreamFileHashes': original,
             'packagingOnlyFiles': sorted(set(actual) - set(original)),
         }
+        if omitted:
+            receipt['omittedUpstreamFiles'] = sorted(omitted)
         if preserved:
             receipt['preservedUpstreamFiles'] = preserved
             receipt['adaptedManifestFiles'] = ['plugin.json']

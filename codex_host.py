@@ -418,7 +418,8 @@ class CodexState:
             elif isinstance(releases.get(plugin['pluginId']), Path):
                 detail = replace(detail, release=releases[plugin['pluginId']])
             try:
-                value = PluginValue(plugin['enabled'], pin(plugin))
+                file_on = not plugin['enabled'] and config.get('plugins', {}).get(plugin['pluginId'], {}).get('enabled') is True
+                value = PluginValue(plugin['enabled'], pin(plugin), file_on)
             except Unread as error:
                 seen.unread(source.get('path', ''), error, {Surface.PLUGIN}, {plugin['pluginId']})
                 continue

@@ -53,6 +53,44 @@ class PublisherRootManifest(unittest.TestCase):
                 self.assertEqual(repeated_receipt, receipt)
 
 
+class SharedSkillRoot(unittest.TestCase):
+    def build(self, skills, *folders):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        source, packages = root / 'source', root / 'packages'
+        packages.mkdir()
+        (source / '.cursor-plugin').mkdir(parents=True)
+        (source / '.cursor-plugin/plugin.json').write_text(json.dumps({'version': '1.0.0', 'author': {'name': 'P'}}))
+        for folder in folders:
+            (source / folder).mkdir(parents=True)
+            (source / folder / 'SKILL.md').write_text(f'---\nname: {Path(folder).name}\ndescription: D.\n---\nBody.\n')
+        subprocess.run(['git', 'init', '-q', str(source)], check=True)
+        subprocess.run(['git', 'add', '.'], cwd=source, check=True)
+        subprocess.run(['git', '-c', 'user.name=T', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'F'], cwd=source, check=True)
+        profile = {'checkout': str(source), 'subdirectory': '', 'manifest': '.cursor-plugin/plugin.json', 'displayName': 'E',
+                   'url': 'https://example.invalid/s', 'skills': skills}
+        (packages / 'sources.json').write_text(json.dumps({'kit': profile}))
+        with patch.object(package, 'ROOT', packages):
+            release, receipt = package.package('kit')
+        return release, receipt, json.loads((release / '.codex-plugin/plugin.json').read_text())
+
+    def test_a_selection_exports_one_root_and_only_the_selected_skills(self):
+        release, receipt, manifest = self.build(['./skills/group/keep', './skills/flat'],
+                                                'skills/group/keep', 'skills/group/drop', 'skills/flat', 'skills/other')
+        self.assertEqual(manifest['skills'], ['./skills/'])
+        self.assertEqual(sorted(p.parent.relative_to(release).as_posix() for p in release.rglob('SKILL.md')),
+                         ['skills/flat', 'skills/group/keep'])
+        self.assertEqual(receipt['selectedSkillRoots'], ['./skills/group/keep', './skills/flat'])
+        self.assertEqual(receipt['omittedUpstreamFiles'], ['skills/group/drop/SKILL.md', 'skills/other/SKILL.md'])
+
+    def test_a_selection_outside_skills_stays_as_named(self):
+        release, receipt, manifest = self.build(['./tool-a'], 'tool-a', 'tool-b')
+        self.assertEqual(manifest['skills'], ['./tool-a'])
+        self.assertTrue((release / 'tool-b/SKILL.md').is_file())
+        self.assertNotIn('omittedUpstreamFiles', receipt)
+
+
 class RuntimeDependencies(unittest.TestCase):
     def test_installed_node_modules_are_not_package_content(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -99,7 +99,7 @@ def _classify(key: FactKey, expected: FactValue | None, observed: FactValue | No
         return NoteKind.DEVICE_LOCAL
     if expected is not None and observed is not None:
         if surface == Surface.PLUGIN:
-            if expected.enabled != observed.enabled:
+            if expected.enabled != observed.enabled or (observed.file_on and not expected.enabled):
                 return Kind.CHANGED
             if isinstance(expected.pin, Unpinned) or expected.pin == observed.pin:
                 return None
@@ -224,7 +224,7 @@ def _unlock(expected: FactSet, stale: frozenset[EntryName]) -> tuple[dict[FactKe
         elif key.surface in _LOCKED:
             covered.add(key)
         elif key.surface == Surface.PLUGIN:
-            kept[key] = replace(fact, value=PluginValue(fact.value.enabled, Unpinned()))
+            kept[key] = replace(fact, value=replace(fact.value, pin=Unpinned()))
         else:
             kept[key] = fact
     return kept, covered
@@ -247,8 +247,9 @@ def _spell(value) -> str:
     match value:
         case None:
             return 'absent'
-        case PluginValue(enabled=enabled, pin=pin):
-            return ('enabled' if enabled else 'disabled') + ('' if isinstance(pin, Unpinned) else f' {_spell(pin)}')
+        case PluginValue(enabled=enabled, pin=pin, file_on=file_on):
+            return ('enabled' if enabled else 'disabled, config.toml says on' if file_on else 'disabled') + (
+                '' if isinstance(pin, Unpinned) else f' {_spell(pin)}')
         case Pinned(commit=commit):
             return commit[:7]
         case Released(version=version):

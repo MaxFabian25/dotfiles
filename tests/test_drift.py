@@ -190,6 +190,21 @@ class DiffTest(unittest.TestCase):
         self.assertEqual(kinds(residue), [])
         self.assertIn((hs.NoteKind.RESIDUE, 'stray@personal'), [(n.kind, n.subject) for n in residue.notes])
 
+    def test_a_stale_on_in_config_toml_is_a_change_for_a_plugin_the_description_wants_off(self):
+        def diff(in_file):
+            with Device() as device:
+                device.toggles += f'[plugins."gmail@openai-curated-remote"]\nenabled = {in_file}\n'
+                device.codex_inventory.append({'pluginId': 'gmail@openai-curated-remote', 'name': 'gmail', 'version': '1',
+                                               'marketplaceName': 'openai-curated-remote', 'installed': True, 'enabled': False})
+                gmail = d.Package('gmail', d.Visibility.PRIVATE, '', None, {}, d.ToolNotes.AUDIT,
+                                  d.CodexPlacement((d.MarketplaceInstall('openai-curated-remote', False),)), None)
+                device.setup = d.Setup(**{**device.setup.__dict__, 'packages': {**device.setup.packages, 'gmail': gmail}})
+                return device.diff()
+        stale = diff('true')
+        self.assertEqual([(x.kind, x.key.subject, x.observed.enabled, x.observed.file_on) for x in stale.differences],
+                         [(K.CHANGED, 'gmail@openai-curated-remote', False, True)])
+        self.assertEqual(kinds(diff('false')), [])
+
     def test_a_catalog_this_device_does_not_offer_is_a_note(self):
         with Device() as device:
             connector = d.Package('connector', d.Visibility.PRIVATE, '', None, {'tool': M.EXPLICIT}, d.ToolNotes.AUDIT,
