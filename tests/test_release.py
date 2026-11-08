@@ -18,10 +18,11 @@ def git(root, *args):
 
 SYNC_WITH_CHANGES = 'print("Managed changes: 1; blocking issues: 0.")\nraise SystemExit(1)\n'
 PASSING_TEST = 'import unittest\n\n\nclass Seed(unittest.TestCase):\n    def test_passes(self):\n        pass\n'
+FAILING_TEST = PASSING_TEST.replace('        pass', '        self.fail("broken")')
 ALLOWLIST = '/*\n!/.gitignore\n!/content\n!/doc\n!/sync.py\n!/tests/\n!/tests/**\n__pycache__/\n.sync/\n'
 # finish runs the suite through the real runner, so the fixture's origin carries it.
 RUNNER = (Path(release.__file__).resolve().parent / 'tests/run.py').read_text(encoding='utf-8')
-SEEDED_TESTS = 'tests/run.py\ntests/test_seed.py'
+SEEDED_TESTS = 'tests/run.py\ntests/test_mise_env.py'
 
 
 class ReleaseTest(unittest.TestCase):
@@ -34,7 +35,7 @@ class ReleaseTest(unittest.TestCase):
         # The release's device check runs the worktree's sync.py, which exits 1 when it has changes to apply.
         self.public_origin = self.origin('public-origin', {'content': 'first\n', 'doc': 'one\ntwo\nthree\nfour\nfive\n',
                                                            'sync.py': SYNC_WITH_CHANGES, 'tests/run.py': RUNNER,
-                                                           'tests/test_seed.py': PASSING_TEST,
+                                                           'tests/test_mise_env.py': PASSING_TEST,
                                                            '.gitignore': ALLOWLIST})
         first = git(self.public_origin, 'rev-parse', 'main')
         self.private_origin = self.origin('private-origin', {'release.toml': f'public_commit = "{first}"\n'})
@@ -141,7 +142,7 @@ class ReleaseTest(unittest.TestCase):
     def test_finish_runs_the_whole_suite_and_stops_on_a_failure(self):
         release_main(['start', 'failing', *self.options()], self.public)
         (self.worktrees / 'failing/public/tests/test_other.py').write_text(
-            PASSING_TEST.replace('pass', 'self.fail("broken")'), encoding='utf-8')
+            FAILING_TEST, encoding='utf-8')
         message = self.root / 'message'
         message.write_text('Add a failing test\n', encoding='utf-8')
         self.assertEqual(release_main(['finish', 'failing', '--message', str(message), '--push', *self.options()],
@@ -166,7 +167,7 @@ class ReleaseTest(unittest.TestCase):
         folder = self.worktrees / 'private/private/config/tool'
         folder.mkdir(parents=True)
         (folder / 'helper.py').write_text('VALUE = 1\n', encoding='utf-8')
-        (folder / 'test_tool.py').write_text(PASSING_TEST.replace('pass', 'self.fail("broken")'), encoding='utf-8')
+        (folder / 'test_tool.py').write_text(FAILING_TEST, encoding='utf-8')
         message = self.root / 'message'
         message.write_text('Add a private tool\n', encoding='utf-8')
         finish = ['finish', 'private', '--private-message', str(message), '--push', *self.options()]
@@ -213,14 +214,67 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(release_main(finish, self.public), 0)
 
     def test_finish_reports_the_suite_result_and_its_log(self):
-        release_main(['start', 'report', *self.options()], self.public)
-        (self.worktrees / 'report/public/content').write_text('second\n', encoding='utf-8')
         message = self.root / 'message'
-        message.write_text('Change the content\n', encoding='utf-8')
+        message.write_text('Change the tree\n', encoding='utf-8')
+        for name, changed, text, count, skip_note in (
+                ('data', 'content', 'second\n', 'Ran 1 test in', True),
+                ('code', 'tests/test_other.py', PASSING_TEST, 'Ran 2 tests in', False)):
+            with self.subTest(name):
+                release_main(['start', name, *self.options()], self.public)
+                (self.worktrees / name / 'public' / changed).write_text(text, encoding='utf-8')
+                with redirect_stdout(io.StringIO()) as output:
+                    self.assertEqual(release_main(['finish', name, '--message', str(message), *self.options()],
+                                                  self.public), 0)
+                self.assertIn(count, output.getvalue())
+                self.assertIn(str(self.worktrees / name / 'build/tests.log'), output.getvalue())
+                self.assertEqual('only test_mise_env.py ran' in output.getvalue(), skip_note)
+
+    def test_the_public_suite_runs_only_for_a_release_that_changes_code(self):
+        seed = self.clone(self.public_origin, 'code-seed')
+        for relative, text in {'tests/test_broken.py': FAILING_TEST,
+                               'code/old.py': 'value = 1\n', 'uv.lock': 'old\n', 'pyproject.toml': 'old\n',
+                               'config/mise/config.toml': 'old\n', '.github/workflows/tests.yml': 'old\n',
+                               '.gitignore': ALLOWLIST + '!/code/\n!/uv.lock\n!/pyproject.toml\n!/config/\n!/.github/\n',
+                               }.items():
+            (seed / relative).parent.mkdir(parents=True, exist_ok=True)
+            (seed / relative).write_text(text, encoding='utf-8')
+        git(seed, 'add', '-A')
+        git(seed, 'commit', '-qm', 'Seed a failing module')
+        git(seed, 'push', '-q', 'origin', 'HEAD:main')
+        release_main(['start', 'scope', *self.options()], self.public)
+        public, private = self.worktrees / 'scope/public', self.worktrees / 'scope/private'
+
+        def write(root, relative):
+            (root / relative).parent.mkdir(parents=True, exist_ok=True)
+            (root / relative).write_text('changed\n', encoding='utf-8')
+
+        write(public, 'content')
+        log = self.root / 'logs/data.log'
         with redirect_stdout(io.StringIO()) as output:
-            self.assertEqual(release_main(['finish', 'report', '--message', str(message), *self.options()], self.public), 0)
-        self.assertIn('Ran 1 test in', output.getvalue())
-        self.assertIn(str(self.worktrees / 'report/build/tests.log'), output.getvalue())
+            release.test_suite(public, private, log)
+        self.assertNotIn('broken', log.read_text(encoding='utf-8'))
+        self.assertIn('only test_mise_env.py ran', output.getvalue())
+
+        for name, change in {
+                'new python file': lambda: write(public, 'code/new.py'),
+                'non-ascii python file': lambda: write(public, 'code/æ.py'),
+                'deleted python file': lambda: (public / 'code/old.py').unlink(),
+                'python file renamed away': lambda: git(public, 'mv', 'code/old.py', 'code/old.txt'),
+                'private python file': lambda: write(private, 'tool.py'),
+                'tests folder': lambda: write(public, 'tests/data.txt'),
+                'uv.lock': lambda: write(public, 'uv.lock'),
+                'pyproject.toml': lambda: write(public, 'pyproject.toml'),
+                'config/mise': lambda: write(public, 'config/mise/config.toml'),
+                '.github/workflows': lambda: write(public, '.github/workflows/tests.yml')}.items():
+            with self.subTest(name):
+                for root in (public, private):
+                    git(root, 'checkout', '-q', '--no-overlay', 'HEAD', '--', '.')
+                    git(root, 'clean', '-fdq')
+                change()
+                log = self.root / 'logs' / f'{name.replace("/", "-")}.log'
+                with self.assertRaises(RuntimeError):
+                    release.test_suite(public, private, log)
+                self.assertIn('broken', log.read_text(encoding='utf-8'))
 
     def test_finish_stops_on_a_new_file_the_allowlist_leaves_out(self):
         release_main(['start', 'notes', *self.options()], self.public)

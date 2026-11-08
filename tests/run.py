@@ -1,21 +1,58 @@
 """Run the public test suite as CI and release.py do: without writing bytecode, and with Codex's and Claude's config
 roots at a missing folder, because agent sessions export CODEX_HOME and CLAUDE_CONFIG_DIR at the device's real
-config. Other arguments go to unittest's discover, so -p 'test_sync.py' runs one module and -k NAME the tests whose
-name contains NAME. From the public checkout, or a release worktree's public folder:
+config. With no arguments, each test module runs in its own process, up to 8 at a time, so no module can lean on what
+another imported; the failing modules' output and a combined count follow. Any arguments go to unittest's discover in
+one process, so -p 'test_sync.py' runs one module and -k NAME the tests whose name contains NAME. From the public
+checkout, or a release worktree's public folder:
 
     uv run --locked python -B tests/run.py [-p PATTERN] [-k NAME] [-v]
 """
 
+from concurrent.futures import ThreadPoolExecutor
 import os
+from pathlib import Path
+import re
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
-from pathlib import Path
 
 TESTS = Path(__file__).resolve().parent
+RAN = re.compile(r'^Ran (\d+) tests? in', re.MULTILINE)
+MODULE_TIMEOUT_SECONDS = 900
+
+
+def run_module(path):
+    try:
+        return subprocess.run([sys.executable, '-B', str(Path(__file__).resolve()), '-p', path.name], capture_output=True,
+                              text=True, encoding='utf-8', errors='replace', timeout=MODULE_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(path.name, 1, '', f'{path.name} ran past the {MODULE_TIMEOUT_SECONDS} s limit')
+
+
+def unittest_count(stderr):
+    return int((RAN.findall(stderr) or ['0'])[-1])
+
+
+def run_each_module():
+    began = time.perf_counter()
+    modules = sorted(TESTS.glob('test_*.py'))
+    with ThreadPoolExecutor(min(8, os.cpu_count() or 1)) as pool:
+        results = list(pool.map(run_module, modules))
+    failed = [path.name for path, result in zip(modules, results) if result.returncode]
+    for path, result in zip(modules, results):
+        if result.returncode:
+            print(f'== {path.name}', result.stdout, result.stderr, sep='\n')
+    total = sum(unittest_count(result.stderr) for result in results)
+    print(f'Ran {total} test{"s" * (total != 1)} in {time.perf_counter() - began:.3f}s')
+    print(f'FAILED ({", ".join(failed)})' if failed else 'OK')
+    return 1 if failed else 0 if total else 5
 
 
 def main(argv):
+    if not argv:
+        return run_each_module()
     sys.dont_write_bytecode = True
     with tempfile.TemporaryDirectory(prefix='dotfiles-tests-') as folder:
         absent = Path(folder) / 'absent-config'

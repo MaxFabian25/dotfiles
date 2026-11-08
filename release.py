@@ -3,7 +3,7 @@
 Run it with the engine's own Python from the canonical public checkout. `start NAME` makes a worktree of
 each repository at origin/main on branch NAME. Edit there. `finish NAME` locks and builds the named
 entries, stops on a changed plugin whose Codex hooks are trusted until --hooks-reapproved, runs the public
-test suite and the private folders' tests, stops on new files the .gitignore allowlist would leave out, commits both worktrees, stops if
+test suite (only test_mise_env.py when the release changes no code) and the private folders' tests, stops on new files the .gitignore allowlist would leave out, commits both worktrees, stops if
 origin/main changed the same files meanwhile, rebases them onto it, pairs the private release.toml with the
 public commit, checks that this device's pull could apply the pair, naming each Claude plugin cache that
 running sessions hold, checks both pushes with --dry-run, pushes, and pulls, after any other pull here ends.
@@ -49,6 +49,7 @@ ALLOWLIST_BASE = '/*'
 # Strings the public tree must never hold, such as host and account names. The list is private, because a public
 # list would publish them.
 DENYLIST = 'config/privacy/public-denylist.txt'
+ONLY_TEST_READING_REPO_FILES = 'test_mise_env.py'
 
 
 def machine_locks():
@@ -87,6 +88,15 @@ def hold(path):
     return stack
 
 
+def changed_files(tree):
+    """Without --no-renames a file renamed from a.py to a.txt would list only a.txt, and without -z git quotes a name
+    that is not plain ASCII."""
+    fork = git(tree, 'merge-base', 'HEAD', 'origin/main')
+    listings = (git(tree, 'diff', '--name-only', '--no-renames', '-z', fork),
+                git(tree, 'ls-files', '--others', '--exclude-standard', '-z'))
+    return sorted({name for listing in listings for name in listing.split('\0') if name})
+
+
 def summary(tree):
     """How a release worktree stands against origin/main: its own commits, its uncommitted files, and the files
     it changes."""
@@ -94,9 +104,7 @@ def summary(tree):
     uncommitted = len(git(tree, 'status', '--porcelain').splitlines())
     if not commits and not uncommitted:
         return 'on origin/main and clean'
-    fork = git(tree, 'merge-base', 'HEAD', 'origin/main')
-    files = sorted(set(git(tree, 'diff', '--name-only', fork).splitlines())
-                   | set(git(tree, 'ls-files', '--others', '--exclude-standard').splitlines()))
+    files = changed_files(tree)
     counts = [f'{commits} commit{"s" * (commits != 1)} not on origin/main' if commits else '',
               f'{uncommitted} uncommitted' if uncommitted else '']
     shown = ', '.join(files[:8]) + (f' and {len(files) - 8} more' if len(files) > 8 else '')
@@ -304,20 +312,25 @@ def reapprovals(public, private):
     return sorted(changed)
 
 
+def can_change_test_results(name):
+    return name.endswith('.py') or name.startswith(('tests/', 'uv.lock', 'pyproject.toml', 'config/mise/',
+                                                    '.github/workflows/'))
+
+
 def test_suite(public, private, log):
-    """Run every public test, not just the ones the change looks like it touches, through tests/run.py, which points
-    the config roots at a missing folder as CI does, because agent sessions export CODEX_HOME at this device's real
-    config. Then run the tests in each private folder that holds test_*.py files, which no other check runs."""
     log.parent.mkdir(parents=True, exist_ok=True)
+    has_code = any(can_change_test_results(name) for tree in (public, private) for name in changed_files(tree))
     cache = public / '.sync'
     cached = cache.exists()
+    selection = [] if has_code else ['-p', ONLY_TEST_READING_REPO_FILES]
     with log.open('w', encoding='utf-8') as output:
-        result = subprocess.run([sys.executable, '-B', 'tests/run.py'], cwd=public, stdout=output,
+        result = subprocess.run([sys.executable, '-B', 'tests/run.py', *selection], cwd=public, stdout=output,
                                 stderr=subprocess.STDOUT, timeout=1800)
     if result.returncode:
         raise RuntimeError(f'the test suite failed; read {log}')
     ran = next((line for line in reversed(log.read_text(encoding='utf-8').splitlines()) if line.startswith('Ran ')), 'Ran')
-    print(f'{ran}: OK; log {log}', flush=True)
+    scope = '' if has_code else f'; only {ONLY_TEST_READING_REPO_FILES} ran because the release changes no code'
+    print(f'{ran}: OK{scope}; log {log}', flush=True)
     if cache.exists() and not cached:
         raise RuntimeError(f'the test suite wrote into {cache}, which in the canonical checkout is the cache real '
                            'pulls use; give the test that wrote it its own engine folder')
