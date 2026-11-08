@@ -7,6 +7,7 @@ test suite and the private folders' tests, stops on new files the .gitignore all
 origin/main changed the same files meanwhile, rebases them onto it, pairs the private release.toml with the
 public commit, checks that this device's pull could apply the pair, naming each Claude plugin cache that
 running sessions hold, checks both pushes with --dry-run, pushes, and pulls, after any other pull here ends.
+Before all of that it stops on a package whose selection changed without a new packaging number.
 One finish runs at a time on a machine; another stops and names it. `clean NAME` removes the worktrees and branches once origin/main has them. `status` lists what runs here and each open
 release worktree with the files it changes, and `start` lists the others. `wait --timeout SECONDS` returns
 once no release, pull or sync runs on this machine.
@@ -269,6 +270,21 @@ def current(root, path):
     return tomllib.loads((root / path).read_text(encoding='utf-8')) if (root / path).is_file() else {}
 
 
+def reused_release_names(public, private):
+    """Packages whose selection changed at the same upstream commit and packaging number. A built release folder is
+    named for those two alone, so a build with another selection differs from the folder of that name, and every
+    machine's pull stops on it. The device check can't see this, because a candidate builds into its own folder."""
+    reused = []
+    for root in (public, private):
+        for path in sorted((root / 'setup/packages').glob('*.toml')):
+            relative = f'setup/packages/{path.name}'
+            before, after = started(root, relative).get('source', {}), current(root, relative).get('source', {})
+            if (before.get('commit') and before.get('commit') == after.get('commit')
+                    and before.get('packaging') == after.get('packaging') and before.get('select') != after.get('select')):
+                reused.append(path.stem)
+    return reused
+
+
 def reapprovals(public, private):
     """Plugins with trusted Codex hooks whose installed Codex content this branch may change: their lock entry
     changed, or they apply tool notes and the notes changed, which the lock leaves out. Codex ties a hook's
@@ -363,6 +379,11 @@ def start(args, public_repo, private_repo):
 
 def finish(args, public_repo, private_repo):
     base, public, private = places(args)
+    if reused := reused_release_names(public, private):
+        raise RuntimeError(f'{", ".join(reused)} changed its selection at the same upstream commit and packaging number, '
+                           'so its release folder keeps its name and every machine\'s pull would stop with "Existing '
+                           'release differs". Raise packaging by one in its setup/packages file, then finish again; '
+                           'nothing was committed')
     python = [sys.executable, '-B']
     setups = ['--public', str(public / 'setup'), '--private', str(private / 'setup')]
     entries = [part for entry in args.entry for part in ('--entry', entry)]

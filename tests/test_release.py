@@ -284,6 +284,35 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(release_main([*finish, '--hooks-reapproved'], self.public), 0)
         self.assertIn('"sha256:bb"', git(self.private_origin, 'show', 'main:setup/lock.toml'))
 
+    def test_finish_stops_on_a_selection_that_changes_under_the_same_release_name(self):
+        self.seed_package(package_toml('a' * 40, ('./one', './two'), 2))
+        release_main(['start', 'select', *self.options()], self.public)
+        package = self.worktrees / 'select/public' / PACKAGE
+        package.write_text(package_toml('a' * 40, ('./one',), 2), encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Drop a skill\n', encoding='utf-8')
+        finish = ['finish', 'select', '--message', str(message), '--push', *self.options()]
+        with redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(finish, self.public), 3)
+        self.assertIn('plugin changed its selection', error.getvalue())
+        self.assertIn('Raise packaging by one', error.getvalue())
+        self.assertIn('./two', git(self.public_origin, 'show', f'main:{PACKAGE}'))
+        package.write_text(package_toml('a' * 40, ('./one',), 3), encoding='utf-8')
+        self.assertEqual(release_main(finish, self.public), 0)
+        self.assertNotIn('./two', git(self.public_origin, 'show', f'main:{PACKAGE}'))
+
+    def test_finish_keeps_a_new_package_and_a_selection_at_a_new_commit(self):
+        self.seed_package(package_toml('a' * 40, ('./one', './two'), 2))
+        release_main(['start', 'moved', *self.options()], self.public)
+        worktree = self.worktrees / 'moved/public'
+        (worktree / PACKAGE).write_text(package_toml('b' * 40, ('./one',), 2), encoding='utf-8')
+        (worktree / PACKAGE).with_name('fresh.toml').write_text(package_toml('c' * 40, ('./one',), 1), encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Move the pin\n', encoding='utf-8')
+        self.assertEqual(release_main(['finish', 'moved', '--message', str(message), '--push', *self.options()],
+                                      self.public), 0)
+        self.assertIn('b' * 40, git(self.public_origin, 'show', f'main:{PACKAGE}'))
+
     def test_finish_pushes_and_names_claude_sessions_holding_a_plugin_it_replaces(self):
         release_main(['start', 'held', *self.options()], self.public)
         held = 'print("Claude lease: plugin:claude:kit@m at /cache/kit/1.0.0, held by running Claude processes 4242")\n'
@@ -390,6 +419,23 @@ class ReleaseTest(unittest.TestCase):
 
     def options(self):
         return ['--worktrees', str(self.worktrees), '--private', str(self.private)]
+
+    def seed_package(self, text):
+        seed = self.clone(self.public_origin, 'public-seed')
+        (seed / PACKAGE).parent.mkdir(parents=True)
+        (seed / PACKAGE).write_text(text, encoding='utf-8')
+        (seed / '.gitignore').write_text(ALLOWLIST + '!/setup/\n!/setup/**\n', encoding='utf-8')
+        git(seed, 'add', '-A')
+        git(seed, 'commit', '-qm', 'Add a package')
+        git(seed, 'push', '-q', 'origin', 'HEAD:main')
+
+
+PACKAGE = 'setup/packages/plugin.toml'
+
+
+def package_toml(commit, select, packaging):
+    chosen = ', '.join(f'"{path}"' for path in select)
+    return f'[source]\nbuild = "generic"\ncommit = "{commit}"\npackaging = {packaging}\nselect = [{chosen}]\n'
 
 
 def release_main(argv, engine):
