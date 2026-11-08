@@ -3,7 +3,7 @@
 Run it with the engine's own Python from the canonical public checkout. `start NAME` makes a worktree of
 each repository at origin/main on branch NAME. Edit there. `finish NAME` locks and builds the named
 entries, stops on a changed plugin whose Codex hooks are trusted until --hooks-reapproved, runs the public
-test suite, stops on new files the .gitignore allowlist would leave out, commits both worktrees, stops if
+test suite and the private folders' tests, stops on new files the .gitignore allowlist would leave out, commits both worktrees, stops if
 origin/main changed the same files meanwhile, rebases them onto it, pairs the private release.toml with the
 public commit, checks that this device's pull could apply the pair, naming each Claude plugin cache that
 running sessions hold, checks both pushes with --dry-run, pushes, and pulls, after any other pull here ends.
@@ -288,17 +288,16 @@ def reapprovals(public, private):
     return sorted(changed)
 
 
-def test_suite(public, log):
-    """Run every public test, not just the ones the change looks like it touches. The config roots point at a
-    missing folder, as in CI, because agent sessions export CODEX_HOME at this device's real config."""
+def test_suite(public, private, log):
+    """Run every public test, not just the ones the change looks like it touches, through tests/run.py, which points
+    the config roots at a missing folder as CI does, because agent sessions export CODEX_HOME at this device's real
+    config. Then run the tests in each private folder that holds test_*.py files, which no other check runs."""
     log.parent.mkdir(parents=True, exist_ok=True)
     cache = public / '.sync'
     cached = cache.exists()
-    absent = log.parent / 'absent-config'
-    environment = {**os.environ, 'CODEX_HOME': str(absent / 'codex'), 'CLAUDE_CONFIG_DIR': str(absent / 'claude')}
     with log.open('w', encoding='utf-8') as output:
-        result = subprocess.run([sys.executable, '-B', '-m', 'unittest', 'discover', '-s', 'tests'], cwd=public,
-                                env=environment, stdout=output, stderr=subprocess.STDOUT, timeout=1800)
+        result = subprocess.run([sys.executable, '-B', 'tests/run.py'], cwd=public, stdout=output,
+                                stderr=subprocess.STDOUT, timeout=1800)
     if result.returncode:
         raise RuntimeError(f'the test suite failed; read {log}')
     ran = next((line for line in reversed(log.read_text(encoding='utf-8').splitlines()) if line.startswith('Ran ')), 'Ran')
@@ -306,6 +305,25 @@ def test_suite(public, log):
     if cache.exists() and not cached:
         raise RuntimeError(f'the test suite wrote into {cache}, which in the canonical checkout is the cache real '
                            'pulls use; give the test that wrote it its own engine folder')
+    folders = sorted({str(Path(name).parent) for name in git(private, 'ls-files', '-co', '--exclude-standard').splitlines()
+                      if Path(name).name.startswith('test_') and name.endswith('.py')})
+    if not folders:
+        return
+    private_log = log.with_name('private-tests.log')
+    absent = log.parent / 'absent-config'
+    environment = {**os.environ, 'CODEX_HOME': str(absent / 'codex'), 'CLAUDE_CONFIG_DIR': str(absent / 'claude'),
+                   'PYTHONDONTWRITEBYTECODE': '1'}
+    total = 0
+    with private_log.open('w', encoding='utf-8') as output:
+        for folder in folders:
+            result = subprocess.run([sys.executable, '-B', '-m', 'unittest', 'discover', '-s', folder, '-t', folder],
+                                    cwd=private, env=environment, capture_output=True, text=True, timeout=1800)
+            output.write(f'== {folder}\n{result.stdout}{result.stderr}')
+            if result.returncode:
+                raise RuntimeError(f'the private tests in {folder} failed; read {private_log}')
+            total += next((int(line.split()[1]) for line in reversed(result.stderr.splitlines())
+                           if line.startswith('Ran ')), 0)
+    print(f'Ran {total} private tests in {len(folders)} folders: OK; log {private_log}', flush=True)
 
 
 def device_check(public, private):
@@ -365,7 +383,7 @@ def finish(args, public_repo, private_repo):
     if hits := leaks(public, private, args.message):
         raise RuntimeError(f'{", ".join(hits[:20])} in {public} hold a string that the private {DENYLIST} names; '
                            'take it out of the public side, then finish again; nothing was committed')
-    test_suite(public, base / 'build/tests.log')
+    test_suite(public, private, base / 'build/tests.log')
     for tree in (public, private):
         if paths := dropped(tree):
             raise RuntimeError(f'{tree}: .gitignore leaves out {", ".join(paths)}; add a "!" line for each path the '

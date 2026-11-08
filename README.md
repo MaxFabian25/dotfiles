@@ -202,7 +202,7 @@ in a main checkout would stop every pull. Without `--write`, `review` runs on an
 ## Verify changes
 
 ```sh
-uv run --locked python -m unittest discover -s tests
+uv run --locked python -B tests/run.py
 uv run --locked python tests/native_smoke.py ./setup ../dotfiles-private/setup
 uv run --locked python tests/native_policy_smoke.py
 ```

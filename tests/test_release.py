@@ -19,6 +19,9 @@ def git(root, *args):
 SYNC_WITH_CHANGES = 'print("Managed changes: 1; blocking issues: 0.")\nraise SystemExit(1)\n'
 PASSING_TEST = 'import unittest\n\n\nclass Seed(unittest.TestCase):\n    def test_passes(self):\n        pass\n'
 ALLOWLIST = '/*\n!/.gitignore\n!/content\n!/doc\n!/sync.py\n!/tests/\n!/tests/**\n__pycache__/\n.sync/\n'
+# finish runs the suite through the real runner, so the fixture's origin carries it.
+RUNNER = (Path(release.__file__).resolve().parent / 'tests/run.py').read_text(encoding='utf-8')
+SEEDED_TESTS = 'tests/run.py\ntests/test_seed.py'
 
 
 class ReleaseTest(unittest.TestCase):
@@ -30,7 +33,8 @@ class ReleaseTest(unittest.TestCase):
         subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'release', '-f', str(self.key)], check=True)
         # The release's device check runs the worktree's sync.py, which exits 1 when it has changes to apply.
         self.public_origin = self.origin('public-origin', {'content': 'first\n', 'doc': 'one\ntwo\nthree\nfour\nfive\n',
-                                                           'sync.py': SYNC_WITH_CHANGES, 'tests/test_seed.py': PASSING_TEST,
+                                                           'sync.py': SYNC_WITH_CHANGES, 'tests/run.py': RUNNER,
+                                                           'tests/test_seed.py': PASSING_TEST,
                                                            '.gitignore': ALLOWLIST})
         first = git(self.public_origin, 'rev-parse', 'main')
         self.private_origin = self.origin('private-origin', {'release.toml': f'public_commit = "{first}"\n'})
@@ -143,7 +147,7 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(release_main(['finish', 'failing', '--message', str(message), '--push', *self.options()],
                                       self.public), 3)
         self.assertIn('broken', (self.worktrees / 'failing/build/tests.log').read_text(encoding='utf-8'))
-        self.assertEqual(git(self.public_origin, 'ls-tree', '--name-only', 'main', 'tests/'), 'tests/test_seed.py')
+        self.assertEqual(git(self.public_origin, 'ls-tree', '--name-only', 'main', 'tests/'), SEEDED_TESTS)
 
     def test_finish_runs_the_suite_against_missing_config_roots(self):
         release_main(['start', 'isolated', *self.options()], self.public)
@@ -156,6 +160,33 @@ class ReleaseTest(unittest.TestCase):
         message.write_text('Check the config roots\n', encoding='utf-8')
         self.assertEqual(release_main(['finish', 'isolated', '--message', str(message), '--push', *self.options()],
                                       self.public), 0)
+
+    def test_finish_runs_the_private_tests_and_stops_on_a_failure(self):
+        release_main(['start', 'private', *self.options()], self.public)
+        folder = self.worktrees / 'private/private/config/tool'
+        folder.mkdir(parents=True)
+        (folder / 'helper.py').write_text('VALUE = 1\n', encoding='utf-8')
+        (folder / 'test_tool.py').write_text(PASSING_TEST.replace('pass', 'self.fail("broken")'), encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Add a private tool\n', encoding='utf-8')
+        finish = ['finish', 'private', '--private-message', str(message), '--push', *self.options()]
+        with redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(finish, self.public), 3)
+        self.assertIn('the private tests in config/tool failed', error.getvalue())
+        self.assertIn('broken', (self.worktrees / 'private/build/private-tests.log').read_text(encoding='utf-8'))
+        self.assertEqual(git(self.private_origin, 'log', '--format=%s', 'main'), 'seed')
+        # Each folder is its own top level, as its tests run alone, so a test imports the helpers beside it.
+        (folder / 'test_tool.py').write_text(
+            'import os\nfrom pathlib import Path\nimport unittest\n\nimport helper\n\n\nclass Tool(unittest.TestCase):\n'
+            '    def test_imports_its_helper_against_missing_config_roots(self):\n'
+            '        self.assertEqual(helper.VALUE, 1)\n'
+            '        for variable in ("CODEX_HOME", "CLAUDE_CONFIG_DIR"):\n'
+            '            self.assertFalse(Path(os.environ[variable]).exists())\n', encoding='utf-8')
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(release_main(finish, self.public), 0)
+        self.assertIn('Ran 1 private tests in 1 folders: OK', output.getvalue())
+        self.assertEqual(git(self.private_origin, 'ls-tree', '-r', '--name-only', 'main', 'config/'),
+                         'config/tool/helper.py\nconfig/tool/test_tool.py')
 
     def test_finish_stops_on_a_public_line_the_private_denylist_names(self):
         release_main(['start', 'leak', *self.options()], self.public)
@@ -220,7 +251,7 @@ class ReleaseTest(unittest.TestCase):
             self.assertEqual(release_main(['finish', 'cache', '--message', str(message), '--push', *self.options()],
                                           self.public), 3)
         self.assertIn('the test suite wrote into', error.getvalue())
-        self.assertEqual(git(self.public_origin, 'ls-tree', '--name-only', 'main', 'tests/'), 'tests/test_seed.py')
+        self.assertEqual(git(self.public_origin, 'ls-tree', '--name-only', 'main', 'tests/'), SEEDED_TESTS)
 
     def test_finish_stops_when_the_device_check_crashes(self):
         release_main(['start', 'crash', *self.options()], self.public)

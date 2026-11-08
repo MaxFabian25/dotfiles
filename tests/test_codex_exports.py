@@ -6,6 +6,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from homes import Home
 from description import (CodexPlacement, EngineInstall, LocalSource, MarketplaceInstall, Package, Roots, Setup,
                          ToolNotes, Visibility)

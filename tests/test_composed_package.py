@@ -4,6 +4,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from homes import Home
 from composed_package import compose
 from description import CodexPlacement, EngineInstall, Package, RepoSource, ToolNotes, Visibility

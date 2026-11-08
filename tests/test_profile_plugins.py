@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from homes import Home
 from accepted_installations import image
 from description import CodexPlacement, EngineInstall, Hooks, LocalSource, Lock, LockedTree, Package, Roots, Setup
