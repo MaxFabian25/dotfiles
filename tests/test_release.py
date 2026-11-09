@@ -92,6 +92,20 @@ class ReleaseTest(unittest.TestCase):
         self.assertFalse((self.worktrees / 'change').exists())
         self.assertEqual(git(self.public, 'branch', '--list', 'change'), '')
 
+    def test_finish_takes_the_pair_message_from_a_file_like_the_other_messages(self):
+        release_main(['start', 'worded', *self.options()], self.public)
+        (self.worktrees / 'worded/public/content').write_text('second\n', encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Change the content\n', encoding='utf-8')
+        pair_message = self.root / 'pair-message'
+        pair_message.write_text('Pair the content change\n\nWith a body.\n', encoding='utf-8')
+
+        self.assertEqual(release_main(['finish', 'worded', '--message', str(message), '--pair-message', str(pair_message),
+                                       '--push', *self.options()], self.public), 0)
+
+        self.assertEqual(git(self.private_origin, 'log', '-1', '--format=%B', 'main'),
+                         'Pair the content change\n\nWith a body.')
+
     def test_clean_keeps_an_unpushed_branch(self):
         release_main(['start', 'draft', *self.options()], self.public)
         (self.worktrees / 'draft/public/content').write_text('unpushed\n', encoding='utf-8')
