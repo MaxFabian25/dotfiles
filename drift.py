@@ -185,6 +185,9 @@ def diff(setup: Setup, device: Device, *, observations: Mapping[Host, Observatio
             follows = fact.follows
             if follows is not None and outcomes.get(follows) in (NoteKind.UNAVAILABLE, NoteKind.RESIDUE, NoteKind.DORMANT):
                 continue
+            # Nothing can approve a hook before sync installs its plugin, so the plan after that install asks for it.
+            if outcome == Kind.APPROVAL and outcomes.get(follows) == Kind.MISSING:
+                continue
             if isinstance(outcome, NoteKind):
                 notes.append(Note(outcome, state.host, key.subject, _note_detail(outcome, want, have)))
                 continue

@@ -361,6 +361,20 @@ class InstallationTest(unittest.TestCase):
             self.run_apply(current)
         self.assertEqual(self.snapshot(), before)
 
+    def test_first_install_is_not_held_for_an_approval_only_the_install_makes_possible(self):
+        package = self.setup.packages['kit']
+        package = replace(package, codex=replace(package.codex, hooks=Hooks.TRUSTED))
+        lock = replace(self.setup.lock['kit'], intent=intent(package, {}), hooks=1)
+        self.setup = replace(self.setup, packages={'kit': package}, lock={**self.setup.lock, 'kit': lock})
+        self.host.approved = False
+        current = plan(self.setup, self.device)
+        self.assertEqual(current.blocked, ())
+        installed = self.run_apply(current)
+        self.assertEqual([d.kind.value for d in installed.blocked], ['approval'])
+        self.assertEqual(installed.exit_code, 2)
+        self.host.approved = True
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
     def test_toml_fields_share_the_owner_and_preserve_unmanaged_values(self):
         config_source = self.public / 'config/mise/config.toml'
         config_source.parent.mkdir(parents=True)
