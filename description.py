@@ -245,6 +245,7 @@ class ClaudePlacement:
     # Claude's own modes: EXPLICIT or ON for a skill the package has off, or ON for one it has explicit, which
     # makes it model-invocable in Claude only. Absent means the package mode holds.
     modes: Mapping[str, SkillMode] = field(default_factory=dict, metadata={'intent': 'when-set'})
+    windows_replace: tuple[WindowsReplace, ...] = field(default=(), metadata={'intent': 'when-set'})
 
 
 class ToolNotes(enum.StrEnum):
@@ -381,6 +382,7 @@ class Setup:
                         changes.update(hooks=Hooks.OFF, roles=None, adaptation=None, windows_hook_command=None, windows_replace=())
                     else:
                         changes['modes'] = {}
+                        changes['windows_replace'] = ()
                     placements[host.value] = replace(placement, **changes)
             packages[name] = replace(package, modes={}, tool_notes=ToolNotes.AUDIT, **placements)
         runtime = self.runtime if self.runtime is not None and self.runtime.platform == platform else None

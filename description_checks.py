@@ -157,6 +157,9 @@ def check_invariants(setup: Setup, errors: list[str]) -> None:
                         and package.tool_notes == ToolNotes.APPLY):
                     errors.append(f'{path}:{key}: Claude Code runs this install from the catalog, where tool notes do '
                                   'not reach; give it an aligned Claude install')
+                if (host == Host.CLAUDE and install.enabled and placement.windows_replace
+                        and not isinstance(install, MarketplaceInstall)):
+                    errors.append(f'{path}:{key}: Windows patches require a native marketplace install')
                 if isinstance(install, AlignedInstall) and install.enabled and not (
                         package.codex and any(i.enabled for i in package.codex.installs)):
                     errors.append(f'{path}:{key}: an enabled aligned copy needs an enabled Codex install')

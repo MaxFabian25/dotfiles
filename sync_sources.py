@@ -289,8 +289,10 @@ class Builder:
         if package.tool_notes == ToolNotes.APPLY:
             adaptations['toolNotes'] = {'plugins': [package.name],
                                          'rules': [{'match': r.match, 'note': r.note} for r in self.setup.note_rules]}
-        if host == Host.CODEX and package.codex and WINDOWS:
-            if windows := windows_overlay(package.codex.windows_hook_command, package.codex.windows_replace):
+        placement = package.placement(host)
+        if placement and WINDOWS:
+            command = placement.windows_hook_command if host == Host.CODEX else None
+            if windows := windows_overlay(command, placement.windows_replace):
                 adaptations['windows'] = {package.name: windows}
         return plan(registry, [(label, identity, root)], overlay=overlay, adaptations=adaptations)[0]
 

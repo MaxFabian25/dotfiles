@@ -150,10 +150,13 @@ class ClaudeState:
                 if install.enabled and tree:
                     add(Surface.TREE, plugin, TreeValue(tree.digest), package.name, key)
                 share = install.skills if isinstance(install, EngineInstall) and install.skills else None
-                if install.enabled and package.tool_notes == ToolNotes.APPLY and not isinstance(install, AlignedInstall):
+                if (install.enabled and not isinstance(install, AlignedInstall)
+                        and (package.tool_notes == ToolNotes.APPLY or package.claude.windows_replace)):
                     explicit = tuple(sorted(s for s, mode in package.modes.items()
                                             if mode == SkillMode.EXPLICIT and (share is None or s in share)))
-                    add(Surface.OVERLAY, plugin, OverlaySpec(setup.note_rules, None, explicit), package.name, key)
+                    rules = setup.note_rules if package.tool_notes == ToolNotes.APPLY else ()
+                    add(Surface.OVERLAY, plugin, OverlaySpec(rules, None, explicit,
+                        windows_replace=package.claude.windows_replace), package.name, key)
                 own = package.claude.modes if isinstance(install, AlignedInstall) else {}
                 modes = {**{s: m for s, m in package.modes.items() if s not in own},
                          **{s: m for s, m in own.items() if m == SkillMode.EXPLICIT}}

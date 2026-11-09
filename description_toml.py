@@ -253,7 +253,8 @@ def _parse_package(path: Path, data: Mapping, visibility: Visibility, errors: li
         codex_table.done()
     claude_table = table.sub('claude')
     if claude_table:
-        claude = ClaudePlacement(_parse_installs(claude_table, Host.CLAUDE), _parse_claude_modes(claude_table.sub('skills')))
+        claude = ClaudePlacement(_parse_installs(claude_table, Host.CLAUDE), _parse_claude_modes(claude_table.sub('skills')),
+                                 _parse_windows_replace(claude_table))
         claude_table.done()
     table.done()
     return Package(EntryName(path.stem), visibility, note, source, modes, tool_notes, codex, claude, platforms)
@@ -641,6 +642,9 @@ def _dump_package(package: Package) -> dict:
         out['codex'] = codex
     if package.claude:
         out['claude'] = {'install': [_dump_install(i, Host.CLAUDE) for i in package.claude.installs]}
+        if package.claude.windows_replace:
+            out['claude']['windows_replace'] = [_Inline({'path': r.path, 'find': r.find, 'replace': r.replace})
+                                               for r in package.claude.windows_replace]
         claude_skills = {mode.value: names for mode in CLAUDE_MODES
                          if (names := sorted(s for s, m in package.claude.modes.items() if m == mode))}
         if claude_skills:
