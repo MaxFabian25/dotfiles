@@ -1,16 +1,15 @@
 public = true
-note = "Upstream's exported skills, except setup-matt-pocock-skills, which a patched copy replaces, plus five the user chose on 2026-10-14 from upstream's in-progress and misc folders: chief-of-staff, scaffold-exercises, setup-ts-deep-modules and setup-pre-commit are explicit-only in both hosts; claude-handoff is explicit-only and Claude-only (off in Codex). Listed by path so other upstream additions stay out."
+note = "Upstream's exported skills, except setup-matt-pocock-skills and diagnosing-bugs, which patched copies replace, plus five the user chose on 2026-10-14 from upstream's in-progress and misc folders: chief-of-staff, scaffold-exercises, setup-ts-deep-modules and setup-pre-commit are explicit-only in both hosts; claude-handoff is explicit-only and Claude-only (off in Codex). Listed by path so other upstream additions stay out."
 
 [source]
 build = "generic"
 repository = "https://github.com/mattpocock/skills.git"
 commit = "4ae2317ddb22b046e26455e4f9c9b3aaaf62212d"
 manifest = ".claude-plugin/plugin.json"
-packaging = 4
+packaging = 5
 display_name = "Matt Pocock skills"
 select = [
   "./skills/engineering/ask-matt",
-  "./skills/engineering/diagnosing-bugs",
   "./skills/engineering/grill-with-docs",
   "./skills/engineering/triage",
   "./skills/engineering/improve-codebase-architecture",

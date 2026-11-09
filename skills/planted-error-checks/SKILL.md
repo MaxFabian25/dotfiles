@@ -1,6 +1,6 @@
 ---
 name: planted-error-checks
-description: Prove that a set of checks catches real errors by planting known errors in copies and running every check on each copy. Use for checks on a generated document, such as a deck, report, site, or data export, and for a code repository's test suite. Use when writing or trusting fact, figure, link, or layout checks, or a checker, scorer or answer key, before you call one complete, when testing one on defective copies, when checks pass but a reviewer, user or production still finds errors, when deciding which tests earn their keep or whether to delete a class of tests, and when someone asks for mutation testing of a document build or a test suite.
+description: Prove that a set of checks catches real errors by planting known errors in copies and running every check on each copy. Use for checks on a generated document, such as a deck, report, site, or data export, and for a code repository's test suite. Use when writing or trusting fact, figure, link, or layout checks, an acceptance gate, lint or browser probe written for a redesign or migration, or a checker, scorer or answer key, before you call one complete or quote its planted score as coverage, when testing one on defective copies, when checks pass but a reviewer, user or production still finds errors, when deciding which tests earn their keep or whether to delete a class of tests, and when someone asks for mutation testing of a document build or a test suite.
 ---
 
 # Planted-error checks

@@ -8,8 +8,8 @@ intent = "sha256:c4583cec37974f857c5ccac62596ffbfab73ef3bbf5cbb4259de0235298d42f
 placements = { agents = "sha256:3c2808f06ff31c4c11e64a7234a0d79f88eb42f3a8b6b7260b438b643a2f5eec", claude = "sha256:3c2808f06ff31c4c11e64a7234a0d79f88eb42f3a8b6b7260b438b643a2f5eec" }
 
 [browser-and-computer-use]
-intent = "sha256:c8e8b4c832b370628a3d2e346bf70af3e5374a0fc60d33113e917237bb39e33b"
-placements = { agents = "sha256:7ebc53a7805d2e91c66ec7407f051ca7098b13dc8f82065dc8c730254e8d7e9c", claude = "sha256:7ebc53a7805d2e91c66ec7407f051ca7098b13dc8f82065dc8c730254e8d7e9c" }
+intent = "sha256:1ba70cdc0301df3be90e05ca67b9269127198f0c0fc17f186d4bd31baaea376d"
+placements = { agents = "sha256:d699ccdb6119dfe941066d2988d76489615abbaa25de7b8b6173c2debed45e48", claude = "sha256:d699ccdb6119dfe941066d2988d76489615abbaa25de7b8b6173c2debed45e48" }
 
 [build-iterated-agentic-loop]
 intent = "sha256:5a5c900801815c2408c103fd71ee14ae6a2231bf9d6cbe2189139c9835872fa7"
@@ -77,9 +77,9 @@ intent = "sha256:f96e3fcb12086e815b17687cd745722cf9beefa5950c1cec3bfe45769a302ff
 intent = "sha256:ee4aaa9f84683e296b8a98f79ca5ad19a7ba260a0024caeb5a9b889a7c86c19b"
 
 [mattpocock-skills]
-intent = "sha256:8fb7889da1aa69f72f62b368738f645dc92ac291f4f530eca446b860523630af"
-codex = { version = "1.3.2+upstream.4ae2317ddb22.codex4.explicit.a1013f8dab783303", tree = "sha256:7c26e40acff2afd99a76e2b3aeb1e0808fd96d345601d1b3105ff291fafc8065" }
-claude = { version = "1.3.2+codex-aligned.bcb942c5f5a1", tree = "sha256:fb60c8130ee521f2c7d92d32080a7d8b8310e303feab29a5b5baa3f6fe3e8f1e" }
+intent = "sha256:66185e9aa6fd9749be3d764f7bdc00fa14cc2fe6a0206fe0be3a9e8fa9cbd00d"
+codex = { version = "1.3.2+upstream.4ae2317ddb22.codex5.explicit.215f1e108dd17fef", tree = "sha256:ea442067a1f17d9de9fa9921925bddaecde413b683d430e319bc0ea4587747ce" }
+claude = { version = "1.3.2+codex-aligned.656ea32c5e63", tree = "sha256:cd9a8a33be5599f22b84bfe390c58a4cb65f59008d1441c0132cd134a1c78e38" }
 
 [narrow-react-prop-types]
 intent = "sha256:3bff1fe58adad4228f235b57cd438844bcf1c9eaca0183cebc910556d3cdb1d7"
@@ -95,8 +95,8 @@ codex = { version = "0.1.0+upstream.ced39776fdf8.codex1", tree = "sha256:dd58dba
 claude = { version = "0.1.0+codex-aligned.f6c9d03c5fcf", tree = "sha256:7f6768983aa85ee443f728165e7065076ccb34b10e442535e68f7380419730fc" }
 
 [planted-error-checks]
-intent = "sha256:7a6ed9c3e2befa63592a9f00a5265681430af8d663f0db81f51074e63b52f417"
-placements = { agents = "sha256:a849eb65ad70e1d04fe4f609beac363ad0a41a7f2e27048ed5b0e274d1107342", claude = "sha256:a849eb65ad70e1d04fe4f609beac363ad0a41a7f2e27048ed5b0e274d1107342" }
+intent = "sha256:96a28fd6bc06e8c37dcc973da55b31e62fe61e60fa7882e216d56296cc1251b7"
+placements = { agents = "sha256:6e7c06a9685c12096587f0c48a420e541c9304c253610ee9046be1a475e5f087", claude = "sha256:6e7c06a9685c12096587f0c48a420e541c9304c253610ee9046be1a475e5f087" }
 
 [powerpoint-com-wsl]
 intent = "sha256:40c6d4a27fde9f0db75aa7350aa29dcd477e5b71c32fbd2f741e918cae73f57a"
@@ -111,9 +111,9 @@ codex = { version = "0.3.16+dotfiles.20261108", tree = "sha256:2b6253a591e1f1d6e
 claude = { version = "0.3.16+codex-aligned.63666377b821", tree = "sha256:d7b6f69d9b1daeaafb85c4f19898a429acc730f5d6d5071c8f7a9a7de5667b09" }
 
 [pstack]
-intent = "sha256:84916cc915ba35f40480a49ffe8df6adde19cea9f00f7c7e62b9a56236fc63ee"
+intent = "sha256:ba6c780b17f9d3d3f8427b2d895b6949acd42197355c5e871071f7f6d5b3b0df"
 codex = { version = "0.15.36+upstream.1ba91fc25c09.codex2.explicit.5ac7f1c293475616", tree = "sha256:b381fd68190bd1acf7a43de44a71ba998bf79172f1cee0790f2e7b97068b1733" }
-claude = { version = "0.15.36+codex-aligned.1b5af1e41408", tree = "sha256:4c63cfc3e1107dce47e02ab6ce44dff6bb8f0fdf6e9deb60853ccd4e8094974f" }
+claude = { version = "0.15.36+codex-aligned.5d5148e4c9c4", tree = "sha256:fe45dd1a63e62b0ecc4962c563f673eb7e7208b6e87a0b93fb2fd623043d2f19" }
 roles = { "comment-sicko.toml" = "sha256:6f3ea8222b5e7abf65decd3712a9d32f5804953e0539e61b2a9f92e11148d56e", "poteto-agent.toml" = "sha256:3d113f3faefd9ee007f001bedc51aa9227b46bb5a233567e87eba1f56e89c206", "pstack-reader.toml" = "sha256:e1ce58630b65ea7ce264d6590d4209a525ae2df8ba422fafdc2a6fc3a55a885a" }
 
 [show-me]
