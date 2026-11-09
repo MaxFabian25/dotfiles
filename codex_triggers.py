@@ -25,7 +25,8 @@ TIMEOUT = 180
 
 
 def run_one(entry):
-    names_skill = re.compile(rf"(?<![\w-]){re.escape(entry['target'])}/SKILL\.md")
+    # Windows Codex records a path's backslashes doubled, and JSON doubles each again.
+    names_skill = re.compile(rf"(?<![\w-]){re.escape(entry['target'])}[\\/]+SKILL\.md")
     with (tempfile.TemporaryDirectory(prefix='codex-trigger-') as folder,
           tempfile.TemporaryFile('w+', encoding='utf-8') as errors):
         command = [shutil.which('codex') or 'codex', 'exec', '--ephemeral', '--skip-git-repo-check', '-s', 'read-only',
@@ -49,7 +50,7 @@ def run_one(entry):
                 # Codex prints config warnings as items of type error; real failures end in turn.failed or exit 1.
                 if not isinstance(item, dict) or item.get('type') in ('agent_message', 'reasoning', 'error'):
                     continue
-                if names_skill.search(json.dumps(item).replace('\\\\', '/')):
+                if names_skill.search(json.dumps(item)):
                     return True
                 tools += 1
                 if tools >= MAX_TOOLS * 2:  # A tool call has a started and a completed event.
