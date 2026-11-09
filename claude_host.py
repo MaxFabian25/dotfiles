@@ -9,6 +9,7 @@ An aligned copy keeps a skill the package has off when the package gives it a Cl
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, replace
 from pathlib import Path
 import re
@@ -194,12 +195,14 @@ class ClaudeState:
                 seen.unread(path, error, surfaces)
                 return default
 
+        # A wrapper such as Omarchy's account switcher picks its own home when CLAUDE_CONFIG_DIR is unset.
+        home = {**os.environ, 'CLAUDE_CONFIG_DIR': str(roots.claude_home)}
         try:
-            version = run([*self.cli, '--version']).strip()
+            version = run([*self.cli, '--version'], env=home).strip()
         except (OSError, subprocess.SubprocessError):
             version = 'unknown'
         try:
-            listed = json.loads(run([*self.cli, 'plugin', 'list', '--available', '--json']))
+            listed = json.loads(run([*self.cli, 'plugin', 'list', '--available', '--json'], env=home))
             inventory, available = listed['installed'], listed['available']
         except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as error:
             seen.unread('claude plugin list --available --json', error,

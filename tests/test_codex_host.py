@@ -581,6 +581,22 @@ class ObserveTest(unittest.TestCase):
         self.assertIn('gmail@openai-curated-remote', observation.offered)
         self.assertNotIn(key(S.PLUGIN, 'gmail@openai-curated-remote'), observation.facts)
 
+    def test_a_cli_wrapper_that_picks_its_own_home_reads_the_home_being_observed(self):
+        with Device() as device:
+            state = device.state()
+            # Like Omarchy's account switcher: the real CLI runs only when CODEX_HOME names the observed home.
+            wrapper = device.bin / 'switcher.py'
+            wrapper.write_text('import os, sys\n'
+                               f'if os.environ.get("CODEX_HOME") != {str(device.roots.codex_home)!r}:\n'
+                               '    sys.exit("another account home")\n'
+                               'os.execv(sys.argv[1], sys.argv[1:])\n')
+            state.cli = [sys.executable, str(wrapper), *state.cli]
+            environment = {k: v for k, v in os.environ.items() if k != 'CODEX_HOME'}
+            with patch.dict(os.environ, environment, clear=True):
+                observation = state.observe(hs.Request())
+        self.assertEqual(observation.facts[key(S.PLUGIN, 'rpi@skills')].value, hs.PluginValue(True, hs.Pinned(C2)))
+        self.assertEqual(observation.unknown, ())
+
     def test_a_git_marketplace_plugin_is_pinned_by_what_codex_fetched_not_the_configured_ref(self):
         with Device() as device:
             config = device.roots.codex_home / 'config.toml'

@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import replace
 import json
+import os
 from pathlib import Path
 from queue import Empty, Queue
 import re
@@ -252,13 +253,15 @@ class CodexState:
     def observe(self, request: Request) -> Observation:
         roots = self.roots
         seen = Observer(_HOST, roots)
+        # A wrapper such as Omarchy's account switcher picks its own home when CODEX_HOME is unset.
+        home = {**os.environ, 'CODEX_HOME': str(roots.codex_home)}
         try:
-            version = run([*self.cli, '--version']).strip()
+            version = run([*self.cli, '--version'], env=home).strip()
         except (OSError, subprocess.SubprocessError):
             version = 'unknown'
         listing = 'codex plugin list --available --json'
         try:
-            listed = json.loads(run([*self.cli, 'plugin', 'list', '--available', '--json']))
+            listed = json.loads(run([*self.cli, 'plugin', 'list', '--available', '--json'], env=home))
             inventory, available = listed['installed'], listed['available']
         except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as error:
             seen.unread(listing, error, {Surface.PLUGIN, Surface.TREE, Surface.OVERLAY, Surface.HOOK, Surface.SKILL})
@@ -521,7 +524,7 @@ class CodexState:
         state = config.get('hooks', {}).get('state', {})
         if any(hooks.values()):
             try:
-                approved = _approved_hooks(self.cli, roots.home)
+                approved = _approved_hooks(self.cli, roots.home, codex_home=roots.codex_home)
                 for plugin_id, defined in hooks.items():
                     if approved & defined and installed[plugin_id]['enabled']:
                         seen.add(Surface.HOOK, plugin_id, Approved(len(approved & defined)), seen.key(Surface.PLUGIN, plugin_id))
