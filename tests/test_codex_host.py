@@ -17,6 +17,8 @@ import host_state
 import description
 import codex_host
 import portable
+from device import Device as HostDevice
+from drift import Kind, diff
 from runtime_pin import RuntimePin
 d, hs = description, host_state
 S, M = hs.Surface, hs.SkillMode
@@ -251,6 +253,34 @@ trust_level = "trusted"
 
 
 class ObserveTest(unittest.TestCase):
+    def test_catalog_disables_need_no_cache_but_invocation_changes_still_do(self):
+        for mode in M:
+            for enabled in (None, False, True):
+                with self.subTest(mode=mode, enabled=enabled), Device() as device:
+                    device.inventory = [plugin(device, 'sharepoint@openai-curated-remote', False, '2', {'source': 'remote'})]
+                    config = '' if enabled is None else ('[[skills.config]]\nname="sharepoint:search"\n'
+                                                        f'enabled={str(enabled).lower()}\n')
+                    device.write(device.roots.codex_home / 'config.toml', config)
+                    desired = setup([package('sharepoint', None,
+                        d.CodexPlacement((d.MarketplaceInstall('openai-curated-remote', False),)), {'search': mode})])
+                    state = device.state()
+                    result = diff(desired, HostDevice(hs.Platform.LINUX, device.roots, (state,), ()))
+                    changes = [change for change in result.differences if change.key == key(S.SKILL, 'sharepoint:search')]
+                    expected = ([] if enabled is False else [Kind.MISSING if enabled is None else Kind.CHANGED])
+                    self.assertEqual([change.kind for change in changes], expected if mode == M.OFF else [Kind.INCOMPLETE])
+
+    def test_missing_invocation_cache_does_not_mask_an_independent_disable(self):
+        with Device() as device:
+            device.inventory = [plugin(device, 'sharepoint@openai-curated-remote', False, '2', {'source': 'remote'})]
+            device.write(device.roots.codex_home / 'config.toml', '')
+            desired = setup([package('sharepoint', None,
+                d.CodexPlacement((d.MarketplaceInstall('openai-curated-remote', False),)),
+                {'search': M.OFF, 'browse': M.EXPLICIT})])
+            result = diff(desired, HostDevice(hs.Platform.LINUX, device.roots, (device.state(),), ()))
+            changes = {change.key.subject: change.kind for change in result.differences
+                       if change.key and change.key.surface == S.SKILL}
+            self.assertEqual(changes, {'sharepoint:search': Kind.MISSING, 'sharepoint:browse': Kind.INCOMPLETE})
+
     def test_requested_implicit_skill_is_observed_without_masking_off_explicit_or_missing_skills(self):
         with Device() as device:
             requested = frozenset('kit:' + name for name in ('weekly-review', 'fix-ci', 'deslop', 'missing'))

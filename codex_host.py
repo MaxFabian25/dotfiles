@@ -491,14 +491,16 @@ class CodexState:
                 continue
             root = self._cache(plugin)
             partial = plugin['marketplaceName'] in CATALOGS or not (plugin['enabled'] or request.everything)
-            wanted = named_skills.get(plugin['name'], set()) if partial else None
+            wanted = {skill for skill in named_skills.get(plugin['name'], set())
+                      if f'{plugin["name"]}:{skill}' not in request.disables} if partial else None
             if partial and not wanted:
                 continue
             try:
                 explicit = self._explicit(root, wanted)
                 implicit = (named_skills.get(plugin['name'], set()) & skill_paths(root).keys()) - explicit
             except Unread as error:
-                seen.unread(root, error, {Surface.SKILL}, {plugin['pluginId']})
+                subjects = {f'{plugin["name"]}:{skill}' for skill in wanted} if wanted is not None else {plugin['pluginId']}
+                seen.unread(root, error, {Surface.SKILL}, subjects)
                 continue
             for skill in explicit:
                 key = seen.key(Surface.SKILL, f'{plugin["name"]}:{skill}')

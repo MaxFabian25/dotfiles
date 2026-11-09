@@ -409,13 +409,16 @@ class Request:
     overlays: Mapping[str, OverlaySpec] = field(default_factory=dict)   # plugin id -> the overlay it should carry
     skills: frozenset[str] = frozenset()     # SKILL subjects whose flags to read on catalog and disabled installs
     everything: bool = False                 # also every enabled non-catalog tree, and every non-catalog flag
+    disables: frozenset[str] = frozenset()   # config alone determines whether these requested disables are applied
 
     @classmethod
     def of(cls, expected: FactSet) -> Request:
         """What a comparison with these expected facts needs read."""
         return cls(frozenset(key.subject for key in expected if key.surface == Surface.TREE),
                    {key.subject: fact.value for key, fact in expected.items() if key.surface == Surface.OVERLAY},
-                   frozenset(key.subject for key in expected if key.surface == Surface.SKILL))
+                   frozenset(key.subject for key in expected if key.surface == Surface.SKILL),
+                   disables=frozenset(key.subject for key, fact in expected.items()
+                                      if key.surface == Surface.SKILL and fact.value == SkillMode.OFF))
 
 
 class HostState(Protocol):
