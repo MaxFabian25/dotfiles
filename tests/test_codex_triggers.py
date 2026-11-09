@@ -69,6 +69,13 @@ class CodexTriggersTest(unittest.TestCase):
         lines = [other] * (codex_triggers.MAX_TOOLS * 2) + [late]
         self.assertFalse(self.run_stand_in(prints(*lines)))
 
+    def test_config_warnings_leave_the_full_tool_budget(self):
+        warning = event('error', message='`[features].multi_agent` is deprecated.')
+        other = event('command_execution', command='ls')
+        last = event('command_execution', command='cat prose/SKILL.md')
+        lines = [warning] * 3 + [other] * ((codex_triggers.MAX_TOOLS - 1) * 2) + [last]
+        self.assertTrue(self.run_stand_in(prints(*lines)))
+
     def test_the_time_limit_stops_a_silent_run(self):
         started = time.monotonic()
         with patch.object(codex_triggers, 'TIMEOUT', 0.2):
