@@ -1,6 +1,8 @@
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import time
@@ -23,13 +25,27 @@ def prints(*lines):
 
 @unittest.skipIf(os.name == 'nt', 'the stand-in codex is a script with a shebang')
 class CodexTriggersTest(unittest.TestCase):
-    def run_stand_in(self, body):
+    @contextmanager
+    def stand_in(self, body):
         with tempfile.TemporaryDirectory() as temporary:
             fake = Path(temporary) / 'codex'
-            fake.write_text(f'#!{sys.executable}\nimport time\n{body}', encoding='utf-8')
+            fake.write_text(f'#!{sys.executable}\nimport sys, time\n{body}', encoding='utf-8')
             fake.chmod(0o755)
             with patch.dict(os.environ, {'PATH': f'{temporary}{os.pathsep}{os.environ["PATH"]}'}):
-                return codex_triggers.run_one(ENTRY)
+                yield Path(temporary)
+
+    def run_stand_in(self, body):
+        with self.stand_in(body):
+            return codex_triggers.run_one(ENTRY)
+
+    def measure(self, body):
+        with self.stand_in(body) as folder:
+            queries = folder / 'queries.json'
+            queries.write_text(json.dumps([ENTRY]), encoding='utf-8')
+            out = folder / 'out.json'
+            run = subprocess.run([sys.executable, '-I', codex_triggers.__file__, str(queries), str(out), '--runs', '1'],
+                                 capture_output=True, text=True, encoding='utf-8')
+            return run, out.exists()
 
     def test_a_tool_call_naming_the_skill_counts(self):
         call = event('command_execution', command='cat /home/me/.agents/skills/prose/SKILL.md')
@@ -58,6 +74,20 @@ class CodexTriggersTest(unittest.TestCase):
         with patch.object(codex_triggers, 'TIMEOUT', 0.2):
             self.assertFalse(self.run_stand_in('time.sleep(30)\n'))
         self.assertLess(time.monotonic() - started, 10)
+
+    def test_a_failed_turn_stops_the_measurement_and_names_the_failure(self):
+        warning = event('error', message='`[features].multi_agent` is deprecated.')
+        failed = json.dumps({'type': 'turn.failed', 'error': {'message': 'You’ve hit your usage limit.'}})
+        run, scored = self.measure(prints(warning, failed) + 'sys.exit(1)\n')
+        self.assertNotEqual(run.returncode, 0)
+        self.assertIn('You’ve hit your usage limit.', run.stderr)
+        self.assertFalse(scored)
+
+    def test_codex_failing_before_any_event_stops_the_measurement(self):
+        run, scored = self.measure("sys.stderr.write('Error: No such file or directory (os error 2)\\n')\nsys.exit(1)\n")
+        self.assertNotEqual(run.returncode, 0)
+        self.assertIn('No such file or directory', run.stderr)
+        self.assertFalse(scored)
 
 
 if __name__ == '__main__':
