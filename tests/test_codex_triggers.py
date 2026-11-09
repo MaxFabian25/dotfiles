@@ -34,9 +34,9 @@ class CodexTriggersTest(unittest.TestCase):
             with patch.dict(os.environ, {'PATH': f'{temporary}{os.pathsep}{os.environ["PATH"]}'}):
                 yield Path(temporary)
 
-    def run_stand_in(self, body):
+    def run_stand_in(self, body, entry=ENTRY):
         with self.stand_in(body):
-            return codex_triggers.run_one(ENTRY)
+            return codex_triggers.run_one(entry)
 
     def measure(self, body):
         with self.stand_in(body) as folder:
@@ -54,6 +54,17 @@ class CodexTriggersTest(unittest.TestCase):
     def test_a_windows_path_counts(self):
         call = event('command_execution', command=r'type C:\Users\me\.agents\skills\prose\SKILL.md')
         self.assertTrue(self.run_stand_in(prints(call)))
+
+    def test_a_windows_command_with_escaped_backslashes_counts(self):
+        # Native Windows Codex 0.169.0-alpha.3 ran this on 2026-11-09, with the user folder renamed.
+        command = (r'"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command '
+                   r'"Get-Content -LiteralPath C:\\Users\\me\\.agents\\skills\\agent-logs\\SKILL.md"')
+        entry = {**ENTRY, 'target': 'agent-logs'}
+        self.assertTrue(self.run_stand_in(prints(event('command_execution', command=command)), entry))
+
+    def test_an_escaped_windows_path_to_a_similarly_named_skill_does_not_count(self):
+        command = r'Get-Content -LiteralPath C:\\Users\\me\\.agents\\skills\\better-prose\\SKILL.md'
+        self.assertFalse(self.run_stand_in(prints(event('command_execution', command=command))))
 
     def test_a_skill_whose_name_ends_the_same_does_not_count(self):
         call = event('command_execution', command='cat /home/me/.agents/skills/better-prose/SKILL.md')
