@@ -46,7 +46,8 @@ def run_one(entry):
                 if isinstance(event, dict) and event.get('type') == 'turn.failed':
                     raise RuntimeError(f"Codex run failed: {event['error']['message']}")
                 item = event.get('item') if isinstance(event, dict) else None
-                if not isinstance(item, dict) or item.get('type') in ('agent_message', 'reasoning'):
+                # Codex prints config warnings as items of type error; real failures end in turn.failed or exit 1.
+                if not isinstance(item, dict) or item.get('type') in ('agent_message', 'reasoning', 'error'):
                     continue
                 if names_skill.search(json.dumps(item).replace('\\\\', '/')):
                     return True
