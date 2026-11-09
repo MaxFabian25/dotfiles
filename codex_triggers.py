@@ -3,7 +3,8 @@ description change.
 
 Runs `codex exec --ephemeral -s read-only` once per prompt and run, from an empty temporary folder, at medium effort
 so a measurement stays affordable. A run counts as triggered when a tool call names <target>/SKILL.md, and it stops
-at that call, after a few tool calls, or at the time limit. Usage:
+at that call, after a few tool calls, or at the time limit. A run that fails, such as one at Codex's usage limit,
+stops the measurement with Codex's error instead of counting as a miss. Usage:
 
     python3 -I codex_triggers.py QUERIES.json OUT.json [--runs 2] [--workers 4]
 
@@ -25,11 +26,12 @@ TIMEOUT = 180
 
 def run_one(entry):
     names_skill = re.compile(rf"(?<![\w-]){re.escape(entry['target'])}/SKILL\.md")
-    with tempfile.TemporaryDirectory(prefix='codex-trigger-') as folder:
+    with (tempfile.TemporaryDirectory(prefix='codex-trigger-') as folder,
+          tempfile.TemporaryFile('w+', encoding='utf-8') as errors):
         command = [shutil.which('codex') or 'codex', 'exec', '--ephemeral', '--skip-git-repo-check', '-s', 'read-only',
                    '--json', '-c', 'model_reasoning_effort=medium', '-C', folder, entry['query']]
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                   stderr=subprocess.DEVNULL, text=True, encoding='utf-8')
+                                   stderr=errors, text=True, encoding='utf-8')
         # A timer, because a check between lines of output never runs while Codex prints nothing.
         timer = threading.Timer(TIMEOUT, process.kill)
         timer.start()
@@ -41,6 +43,8 @@ def run_one(entry):
                     event = json.loads(line)
                 except ValueError:
                     continue
+                if isinstance(event, dict) and event.get('type') == 'turn.failed':
+                    raise RuntimeError(f"Codex run failed: {event['error']['message']}")
                 item = event.get('item') if isinstance(event, dict) else None
                 if not isinstance(item, dict) or item.get('type') in ('agent_message', 'reasoning'):
                     continue
@@ -49,6 +53,9 @@ def run_one(entry):
                 tools += 1
                 if tools >= MAX_TOOLS * 2:  # A tool call has a started and a completed event.
                     return False
+            if process.wait() > 0:  # The time limit's kill gives a negative status, and that run stays a miss.
+                errors.seek(0)
+                raise RuntimeError(f'codex exited with status {process.returncode}: {errors.read().strip()}')
             return False
         finally:
             timer.cancel()

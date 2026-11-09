@@ -84,7 +84,8 @@ class CodexTriggersTest(unittest.TestCase):
         self.assertFalse(scored)
 
     def test_codex_failing_before_any_event_stops_the_measurement(self):
-        run, scored = self.measure("sys.stderr.write('Error: No such file or directory (os error 2)\\n')\nsys.exit(1)\n")
+        failure = "sys.stderr.write('Error: No such file or directory (os error 2)\\n')\nsys.exit(1)\n"
+        run, scored = self.measure(failure)
         self.assertNotEqual(run.returncode, 0)
         self.assertIn('No such file or directory', run.stderr)
         self.assertFalse(scored)
