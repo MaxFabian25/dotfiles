@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -7,6 +8,7 @@ import re
 import stat
 import subprocess
 import tempfile
+import time
 import tomllib
 
 import portable
@@ -82,9 +84,23 @@ def model_target(section: str, model: str) -> tuple[str, str]:
 
 
 def validate_models(home, data, *, codex_home=None):
-    catalog = json.loads(((codex_home or home / '.codex') / 'models_cache.json').read_text(encoding='utf-8-sig'))
-    models = {m["slug"]: {e["effort"] for e in m.get("supported_reasoning_levels", [])}
-              for m in catalog["models"] if m.get("visibility") == "list"}
+    models = {}
+    with codex_requests(codex_home=codex_home or portable.codex_home(home)) as request:
+        cursor, seen = None, set()
+        while True:
+            page = request('model/list', {'limit': 100, 'cursor': cursor})
+            try:
+                for model in page['data']:
+                    models[model['model']] = {effort['reasoningEffort']
+                                              for effort in model['supportedReasoningEfforts']}
+                cursor = page['nextCursor']
+            except (KeyError, TypeError) as error:
+                raise ValueError('Codex model/list returned an invalid catalog') from error
+            if cursor is None:
+                break
+            if not isinstance(cursor, str) or not cursor or cursor in seen:
+                raise ValueError('Codex model/list returned an invalid or repeated cursor')
+            seen.add(cursor)
     entries = model_entries(data)
     for section, role, model, effort in entries:
         if model in {"inherit-parent", "auto"}:
@@ -98,38 +114,40 @@ def validate_models(home, data, *, codex_home=None):
     return len(entries)
 
 
-def validate_codex(enabled, *, proposed=False):
-    request = {"id": 1, "method": "initialize", "params": {
-        "clientInfo": {"name": "pstack-runtime-validation", "version": "1.0"}}}
-    command = cli_command("codex", "app-server")
-    if proposed:
-        command += ['-c', f"features.multi_agent_v2.{OVERRIDE_KEY}={'true' if enabled else 'false'}"]
-    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               text=True, encoding='utf-8')
+@contextmanager
+def codex_requests(*, codex_home=None, overrides=()):
+    command = cli_command("codex", "app-server", *overrides)
+    environment = portable.native_cli_environment()
+    if codex_home is not None:
+        environment['CODEX_HOME'] = str(codex_home)
+    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                               text=True, encoding='utf-8', env=environment)
     reader = ThreadPoolExecutor(max_workers=1)
     try:
         def send(value):
             process.stdin.write(json.dumps(value) + "\n")
             process.stdin.flush()
 
-        def receive(ident):
+        ident = 0
+
+        def request(method, params):
+            nonlocal ident
+            ident += 1
+            send({'id': ident, 'method': method, 'params': params})
+            deadline = time.monotonic() + 30
             while True:
-                line = reader.submit(process.stdout.readline).result(timeout=30)
+                line = reader.submit(process.stdout.readline).result(timeout=max(0, deadline - time.monotonic()))
                 if not line:
-                    raise RuntimeError("Codex exited before accepting the requested configuration")
+                    raise RuntimeError(f"Codex exited before replying to {method}")
                 response = json.loads(line)
                 if response.get("id") == ident:
                     if "error" in response:
-                        raise RuntimeError(f"Codex configuration request {ident} was rejected")
+                        raise RuntimeError(f"Codex {method} request was rejected")
                     return response["result"]
 
-        send(request)
-        receive(1)
+        request('initialize', {'clientInfo': {'name': 'pstack-runtime-validation', 'version': '1.0'}})
         send({"method": "initialized"})
-        send({"id": 2, "method": "config/read", "params": {"includeLayers": False}})
-        config = receive(2)["config"]
-        if config.get("features", {}).get("multi_agent_v2", {}).get(OVERRIDE_KEY) != enabled:
-            raise RuntimeError("Codex did not resolve the requested spawn override setting")
+        yield request
     finally:
         process.stdin.close()
         try:
@@ -138,6 +156,15 @@ def validate_codex(enabled, *, proposed=False):
             process.kill()
             process.wait()
         reader.shutdown(wait=True, cancel_futures=True)
+        process.stdout.close()
+
+
+def validate_codex(enabled, *, proposed=False, codex_home=None):
+    overrides = ['-c', f"features.multi_agent_v2.{OVERRIDE_KEY}={'true' if enabled else 'false'}"] if proposed else []
+    with codex_requests(codex_home=codex_home, overrides=overrides) as request:
+        config = request('config/read', {'includeLayers': False})['config']
+        if config.get("features", {}).get("multi_agent_v2", {}).get(OVERRIDE_KEY) != enabled:
+            raise RuntimeError("Codex did not resolve the requested spawn override setting")
 
 
 def replace_checked(path, before, after):

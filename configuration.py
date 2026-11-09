@@ -303,4 +303,4 @@ def validate_runtime(configurations: tuple[Configuration, ...], roots: DeviceRoo
         validate_models(roots.home, models.data, codex_home=roots.codex_home)
     if runtime is not None:
         enabled = runtime.fields[('features', 'multi_agent_v2', OVERRIDE_KEY)]
-        validate_codex(enabled, proposed=proposed)
+        validate_codex(enabled, proposed=proposed, codex_home=roots.codex_home)
