@@ -77,6 +77,23 @@ class WindowsHookCommandTest(unittest.TestCase):
     def test_no_declaration_leaves_the_hook_file_alone(self):
         self.assertEqual(self.plan(MANIFEST, {'plugins': {}}), [])
 
+    def test_multiline_windows_replace_preserves_native_crlf_and_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            launcher = root / 'skills/x/impeccable.cmd'
+            launcher.parent.mkdir(parents=True)
+            original = 'rem keep\r\nwhere impeccable\r\ncall :probe impeccable\r\nrem tail\r\n'
+            launcher.write_bytes(original.encode())
+            replacement = {'plugins': {}, 'windows': {'impeccable': {'replace': [
+                ('skills/x/impeccable.cmd', 'where impeccable\ncall :probe impeccable',
+                 'set "path_bin="\ncall :probe "%path_bin%"')]}}}
+            writes, _ = module.plan(REGISTRY, [('Codex', IDENTITY, root)], None, replacement)
+            expected = 'rem keep\r\nset "path_bin="\r\ncall :probe "%path_bin%"\r\nrem tail\r\n'
+            self.assertEqual(writes[0][1:3], (original, expected))
+            launcher.write_bytes(expected.encode())
+            replay, _ = module.plan(REGISTRY, [('Codex', IDENTITY, root)], None, replacement)
+            self.assertEqual(replay[0][1:3], (expected, expected))
+
     def test_a_manifest_that_already_sets_commandWindows_keeps_it(self):
         manifest = json.loads(render(MANIFEST))
         manifest['hooks']['Stop'][0]['hooks'][0]['commandWindows'] = 'upstream form'

@@ -267,7 +267,12 @@ def windows_overlay(hook_command, replaces):
 
 def replace_on_windows(text, find, replacement, label):
     # A patch to an upstream file, for a bug only a Windows launcher has. An upstream that fixed it needs no patch.
-    if text is None or replacement in text:
+    if text is None:
+        return text
+    newline = '\r\n' if '\r\n' in text else '\n'
+    find = find.replace('\r\n', '\n').replace('\n', newline)
+    replacement = replacement.replace('\r\n', '\n').replace('\n', newline)
+    if replacement in text:
         return text
     if text.count(find) != 1:
         raise ValueError(f'Review upstream change to an adapted file: {label}')
