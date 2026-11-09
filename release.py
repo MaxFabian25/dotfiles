@@ -250,7 +250,8 @@ def pair(public, private, message):
     head = git(public, 'rev-parse', 'HEAD')
     if rewrite(private / 'release.toml', PUBLIC_COMMIT, f'public_commit = "{head}"'):
         subject = git(public, 'log', '-1', '--format=%s')
-        git(private, 'commit', '-q', '-am', message or f'Pair "{subject}"')
+        wording = ['-F', str(message.resolve())] if message else ['-m', f'Pair "{subject}"']
+        git(private, 'commit', '-q', '-a', *wording)
 
 
 def push_url(root):
@@ -515,7 +516,7 @@ def main(argv=None):
     parser.add_argument('--worktrees', type=Path, default=Path.home() / 'worktrees')
     parser.add_argument('--message', type=Path, help='file with the public commit message')
     parser.add_argument('--private-message', type=Path, help='file with the private commit message')
-    parser.add_argument('--pair-message', help='message of the private commit that pairs the public one')
+    parser.add_argument('--pair-message', type=Path, help='file with the message of the private commit that pairs the public one')
     parser.add_argument('--entry', action='append', default=[], help='lock this setup entry (repeat)')
     parser.add_argument('--refresh-owned', action='store_true', help='accept the edited owned trees of the entries')
     parser.add_argument('--package', action='append', default=[], help='build this package (repeat)')
