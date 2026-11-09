@@ -27,13 +27,19 @@ the words on and around it.
   non-breaking space before you reword anything, and check every box in the presenting app's own
   render, not only the one someone flagged. Reword only when that fails, and check a swapped or
   added word against the claim as you would a cut.
+- **The subject, not the making.** A slide speaks about its subject. A "?", a "to test" or "to
+  confirm" stamp, or a line about how the deck was made, checked or reviewed becomes the fact, the
+  limit stated as part of the subject, or nothing, as Prose's
+  [reader-core](../prose/references/reader-core.md) rule on process residue says.
 
 ## Build
 
 - **Native charts.** Draw each chart the presenting app can draw natively as a native chart, so the
   presenter can edit it and its data travels with it. A check can read a native chart's values from
-  the chart part's XML, so checks are no reason to draw a chart as shapes. When you draw one as
-  shapes or as a picture, tell the user in your reply what you did and why.
+  the chart part's XML, so checks are no reason to draw a chart as shapes, or to keep a table that
+  should be a drawing. When the cost of moving checks limits which pages change, say so in the plan
+  before you build. When you draw one as shapes or as a picture, tell the user in your reply what
+  you did and why.
 - **Fonts outside the app's set.** Before you switch a deck to a font the presenting app does not
   ship, and before you tune line breaks in a deck that uses one while the choice between embedding
   and installing it is still open:

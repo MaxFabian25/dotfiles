@@ -1,6 +1,6 @@
 {
   "name": "prose",
-  "version": "0.3.16+dotfiles.20261108",
+  "version": "0.3.17+dotfiles.20261109",
   "description": "Scoped English and Danish prose guidance for editorial, academic, technical, interface, citation, and terminology work, with house rules for charts, tables, dashboards, and slide decks.",
   "author": {
     "name": "MaxFabian25",
