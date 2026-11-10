@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import os
 from pathlib import Path
 import re
@@ -508,6 +509,9 @@ def finish(args, public_repo, private_repo):
                 raise RuntimeError(f'push failed {ATTEMPTS} times; origin keeps moving: {error}') from error
     print(f'public {git(public, "rev-parse", "--short", "HEAD")}  private {git(private, "rev-parse", "--short", "HEAD")}'
           + ('  pushed' if args.push else '  not pushed'), flush=True)
+    if args.push:
+        for line in other_machines(tailnet()):
+            print(line, flush=True)
     if args.pull:
         if not wait(('pull', 'sync'), WAIT_FOR_PULL):
             raise RuntimeError(f'pushed, but another pull still runs here after {WAIT_FOR_PULL // 60} minutes; '
@@ -518,6 +522,33 @@ def finish(args, public_repo, private_repo):
             subprocess.run([*python, str(public_repo / 'skill_listing.py')], cwd=public_repo, timeout=900)
         return result.returncode
     return 0
+
+
+def tailnet():
+    """Tailscale's view of this tailnet as its status JSON, or None on a machine without a working Tailscale."""
+    try:
+        shown = subprocess.run(['tailscale', 'status', '--json'], capture_output=True, text=True, timeout=20)
+        return json.loads(shown.stdout) if shown.returncode == 0 else None
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+
+
+def other_machines(status):
+    """A line per other computer of this user on the tailnet, saying whether it is online now. A report that a
+    machine cannot pull then quotes this run's output. On 10 November 2026 a note that the Windows PC was cut off
+    outlived the cut by a day, and two releases skipped that PC on its word."""
+    if not status:
+        return ['Other machines: Tailscale gave no status here, so check each machine before you say it is unreachable.']
+    owner = status['Self'].get('UserID')
+    lines = []
+    for peer in sorted(status.get('Peer', {}).values(), key=lambda peer: peer.get('HostName', '').lower()):
+        if peer.get('UserID') != owner or peer.get('OS') not in ('linux', 'windows', 'macOS'):
+            continue
+        seen = peer.get('LastSeen', '')[:10]
+        state = ('online now, so pull there' if peer.get('Online')
+                 else f'offline, last seen {seen}, so queue its steps in maintenance/pending-sync.md')
+        lines.append(f"Other machine {peer.get('HostName')} ({peer['OS']}): {state}")
+    return lines or ['Other machines: the tailnet lists none of yours besides this one.']
 
 
 def detached_paths(args):

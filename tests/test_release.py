@@ -30,6 +30,9 @@ class ReleaseTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+        tailnet = patch.object(release, 'tailnet', return_value=None)  # no test asks the machine's own Tailscale
+        tailnet.start()
+        self.addCleanup(tailnet.stop)
         self.root = Path(self.temp.name)
         self.key = self.root / 'release'
         subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'release', '-f', str(self.key)], check=True)
@@ -394,6 +397,27 @@ class ReleaseTest(unittest.TestCase):
                       'the pull here swaps it at once if only skill text changes', output.getvalue())
         self.assertEqual(git(self.public_origin, 'show', 'main:sync.py'), (held + SYNC_WITH_CHANGES).strip())
 
+    def test_a_pushed_finish_says_which_of_the_users_other_machines_are_online(self):
+        status = {'Self': {'UserID': 7, 'HostName': 'here', 'OS': 'linux'}, 'Peer': {
+            'a': {'UserID': 7, 'HostName': 'Work-PC', 'OS': 'windows', 'Online': True, 'LastSeen': '0001-01-01T00:00:00Z'},
+            'b': {'UserID': 7, 'HostName': 'laptop', 'OS': 'macOS', 'Online': False, 'LastSeen': '2026-10-29T08:00:00Z'},
+            'c': {'UserID': 7, 'HostName': 'phone', 'OS': 'iOS', 'Online': True},
+            'd': {'UserID': 9, 'HostName': 'exit-node', 'OS': '', 'Online': True}}}
+        self.assertEqual(release.other_machines(status), [
+            'Other machine laptop (macOS): offline, last seen 2026-10-29, so queue its steps in '
+            'maintenance/pending-sync.md',
+            'Other machine Work-PC (windows): online now, so pull there'])
+        self.assertIn('check each machine before you say it is unreachable', release.other_machines(None)[0])
+        release_main(['start', 'told', *self.options()], self.public)
+        (self.worktrees / 'told/public/content').write_text('told\n', encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Tell the machines\n', encoding='utf-8')
+        for flags, told in ((['--push'], True), ([], False)):
+            with self.subTest(flags=flags), patch.object(release, 'tailnet', return_value=status), \
+                    redirect_stdout(io.StringIO()) as output:
+                release_main(['finish', 'told', '--message', str(message), *flags, *self.options()], self.public)
+            self.assertEqual('Other machine Work-PC (windows): online now' in output.getvalue(), told)
+
     def test_a_rebase_takes_origins_copy_of_a_regenerated_file_only_where_it_alone_conflicts(self):
         lock = 'setup/lock.toml'
         regenerated = frozenset({lock})
@@ -469,7 +493,8 @@ class ReleaseTest(unittest.TestCase):
         self.assertIn('Other open releases; read them before you edit the same files:\n'
                       '  first/public: 2 uncommitted: content, tests/notes.py', output.getvalue())
         self.assertNotIn('first/private', output.getvalue())
-        with redirect_stdout(io.StringIO()) as output:
+        # Without the machine's own locks: a pull that runs here during the suite would be listed.
+        with patch.object(release, 'running', return_value=[]), redirect_stdout(io.StringIO()) as output:
             self.assertEqual(release_main(['status', *self.options()], self.public), 0)
         self.assertEqual(output.getvalue().splitlines(), [
             'Running on this machine: no release, pull or sync',
