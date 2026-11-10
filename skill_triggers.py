@@ -6,9 +6,12 @@ disallowed, and records which skills each session loads within its first few too
 loader with every installed skill competing, which a test copy of one skill cannot show. Usage:
 
     python3 -I skill_triggers.py QUERIES.json OUT.json [--runs 2] [--workers 6] [--permission-mode MODE]
+        [--model MODEL]
 
-QUERIES.json is a list of {"target", "query", "should_trigger"}, where target is the skill name. Compare a
-before and an after measurement only when both used the same --permission-mode.
+QUERIES.json is a list of {"target", "query", "should_trigger"}, where target is the skill name. Each session
+runs on the model that new Claude sessions start on, the `model` key of ~/.claude/settings.json, unless --model
+names another, and at that model's saved effort. Compare a before and an after measurement only when both used
+the same --permission-mode and the same model, which each output row records.
 """
 
 import argparse
@@ -26,8 +29,16 @@ MAX_TOOLS = 5
 TIMEOUT = 180
 
 
-def run_one(query, folder, permission_mode='bypassPermissions'):
-    command = ['claude', '-p', query, '--model', 'opus', '--permission-mode', permission_mode,
+def session_model():
+    try:
+        model = json.loads((Path.home() / '.claude/settings.json').read_text(encoding='utf-8')).get('model')
+    except (OSError, ValueError, AttributeError):
+        model = None
+    return model if isinstance(model, str) and model else 'opus'
+
+
+def run_one(query, folder, permission_mode='bypassPermissions', model='opus'):
+    command = ['claude', '-p', query, '--model', model, '--permission-mode', permission_mode,
                '--disallowedTools', 'Bash,Edit,Write,NotebookEdit', '--no-session-persistence', '--max-turns', '6',
                '--output-format', 'stream-json', '--verbose', '--include-partial-messages']
     environment = {key: value for key, value in os.environ.items() if key != 'CLAUDECODE'}
@@ -98,14 +109,18 @@ def main():
     parser.add_argument('--runs', type=int, default=2)
     parser.add_argument('--workers', type=int, default=6)
     parser.add_argument('--permission-mode', default='bypassPermissions')
+    parser.add_argument('--model', default=session_model())
     args = parser.parse_args()
     items = json.loads(args.queries.read_text(encoding='utf-8'))
     jobs = [(index, run) for index in range(len(items)) for run in range(args.runs)]
     with tempfile.TemporaryDirectory(prefix='skill-triggers-') as folder, ThreadPoolExecutor(args.workers) as pool:
-        results = list(pool.map(lambda job: (job, run_one(items[job[0]]['query'], folder, args.permission_mode)), jobs))
-    rows = [{**items[index], 'run': run, **result, 'triggered': matches(items[index]['target'], result['skills'])}
+        results = list(pool.map(
+            lambda job: (job, run_one(items[job[0]]['query'], folder, args.permission_mode, args.model)), jobs))
+    rows = [{**items[index], 'run': run, 'model': args.model, **result,
+             'triggered': matches(items[index]['target'], result['skills'])}
             for (index, run), result in results]
     args.out.write_text(json.dumps(rows, indent=1, ensure_ascii=False), encoding='utf-8')
+    print(f'model: {args.model}')
     summary = {}
     for row in rows:
         counts = summary.setdefault(row['target'], {'pos_hit': 0, 'pos_n': 0, 'neg_hit': 0, 'neg_n': 0})
