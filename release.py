@@ -7,10 +7,13 @@ test suite unless the release changes no code, runs the private folders' tests, 
 origin/main changed the same files meanwhile, rebases them onto it, pairs the private release.toml with the
 public commit, checks that this device's pull could apply the pair, naming each Claude plugin cache that
 running sessions hold, checks both pushes with --dry-run, pushes, and pulls, after any other pull here ends.
-Before all of that it stops on a package whose selection changed without a new packaging number.
+Before all of that it stops on a package whose selection changed without a new packaging number, and on an owned
+source edited without `--entry NAME --refresh-owned`, which every pull would refuse as a stale lock.
 One finish runs at a time on a machine; another stops and names it. `clean NAME` removes the worktrees and branches once origin/main has them. `status` lists what runs here and each open
 release worktree with the files it changes, and `start` lists the others. `wait --timeout SECONDS` returns
-once no release, pull or sync runs on this machine.
+once no release, pull or sync runs on this machine. `finish NAME --detach` runs the finish as a systemd user unit,
+which a restart of the agent's host leaves running, after waiting up to --timeout seconds for another release
+here; `result NAME --timeout SECONDS` waits for that unit, prints the end of its log and exits with its status.
 """
 from __future__ import annotations
 
@@ -38,6 +41,7 @@ GITHUB_SSH = re.compile(r'^(?:git@github\.com:|ssh://git@github\.com/)')
 CREDENTIALS = ('-c', 'credential.https://github.com.helper=',
                '-c', 'credential.https://github.com.helper=!gh auth git-credential')
 ATTEMPTS = 3
+RESULT_LINES = 25  # lines of a detached finish's log that result prints
 MOVED = re.compile(r'\((?:fetch first|non-fast-forward)\)')
 # Files every release rewrites, so both sides changing them says nothing about clashing work.
 PAIRING_FILES = frozenset({'release.toml', 'setup/lock.toml'})
@@ -293,6 +297,26 @@ def reused_release_names(public, private):
     return reused
 
 
+def edited_owned(public, private):
+    """Owned sources whose files differ from the tree their entry pins, as entry name to source path. The device
+    check finds the same thing, but only after the suites have run. Empty for a tree without a setup description."""
+    if not (public / SETUP).is_file():
+        return {}
+    from description import Roots
+    from description_toml import load
+    from drift import _edited_owned
+    from host_state import DeviceRoots
+    private_setup = private / 'setup'
+    setup = load(Roots(public / 'setup', private_setup if private_setup.is_dir() else None))
+    return _edited_owned(setup, DeviceRoots.current())
+
+
+def unpinned(edited, entries, refresh_owned):
+    """The edited owned sources this finish was not told to pin again."""
+    accepted = set(entries) if refresh_owned else set()
+    return {name: path for name, path in edited.items() if name not in accepted}
+
+
 def reapprovals(public, private):
     """Plugins with trusted Codex hooks whose installed Codex content this branch may change: their lock entry
     changed, or they apply tool notes and the notes changed, which the lock leaves out. Codex ties a hook's
@@ -401,6 +425,11 @@ def finish(args, public_repo, private_repo):
                            'so its release folder keeps its name and every machine\'s pull would stop with "Existing '
                            'release differs". Raise packaging by one in its setup/packages file, then finish again; '
                            'nothing was committed')
+    if stale := unpinned(edited_owned(public, private), args.entry, args.refresh_owned):
+        flags = ' '.join(f'--entry {name}' for name in sorted(stale))
+        raise RuntimeError(f'{", ".join(sorted(stale.values()))} changed after its tree was pinned, so every '
+                           f"machine's pull would stop on a stale lock. Finish again with {flags} --refresh-owned; "
+                           'nothing was committed')
     python = [sys.executable, '-B']
     setups = ['--public', str(public / 'setup'), '--private', str(private / 'setup')]
     entries = [part for entry in args.entry for part in ('--entry', entry)]
@@ -488,6 +517,61 @@ def finish(args, public_repo, private_repo):
     return 0
 
 
+def detached_paths(args):
+    build = places(args)[0] / 'build'
+    return build / 'finish.log', build / 'finish.exit'
+
+
+def detach_command(args, argv, environ):
+    """The systemd-run command that runs this finish as a user unit: the same arguments without --detach, its
+    output appended to the log, and its exit status written to the status file. A unit starts without the
+    session's environment, so it is given the PATH, HOME and SSH agent the finish needs."""
+    log, status = detached_paths(args)
+    passed = [part for name in ('PATH', 'HOME', 'SSH_AUTH_SOCK') if environ.get(name)
+              for part in ('--setenv', f'{name}={environ[name]}')]
+    inner = [sys.executable, '-B', str(ENGINE / 'release.py'), *(part for part in argv if part != '--detach'),
+             '--report', str(status)]
+    return ['systemd-run', '--user', '--collect', f'--unit=dotfiles-release-{args.name}', *passed,
+            f'--working-directory={ENGINE}', f'--property=StandardOutput=append:{log}',
+            f'--property=StandardError=append:{log}', *inner]
+
+
+def detach(args, argv):
+    for file in (args.message, args.private_message):
+        if file and not file.is_absolute():
+            raise RuntimeError(f'--detach needs an absolute path for {file}, because the unit runs in {ENGINE}')
+    if not shutil.which('systemd-run'):
+        raise RuntimeError('--detach needs systemd-run, which this machine lacks; run the finish in the foreground')
+    log, status = detached_paths(args)
+    log.parent.mkdir(parents=True, exist_ok=True)
+    status.unlink(missing_ok=True)
+    log.write_text('', encoding='utf-8')
+    started = subprocess.run(detach_command(args, argv, os.environ), capture_output=True, text=True, timeout=60)
+    if started.returncode:
+        raise RuntimeError(f'systemd-run exited {started.returncode}: {started.stderr.strip()}')
+    print(f'Detached as unit dotfiles-release-{args.name}; log {log}. Wait for it with: release.py result '
+          f'{args.name} --timeout 3600')
+    return 0
+
+
+def result(args):
+    """Block until a detached finish has written its status, print the end of its log, and return that status."""
+    log, status = detached_paths(args)
+    if not log.exists():
+        raise RuntimeError(f'no detached finish of {args.name} was started: {log} is absent')
+    deadline = time.monotonic() + args.timeout
+    while not (status.is_file() and status.read_text(encoding='utf-8').strip()):
+        if time.monotonic() >= deadline:
+            print(f'Still running after {args.timeout:g} seconds; log {log}', file=sys.stderr)
+            return 4
+        time.sleep(2)
+    lines = log.read_text(encoding='utf-8', errors='replace').splitlines()
+    print('\n'.join(lines[-RESULT_LINES:]))
+    code = int(status.read_text(encoding='utf-8').strip())
+    print(f'finish {args.name} exited {code}; full log {log}')
+    return code
+
+
 def clean(args, public_repo, private_repo):
     base, public, private = places(args)
     for repo, tree in ((public_repo, public), (private_repo, private)):
@@ -509,8 +593,16 @@ def clean(args, public_repo, private_repo):
 
 
 def main(argv=None):
+    report = []
+    code = dispatch(argv, report)
+    for path in report:  # a detached finish tells result how it ended
+        path.write_text(f'{code}\n', encoding='utf-8')
+    return code
+
+
+def dispatch(argv, report):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('action', choices=('start', 'finish', 'clean', 'status', 'wait'))
+    parser.add_argument('action', choices=('start', 'finish', 'clean', 'status', 'wait', 'result'))
     parser.add_argument('name', nargs='?', help='branch name, also the folder under --worktrees')
     parser.add_argument('--private', type=Path, default=ENGINE.parent / 'dotfiles-private', help='canonical private checkout')
     parser.add_argument('--worktrees', type=Path, default=Path.home() / 'worktrees')
@@ -527,10 +619,18 @@ def main(argv=None):
                         help='finish although a plugin with trusted Codex hooks may change, once the user approved them again')
     parser.add_argument('--pull', action='store_true', help='then pull and apply the pair on this device')
     parser.add_argument('--force', action='store_true', help='clean: remove unpushed branches too')
-    parser.add_argument('--timeout', type=float, default=1800, help='wait: give up after this many seconds')
+    parser.add_argument('--timeout', type=float, default=1800,
+                        help='wait and result: give up after this many seconds; finish --detach: wait this long '
+                             'for another release here')
+    parser.add_argument('--detach', action='store_true',
+                        help='finish: run as a systemd user unit and return at once, with absolute paths for the '
+                             'message files; read it with result NAME')
+    parser.add_argument('--report', type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    if args.action in ('start', 'finish', 'clean') and not args.name:
+    if args.action in ('start', 'finish', 'clean', 'result') and not args.name:
         parser.error(f'{args.action} needs a NAME')
+    if args.report:
+        report.append(args.report)
     try:
         if args.action == 'wait':
             if wait(None, args.timeout):
@@ -538,7 +638,13 @@ def main(argv=None):
                 return 0
             print(f'Still running after {args.timeout:g} seconds: ' + '; '.join(running()), file=sys.stderr)
             return 3
+        if args.action == 'result':
+            return result(args)
+        if args.action == 'finish' and args.detach:
+            return detach(args, sys.argv[1:] if argv is None else list(argv))
         if args.action == 'finish':
+            if args.report and not wait(('release',), args.timeout):
+                raise RuntimeError(f'another release still finishes here after {args.timeout:g} seconds')
             with hold(machine_locks()['release']):
                 return finish(args, ENGINE, args.private.resolve())
         action = {'start': start, 'clean': clean, 'status': status}[args.action]

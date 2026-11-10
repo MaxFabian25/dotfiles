@@ -6,11 +6,19 @@ different value, restarts the session's browser, and the restart loses the profi
 
   ab_session.py start NAME FLAG... -- [COMMAND...]   save NAME's flags, then run COMMAND, usually open URL
   ab_session.py attach NAME [COMMAND...]             start NAME on the user's running Chrome, pinned to its tab
+  ab_session.py attach --approve[=PID] NAME [COMMAND...]
+                                                     the same on Linux, pressing Allow on the prompts this attach raises
   ab_session.py run NAME COMMAND...                  run COMMAND with NAME's saved flags
   ab_session.py close NAME                           close NAME with its saved flags and forget them
 
 attach stops with exit 3 and agent-browser's error when Chrome refused the session or nobody approved it in time.
-It closes that session, so attach again.
+It closes that session, so attach again. --approve runs the attach under approve_attach.py, which needs uv, and
+takes Chrome's browser process from the default profile's SingletonLock unless PID is given. Use it only after
+the user said yes to attaching in this task.
+
+close ends the session's daemon itself when agent-browser's own close fails, as it did on WSL on 10 November
+2026 after attaches nobody approved: on Linux it reads the daemon's PID from the session's pid file, checks that
+the process carries this session's name, and stops it.
 
 The flags live in ~/.local/state/agent-browser-sessions/NAME.json. For macOS and Linux. On Windows, start the
 session with windows-session.ps1 and pass the same flags on every later command.
@@ -20,11 +28,14 @@ import json
 import os
 import pathlib
 import re
+import signal
 import subprocess
 import sys
+import time
 
 STATE = pathlib.Path.home() / ".local/state/agent-browser-sessions"
 ATTACH = ["--auto-connect", "--pin-tab"]
+CHROME_LOCK = pathlib.Path.home() / ".config/google-chrome/SingletonLock"
 
 
 def state_file(name: str) -> pathlib.Path:
@@ -51,10 +62,59 @@ def attach_error(name: str, flags: list[str]) -> str | None:
     return reply.get("error") or (done.stdout + done.stderr).strip()[-300:] or f"exit status {done.returncode}"
 
 
+def chrome_pid(lock: pathlib.Path) -> int:
+    """Chrome's browser process, from the HOST-PID target of its profile folder's SingletonLock link."""
+    try:
+        pid = int(os.readlink(lock).rsplit("-", 1)[1])
+        os.kill(pid, 0)  # a Chrome that crashed leaves its lock behind
+    except PermissionError:
+        pass
+    except (OSError, IndexError, ValueError):
+        sys.exit(f"ab_session: no running Chrome found at {lock}; pass --approve=PID")
+    return pid
+
+
+def approve_command(pid: int, name: str, rest: list[str]) -> list[str]:
+    here = pathlib.Path(__file__).resolve().parent
+    return ["uv", "run", "-q", "--with", "jeepney", "python", "-I", str(here / "approve_attach.py"), "--pid", str(pid),
+            "--", sys.executable, str(here / "ab_session.py"), "attach", name, *rest]
+
+
+def daemon_pid(name: str, runtime: pathlib.Path, proc: pathlib.Path) -> int | None:
+    """The PID in NAME's pid file, or None unless that process carries NAME as its session. The check keeps a
+    recycled PID, or another session's daemon, from being stopped."""
+    try:
+        pid = int((runtime / f"{name}.pid").read_text().strip())
+        environment = (proc / str(pid) / "environ").read_bytes().split(b"\0")
+    except (OSError, ValueError):
+        return None
+    return pid if f"AGENT_BROWSER_SESSION={name}".encode() in environment else None
+
+
+def stop_daemon(name: str, runtime: pathlib.Path, proc: pathlib.Path = pathlib.Path("/proc")) -> bool:
+    """End NAME's daemon after its own close failed. True once that process is gone."""
+    pid = daemon_pid(name, runtime, proc)
+    if pid is None:
+        return False
+    for sent in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.kill(pid, sent)
+        except ProcessLookupError:
+            return True
+        for _ in range(20):
+            time.sleep(0.1)
+            if daemon_pid(name, runtime, proc) is None:
+                print(f"ab_session: {name}'s daemon ignored close, so process {pid} was stopped", file=sys.stderr)
+                return True
+    return False
+
+
 def close(name: str, flags: list[str], path: pathlib.Path) -> int:
     result = subprocess.run(["agent-browser", "--session", name, *flags, "close"])
-    if result.returncode == 0:
+    runtime = pathlib.Path(os.environ.get("XDG_RUNTIME_DIR", "/nonexistent")) / "agent-browser"
+    if result.returncode == 0 or stop_daemon(name, runtime):
         path.unlink()
+        return 0
     return result.returncode
 
 
@@ -63,6 +123,11 @@ def main(args: list[str]) -> int:
         sys.exit(__doc__)
     op, name, rest = args[0], args[1], args[2:]
     attach = op == "attach"
+    if attach and name.startswith("--approve"):
+        if not rest:
+            sys.exit("ab_session: attach --approve needs a NAME")
+        pid = int(name.split("=", 1)[1]) if "=" in name else chrome_pid(CHROME_LOCK)
+        os.execvp("uv", approve_command(pid, rest[0], rest[1:]))
     if attach:
         op, rest = "start", [*ATTACH, "--", *rest]
     path = state_file(name)

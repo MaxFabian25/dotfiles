@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import release
@@ -477,6 +478,59 @@ class ReleaseTest(unittest.TestCase):
             '  first/public: 2 uncommitted: content, tests/notes.py',
             '  later/private: on origin/main and clean',
             '  later/public: on origin/main and clean'])
+
+    def test_finish_stops_before_the_suite_on_an_owned_source_edited_without_its_pin(self):
+        release_main(['start', 'owned', *self.options()], self.public)
+        (self.worktrees / 'owned/public/tests/test_seed.py').write_text(FAILING_TEST, encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Edit an owned skill\n', encoding='utf-8')
+        finish = ['finish', 'owned', '--message', str(message), *self.options()]
+        with patch.object(release, 'edited_owned', return_value={'mine': 'skills/mine', 'other': 'skills/other'}):
+            for named in ([], ['--entry', 'mine'], ['--entry', 'mine', '--refresh-owned']):
+                with self.subTest(named=named), redirect_stderr(io.StringIO()) as error:
+                    self.assertEqual(release_main([*finish, *named], self.public), 3)
+                    self.assertIn('changed after its tree was pinned', error.getvalue())
+                    self.assertIn('--entry other --refresh-owned', error.getvalue())
+                    self.assertNotIn('test suite failed', error.getvalue())  # stopped before the failing suite ran
+        self.assertEqual(release.unpinned({'mine': 'skills/mine'}, ['mine'], True), {})
+
+    def test_a_tree_without_a_setup_description_has_no_owned_sources(self):
+        self.assertEqual(release.edited_owned(self.public, self.private), {})
+
+    def test_a_detached_finish_runs_the_same_arguments_as_a_unit_and_result_reads_how_it_ended(self):
+        release_main(['start', 'away', *self.options()], self.public)
+        args = release.argparse.Namespace(name='away', worktrees=self.worktrees, timeout=0.1)
+        argv = ['finish', 'away', '--detach', '--message', '/tmp/m', '--push']
+        command = release.detach_command(args, argv, {'PATH': '/bin', 'HOME': '/home/x'})
+        log, status = self.worktrees / 'away/build/finish.log', self.worktrees / 'away/build/finish.exit'
+        self.assertEqual(command[:4], ['systemd-run', '--user', '--collect', '--unit=dotfiles-release-away'])
+        self.assertEqual(command[4:8], ['--setenv', 'PATH=/bin', '--setenv', 'HOME=/home/x'])  # no SSH agent to pass
+        self.assertIn(f'--property=StandardOutput=append:{log}', command)
+        self.assertEqual(command[-7:], ['finish', 'away', '--message', '/tmp/m', '--push', '--report', str(status)])
+        with redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(['result', 'away', *self.options()], self.public), 3)
+        self.assertIn('no detached finish of away was started', error.getvalue())
+        with redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(['finish', 'away', '--detach', '--message', 'm.txt', *self.options()],
+                                          self.public), 3)
+        self.assertIn('--detach needs an absolute path for m.txt', error.getvalue())
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text('Ran 3 tests: OK\nRelease stopped: nothing to release\n', encoding='utf-8')
+        with redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(['result', 'away', '--timeout', '0.1', *self.options()], self.public), 4)
+        self.assertIn('Still running', error.getvalue())
+        status.write_text('3\n', encoding='utf-8')
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(release_main(['result', 'away', *self.options()], self.public), 3)
+        self.assertIn('Release stopped: nothing to release', output.getvalue())
+        self.assertIn('finish away exited 3', output.getvalue())
+
+    def test_a_finish_started_by_a_unit_reports_its_status_to_the_file_result_reads(self):
+        release_main(['start', 'unit', *self.options()], self.public)
+        status = self.root / 'finish.exit'
+        with redirect_stderr(io.StringIO()):
+            self.assertEqual(release_main(['finish', 'unit', '--report', str(status), *self.options()], self.public), 3)
+        self.assertEqual(status.read_text(encoding='utf-8'), '3\n')  # nothing to release
 
     def test_finish_without_a_message_stops_before_committing(self):
         release_main(['start', 'quiet', *self.options()], self.public)
