@@ -34,6 +34,9 @@ CATALOGS = ALL_CATALOGS[_HOST]
 ENGINE = ENGINE_MARKETPLACE[_HOST]
 # Codex's record, in a git marketplace's snapshot, of the commit it fetched.
 _FETCHED = '.codex-marketplace-install.json'
+# A listing with no warm cache downloads Codex's whole remote catalog. On 2026-11-10 that took 167 to 200 seconds on
+# two machines, and at the general limit every Codex fact came back unread, which stopped each pull and release.
+PLUGIN_LISTING_SECONDS = 300
 
 
 def _key(surface: Surface, subject: str) -> FactKey:
@@ -261,7 +264,7 @@ class CodexState:
             version = 'unknown'
         listing = 'codex plugin list --available --json'
         try:
-            listed = json.loads(run([*self.cli, 'plugin', 'list', '--available', '--json'], env=home))
+            listed = json.loads(run([*self.cli, 'plugin', 'list', '--available', '--json'], PLUGIN_LISTING_SECONDS, env=home))
             inventory, available = listed['installed'], listed['available']
         except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as error:
             seen.unread(listing, error, {Surface.PLUGIN, Surface.TREE, Surface.OVERLAY, Surface.HOOK, Surface.SKILL})

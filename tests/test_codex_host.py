@@ -16,6 +16,7 @@ import homes
 import host_state
 import description
 import codex_host
+import host_observation
 import portable
 from device import Device as HostDevice
 from drift import Kind, diff
@@ -596,6 +597,35 @@ class ObserveTest(unittest.TestCase):
                 observation = state.observe(hs.Request())
         self.assertEqual(observation.facts[key(S.PLUGIN, 'rpi@skills')].value, hs.PluginValue(True, hs.Pinned(C2)))
         self.assertEqual(observation.unknown, ())
+
+    def slow_listing(self, device, seconds):
+        """A CLI whose plugin listing takes SECONDS, as a listing without a warm catalog cache does."""
+        state = device.state()
+        wrapper = device.bin / 'slow_listing.py'
+        wrapper.write_text('import os, sys, time\n'
+                           'if sys.argv[-4:-2] == ["plugin", "list"]:\n'
+                           f'    time.sleep({seconds})\n'
+                           'os.execv(sys.argv[1], sys.argv[1:])\n')
+        state.cli = [sys.executable, str(wrapper), *state.cli]
+        return state
+
+    def test_a_plugin_listing_slower_than_other_commands_is_still_read(self):
+        with Device() as device:
+            state = self.slow_listing(device, 6)
+            with patch.object(host_observation, 'COMMAND_SECONDS', 4):
+                observation = state.observe(hs.Request())
+        self.assertEqual(observation.facts[key(S.PLUGIN, 'rpi@skills')].value, hs.PluginValue(True, hs.Pinned(C2)))
+        self.assertEqual(observation.unknown, ())
+
+    def test_a_plugin_listing_past_its_own_limit_leaves_the_plugins_unread(self):
+        with Device() as device:
+            state = self.slow_listing(device, 6)
+            with patch.object(codex_host, 'PLUGIN_LISTING_SECONDS', 1):
+                observation = state.observe(hs.Request())
+        self.assertNotIn(key(S.PLUGIN, 'rpi@skills'), observation.facts)
+        listing = [u for u in observation.unknown if u.source == 'codex plugin list --available --json']
+        self.assertEqual(len(listing), 1)
+        self.assertIn('timed out after 1 seconds', listing[0].reason)
 
     def test_a_git_marketplace_plugin_is_pinned_by_what_codex_fetched_not_the_configured_ref(self):
         with Device() as device:

@@ -13,9 +13,13 @@ from host_state import (Commit, Detail, DeviceRoots, Fact, FactKey, FactValue, F
                         clone_url, parse_commit)
 
 
-def run(command: list[str], **options) -> str:
+COMMAND_SECONDS = 120
+
+
+def run(command: list[str], seconds: float | None = None, **options) -> str:
     options['env'] = portable.native_cli_environment(options.get('env'))
-    return subprocess.run(command, capture_output=True, text=True, encoding='utf-8', check=True, timeout=120, **options).stdout
+    return subprocess.run(command, capture_output=True, text=True, encoding='utf-8', check=True,
+                          timeout=seconds or COMMAND_SECONDS, **options).stdout
 
 
 class Unread(Exception):
