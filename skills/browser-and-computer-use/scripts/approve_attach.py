@@ -13,6 +13,11 @@ another connection. It exits with COMMAND's status.
 task. CHROME_PID is Chrome's browser process, the one
 without --type= in its arguments. --max caps the presses, and a prompt left over from a failed attempt stays on
 screen until someone cancels it. For Linux, WSLg's display :0 included.
+
+Chrome shows its windows to accessibility tools only when it was started with --force-renderer-accessibility.
+Without that the prompt cannot be found, so the script exits 4 before it starts COMMAND, and no prompt is raised.
+On 11 November 2026 an attach to a Chrome the user had opened themselves timed out and left its prompt over
+their window, which is why the check exists.
 """
 
 import argparse
@@ -25,6 +30,25 @@ PROMPT = ("alert", "Allow remote debugging?")
 BUTTON = ("push button", "Allow")
 PAGE = "document web"
 REPRESS = 1  # seconds; a press Chrome accepts takes the prompt down within this
+ABSENT = "/org/a11y/atspi/null"  # the path AT-SPI gives for a child the application does not expose
+NO_TREE = 4  # exit status when Chrome exposes no accessibility tree
+
+
+def exposed(nodes):
+    """The (bus name, path) pairs of a GetChildren reply that name a real node."""
+    return [tuple(node) for node in nodes if node[1] != ABSENT]
+
+
+def has_tree(roots, children):
+    """Whether any window of the application exposes something inside it. A Chrome started without
+    --force-renderer-accessibility lists its windows and nothing in them."""
+    for root in roots:
+        try:
+            if any(children(window) for window in children(root)):
+                return True
+        except Exception:
+            pass
+    return False
 
 
 def allow_buttons(roots, info, children):
@@ -95,7 +119,7 @@ def main():
         return role, label[0][1] or ""
 
     def children(node):
-        return [tuple(child) for child in call(node, "org.a11y.atspi.Accessible", "GetChildren")[0]]
+        return exposed(call(node, "org.a11y.atspi.Accessible", "GetChildren")[0])
 
     def bus_pid(name):
         message = new_method_call(DBusAddress("/org/freedesktop/DBus", "org.freedesktop.DBus", "org.freedesktop.DBus"),
@@ -111,6 +135,13 @@ def main():
             pass
     if not roots:
         sys.exit(f"approve_attach: no accessible application for pid {args.pid}")
+
+    if not has_tree(roots, children):
+        print(f"approve_attach: Chrome (pid {args.pid}) exposes no accessibility tree, so its prompt cannot be "
+              "pressed, and the attach was not started. Chrome exposes one only when started with "
+              "--force-renderer-accessibility. Run the attach without --approve and ask the user to click Allow, "
+              "or ask them to restart Chrome with that flag.", file=sys.stderr)
+        sys.exit(NO_TREE)
 
     def buttons():
         return allow_buttons(roots, info, children)

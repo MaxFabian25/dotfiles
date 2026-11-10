@@ -43,6 +43,19 @@ class ApproveTest(unittest.TestCase):
         found = approve_attach.allow_buttons(['app'], lambda node: TREE[node][:2], lambda node: TREE[node][2])
         self.assertEqual(found, {'allow'})
 
+    def test_a_chrome_that_lists_its_windows_and_nothing_in_them_has_no_tree(self):
+        # What a Chrome started without --force-renderer-accessibility answered on 11 November 2026.
+        reply = [(':1.439', '/org/a11y/atspi/accessible/1'), (':1.439', approve_attach.ABSENT)]
+        self.assertEqual(approve_attach.exposed(reply), [(':1.439', '/org/a11y/atspi/accessible/1')])
+        bare = {'app': ['frame'], 'frame': approve_attach.exposed([(':1.439', approve_attach.ABSENT)] * 2)}
+        self.assertFalse(approve_attach.has_tree(['app'], bare.__getitem__))
+        self.assertFalse(approve_attach.has_tree(['app'], {'app': []}.__getitem__))  # no window at all
+        self.assertTrue(approve_attach.has_tree(['app'], lambda node: TREE[node][2]))
+
+        def broken(node):
+            raise OSError('the bus went away')
+        self.assertFalse(approve_attach.has_tree(['app'], broken))
+
     def approve(self, views, times, limit=4):
         """Run approve over successive screen contents and clock readings; return what it pressed and reported."""
         views, times, pressed, said = list(views), iter(times), [], []

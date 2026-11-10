@@ -12,7 +12,8 @@ different value, restarts the session's browser, and the restart loses the profi
   ab_session.py close NAME                           close NAME with its saved flags and forget them
 
 attach stops with exit 3 and agent-browser's error when Chrome refused the session or nobody approved it in time.
-It closes that session, so attach again. --approve runs the attach under approve_attach.py, which needs uv, and
+It closes that session, so attach again. --approve runs the attach under approve_attach.py, which needs uv,
+exits 4 without attaching when Chrome was not started with --force-renderer-accessibility, and
 takes Chrome's browser process from the default profile's SingletonLock unless PID is given. Use it only after
 the user said yes to attaching in this task.
 
