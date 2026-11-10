@@ -1,4 +1,5 @@
 """Build folders take their parent's access rules on Windows, and an unreadable release is reported as such."""
+import ast
 import os
 from pathlib import Path
 import stat
@@ -54,6 +55,32 @@ class StagingTest(unittest.TestCase):
                     package.files(Path(root) / 'release')
             finally:
                 closed.chmod(0o700)
+
+
+def folders_made_under_a_parent(source):
+    """Line numbers of tempfile.TemporaryDirectory and tempfile.mkdtemp calls in source that name a parent folder,
+    by the dir keyword or as the third positional argument."""
+    return sorted(node.lineno for node in ast.walk(ast.parse(source))
+                  if isinstance(node, ast.Call)
+                  and getattr(node.func, 'attr', getattr(node.func, 'id', None)) in ('TemporaryDirectory', 'mkdtemp')
+                  and (len(node.args) >= 3 or any(keyword.arg == 'dir' for keyword in node.keywords)))
+
+
+class StagingGuardTest(unittest.TestCase):
+    def test_a_tempfile_folder_under_a_named_parent_is_found(self):
+        self.assertEqual(folders_made_under_a_parent(
+            "import tempfile\n"
+            "with tempfile.TemporaryDirectory(prefix='.build-', dir=root) as a: pass\n"
+            "b = tempfile.mkdtemp('', '.native-', parent)\n"
+            "with tempfile.TemporaryDirectory(prefix='check-') as c: pass\n"), [2, 3])
+
+    def test_engine_modules_stage_through_portable(self):
+        # A folder tempfile makes under a release root is owner-only on Windows, and the tree renamed out of it
+        # stays closed to a non-elevated run. Only portable.py may call tempfile that way, on other systems.
+        root = Path(__file__).resolve().parents[1]
+        direct = [f'{module.name}:{line}' for module in sorted(root.glob('*.py')) if module.name != 'portable.py'
+                  for line in folders_made_under_a_parent(module.read_text(encoding='utf-8'))]
+        self.assertEqual(direct, [], 'make these folders with portable.staging_directory or portable.staging_folder')
 
 
 if __name__ == '__main__':
