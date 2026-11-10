@@ -3,8 +3,9 @@
 
 Chrome asks "Allow remote debugging?" for each new DevTools connection. This script records the Allow buttons
 already on screen, starts COMMAND, and presses each Allow button that appears while COMMAND runs, through AT-SPI
-on the session's accessibility bus. It never presses a prompt that was there before it started, because that one
-belongs to another connection. It exits with COMMAND's status.
+on the session's accessibility bus. Chrome ignores a press that lands as the prompt appears, so it presses again
+while the prompt stays. It never presses a prompt that was there before it started, because that one belongs to
+another connection. It exits with COMMAND's status.
 
   uv run --with jeepney python -I approve_attach.py --pid CHROME_PID -- python3 ab_session.py attach NAME
 
@@ -86,17 +87,21 @@ def allow_buttons():
     return found
 
 
-seen = allow_buttons()
-print(f"approve_attach: {len(seen)} earlier prompt(s) left alone", file=sys.stderr)
+earlier = allow_buttons()
+print(f"approve_attach: {len(earlier)} earlier prompt(s) left alone", file=sys.stderr)
 process = subprocess.Popen(args.command)
-start, pressed = time.monotonic(), 0
+# Each prompt this run approved, with the time of its last press. A press Chrome accepts takes the prompt down
+# within a second.
+start, pressed = time.monotonic(), {}
 while process.poll() is None:
-    for name, path in sorted(allow_buttons() - seen):
-        seen.add((name, path))
-        if pressed >= args.max or process.poll() is not None:
+    for button in sorted(allow_buttons() - earlier):
+        now, again = time.monotonic(), button in pressed
+        skip = now - pressed[button] < 1 if again else len(pressed) >= args.max
+        if skip or process.poll() is not None:
             continue
-        done = call(name, path, "org.a11y.atspi.Action", "DoAction", "i", (0,))[0]
-        pressed += 1
-        print(f"approve_attach: pressed Allow after {time.monotonic() - start:.1f}s: {bool(done)}", file=sys.stderr)
+        done = call(*button, "org.a11y.atspi.Action", "DoAction", "i", (0,))[0]
+        pressed[button] = now
+        print(f"approve_attach: pressed Allow {'again ' if again else ''}after {now - start:.1f}s: {bool(done)}",
+              file=sys.stderr)
     time.sleep(0.2)
 sys.exit(process.returncode)

@@ -9,8 +9,8 @@ different value, restarts the session's browser, and the restart loses the profi
   ab_session.py run NAME COMMAND...                  run COMMAND with NAME's saved flags
   ab_session.py close NAME                           close NAME with its saved flags and forget them
 
-attach stops with exit 3 when the session reached only about:blank, the hidden browser a failed attach starts.
-Close that session and attach again.
+attach stops with exit 3 and agent-browser's error when Chrome refused the session or nobody approved it in time.
+It closes that session, so attach again.
 
 The flags live in ~/.local/state/agent-browser-sessions/NAME.json. For macOS and Linux. On Windows, start the
 session with windows-session.ps1 and pass the same flags on every later command.
@@ -38,12 +38,24 @@ def run(name: str, flags: list[str], command: list[str]) -> None:
     os.execvp(argv[0], argv)
 
 
-def reached_chrome(name: str, flags: list[str]) -> bool:
+def attach_error(name: str, flags: list[str]) -> str | None:
+    """Run the session's first command, which makes the attach, and return agent-browser's error when it fails."""
     done = subprocess.run(["agent-browser", "--session", name, *flags, "--json", "tab", "list"],
                           capture_output=True, text=True)
-    if done.returncode:
-        return False
-    return any(tab.get("url") != "about:blank" for tab in json.loads(done.stdout)["data"]["tabs"])
+    try:
+        reply = json.loads(done.stdout)
+    except ValueError:
+        reply = {}
+    if done.returncode == 0 and reply.get("success"):
+        return None
+    return reply.get("error") or (done.stdout + done.stderr).strip()[-300:] or f"exit status {done.returncode}"
+
+
+def close(name: str, flags: list[str], path: pathlib.Path) -> int:
+    result = subprocess.run(["agent-browser", "--session", name, *flags, "close"])
+    if result.returncode == 0:
+        path.unlink()
+    return result.returncode
 
 
 def main(args: list[str]) -> int:
@@ -66,10 +78,12 @@ def main(args: list[str]) -> int:
         else:
             STATE.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps({"flags": flags}))
-        if attach and not reached_chrome(name, flags):
-            print(f"ab_session: {name} reached only about:blank, so it is not attached; close it and attach again",
-                  file=sys.stderr)
-            return 3
+        if attach:
+            error = attach_error(name, flags)
+            if error:
+                print(f"ab_session: {name} is not attached: {error}", file=sys.stderr)
+                close(name, flags, path)
+                return 3
         if command:
             run(name, flags, command)
         return 0
@@ -80,10 +94,7 @@ def main(args: list[str]) -> int:
         if not rest:
             sys.exit("ab_session: run needs a COMMAND")
         run(name, flags, rest)
-    result = subprocess.run(["agent-browser", "--session", name, *flags, "close"])
-    if result.returncode == 0:
-        path.unlink()
-    return result.returncode
+    return close(name, flags, path)
 
 
 if __name__ == "__main__":
