@@ -60,6 +60,15 @@ A method change the text has to leave out, because the user asked or because say
 
 Give parallel setups the same term, and keep the term the user designed the study with. Ask before you switch to a product's own label.
 
+Before the user sees a post, thread or reply about the study as ready, a reviewer who hasn't seen it answers four questions for each post or section, because the user sent a finished thread back on each of them in November 2026:
+
+1. Does it say why the result came out as it did?
+2. Does it repeat what its chart or card already shows?
+3. Does it use a number, unit or detail that a reader who hasn't read the write-up can't picture?
+4. Can it be read without the earlier study or thread?
+
+Give the reviewer the user's earlier cuts as fixed rules, from the task's decisions file.
+
 Before publishing, run the repository's publishing gates, such as the passes a site's verify doc lists, on the final draft.
 
 When a flaw is found after publication, quote each published sentence it touches before you say what it breaks, and set the severity from those sentences.
