@@ -36,6 +36,11 @@ import time
 STATE = pathlib.Path.home() / ".local/state/agent-browser-sessions"
 ATTACH = ["--auto-connect", "--pin-tab"]
 CHROME_LOCK = pathlib.Path.home() / ".config/google-chrome/SingletonLock"
+# One agent-browser for every call: a shell started before an upgrade still has the older version first on its
+# PATH, and two versions on one session restart its daemon, which closes its pages.
+SHIMS = pathlib.Path.home() / ".local/share/mise/shims"
+if (SHIMS / "agent-browser").exists():
+    os.environ["PATH"] = f"{SHIMS}{os.pathsep}{os.environ.get('PATH', '')}"
 
 
 def state_file(name: str) -> pathlib.Path:

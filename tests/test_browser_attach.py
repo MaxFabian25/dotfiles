@@ -93,6 +93,26 @@ class SessionTest(unittest.TestCase):
         self.assertEqual(command[7:11], [str(scripts / 'approve_attach.py'), '--pid', '4711', '--'])
         self.assertEqual(command[11:], [sys.executable, str(scripts / 'ab_session.py'), 'attach', 'mine', 'get', 'url'])
 
+    @unittest.skipIf(sys.platform == 'win32', 'the stand-in tools are shell scripts')
+    def test_a_session_runs_the_pinned_agent_browser_ahead_of_an_older_one_on_the_path(self):
+        def tool(folder, says):
+            path = self.root / folder / 'agent-browser'
+            path.parent.mkdir(parents=True)
+            path.write_text(f'#!/bin/sh\necho {says}\n')
+            path.chmod(0o755)
+            return path.parent
+
+        older = tool('older', 'older')
+        script = Path(ab_session.__file__)
+        environment = {**os.environ, 'HOME': str(self.root), 'PATH': f"{older}{os.pathsep}{os.environ['PATH']}"}
+        unpinned = subprocess.run([sys.executable, str(script), 'start', 'one', '--', 'open', 'about:blank'],
+                                  env=environment, capture_output=True, text=True)
+        self.assertEqual(unpinned.stdout.strip(), 'older')
+        tool('.local/share/mise/shims', 'pinned')
+        pinned = subprocess.run([sys.executable, str(script), 'start', 'two', '--', 'open', 'about:blank'],
+                                env=environment, capture_output=True, text=True)
+        self.assertEqual(pinned.stdout.strip(), 'pinned')
+
     def proc(self, pid, session):
         (self.root / 'proc' / str(pid)).mkdir(parents=True)
         (self.root / 'proc' / str(pid) / 'environ').write_bytes(f'HOME=/x\0AGENT_BROWSER_SESSION={session}\0'.encode())
