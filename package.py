@@ -7,9 +7,9 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-import tempfile
 
-from portable import GIT, agents_home, codex_home, extract_tar, posix, read_utf8, write_utf8
+from portable import (GIT, agents_home, codex_home, extract_tar, posix, read_utf8, require_readable,
+                      staging_directory, write_utf8)
 
 ROOT = Path(__file__).resolve().parent
 
@@ -18,6 +18,7 @@ def files(root):
     # Dependencies a packaged script installs beside itself at run time are not package content,
     # nor are the .in_use and .orphaned_at markers Claude Code writes into installed plugin caches,
     # nor the __pycache__ folders Python writes beside any module it imports.
+    require_readable(root)
     return {
         posix(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(root.rglob('*'), key=lambda path: path.parts)
@@ -73,7 +74,7 @@ def package(name, revision='HEAD', *, config=None, output_root=None):
     tree = f"{commit}:{config['subdirectory']}" if config['subdirectory'] else commit
     release_root = (output_root or ROOT) / name
     release_root.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='.build-', dir=release_root) as temporary:
+    with staging_directory(prefix='.build-', dir=release_root) as temporary:
         stage = Path(temporary) / 'package'
         stage.mkdir()
         archive = git(repository, 'archive', tree)

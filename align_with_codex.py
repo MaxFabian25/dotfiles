@@ -15,7 +15,7 @@ import tomllib
 
 import yaml
 
-from portable import GIT, claude_cli, claude_home, codex_home, posix, read_utf8, replace, write_utf8
+from portable import GIT, claude_cli, claude_home, codex_home, posix, read_utf8, replace, staging_directory, write_utf8
 
 ROOT = Path(__file__).resolve().parent
 HOME = Path.home()
@@ -210,7 +210,7 @@ def build_from(name, source, disabled, catalog_root, *, kept_skills=_LEGACY, age
     target = catalog_root / 'plugins' / name / version
     if not target.exists():
         target.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=target.parent, prefix='.build-') as folder:
+        with staging_directory(dir=target.parent, prefix='.build-') as folder:
             stage = Path(folder) / 'plugin'
             shutil.copytree(source, stage, ignore=shutil.ignore_patterns(
                 '.git', '.out-of-scope', 'node_modules', '__pycache__', '.codex-plugin',

@@ -14,7 +14,7 @@ import yaml
 
 from package import ROOT, files
 from verify_candidate import validate
-from portable import agents_home, codex_home, posix, read_pointer, read_utf8, set_pointer, write_utf8
+from portable import agents_home, codex_home, posix, read_pointer, read_utf8, set_pointer, staging_directory, write_utf8
 
 
 def read(path):
@@ -36,7 +36,7 @@ def snapshot(skills, source_record, destination):
     source_record = {**source_record, 'snapshotSha256': digest, 'fileHashes': content_hashes(skills)}
     if not target.exists():
         target.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix='.snapshot-', dir=target.parent) as tmp:
+        with staging_directory(prefix='.snapshot-', dir=target.parent) as tmp:
             staged = Path(tmp) / 'snapshot'
             shutil.copytree(skills, staged / 'skills', ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '.DS_Store'))
             write_utf8(staged / 'source.json', json.dumps(source_record, indent=2) + '\n')
@@ -57,7 +57,7 @@ def build_snapshot(name, definition, source_snapshot, *, output_root=None):
     version = '0.1.0+snapshot.' + record['snapshotSha256'][:12] + '.personal' + str(definition['packagingRevision'])
     parent = (output_root or ROOT) / name
     parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='.build-', dir=parent) as tmp:
+    with staging_directory(prefix='.build-', dir=parent) as tmp:
         stage = Path(tmp) / 'package'
         shutil.copytree(source_snapshot / 'skills', stage / 'skills')
         metadata = stage / '.codex-plugin'
@@ -268,7 +268,7 @@ def publish_codex(name, release, backup):
             raise RuntimeError('Edited Codex destination; preserve it')
     else:
         cache.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix='.publish-', dir=cache.parent) as tmp:
+        with staging_directory(prefix='.publish-', dir=cache.parent) as tmp:
             staged = Path(tmp) / 'package'
             shutil.copytree(release, staged)
             staged.rename(cache)

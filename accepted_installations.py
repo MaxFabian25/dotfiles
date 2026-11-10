@@ -17,7 +17,7 @@ from description import (AlignedInstall, LocalSource, RepoSource, SkillRoot, Sna
                          plugin_id)
 from drift import Difference, EntryRef, Kind
 from host_state import FactKey, Host, InstallDetail, Surface, Unpinned, bytes_digest
-from portable import process_running, replace as replace_path
+from portable import process_running, staging_folder, replace as replace_path
 from sync_files import ConcurrentEdit, contents
 from sync_sources import BuildError
 
@@ -540,7 +540,7 @@ class AcceptedInstallations:
                 pristine = image(release.root)
                 scratch = self.roots.engine / '.sync/accepted-images'
                 scratch.mkdir(parents=True, exist_ok=True)
-                source = Path(tempfile.mkdtemp(prefix=package.name + '-', dir=scratch)) / 'tree'
+                source = Path(staging_folder(prefix=package.name + '-', dir=scratch)) / 'tree'
                 copy_tree(release.root, source)
                 install = next(i for i in package.placement(artifact.key.host).installs
                                if plugin_id(package.name, i, artifact.key.host) == artifact.key.subject)

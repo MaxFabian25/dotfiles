@@ -13,7 +13,7 @@ from description import (AcademicRecipe, AlignedInstall, BuildSource, CourseReci
                          GeneratedRoles, GenericRecipe, LocalSource, Package, PluginRoles, PublicEmilRecipe,
                          RepoRoles, RepoSource, Setup, SnapshotRecipe, ToolNotes, plugin_id, via)
 from host_state import DeviceRoots, Digest, Host, SkillMode, bytes_digest, clone_url, parse_commit
-from portable import GIT, WINDOWS, extract_tar, read_utf8
+from portable import GIT, WINDOWS, extract_tar, read_utf8, staging_directory, staging_folder
 
 
 class BuildError(RuntimeError):
@@ -151,12 +151,12 @@ class Builder:
             if not verify:
                 review = self.directory / '.sync/review-native'
                 review.mkdir(parents=True, exist_ok=True)
-                parent = Path(tempfile.mkdtemp(prefix=package.name + '-', dir=review)) / 'package'
+                parent = Path(staging_folder(prefix=package.name + '-', dir=review)) / 'package'
             if parent.exists():
                 tree = parent
             else:
                 parent.parent.mkdir(parents=True, exist_ok=True)
-                with tempfile.TemporaryDirectory(prefix='.native-', dir=parent.parent) as temp:
+                with staging_directory(prefix='.native-', dir=parent.parent) as temp:
                     checkout = self.sources.tree(repo.url, repo.commit, Path(temp) / 'repo')
                     relative = source.path or self._plugin_path(checkout, package.name)
                     selected = child(checkout, relative)
@@ -341,7 +341,7 @@ class Builder:
                 catalog = self.directory / '.sync/claude-aligned'
                 if not verify:
                     catalog.parent.mkdir(parents=True, exist_ok=True)
-                    catalog = Path(tempfile.mkdtemp(prefix='claude-reviewed-', dir=catalog.parent))
+                    catalog = Path(staging_folder(prefix='claude-reviewed-', dir=catalog.parent))
                 entry = build_from(package.name, effective, disabled, catalog,
                                    kept_skills=set(package.claude.modes), agents=install.agents,
                                    invocable={s for s, m in package.claude.modes.items() if m == SkillMode.ON},

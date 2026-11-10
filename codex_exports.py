@@ -4,10 +4,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import shutil
-import tempfile
 
 from host_state import SkillMode
 from invocation_overrides import read_text, skill_paths, transform_policy, transform_skill
+from portable import staging_directory
 
 
 def explicit_skills(package):
@@ -48,7 +48,7 @@ def export(package, built, directory, roots):
         return built
     parent = directory / 'codex-exports' / package.name
     parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='.policy-', dir=parent) as temporary:
+    with staging_directory(prefix='.policy-', dir=parent) as temporary:
         staged = Path(temporary) / 'tree'
         shutil.copytree(built.root, staged)
         for path, _, after, _ in changes:

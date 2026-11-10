@@ -11,7 +11,7 @@ import tempfile
 import yaml
 
 from package import ROOT, files, git
-from portable import extract_tar, posix, read_utf8, write_utf8
+from portable import extract_tar, posix, read_utf8, staging_directory, write_utf8
 
 
 def load_installer(source, expected_hash):
@@ -55,7 +55,7 @@ def build(name, config, revision='HEAD', *, output_root=None):
     release_root = (output_root or ROOT) / name
     release_root.mkdir(parents=True, exist_ok=True)
     archive = git(repository, 'archive', commit)
-    with tempfile.TemporaryDirectory(prefix='.build-', dir=release_root) as temporary:
+    with staging_directory(prefix='.build-', dir=release_root) as temporary:
         temporary = Path(temporary)
         source = temporary / 'source'
         source.mkdir()

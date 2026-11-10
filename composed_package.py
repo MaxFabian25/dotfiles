@@ -5,10 +5,10 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
-import tempfile
 
 from standalone_package import content_hashes
 from sync_sources import BuildError, Built, child
+from portable import staging_directory
 
 
 def compose(package, built, private, directory, roots):
@@ -36,7 +36,7 @@ def compose(package, built, private, directory, roots):
         imports.append((name, pinned, source, original, content_hashes(source)))
     parent = directory / 'composed' / package.name
     parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='.compose-', dir=parent) as temporary:
+    with staging_directory(prefix='.compose-', dir=parent) as temporary:
         staged = Path(temporary) / 'tree'
         shutil.copytree(built.root, staged)
         receipt = {'schema': 1, 'base_version': built.version, 'base_digest': built.digest, 'imports': {}}

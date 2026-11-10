@@ -4,11 +4,10 @@ import json
 from pathlib import Path
 import re
 import subprocess
-import tempfile
 
 import yaml
 
-from portable import GIT, extract_tar, read_utf8, write_utf8
+from portable import GIT, extract_tar, read_utf8, require_readable, staging_directory, write_utf8
 
 ROOT = Path(__file__).resolve().parent
 
@@ -18,6 +17,7 @@ def sha(data):
 
 
 def files(root):
+    require_readable(root)
     return {p.relative_to(root).as_posix(): sha(p.read_bytes())
             for p in sorted(root.rglob('*'), key=lambda path: path.parts) if p.is_file()}
 
@@ -34,7 +34,7 @@ def build(name, config, revision='HEAD', *, output_root=None):
     version = f"0.1.0+upstream.{commit[:12]}.codex{config['packagingRevision']}"
     release_root = (output_root or ROOT) / name
     release_root.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='.build-', dir=release_root) as temporary:
+    with staging_directory(prefix='.build-', dir=release_root) as temporary:
         temporary = Path(temporary)
         source, stage = temporary/'source', temporary/'package'
         source.mkdir(); stage.mkdir()

@@ -28,6 +28,7 @@ import sys
 import time
 import tomllib
 
+import claims
 from portable import GIT, codex_home, exclusive_lock, lock_holder, native_cli_environment
 from pull import git
 
@@ -133,6 +134,8 @@ def releases(args, public_repo, private_repo):
 def status(args, public_repo, private_repo):
     busy = running()
     print('Running on this machine: ' + ('; '.join(busy) if busy else 'no release, pull or sync'))
+    for claim in claims.lines(STATE / 'claims'):
+        print('Claimed: ' + claim)
     found = releases(args, public_repo, private_repo)
     print(f'Release worktrees under {args.worktrees}:' if found else f'No release worktrees under {args.worktrees}.')
     for name, side, text in found:

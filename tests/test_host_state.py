@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path, PureWindowsPath
 import subprocess
 import sys
@@ -32,6 +33,19 @@ class TreeDigestTest(unittest.TestCase):
         write(root / '.claude-plugin/codex-alignment.json',
               json.dumps({'codexSource': str(roots.codex_home / 'plugins/cache/personal/kit/1.0')}))
         return roots.tree_digest(root)
+
+    @unittest.skipIf(os.name == 'nt' or os.geteuid() == 0, 'needs a folder the process may not list')
+    def test_a_folder_the_process_may_not_list_is_an_error_not_an_empty_tree(self):
+        with tempfile.TemporaryDirectory() as home:
+            roots = roots_for(home)
+            root = roots.claude_home / 'plugins/cache/personal/kit/1.0'
+            write(root / 'skills/a/SKILL.md', '# kit\n')
+            os.chmod(root / 'skills', 0)
+            try:
+                with self.assertRaisesRegex(PermissionError, 'Cannot read .*skills'):
+                    roots.tree_digest(root)
+            finally:
+                os.chmod(root / 'skills', 0o700)
 
     def test_generated_files_hash_the_same_under_any_home(self):
         with tempfile.TemporaryDirectory() as one, tempfile.TemporaryDirectory() as two:

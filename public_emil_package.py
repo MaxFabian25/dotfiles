@@ -2,10 +2,9 @@
 import json
 from pathlib import Path
 import re
-import tempfile
 
 from package import ROOT, files, git, require_clean
-from portable import extract_tar, read_utf8, write_utf8
+from portable import extract_tar, read_utf8, staging_directory, write_utf8
 
 
 def build(name, config, revision='HEAD', *, output_root=None):
@@ -15,7 +14,7 @@ def build(name, config, revision='HEAD', *, output_root=None):
     version = f"0.1.0+upstream.{commit[:12]}.codex{config['packagingRevision']}"
     release_root = (output_root or ROOT) / name
     release_root.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='.build-', dir=release_root) as temporary:
+    with staging_directory(prefix='.build-', dir=release_root) as temporary:
         source = Path(temporary) / 'source'
         stage = Path(temporary) / 'package'
         source.mkdir()

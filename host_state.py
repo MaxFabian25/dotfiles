@@ -181,6 +181,7 @@ class DeviceRoots:
         which is how an overlaid cache is read as its pristine release.
         """
         root = Path(root)
+        portable.require_readable(root)
         hashes = {}
         present = set()
         for path in sorted(root.rglob('*')):

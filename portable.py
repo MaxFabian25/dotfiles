@@ -12,10 +12,13 @@ import io
 import json
 import os
 from pathlib import Path, PurePath, PurePosixPath
+import secrets
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 
 WINDOWS = os.name == 'nt'
@@ -122,6 +125,58 @@ def replace(source, target, attempts=20, delay=0.25):
             if not WINDOWS or attempt == attempts - 1:
                 raise
             time.sleep(delay)
+
+
+def staging_folder(prefix, dir):
+    """Make a new folder under dir for building a tree that is then renamed into place, and return its path.
+
+    On Windows the folder takes dir's own access rules. Python's tempfile gives its folders an owner-only rule
+    there, a tree renamed out of one keeps that rule, and a tree an elevated session built is owned by the
+    Administrators group, so a later non-elevated run could not read the release."""
+    if not WINDOWS:
+        return tempfile.mkdtemp(prefix=prefix, dir=dir)
+    for _ in range(100):
+        folder = Path(dir) / (prefix + secrets.token_hex(4))
+        try:
+            folder.mkdir()
+        except FileExistsError:
+            continue
+        return str(folder)
+    raise FileExistsError(f'No free staging folder name under {dir}')
+
+
+def _remove_read_only(function, path, error):
+    os.chmod(path, stat.S_IWRITE)
+    function(path)
+
+
+@contextlib.contextmanager
+def staging_directory(prefix, dir):
+    """staging_folder as a context manager that removes the folder on exit, as tempfile.TemporaryDirectory does."""
+    if not WINDOWS:
+        with tempfile.TemporaryDirectory(prefix=prefix, dir=dir) as folder:
+            yield folder
+        return
+    folder = staging_folder(prefix, dir)
+    try:
+        yield folder
+    finally:
+        # Git marks a checkout's objects read-only, and Windows refuses to delete a read-only file.
+        shutil.rmtree(folder, onexc=_remove_read_only)
+
+
+def require_readable(root):
+    """Raise PermissionError when a folder under root may not be listed. pathlib's rglob skips such a folder
+    silently, so a tree read through it looks empty or smaller than it is. A missing root stays what rglob
+    makes of it, an empty tree."""
+    def refuse(error):
+        if isinstance(error, PermissionError):
+            raise PermissionError(
+                f'Cannot read {error.filename}: {error.strerror}. On Windows a non-elevated run cannot read a '
+                'folder that an elevated session built before staging folders took their parent\'s access rules; '
+                'run the same command elevated, or reset the folder with icacls /reset /T.') from error
+    for _ in os.walk(root, onerror=refuse):
+        pass
 
 
 @functools.cache

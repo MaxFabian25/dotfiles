@@ -13,7 +13,7 @@ import yaml
 
 from invocation_overrides import transform_policy
 from package import ROOT, files
-from portable import claude_cli, claude_home, posix, read_utf8, replace, write_utf8
+from portable import claude_cli, claude_home, posix, read_utf8, replace, staging_directory, write_utf8
 
 MARKETPLACE = 'personal-collections'
 CATALOG_ROOT = ROOT / 'claude'
@@ -62,7 +62,7 @@ def build(collection, codex_release, config=None, catalog_root=CATALOG_ROOT, exp
         name = entry['name']
         parent = catalog_root / 'plugins' / name
         parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix='.build-', dir=parent) as tmp:
+        with staging_directory(prefix='.build-', dir=parent) as tmp:
             stage = Path(tmp) / 'package'
             (stage / 'skills').mkdir(parents=True)
             original_hashes = {}
@@ -249,7 +249,7 @@ def publish(packages, backup, home=None, catalog_root=CATALOG_ROOT, bootstrap=Fa
                 raise RuntimeError(f'Claude destination has different content: {target}')
         else:
             target.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.TemporaryDirectory(prefix='.publish-', dir=target.parent) as tmp:
+            with staging_directory(prefix='.publish-', dir=target.parent) as tmp:
                 staged = Path(tmp) / 'package'
                 shutil.copytree(source, staged)
                 if files(staged) != files(source):
