@@ -28,6 +28,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import re
 import shutil
 import subprocess
@@ -721,7 +722,7 @@ def finish(args, public_repo, private_repo):
     print(f'public {git(public, "rev-parse", "--short", "HEAD")}  private {git(private, "rev-parse", "--short", "HEAD")}'
           + ('  pushed' if args.push else '  not pushed'), flush=True)
     if args.push:
-        for line in other_machines(tailnet()):
+        for line in other_machines(tailnet(), windows_side()):
             print(line, flush=True)
     if args.pull:
         if not wait(('pull', 'sync'), WAIT_FOR_PULL):
@@ -745,10 +746,17 @@ def tailnet():
         return None
 
 
-def other_machines(status):
+def windows_side():
+    """The hostname WSL shares with the Windows it runs on, in lower case, or None on any other machine."""
+    return platform.node().lower() if 'microsoft' in platform.release().lower() else None
+
+
+def other_machines(status, same_pc=None):
     """A line per other computer of this user on the tailnet, saying whether it is online now. A report that a
     machine cannot pull then quotes this run's output. On 10 November 2026 a note that the Windows PC was cut off
-    outlived the cut by a day, and two releases skipped that PC on its word."""
+    outlived the cut by a day, and two releases skipped that PC on its word. `same_pc` is windows_side(): from WSL
+    the PC's own Windows can show as offline while it runs, as on 11 November 2026, when this line said to queue
+    its steps and pull-machines then pulled it."""
     if not status:
         return ['Other machines: Tailscale gave no status here, so check each machine before you say it is unreachable.']
     owner = status['Self'].get('UserID')
@@ -757,8 +765,13 @@ def other_machines(status):
         if peer.get('UserID') != owner or peer.get('OS') not in ('linux', 'windows', 'macOS'):
             continue
         seen = peer.get('LastSeen', '')[:10]
-        state = ('online now, so pull there' if peer.get('Online')
-                 else f'offline, last seen {seen}, so queue its steps in maintenance/pending-sync.md')
+        if peer.get('Online'):
+            state = 'online now, so pull there'
+        elif same_pc and peer['OS'] == 'windows' and peer.get('HostName', '').lower() == same_pc:
+            state = ("shown as offline, but it is this PC's Windows side, which WSL reaches without the tailnet, "
+                     'so pull it with pull-machines')
+        else:
+            state = f'offline, last seen {seen}, so queue its steps in maintenance/pending-sync.md'
         lines.append(f"Other machine {peer.get('HostName')} ({peer['OS']}): {state}")
     return lines or ['Other machines: the tailnet lists none of yours besides this one.']
 

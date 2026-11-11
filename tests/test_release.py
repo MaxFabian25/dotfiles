@@ -459,6 +459,15 @@ class ReleaseTest(unittest.TestCase):
             'maintenance/pending-sync.md',
             'Other machine Work-PC (windows): online now, so pull there'])
         self.assertIn('check each machine before you say it is unreachable', release.other_machines(None)[0])
+        status['Peer']['a']['Online'] = False
+        for same_pc, told in (('work-pc', "this PC's Windows side, which WSL reaches without the tailnet, so pull it "
+                               'with pull-machines'), ('laptop', 'so queue its steps'), (None, 'so queue its steps')):
+            with self.subTest(same_pc=same_pc):
+                lines = release.other_machines(status, same_pc)
+                self.assertIn(told, lines[1])
+                self.assertIn('so queue its steps', lines[0])
+        status['Peer']['a']['Online'] = True
+        self.assertIn('online now, so pull there', release.other_machines(status, 'work-pc')[1])
         release_main(['start', 'told', *self.options()], self.public)
         (self.worktrees / 'told/public/content').write_text('told\n', encoding='utf-8')
         message = self.root / 'message'
@@ -468,6 +477,16 @@ class ReleaseTest(unittest.TestCase):
                     redirect_stdout(io.StringIO()) as output:
                 release_main(['finish', 'told', '--message', str(message), *flags, *self.options()], self.public)
             self.assertEqual('Other machine Work-PC (windows): online now' in output.getvalue(), told)
+        status['Peer']['a']['Online'] = False
+        for kernel, told in (('6.18.58.1-microsoft-standard-WSL2', 'Work-PC (windows): shown as offline, but it is this '
+                              "PC's Windows side"), ('6.8.0-45-generic', 'Work-PC (windows): offline, last seen')):
+            (self.worktrees / 'told/public/content').write_text(f'{kernel}\n', encoding='utf-8')
+            with self.subTest(kernel=kernel), patch.object(release, 'tailnet', return_value=status), \
+                    patch.object(release.platform, 'node', return_value='Work-PC'), \
+                    patch.object(release.platform, 'release', return_value=kernel), \
+                    redirect_stdout(io.StringIO()) as output:
+                release_main(['finish', 'told', '--message', str(message), '--push', *self.options()], self.public)
+            self.assertIn(told, output.getvalue())
 
     def test_a_rebase_takes_origins_copy_of_a_regenerated_file_only_where_it_alone_conflicts(self):
         lock = 'setup/lock.toml'
