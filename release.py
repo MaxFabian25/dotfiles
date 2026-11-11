@@ -12,8 +12,10 @@ source edited without `--entry NAME --refresh-owned`, which every pull would ref
 One finish runs at a time on a machine; another stops and names it. `clean NAME` removes the worktrees and branches once origin/main has them. `status` lists what runs here and each open
 release worktree with the files it changes, and `start` lists the others. `wait --timeout SECONDS` returns
 once no release, pull or sync runs on this machine. `finish NAME --detach` runs the finish as a systemd user unit,
-which a restart of the agent's host leaves running, after waiting up to --timeout seconds for another release
-here; `result NAME --timeout SECONDS` waits for that unit, prints the end of its log and exits with its status.
+which a restart of the agent's host leaves running, after waiting up to --timeout seconds for another release,
+pull or sync here, and it starts again after such a wait, so it runs the engine that run may have pulled.
+`result NAME --timeout SECONDS` waits for that unit, prints the end of its log and exits with its status, or with
+70 when the finish ended on an uncaught error or its unit is gone without a status.
 """
 from __future__ import annotations
 
@@ -44,6 +46,7 @@ CREDENTIALS = ('-c', 'credential.https://github.com.helper=',
                '-c', 'credential.https://github.com.helper=!gh auth git-credential')
 ATTEMPTS = 3
 RESULT_LINES = 25  # lines of a detached finish's log that result prints
+CRASHED = 70  # status of a detached finish that ended on an uncaught error, or without writing a status
 MOVED = re.compile(r'\((?:fetch first|non-fast-forward)\)')
 # Files every release rewrites, so both sides changing them says nothing about clashing work.
 PAIRING_FILES = frozenset({'release.toml', 'setup/lock.toml'})
@@ -588,20 +591,42 @@ def detach(args, argv):
     return 0
 
 
+def unit_active(name):
+    """Whether the unit of a detached finish still runs. True when systemd cannot be asked, so result keeps waiting."""
+    try:
+        state = subprocess.run(['systemctl', '--user', 'is-active', f'dotfiles-release-{name}'],
+                               capture_output=True, text=True, timeout=30).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return True
+    return state in ('active', 'activating', 'reloading', 'deactivating')
+
+
 def result(args):
-    """Block until a detached finish has written its status, print the end of its log, and return that status."""
+    """Block until a detached finish has ended, print the end of its log, and return its status: the one it
+    wrote, or CRASHED when its unit is gone and it wrote none, as after a kill."""
     log, status = detached_paths(args)
     if not log.exists():
         raise RuntimeError(f'no detached finish of {args.name} was started: {log} is absent')
-    deadline = time.monotonic() + args.timeout
-    while not (status.is_file() and status.read_text(encoding='utf-8').strip()):
+
+    def reported():
+        return status.is_file() and status.read_text(encoding='utf-8').strip()
+
+    deadline, ended = time.monotonic() + args.timeout, False
+    while not reported():
+        if ended:  # looked again after the unit was gone, since it writes its status as its last step
+            break
         if time.monotonic() >= deadline:
             print(f'Still running after {args.timeout:g} seconds; log {log}', file=sys.stderr)
             return 4
+        ended = not unit_active(args.name)
         time.sleep(2)
     lines = log.read_text(encoding='utf-8', errors='replace').splitlines()
     print('\n'.join(lines[-RESULT_LINES:]))
-    code = int(status.read_text(encoding='utf-8').strip())
+    if not reported():
+        print(f'finish {args.name} ended without a status: its unit is gone, so it was killed or never started; '
+              f'full log {log}', file=sys.stderr)
+        return CRASHED
+    code = int(reported())
     print(f'finish {args.name} exited {code}; full log {log}')
     return code
 
@@ -627,10 +652,15 @@ def clean(args, public_repo, private_repo):
 
 
 def main(argv=None):
-    report = []
-    code = dispatch(argv, report)
-    for path in report:  # a detached finish tells result how it ended
-        path.write_text(f'{code}\n', encoding='utf-8')
+    report, code = [], CRASHED
+    try:
+        code = dispatch(argv, report)
+    except SystemExit as stop:
+        code = stop.code if isinstance(stop.code, int) else 1
+        raise
+    finally:
+        for path in report:  # a detached finish tells result how it ended, an uncaught error included
+            path.write_text(f'{code}\n', encoding='utf-8')
     return code
 
 
@@ -655,7 +685,7 @@ def dispatch(argv, report):
     parser.add_argument('--force', action='store_true', help='clean: remove unpushed branches too')
     parser.add_argument('--timeout', type=float, default=1800,
                         help='wait and result: give up after this many seconds; finish --detach: wait this long '
-                             'for another release here')
+                             'for another release, pull or sync here')
     parser.add_argument('--detach', action='store_true',
                         help='finish: run as a systemd user unit and return at once, with absolute paths for the '
                              'message files; read it with result NAME')
@@ -677,8 +707,18 @@ def dispatch(argv, report):
         if args.action == 'finish' and args.detach:
             return detach(args, sys.argv[1:] if argv is None else list(argv))
         if args.action == 'finish':
-            if args.report and not wait(('release',), args.timeout):
-                raise RuntimeError(f'another release still finishes here after {args.timeout:g} seconds')
+            if args.report:
+                waited = bool(running())
+                if not wait(None, args.timeout):
+                    raise RuntimeError(f'another release, pull or sync still runs here after {args.timeout:g} seconds')
+                if waited:
+                    # The run it waited for may have pulled a new engine into this checkout. On 10 November 2026
+                    # a finish that had waited then imported a new host_state.py beside the portable module it
+                    # had loaded before the pull, and crashed. So start again from the files as they are now.
+                    print('Starting again after the wait, to run the engine as it is now', flush=True)
+                    sys.stderr.flush()
+                    os.execv(sys.executable, [sys.executable, '-B', str(ENGINE / 'release.py'),
+                                              *(sys.argv[1:] if argv is None else argv)])
             with hold(machine_locks()['release']):
                 return finish(args, ENGINE, args.private.resolve())
         action = {'start': start, 'clean': clean, 'status': status}[args.action]

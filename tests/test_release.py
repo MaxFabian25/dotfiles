@@ -541,9 +541,16 @@ class ReleaseTest(unittest.TestCase):
         self.assertIn('--detach needs an absolute path for m.txt', error.getvalue())
         log.parent.mkdir(parents=True, exist_ok=True)
         log.write_text('Ran 3 tests: OK\nRelease stopped: nothing to release\n', encoding='utf-8')
-        with redirect_stderr(io.StringIO()) as error:
+        with redirect_stderr(io.StringIO()) as error, patch.object(release, 'unit_active', return_value=True):
             self.assertEqual(release_main(['result', 'away', '--timeout', '0.1', *self.options()], self.public), 4)
         self.assertIn('Still running', error.getvalue())
+        # A unit that was killed is gone and wrote no status. On 10 November 2026 result waited an hour on one.
+        with redirect_stderr(io.StringIO()) as error, redirect_stdout(io.StringIO()) as output, \
+                patch.object(release, 'unit_active', return_value=False):
+            self.assertEqual(release_main(['result', 'away', '--timeout', '600', *self.options()], self.public),
+                             release.CRASHED)
+        self.assertIn('ended without a status', error.getvalue())
+        self.assertIn('Release stopped: nothing to release', output.getvalue())
         status.write_text('3\n', encoding='utf-8')
         with redirect_stdout(io.StringIO()) as output:
             self.assertEqual(release_main(['result', 'away', *self.options()], self.public), 3)
@@ -556,6 +563,35 @@ class ReleaseTest(unittest.TestCase):
         with redirect_stderr(io.StringIO()):
             self.assertEqual(release_main(['finish', 'unit', '--report', str(status), *self.options()], self.public), 3)
         self.assertEqual(status.read_text(encoding='utf-8'), '3\n')  # nothing to release
+
+    def test_a_finish_that_ends_on_an_uncaught_error_still_reports_a_status(self):
+        status = self.root / 'finish.exit'
+
+        def crash(argv, report):
+            report.append(status)
+            raise AttributeError("module 'portable' has no attribute 'require_readable'")
+        with patch.object(release, 'dispatch', crash), self.assertRaises(AttributeError):
+            release.main(['finish', 'unit'])
+        self.assertEqual(status.read_text(encoding='utf-8'), f'{release.CRASHED}\n')
+
+    def test_a_finish_that_waited_for_another_run_starts_again_from_the_engine_as_it_is_now(self):
+        release_main(['start', 'late', *self.options()], self.public)
+        status = self.root / 'finish.exit'
+        argv = ['finish', 'late', '--report', str(status), *self.options()]
+        busy = iter([['release PID 1 since 23:54: release.py finish other'], []])
+
+        class Restarted(Exception):
+            pass
+
+        def restart(program, arguments):
+            raise Restarted(arguments)
+        with patch.object(release, 'running', lambda names=None: next(busy, [])), \
+                patch.object(release.os, 'execv', restart), redirect_stderr(io.StringIO()), \
+                redirect_stdout(io.StringIO()), self.assertRaises(Restarted) as restarted:
+            release_main(argv, self.public)
+        self.assertEqual(restarted.exception.args[0][1:], ['-B', str(self.public / 'release.py'), *argv])
+        with patch.object(release.os, 'execv', restart), redirect_stderr(io.StringIO()):  # nothing to wait for
+            self.assertEqual(release_main(argv, self.public), 3)
 
     def test_finish_without_a_message_stops_before_committing(self):
         release_main(['start', 'quiet', *self.options()], self.public)
