@@ -145,6 +145,10 @@ pull on the machine has ended. It stops first in each of these cases:
 - A push would be refused. It checks both pushes with `--dry-run`, so a refused login publishes
   neither half.
 
+When the private push fails after the public commit went out, `finish` says so and keeps a note of that commit
+in the release's `build/` folder. Run the same `finish` again: it pairs the private half with the commit it
+pushed. Before 11 November 2026 such a rerun pushed the private half still naming the public commit before.
+
 After a pull that changed skills or packages, it runs `skill_listing.py`, which warns when Claude Code
 lists skills without their descriptions. `clean NAME` removes the worktrees once `origin/main` has them.
 `status` names what runs on the machine and lists every open release worktree with its commits, uncommitted

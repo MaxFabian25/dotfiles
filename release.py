@@ -343,7 +343,8 @@ def git_bytes(tree, *args, passing=(0,)):
     """A git command's output as bytes, or a stop with git's own words when it exits outside passing."""
     done = subprocess.run([*GIT, '-C', str(tree), *args], capture_output=True, env=native_cli_environment(), timeout=120)
     if done.returncode not in passing:
-        raise RuntimeError(f'{tree.name}: git {" ".join(args[:2])} exited {done.returncode}: '
+        command = next(arg for arg in args if arg[:1] != '-' and '=' not in arg)
+        raise RuntimeError(f'{tree.name}: git {command} exited {done.returncode}: '
                            f'{done.stderr.decode(errors="replace").strip()}')
     return done.stdout
 
@@ -358,6 +359,14 @@ def fork_bytes(tree, fork, name):
     return None
 
 
+def worktree_bytes(path):
+    """A file's bytes in the worktree, None when it is no file. A link gives its own text, as git stores a link,
+    so that the bytes of whatever it points to stay out of the fingerprint."""
+    if path.is_symlink():
+        return os.readlink(path).encode()
+    return path.read_bytes() if path.is_file() else None
+
+
 def is_code(name, *contents):
     """Whether a changed file is code, by its name or by a #! at the start of either side. The side at the fork
     point counts, so that an edit which puts a line above a script's #! is still an edit to a script."""
@@ -368,20 +377,24 @@ def is_code(name, *contents):
 def branch_lines(old, new):
     """The lines a branch adds to and removes from one file, given its bytes at the fork point and now, None for
     no file. They carry no position and none of the lines around them, so a rebase over another session's edit
-    elsewhere in the file leaves them as they were, and so does committing the file. Moving a block within the
-    file, a change of mode and a final newline do not show in them."""
+    elsewhere in the file leaves them as they were, and so does committing the file. A change of mode alone
+    gives no lines, so the file's name stands for it. A global git attributes file is left out, because its
+    rules for every file would apply to the two temporary files and change the lines."""
+    if old == new:
+        return []
     with tempfile.TemporaryDirectory() as folder:
         sides = []
         for side, content in (('old', old), ('new', new)):
             if content is not None:
                 (Path(folder) / side).write_bytes(content)
             sides.append(os.devnull if content is None else side)
-        shown = git_bytes(Path(folder), 'diff', '--no-index', '--no-ext-diff', '--no-textconv', '--no-color', '-U0',
-                          '--', *sides, passing=(0, 1))
+        shown = git_bytes(Path(folder), '-c', f'core.attributesFile={os.devnull}', 'diff', '--no-index',
+                          '--no-ext-diff', '--no-textconv', '--no-color', '-U0', '--', *sides, passing=(0, 1))
     head, hunk, body = shown.partition(b'\n@@')
     if hunk:
         return [line for line in body.split(b'\n') if line[:1] in (b'+', b'-')]
-    # No line diff, as for a binary file: a hash of each side stands in.
+    # No line diff, as for a file git reads as binary: a hash of each side stands in, so there another session's
+    # edit to the same file changes the lines too.
     return [sign + hashlib.sha256(content or b'').hexdigest().encode() for sign, content in ((b'-', old), (b'+', new))]
 
 
@@ -393,8 +406,7 @@ def code_changes(tree):
     for name in changed_files(tree):
         if name.startswith(STORED_COPIES):
             continue
-        path = tree / name
-        old, new = fork_bytes(tree, fork, name), path.read_bytes() if path.is_file() else None
+        old, new = fork_bytes(tree, fork, name), worktree_bytes(tree / name)
         if not is_code(name, old, new):
             continue
         names.append(name)
@@ -421,7 +433,7 @@ def review_stop(public, private, record, name):
     wanted = review_lines(public, private)
     held = set()
     if record is not None and record.is_file():
-        held = {line.strip() for line in record.read_text(encoding='utf-8', errors='replace').splitlines()}
+        held = {line.strip() for line in record.read_text(encoding='utf-8-sig', errors='replace').splitlines()}
     missing = [line for _, line in wanted.values() if line not in held]
     if not missing:
         return None
@@ -456,6 +468,20 @@ def review(args, public_repo, private_repo):
               '--untracked-files=all for the new files, which that diff leaves out\n'
               f'  the line its reviewer writes: {line}')
     return 0
+
+
+def public_pushed(base):
+    """Where a finish notes the public commit it has pushed, until the private half that names it is pushed too."""
+    return base / 'build/public-pushed'
+
+
+def half_published(base, public):
+    """Whether an earlier finish of this release pushed the commit now at the public HEAD and then failed to push
+    the private half. The public branch then no longer differs from origin/main, so only this note says that the
+    private release.toml still has to name that commit. Without it a rerun pushed the private half naming the
+    public commit before, and pulls stopped on the mismatch."""
+    note = public_pushed(base)
+    return note.is_file() and note.read_text(encoding='utf-8').strip() == git(public, 'rev-parse', 'HEAD')
 
 
 def reapprovals(public, private):
@@ -612,7 +638,7 @@ def finish(args, public_repo, private_repo):
             raise RuntimeError('another session changed the same files on origin/main since this branch started ('
                                + '; '.join(shared) + '). Read its commits with git log -p HEAD..origin/main -- FILE, '
                                'reconcile the two designs, then finish again with --overlap-reviewed')
-    paired = ahead(public)
+    paired = ahead(public) or half_published(base, public)
     regenerated = frozenset({LOCK}) if args.entry else frozenset()
     for attempt in range(1, ATTEMPTS + 1):
         if rebase(public, regenerated) and args.entry:
@@ -640,12 +666,16 @@ def finish(args, public_repo, private_repo):
             if ahead(public):
                 push(public)
                 published = True
+                public_pushed(base).parent.mkdir(parents=True, exist_ok=True)
+                public_pushed(base).write_text(git(public, 'rev-parse', 'HEAD') + '\n', encoding='utf-8')
             push(private)
+            public_pushed(base).unlink(missing_ok=True)
             break
         except RuntimeError as error:
             git(private, 'reset', '-q', '--hard', before)
             if not MOVED.search(str(error)):
-                state = 'the public commit is on origin without its pair' if published else 'nothing was pushed'
+                state = ('the public commit is on origin without its pair; finish again to push the private half '
+                         'that names it') if published else 'nothing was pushed'
                 raise RuntimeError(f'push failed and {state}: {error}') from error
             if attempt == ATTEMPTS:
                 raise RuntimeError(f'push failed {ATTEMPTS} times; origin keeps moving: {error}') from error

@@ -226,10 +226,13 @@ class PullLockTest(unittest.TestCase):
         with patch.object(pull, 'run', side_effect=lambda args: seen.append(args.wait) or 0):
             with patch.object(sys, 'argv', ['pull.py']):
                 self.assertEqual(pull.main(), 0)
-            with patch.object(sys, 'argv', ['pull.py', '--wait', 'nan']), redirect_stderr(io.StringIO()), \
-                    self.assertRaises(SystemExit):
-                pull.main()
-        self.assertEqual(seen, [pull.LOCK_WAIT])
+            with patch.object(sys, 'argv', ['pull.py', '--wait', '0.5']):
+                self.assertEqual(pull.main(), 0)
+            for refused in ('nan', '-1'):
+                with patch.object(sys, 'argv', ['pull.py', '--wait', refused]), redirect_stderr(io.StringIO()), \
+                        self.assertRaises(SystemExit):
+                    pull.main()
+        self.assertEqual(seen, [pull.LOCK_WAIT, 0.5])
         self.assertGreater(pull.LOCK_WAIT, 0)
 
     def test_the_wait_is_a_finite_number_of_seconds_from_zero(self):

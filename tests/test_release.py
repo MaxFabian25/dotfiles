@@ -630,6 +630,7 @@ class ReleaseTest(unittest.TestCase):
         shown = self.review_output('coded')
         self.assertIn('code this branch changes: tests/test_other.py', shown)
         self.assertIn('code this branch changes: tool.py', shown)
+        self.assertIn('status --short --untracked-files=all', shown)
         self.assertIn(str(self.public / 'docs/agents/coding-standards.md'), shown)
         public_line, private_line = (line.split('writes: ')[1] for line in shown.splitlines() if 'writes: ' in line)
         self.assertRegex(public_line, r'^Reviewed: public [0-9a-f]{16}$')
@@ -639,7 +640,7 @@ class ReleaseTest(unittest.TestCase):
         self.assertIn(f'lacks "{private_line}"', stopped([*finish, '--reviewed', str(record)]))
         record.write_text(f'No findings.\n- {public_line}\n`{private_line}`\n', encoding='utf-8')
         self.assertIn('on a line of its own', stopped([*finish, '--reviewed', str(record)]))
-        record.write_text(f'One finding, fixed.\n{public_line}\n{private_line}\n', encoding='utf-8')
+        record.write_text(f'{public_line}\nOne finding, fixed.\n{private_line}\n', encoding='utf-8-sig')
         module.write_text(PASSING_TEST + '\n# edited after the review\n', encoding='utf-8')
         self.assertIn('reviews other code', stopped([*finish, '--reviewed', str(record)]))
         module.write_text(PASSING_TEST, encoding='utf-8')
@@ -695,15 +696,18 @@ class ReleaseTest(unittest.TestCase):
     def test_a_review_holds_through_a_rebase_over_another_edit_and_through_a_half_published_release(self):
         release_main(['start', 'moved', *self.options()], self.public)
         public, private = self.worktrees / 'moved/public', self.worktrees / 'moved/private'
-        (public / 'tests/test_seed.py').write_text(PASSING_TEST + '\n# this branch\n', encoding='utf-8')
+        (public / 'tests/test_seed.py').write_text(
+            PASSING_TEST.replace('class Seed', '# this branch, above\nclass Seed') + '\n# this branch, below\n',
+            encoding='utf-8')
         (private / 'tool.py').write_text('value = 1\n', encoding='utf-8')
-        git(public, 'commit', '-qam', 'Edit the seed test')
+        git(public, 'commit', '-qam', 'Edit the seed test in two places')
         wanted = release.review_lines(public, private)
         other = self.clone(self.public_origin, 'other-public')
         (other / 'tests/test_seed.py').write_text('# other\n# session\n' + PASSING_TEST, encoding='utf-8')
         git(other, 'commit', '-qam', 'Another session adds lines above this branch\'s edit')
         git(other, 'push', '-q', 'origin', 'HEAD:main')
         git(public, 'fetch', '-q', 'origin')
+        self.assertEqual(release.review_lines(public, private), wanted)  # origin moved, branch not yet rebased
         git(public, 'rebase', '-q', 'origin/main')
         self.assertIn('# other', (public / 'tests/test_seed.py').read_text(encoding='utf-8'))
         self.assertEqual(release.review_lines(public, private), wanted)
@@ -740,7 +744,7 @@ class ReleaseTest(unittest.TestCase):
     def test_a_failed_read_of_the_fork_point_stops_with_gits_own_words(self):
         with self.assertRaises(RuntimeError) as stop:
             release.fork_bytes(self.public, 'no-such-commit', 'content')
-        self.assertIn('git --literal-pathspecs ls-tree exited 128', str(stop.exception))
+        self.assertIn('git ls-tree exited 128', str(stop.exception))
         self.assertIn('no-such-commit', str(stop.exception))
         self.assertIsNone(release.fork_bytes(self.public, 'HEAD', 'tests'))
         self.assertEqual(release.fork_bytes(self.public, 'HEAD', 'content'), b'first\n')
@@ -757,6 +761,92 @@ class ReleaseTest(unittest.TestCase):
                                        *self.options()], self.public), 0)
         argv = (self.public / 'pull-argv').read_text(encoding='utf-8').split('\n')
         self.assertEqual(argv[-4:], ['--update', '--apply', '--wait', '0'])
+
+    def test_a_file_without_a_line_diff_is_fingerprinted_by_both_sides(self):
+        self.assertEqual(release.branch_lines(b'same\n', b'same\n'), [])
+        binary = release.branch_lines(b'a\0one\n', b'a\0two\n')
+        self.assertEqual(len(binary), 2)
+        self.assertNotEqual(binary, release.branch_lines(b'a\0one\n', b'a\0three\n'))
+        self.assertNotEqual(binary, release.branch_lines(b'a\0zero\n', b'a\0two\n'))
+        self.assertEqual(release.branch_lines(None, b'value = 1\n'), [b'+value = 1'])
+
+    def test_a_mode_only_change_keeps_its_line_when_another_session_edits_the_file(self):
+        release_main(['start', 'mode', *self.options()], self.public)
+        public, private = self.worktrees / 'mode/public', self.worktrees / 'mode/private'
+        (public / 'tests/test_seed.py').chmod(0o755)
+        git(public, 'commit', '-qam', 'Make the seed test executable')
+        wanted = release.review_lines(public, private)
+        self.assertEqual(wanted['public'][0], ['tests/test_seed.py'])
+        other = self.clone(self.public_origin, 'other-public')
+        (other / 'tests/test_seed.py').write_text(PASSING_TEST + '\n# other\n', encoding='utf-8')
+        git(other, 'commit', '-qam', 'Another session edits the file')
+        git(other, 'push', '-q', 'origin', 'HEAD:main')
+        git(public, 'fetch', '-q', 'origin')
+        git(public, 'rebase', '-q', 'origin/main')
+        self.assertEqual(release.review_lines(public, private), wanted)
+
+    def test_the_lines_ignore_a_global_attributes_file_and_a_failed_diff_stops(self):
+        plain = release.branch_lines(b'one\r\n', b'two\r\n')
+        self.assertEqual(plain, [b'-one\r', b'+two\r'])
+        attributes, config = self.root / 'attributes', self.root / 'gitconfig'
+        attributes.write_text('* binary\n', encoding='utf-8')
+        config.write_text(f'[core]\n\tattributesFile = {attributes}\n', encoding='utf-8')
+        with patch.dict(os.environ, {'GIT_CONFIG_GLOBAL': str(config)}):
+            self.assertEqual(release.branch_lines(b'one\r\n', b'two\r\n'), plain)
+        with patch.object(release, 'GIT', ('git', '--no-such-option')), self.assertRaises(RuntimeError) as stop:
+            release.branch_lines(b'one\n', b'two\n')
+        self.assertIn('git diff exited', str(stop.exception))
+
+    def test_a_name_git_reads_as_a_pattern_and_a_link_are_read_as_they_are(self):
+        seed = self.clone(self.private_origin, 'odd-seed')
+        (seed / ':colon.py').write_text('value = 1\n', encoding='utf-8')
+        (seed / 'colon.py').write_text('value = 2\n', encoding='utf-8')
+        (seed / 'target').write_text('#!/bin/sh\n', encoding='utf-8')
+        (seed / 'link').symlink_to('target')
+        git(seed, 'add', '-A')
+        git(seed, 'commit', '-qm', 'Seed odd names')
+        self.assertEqual(release.fork_bytes(seed, 'HEAD', ':colon.py'), b'value = 1\n')
+        self.assertEqual(release.fork_bytes(seed, 'HEAD', 'link'), b'target')
+        self.assertEqual(release.worktree_bytes(seed / 'link'), b'target')
+        self.assertIsNone(release.worktree_bytes(seed / 'absent'))
+
+    def test_a_rerun_after_a_half_published_release_pairs_the_private_half_with_the_pushed_commit(self):
+        release_main(['start', 'half', *self.options()], self.public)
+        (self.worktrees / 'half/public/content').write_text('second\n', encoding='utf-8')
+        (self.worktrees / 'half/private/notes').write_text('with it\n', encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Change the content\n', encoding='utf-8')
+        finish = ['finish', 'half', '--message', str(message), '--private-message', str(message), '--push',
+                  *self.options()]
+        hook = self.private_origin / 'hooks/pre-receive'
+        hook.write_text('#!/bin/sh\necho "refused by the test" >&2\nexit 1\n', encoding='utf-8')
+        hook.chmod(0o755)
+        errors = io.StringIO()
+        with redirect_stderr(errors):
+            self.assertEqual(release_main(finish, self.public), 3)
+        self.assertIn('the public commit is on origin without its pair; finish again', errors.getvalue())
+        pushed = git(self.public_origin, 'rev-parse', 'main')
+        self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'second')
+        self.assertNotIn(pushed, git(self.private_origin, 'show', 'main:release.toml'))
+        hook.unlink()
+
+        self.assertEqual(release_main(finish, self.public), 0)
+
+        self.assertEqual(git(self.public_origin, 'rev-parse', 'main'), pushed)
+        self.assertEqual(git(self.private_origin, 'show', 'main:release.toml'), f'public_commit = "{pushed}"')
+        self.assertEqual(git(self.private_origin, 'show', 'main:notes'), 'with it')
+        self.assertFalse((self.worktrees / 'half/build/public-pushed').exists())
+
+    def test_only_a_note_of_the_commit_at_the_public_head_counts_as_half_published(self):
+        release_main(['start', 'noted', *self.options()], self.public)
+        base = self.worktrees / 'noted'
+        self.assertFalse(release.half_published(base, base / 'public'))
+        note = release.public_pushed(base)
+        note.parent.mkdir(parents=True, exist_ok=True)
+        note.write_text('0' * 40 + '\n', encoding='utf-8')
+        self.assertFalse(release.half_published(base, base / 'public'))
+        note.write_text(git(base / 'public', 'rev-parse', 'HEAD') + '\n', encoding='utf-8')
+        self.assertTrue(release.half_published(base, base / 'public'))
 
     def test_a_detached_finish_stops_on_unreviewed_code_before_it_starts_a_unit(self):
         release_main(['start', 'apart', *self.options()], self.public)

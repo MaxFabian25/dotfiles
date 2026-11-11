@@ -18,9 +18,11 @@ not write them. Say for each finding whether it holds the release back.
 A line covers the lines the branch adds to and removes from its code files. Adding, removing or changing a line
 changes it, so after a fix run `review NAME` again and take the new code back to its reviewer. Another
 session's edit elsewhere in the same file does not change it; `finish` stops on that separately. Neither does
-a change of file mode beside a line change, or moving a block the branch adds to a place that passes none of
-the branch's other edits. A file the branch changes without a line diff, such as a mode-only change or a file
-git reads as binary, is covered by a hash of the whole file, so there another session's edit does change it.
+a change of mode on a file whose lines the branch also changes, or moving a block the branch adds to a place
+that passes none of the branch's other edits. A file git reads as binary has no lines to compare and is
+covered by a hash of the whole file, so there another session's edit does change it. A link is covered by
+its own text, not by what it points to, so a link without a code suffix that points to a script is not
+counted: read it when the release changes one.
 
 The stop counts files by suffix, by name, by folder and by a `#!` first line. Two kinds of change are outside
 it, so read them too when the release makes them: hook commands inside JSON and TOML files, and scripts in a
