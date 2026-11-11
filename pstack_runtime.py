@@ -1,49 +1,15 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-import hashlib
 import json
 import os
 from pathlib import Path
-import re
-import stat
 import subprocess
-import tempfile
 import time
-import tomllib
 
 import portable
-MODEL_FILE = ".config/pstack/models.md"
-CONFIG_FILE = ".codex/config.toml"
 OVERRIDE_KEY = "expose_spawn_agent_model_overrides"
 # The model values Claude Code's Agent tool accepts. `claude --help` names only some of them, as examples.
 CLAUDE_ALIASES = {"opus", "sonnet", "haiku", "fable"}
-
-
-def digest(data):
-    return hashlib.sha256(data).hexdigest()
-
-
-def patch_config(data, enabled):
-    text = data.decode("utf-8")
-    before = tomllib.loads(text.lstrip("\ufeff"))
-    section = re.search(r"(?m)^\[features\.multi_agent_v2\][ \t]*(?:#[^\r\n]*)?\r?$", text)
-    if section is None:
-        raise ValueError("Codex config has no explicit multi_agent_v2 section; review it before synchronization")
-    start = section.end()
-    next_section = re.search(r"(?m)^\[", text[start:])
-    end = start + next_section.start() if next_section else len(text)
-    body = text[start:end]
-    pattern = r"(?m)^([ \t]*expose_spawn_agent_model_overrides[ \t]*=[ \t]*)(true|false)([ \t]*(?:#[^\r\n]*)?)(\r?)$"
-    matches = list(re.finditer(pattern, body))
-    if len(matches) != 1:
-        raise ValueError("Codex config needs one explicit spawn override flag; review it before synchronization")
-    replacement = "true" if enabled else "false"
-    body = re.sub(pattern, lambda m: m[1] + replacement + m[3] + m[4], body)
-    result = (text[:start] + body + text[end:]).encode("utf-8")
-    before["features"]["multi_agent_v2"][OVERRIDE_KEY] = enabled
-    if tomllib.loads(result.decode("utf-8-sig")) != before:
-        raise ValueError("Scoped update changed an unrelated Codex setting")
-    return result
 
 
 def model_entries(data):
@@ -165,19 +131,3 @@ def validate_codex(enabled, *, proposed=False, codex_home=None):
         config = request('config/read', {'includeLayers': False})['config']
         if config.get("features", {}).get("multi_agent_v2", {}).get(OVERRIDE_KEY) != enabled:
             raise RuntimeError("Codex did not resolve the requested spawn override setting")
-
-
-def replace_checked(path, before, after):
-    mode = stat.S_IMODE(path.stat().st_mode)
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.pstack-", dir=path.parent)
-    try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(after)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.chmod(temporary, mode)
-        if path.read_bytes() != before:
-            raise RuntimeError(f"Concurrent edit detected; left file unchanged: {path}")
-        os.replace(temporary, path)
-    finally:
-        Path(temporary).unlink(missing_ok=True)

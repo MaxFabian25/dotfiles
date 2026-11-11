@@ -1,7 +1,7 @@
 """Cross-platform primitives shared by the engine on macOS, Linux and Windows.
 
 They cover where Codex and Claude keep their files, how to call their CLIs, byte-exact UTF-8 text,
-file replacement that tolerates Windows file locks, an exclusive run lock, directory pointers, and
+file replacement that tolerates Windows file locks, an exclusive run lock, and
 archive extraction without symlinks. Codex honours CODEX_HOME and Claude honours CLAUDE_CONFIG_DIR,
 as the apps do; an explicit home other than the real one (tests, sandboxes) ignores both.
 """
@@ -266,46 +266,6 @@ def exclusive_lock(path, *, record=False):
             if WINDOWS:
                 handle.seek(0)
                 msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-
-
-def _is_junction(path):
-    return bool(getattr(Path(path), 'is_junction', lambda: False)())
-
-
-def read_pointer(link):
-    """The directory name a pointer names, or None when link is not a pointer."""
-    link = Path(link)
-    if not (link.is_symlink() or _is_junction(link)):
-        return None
-    return Path(os.readlink(link)).name
-
-
-def remove_pointer(link):
-    link = Path(link)
-    if read_pointer(link) is None:
-        raise ValueError(f'Not a directory pointer: {link}')
-    (os.rmdir if WINDOWS else os.unlink)(link)
-
-
-def set_pointer(link, target_name):
-    """Point link at its sibling directory target_name: a relative symlink, or a junction on Windows."""
-    link = Path(link)
-    temporary = link.with_name(f'.{link.name}-{os.getpid()}')
-    try:
-        temporary.symlink_to(target_name, target_is_directory=True)
-    except OSError:
-        if not WINDOWS:
-            raise
-        import _winapi
-        _winapi.CreateJunction(str(link.parent / target_name), str(temporary))
-    try:
-        os.replace(temporary, link)
-    except OSError:
-        # Windows cannot rename over an existing directory link; swap it in two steps.
-        if not WINDOWS:
-            raise
-        remove_pointer(link)
-        os.replace(temporary, link)
 
 
 def extract_tar(archive, destination):

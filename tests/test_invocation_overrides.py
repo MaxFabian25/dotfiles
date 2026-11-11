@@ -25,7 +25,7 @@ class InvocationOverridesTest(unittest.TestCase):
                 metadata.write_text('{"name":"kit","skills":["./skills/selected"]}')
                 self.assertEqual(set(module.skill_paths(root)), {'selected'})
 
-    def test_managed_system_skill_is_discovered_and_replayed_without_changing_body(self):
+    def test_managed_system_skill_is_replayed_without_changing_body(self):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory).resolve()
             root = home / '.codex/skills/.system/review-agent'
@@ -34,31 +34,16 @@ class InvocationOverridesTest(unittest.TestCase):
             (root / 'SKILL.md').write_text(original)
             (root / 'agents').mkdir()
             (root / 'agents/openai.yaml').write_text('policy:\n  allow_implicit_invocation: false\n')
-            registry = {'targets': {'Codex': {'review-agent@system': ['review-agent']}, 'Claude': {}},
-                        'standaloneRoots': {'Codex': {'review-agent@system': str(root)}}}
-            with patch.object(module, 'HOME', home), patch.object(module, 'codex_cli', return_value='codex'), \
-                    patch.object(module.subprocess, 'check_output', return_value='{"installed": []}'):
-                installs = module.installations(registry)
-                writes, counts = module.plan(registry, installs)
-                self.assertEqual(counts, {'Codex': 1, 'Claude': 0})
-                overlay = module.Overlay(home / 'recovery')
-                self.assertEqual(overlay.apply(writes), 1)
-                self.assertEqual((root / 'SKILL.md').read_text(), original)
-                self.assertEqual(module.installations(registry, ['unrelated-plugin']), [])
-                overlay.restore(installs)
-                self.assertIn('false', (root / 'agents/openai.yaml').read_text())
-                (root / 'SKILL.md').unlink()
-                self.assertEqual(module.installations(registry), [])
-
-    def test_standalone_override_rejects_paths_outside_the_skill_root(self):
-        with tempfile.TemporaryDirectory() as directory:
-            home = Path(directory).resolve()
-            registry = {'targets': {'Codex': {'x@system': ['x']}, 'Claude': {}},
-                        'standaloneRoots': {'Codex': {'x@system': str(home / 'other')}}}
-            with patch.object(module, 'HOME', home), patch.object(module, 'codex_cli', return_value='codex'), \
-                    patch.object(module.subprocess, 'check_output', return_value='{"installed": []}'):
-                with self.assertRaises(ValueError):
-                    module.installations(registry)
+            registry = {'targets': {'Codex': {'review-agent@system': ['review-agent']}, 'Claude': {}}}
+            installs = [('Codex', 'review-agent@system', root)]
+            writes, counts = module.plan(registry, installs)
+            self.assertEqual(counts, {'Codex': 1, 'Claude': 0})
+            overlay = module.Overlay(home / 'recovery')
+            self.assertEqual(overlay.apply(writes), 1)
+            self.assertEqual((root / 'SKILL.md').read_text(), original)
+            self.assertIn('true', (root / 'agents/openai.yaml').read_text())
+            overlay.restore(installs)
+            self.assertIn('false', (root / 'agents/openai.yaml').read_text())
 
     def test_only_requested_frontmatter_changes(self):
         original = '---\nname: sample\ndescription: >-\n  A task.\ndisable-model-invocation: true\nallowed-tools: [Read, Write]\nuser-invocable: true\n---\n\nAsk for approval before publishing.\n'
@@ -342,22 +327,26 @@ class InvocationOverridesTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'add, remove or rename'):
                 module.adaptation_files(adaptation)
 
-    def test_adaptation_only_plugin_is_an_installation_and_identities_scope_it(self):
+    def test_identities_scope_an_adaptation_to_the_installs_they_name(self):
         with tempfile.TemporaryDirectory() as directory:
-            home = Path(directory).resolve()
-            inventory = '{"installed": [{"pluginId": "plugin@a", "name": "plugin", "marketplaceName": "a", "version": "1"},' \
-                        ' {"pluginId": "plugin@b", "name": "plugin", "marketplaceName": "b", "version": "1"}]}'
+            directory = Path(directory).resolve()
+            repository, _ = self._adaptation_repository(directory)
+            installs = []
+            for marketplace in ('a', 'b'):
+                root = directory / 'cache' / marketplace / 'plugin/1'
+                (root / 'docs').mkdir(parents=True)
+                (root / 'docs/a.md').write_text('one\ntwo\nthree\nfour\nfive\n')
+                installs.append(('Codex', f'plugin@{marketplace}', root))
             registry = {'targets': {'Codex': {}, 'Claude': {}}}
-            adaptations = {'plugins': {'plugin': {'repository': '/nowhere', 'baseRef': 'upstream', 'adaptedRef': 'main',
+            adaptations = {'plugins': {'plugin': {'repository': str(repository), 'baseRef': 'upstream', 'adaptedRef': 'main',
                                                    'hosts': ['Codex'], 'identities': ['plugin@a']}}}
-            with patch.object(module, 'HOME', home), patch.object(module, 'codex_cli', return_value='codex'), \
-                    patch.object(module.subprocess, 'check_output', return_value=inventory):
-                found = module.installations(registry, adaptations=adaptations)
-            self.assertEqual([(host, identity) for host, identity, _ in found], [('Codex', 'plugin@a')])
+            writes, _ = module.plan(registry, installs, adaptations=adaptations)
+            changed = [(identity, path.relative_to(directory).as_posix(), new)
+                       for path, old, new, _, identity in writes if old != new]
+            self.assertEqual(changed, [('plugin@a', 'cache/a/plugin/1/docs/a.md', 'one\nTWO\nthree\nfour\nfive\n')])
 
     def test_plan_without_adaptations_reads_no_registry_file(self):
-        with patch.object(module, 'ADAPTATIONS', Path('/nonexistent/should-not-be-read.json')), \
-             patch.object(module, 'read_json', side_effect=AssertionError('read a registry file')):
+        with patch.object(module, 'read_json', side_effect=AssertionError('read a registry file')):
             self.assertEqual(module.plan({'targets': {'Codex': {}, 'Claude': {}}}, []), ([], {'Codex': 0, 'Claude': 0}))
 
     def test_overlay_refuses_paths_that_escape_through_a_symlink(self):

@@ -3,10 +3,8 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
-import re
 import shutil
 import sys
-import tempfile
 
 import yaml
 
@@ -123,22 +121,3 @@ def build(name, config, revision='HEAD', *, output_root=None):
         else:
             stage.rename(release)
     return release, receipt
-
-
-def verify_helpers(release):
-    receipt = json.loads(read_utf8(release / '.codex-plugin/upstream.json'))
-    archive = (release / '.codex-plugin/upstream-source.tar').read_bytes()
-    if hashlib.sha256(archive).hexdigest() != receipt['sourceArchiveSha256']:
-        raise RuntimeError('Original upstream archive differs from its receipt')
-    with tempfile.TemporaryDirectory(prefix='awt-package-check-') as temporary:
-        source = Path(temporary)
-        extract_tar(archive, source)
-        installer = load_installer(source, receipt['reviewedInstallerSha256'])
-        installer.check_runtime(receipt['python'])
-        installer.check_node()
-        installer.smoke(release / 'skills', receipt['python'])
-    for path in (release / 'skills').glob('*/SKILL.md'):
-        for relative in re.findall(r'\{skill_dir\}/([A-Za-z0-9/._-]+)', read_utf8(path)):
-            if not (path.parent / relative).is_file():
-                raise RuntimeError(f'Missing packaged helper: {path.parent / relative}')
-    return {'upstreamInstallerSmoke': 'passed', 'portableHelperReferences': 'passed'}

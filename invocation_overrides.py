@@ -1,13 +1,10 @@
-#!/usr/bin/env python3
-"""Apply recorded user invocation preferences (implicit or explicit-only) and harness adaptations without modifying upstream releases.
+"""Plan and apply invocation preferences (implicit or explicit-only) and harness adaptations without modifying upstream releases.
 
-`run -- COMMAND...` exposes pristine caches to existing update/hash checks and
-reapplies the preferences in a finally block. Original bytes remain recoverable.
+Original bytes remain recoverable.
 Harness adaptations replay each plugin's adaptation repository onto the installed
 cache with a three-way merge, so upstream edits merge or stop for review.
 Tool notes name the other host's equivalent after a host-specific tool name.
 """
-import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -16,17 +13,13 @@ from pathlib import Path
 import posixpath
 import re
 import subprocess
-import sys
 import tempfile
 
 import yaml
 
-from portable import GIT, claude_home, codex_cli, codex_home, exclusive_lock, read_utf8, replace, write_utf8
+from portable import GIT, codex_home, read_utf8, replace, write_utf8
 
-ROOT = Path(__file__).resolve().parent
 HOME = Path.home()
-REGISTRY = ROOT / 'invocation-overrides.json'
-ADAPTATIONS = ROOT / 'harness-adaptations.json'
 STATE_DIR = codex_home(HOME) / 'skill-updates/invocation-overrides'
 
 
@@ -285,35 +278,6 @@ def note_files(root):
                    if 'node_modules' not in path.relative_to(folder).parts})
 
 
-def unnoted_tool_names(adaptations):
-    # Report host-specific names in installed Codex plugins that no tool-note rule covers yet.
-    notes = adaptations.get('toolNotes')
-    if not notes:
-        return {}
-    pattern = re.compile('|'.join(rule['match'] for rule in notes['rules']))
-    skipped = set(notes['plugins']) | set(notes.get('auditExclusions', {}))
-    inventory = json.loads(subprocess.check_output([codex_cli(), 'plugin', 'list', '--json'], text=True))
-    found = {}
-    for plugin in inventory['installed']:
-        if not plugin.get('enabled') or plugin['name'] in skipped:
-            continue
-        root = codex_home(HOME) / 'plugins/cache' / plugin['marketplaceName'] / plugin['name'] / plugin['version']
-        if not root.is_dir():
-            continue
-        try:
-            paths = note_files(root)
-        except ValueError:
-            continue
-        count = 0
-        for path in paths:
-            text = read_text(path) or ''
-            match = re.match(r'\A---\r?\n.*?\r?\n---\r?\n', text, re.S)
-            count += len(pattern.findall(text[match.end() if match else 0:]))
-        if count:
-            found[plugin['pluginId']] = count
-    return found
-
-
 def collect_skills(root):
     if not root.is_dir():
         return
@@ -349,49 +313,6 @@ def skill_paths(root):
             if name in found and found[name] != path:
                 raise ValueError(f'Duplicate exported skill: {name}')
             found[name] = path
-    return found
-
-
-def targeted(registry, host):
-    # Plugins with implicit (`targets`) or explicit-only (`explicitTargets`) selections on this host.
-    return registry['targets'][host].keys() | registry.get('explicitTargets', {}).get(host, {}).keys()
-
-
-def installations(registry, plugins=(), adaptations=None):
-    adaptations = adaptations or {'plugins': {}}
-    inventory = json.loads(subprocess.check_output([codex_cli(), 'plugin', 'list', '--json'], text=True))
-    selected = set(plugins)
-    found = []
-    for plugin in inventory['installed']:
-        identity = plugin['pluginId']
-        wanted = (identity in targeted(registry, 'Codex') or adapted_here(adaptations, identity, 'Codex')
-                  or noted_here(adaptations, identity))
-        if wanted and (not selected or plugin['name'] in selected):
-            root = codex_home(HOME) / 'plugins/cache' / plugin['marketplaceName'] / plugin['name'] / plugin['version']
-            found.append(('Codex', identity, root))
-    claude = read_json(claude_home(HOME) / 'plugins/installed_plugins.json', {'plugins': {}})
-    for identity, records in claude['plugins'].items():
-        wanted = (identity in targeted(registry, 'Claude') or adapted_here(adaptations, identity, 'Claude')
-                  or noted_here(adaptations, identity))
-        if wanted and (not selected or identity.split('@')[0] in selected):
-            for record in records:
-                root = Path(record['installPath'])
-                if not root.resolve().is_relative_to(claude_home(HOME) / 'plugins/cache'):
-                    raise ValueError(f'Unexpected Claude cache root: {root}')
-                found.append(('Claude', identity, root))
-    for host, roots in registry.get('standaloneRoots', {}).items():
-        allowed = {'Codex': codex_home(HOME) / 'skills', 'Claude': claude_home(HOME) / 'skills'}[host].resolve()
-        for identity, directory in roots.items():
-            if selected and identity.split('@')[0] not in selected:
-                continue
-            root = Path(directory).resolve()
-            if not root.is_relative_to(allowed):
-                raise ValueError(f'Standalone override escapes the skill root: {root}')
-            if identity not in targeted(registry, host):
-                raise ValueError(f'Standalone override has no selected skills: {identity}')
-            # A missing skill is an uninstall, not permission to recreate it.
-            if (root / 'SKILL.md').is_file():
-                found.append((host, identity, root))
     return found
 
 
@@ -553,61 +474,3 @@ class Overlay:
                 raise ValueError(f'Concurrent file change: {path}')
             atomic_write(path, original)
         return len(changes)
-
-
-def locked():
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    STATE_DIR.chmod(0o700)
-    return exclusive_lock(STATE_DIR / 'lock')
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['apply', 'check', 'restore', 'run'])
-    parser.add_argument('--plugin', action='append', default=[], help='Limit to one plugin name, across installed hosts; repeat as needed')
-    # Split explicitly so argparse never interprets arguments for the child command.
-    argv = sys.argv[1:]
-    command = []
-    if '--' in argv:
-        split = argv.index('--')
-        argv, command = argv[:split], argv[split + 1:]
-    args = parser.parse_args(argv)
-    if (args.action == 'run') != bool(command):
-        parser.error('run requires -- followed by a command; other actions take no command')
-    registry = read_json(REGISTRY)
-    adaptations = read_json(ADAPTATIONS, {'plugins': {}})
-    with locked():
-        overlay = Overlay()
-        installs = installations(registry, args.plugin, adaptations)
-        if args.action in ['restore', 'run']:
-            restored = overlay.restore(installs)
-            if args.action == 'restore':
-                print(json.dumps({'restoredFiles': restored}))
-                return
-            try:
-                status = subprocess.run(command, check=False).returncode
-            finally:
-                # Re-discover after replacement, rollback, or an ordinary command failure.
-                old_roots = [root.resolve() for _, _, root in installs]
-                overlay.state['files'] = {path: record for path, record in overlay.state['files'].items()
-                    if not any(Path(path).resolve().is_relative_to(root) for root in old_roots)}
-                overlay.save()
-                writes, counts = plan(registry, installations(registry, args.plugin, adaptations), overlay, adaptations)
-                changed = overlay.apply(writes)
-                print(json.dumps({'reappliedFiles': changed, 'skills': counts}))
-            if status:
-                raise SystemExit(status)
-            return
-        writes, counts = plan(registry, installs, overlay, adaptations)
-        count = overlay.apply(writes, check=args.action == 'check')
-        result = {'action': args.action, 'filesNeedingChange' if args.action == 'check' else 'changedFiles': count,
-                  'skills': counts, 'recoveryState': str(overlay.path)}
-        if args.action == 'check' and not args.plugin:
-            result['unnotedToolNames'] = unnoted_tool_names(adaptations)
-        print(json.dumps(result))
-        if args.action == 'check' and count:
-            raise SystemExit(1)
-
-
-if __name__ == '__main__':
-    main()

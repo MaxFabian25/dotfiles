@@ -23,14 +23,14 @@ class AgentSelectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self.write_agents(root, 'ci-watcher', 'reviewer')
-            self.assertEqual(alignment.drop_unselected_agents(root, 'cursor-team-kit', set()), ['ci-watcher.md', 'reviewer.md'])
+            self.assertEqual(alignment.drop_unselected_agents(root, set()), ['ci-watcher.md', 'reviewer.md'])
             self.assertEqual(alignment.package_agents(root), {})
 
-    def test_unlisted_plugin_keeps_every_agent(self):
+    def test_no_selection_keeps_every_agent(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self.write_agents(root, 'poteto-agent')
-            self.assertEqual(alignment.drop_unselected_agents(root, 'pstack-plugin'), [])
+            self.assertEqual(alignment.drop_unselected_agents(root, None), [])
             self.assertEqual(list(alignment.package_agents(root)), ['poteto-agent'])
 
 
@@ -52,6 +52,32 @@ class ClaudeSkillTests(unittest.TestCase):
         disabled = {'mattpocock-skills:claude-handoff', 'mattpocock-skills:handoff', 'cursor-team-kit:fix-ci'}
         self.assertEqual(alignment.excluded_skill_names(disabled, 'mattpocock-skills', {'claude-handoff'}), ['mattpocock-skills:handoff'])
         self.assertEqual(alignment.excluded_skill_names(disabled, 'cursor-team-kit'), ['cursor-team-kit:fix-ci'])
+
+    def test_a_built_copy_keeps_the_claude_skill_that_codex_has_off(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'source'
+            (source / '.codex-plugin').mkdir(parents=True)
+            (source / '.codex-plugin/plugin.json').write_text(json.dumps({'name': 'example', 'version': '1.0.0'}))
+            self.write_skills(source, 'claude-handoff', 'handoff', 'tdd')
+            disabled = {'example:claude-handoff', 'example:handoff'}
+            entry = alignment.build_from('example', source, disabled, root / 'catalog', kept_skills={'claude-handoff'})
+            built = root / 'catalog' / entry['source']
+            self.assertEqual(sorted(path.name for path in (built / 'skills').iterdir()), ['claude-handoff', 'tdd'])
+            receipt = json.loads((built / '.claude-plugin/codex-alignment.json').read_text())
+            self.assertEqual(receipt['excludedSkillNames'], ['example:handoff'])
+
+    def test_a_built_copy_keeps_only_the_agents_it_is_given(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'source'
+            (source / '.codex-plugin').mkdir(parents=True)
+            (source / '.codex-plugin/plugin.json').write_text(json.dumps({'name': 'example', 'version': '1.0.0'}))
+            self.write_skills(source, 'tdd')
+            AgentSelectionTests().write_agents(source, 'ci-watcher', 'reviewer')
+            for catalog, agents, kept in (('every', None, ['ci-watcher.md', 'reviewer.md']), ('one', {'reviewer'}, ['reviewer.md'])):
+                entry = alignment.build_from('example', source, set(), root / catalog, agents=agents)
+                self.assertEqual(sorted(path.name for path in (root / catalog / entry['source'] / 'agents').iterdir()), kept)
 
 
 class InvocableSkillTests(unittest.TestCase):

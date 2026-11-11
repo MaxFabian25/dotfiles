@@ -103,23 +103,6 @@ class PortableTest(unittest.TestCase):
             if os.name != 'nt':
                 self.assertIsNone(portable.lock_holder(lock))
 
-    def test_pointer_swaps_between_sibling_releases(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / '1.0').mkdir()
-            (root / '2.0').mkdir()
-            link = root / 'current'
-            self.assertIsNone(portable.read_pointer(link))
-            portable.set_pointer(link, '1.0')
-            self.assertEqual(portable.read_pointer(link), '1.0')
-            portable.set_pointer(link, '2.0')
-            self.assertEqual(portable.read_pointer(link), '2.0')
-            self.assertEqual(link.resolve(), (root / '2.0').resolve())
-            portable.remove_pointer(link)
-            self.assertFalse(os.path.lexists(link))
-            with self.assertRaises(ValueError):
-                portable.remove_pointer(root / '1.0')
-
     def test_extract_materialises_links_inside_the_archive(self):
         data = archive([('pkg', None), ('pkg/CLAUDE.md', b'rules\n'), ('pkg/AGENTS.md', ('link', 'CLAUDE.md')),
                         ('pkg/shared', None), ('pkg/shared/a.md', b'a\n'), ('pkg/shared/b.md', ('link', 'a.md')),

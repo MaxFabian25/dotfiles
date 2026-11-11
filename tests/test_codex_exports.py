@@ -91,6 +91,17 @@ class PolicyExportTest(unittest.TestCase):
             self.assertEqual(builder.codex(dormant, verify=False).version, '1.0.0')
             self.assertEqual(builder.claude(dormant, built, verify=False), {})
 
+    def test_the_aligned_copy_keeps_claudes_own_skill_and_only_the_agents_its_install_lists(self):
+        with Home() as home:
+            source, _, package, builder = self.fixture(home)
+            for name in ('reviewer', 'watcher'):
+                home.write(source / f'agents/{name}.md', f'---\nname: {name}\ndescription: Test agent.\n---\nBody\n')
+            package = replace(package, source=LocalSource('source', home.roots.tree_digest(source)), modes={'publish': SkillMode.OFF},
+                              claude=ClaudePlacement((AlignedInstall(True, frozenset({'reviewer'})),), {'publish': SkillMode.EXPLICIT}))
+            aligned = builder.claude(package, builder.codex(package, verify=False), verify=False)['kit@codex-aligned'].root
+            self.assertEqual(sorted(path.name for path in (aligned / 'skills').iterdir()), ['ordinary', 'publish'])
+            self.assertEqual(sorted(path.name for path in (aligned / 'agents').iterdir()), ['reviewer.md'])
+
     def test_native_marketplace_source_keeps_publisher_version(self):
         with Home() as home:
             _, original, package, builder = self.fixture(home)

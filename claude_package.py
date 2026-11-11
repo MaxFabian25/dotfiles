@@ -1,19 +1,15 @@
-"""Build and publish Claude plugins from verified, immutable Codex collections."""
-import argparse
-from datetime import datetime, timezone
+"""Build Claude plugins from verified, immutable Codex collections."""
 import hashlib
 import json
 from pathlib import Path
 import re
 import shutil
-import subprocess
-import tempfile
 
 import yaml
 
 from invocation_overrides import transform_policy
 from package import ROOT, files
-from portable import claude_cli, claude_home, posix, read_utf8, replace, staging_directory, write_utf8
+from portable import read_utf8, staging_directory, write_utf8
 
 MARKETPLACE = 'personal-collections'
 CATALOG_ROOT = ROOT / 'claude'
@@ -21,19 +17,6 @@ CATALOG_ROOT = ROOT / 'claude'
 
 def read(path):
     return json.loads(read_utf8(path))
-
-
-def update_json(path, change):
-    before = path.read_bytes()
-    data = json.loads(before)
-    change(data)
-    if path.read_bytes() != before:
-        raise RuntimeError(f'Concurrent change: {path}')
-    with tempfile.NamedTemporaryFile(dir=path.parent, prefix='.publish-', delete=False) as f:
-        temporary = Path(f.name)
-        f.write((json.dumps(data, indent=2) + '\n').encode())
-    temporary.chmod(path.stat().st_mode & 0o777)
-    replace(temporary, path)
 
 
 def contract(release):
@@ -134,174 +117,3 @@ def build(collection, codex_release, config=None, catalog_root=CATALOG_ROOT, exp
         packages.append({'name': name, 'id': name + '@' + MARKETPLACE, 'version': version,
                          'commit': source['commit'], 'release': str(release), 'skills': entry['skills']})
     return packages
-
-
-def validate_packages(packages):
-    for package in packages:
-        subprocess.run([claude_cli(), 'plugin', 'validate', package['release'], '--strict'],
-                       check=True, capture_output=True, text=True, timeout=30)
-
-
-def verify_installed(packages):
-    results = []
-    for package in packages:
-        record = current_record(package, Path.home())
-        if record is None:
-            results.append({'id': package['id'], 'state': 'uninstalled; preserved'})
-            continue
-        if files(Path(record['installPath'])) != files(Path(package['release'])):
-            raise RuntimeError(f'Claude installed files differ: {package["id"]}')
-        process = subprocess.run([claude_cli(), 'plugin', 'details', package['id']],
-                                 check=True, capture_output=True, text=True, timeout=30)
-        inventory = re.search(r'Skills \((\d+)\)\s+([^\n]+)', process.stdout)
-        if not inventory or int(inventory[1]) != len(package['skills']) or \
-                set(inventory[2].split(', ')) != set(package['skills']):
-            raise RuntimeError(f'Claude native skill selection differs: {package["id"]}')
-        if not all(re.search(component + r' \(0\)', process.stdout)
-                   for component in ('Agents', 'Hooks', 'MCP servers', 'LSP servers')):
-            raise RuntimeError(f'Unexpected Claude runtime component: {package["id"]}')
-        results.append({'id': package['id'], 'skills': int(inventory[1]), 'filesVerified': True})
-    return results
-
-
-def current_record(package, home):
-    records = read(claude_home(home) / 'plugins/installed_plugins.json')['plugins'].get(package['id'], [])
-    if not records:
-        return None
-    if len(records) != 1 or records[0]['scope'] != 'user':
-        raise RuntimeError(f'Unexpected Claude installation scope: {package["id"]}')
-    record = records[0]
-    cache = Path(record['installPath'])
-    receipt = read(cache / '.claude-plugin/upstream.json')
-    expected = dict(receipt['packagedFileHashes'])
-    actual = files(cache)
-    actual.pop('.claude-plugin/upstream.json', None)
-    if actual != expected:
-        raise RuntimeError(f'Edited Claude cache: {package["id"]}')
-    previous_contract = contract(cache)
-    next_contract = contract(Path(package['release']))
-    # A recorded follow-upstream collection may change only its skills' model-invocation flag.
-    followed = set(package.get('upstreamInvocationSkills', []))
-    for value in (previous_contract, next_contract):
-        for name in followed & value.keys():
-            value[name] = {k: v for k, v in value[name].items() if k != 'disable-model-invocation'}
-    allowed = set(package.get('allowedAddedSkills', []))
-    existing_contract = {name: value for name, value in next_contract.items() if name not in allowed}
-    if previous_contract != next_contract and (not allowed or previous_contract != existing_contract):
-        raise RuntimeError(f'Claude invocation or selection changed: {package["id"]}')
-    return record
-
-
-def needs_update(packages, home=None):
-    home = home or Path.home()
-    changes = []
-    for package in packages:
-        record = current_record(package, home)
-        changes.append(bool(record) and (record['version'] != package['version'] or
-                       files(Path(record['installPath'])) != files(Path(package['release']))))
-    return any(changes)
-
-
-def restore_publication(transaction, home=None, catalog_root=CATALOG_ROOT):
-    home = home or Path.home()
-    def restore_registry(data):
-        for identity, previous in transaction['previousRecords'].items():
-            if data['plugins'].get(identity) != transaction['publishedRecords'].get(identity):
-                raise RuntimeError(f'Claude installation changed during rollback: {identity}')
-            if previous is None:
-                data['plugins'].pop(identity, None)
-            else:
-                data['plugins'][identity] = previous
-    update_json(claude_home(home) / 'plugins/installed_plugins.json', restore_registry)
-    def restore_catalog(data):
-        for name, previous in transaction['previousEntries'].items():
-            existing = next((e for e in data['plugins'] if e['name'] == name), None)
-            if existing != transaction['publishedEntries'][name]:
-                raise RuntimeError(f'Claude catalog changed during rollback: {name}')
-            data['plugins'] = [e for e in data['plugins'] if e['name'] != name]
-            if previous is not None:
-                data['plugins'].append(previous)
-    update_json(catalog_root / '.claude-plugin/marketplace.json', restore_catalog)
-
-
-def publish(packages, backup, home=None, catalog_root=CATALOG_ROOT, bootstrap=False):
-    """Publish verified files without enabling plugins or running their components."""
-    home = home or Path.home()
-    settings = read(claude_home(home) / 'settings.json').get('enabledPlugins', {})
-    registry = read(claude_home(home) / 'plugins/installed_plugins.json')
-    active = []
-    for package in packages:
-        previous = current_record(package, home)
-        if previous is None and not bootstrap:
-            continue  # A user uninstall must not be undone by the updater.
-        if package['id'] not in settings:
-            raise RuntimeError(f'Explicit Claude enablement is required before publication: {package["id"]}')
-        active.append(package)
-    catalog_path = catalog_root / '.claude-plugin/marketplace.json'
-    catalog = read(catalog_path)
-    transaction = {'previousRecords': {}, 'publishedRecords': {}, 'previousEntries': {}, 'publishedEntries': {}}
-    stamp = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
-    for p in active:
-        source = Path(p['release'])
-        target = claude_home(home) / 'plugins/cache' / MARKETPLACE / p['name'] / p['version']
-        if target.exists():
-            if files(target) != files(source):
-                raise RuntimeError(f'Claude destination has different content: {target}')
-        else:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with staging_directory(prefix='.publish-', dir=target.parent) as tmp:
-                staged = Path(tmp) / 'package'
-                shutil.copytree(source, staged)
-                if files(staged) != files(source):
-                    raise RuntimeError(f'Claude copy failed: {p["id"]}')
-                staged.rename(target)
-        previous = registry['plugins'].get(p['id'])
-        transaction['previousRecords'][p['id']] = previous
-        transaction['publishedRecords'][p['id']] = [{
-            'scope': 'user', 'installPath': str(target), 'version': p['version'],
-            'installedAt': previous[0]['installedAt'] if previous else stamp,
-            'lastUpdated': stamp, 'gitCommitSha': p['commit'],
-        }]
-        if p['commit'] is None:
-            transaction['publishedRecords'][p['id']][0].pop('gitCommitSha')
-        transaction['previousEntries'][p['name']] = next((e for e in catalog['plugins'] if e['name'] == p['name']), None)
-        transaction['publishedEntries'][p['name']] = {
-            'name': p['name'], 'source': './' + posix(source.relative_to(catalog_root)),
-            'version': p['version'], 'description': read(source / '.claude-plugin/plugin.json')['description'],
-        }
-    backup.mkdir(parents=True, exist_ok=True)
-    write_utf8(backup / 'claude-publication.json', json.dumps(transaction, indent=2) + '\n')
-    def catalog_change(data):
-        for name, previous in transaction['previousEntries'].items():
-            if next((e for e in data['plugins'] if e['name'] == name), None) != previous:
-                raise RuntimeError(f'Claude catalog changed concurrently: {name}')
-            data['plugins'] = [e for e in data['plugins'] if e['name'] != name]
-            data['plugins'].append(transaction['publishedEntries'][name])
-    def registry_change(data):
-        for identity, previous in transaction['previousRecords'].items():
-            if data['plugins'].get(identity) != previous:
-                raise RuntimeError(f'Claude registry changed concurrently: {identity}')
-            data['plugins'][identity] = transaction['publishedRecords'][identity]
-    update_json(catalog_path, catalog_change)
-    try:
-        update_json(claude_home(home) / 'plugins/installed_plugins.json', registry_change)
-    except Exception:
-        # Registry was not committed; restore only this publication's catalog entries.
-        transaction['publishedRecords'] = transaction['previousRecords']
-        restore_publication(transaction, home, catalog_root)
-        raise
-    return transaction
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('collection')
-    parser.add_argument('release', type=Path)
-    args = parser.parse_args()
-    packages = build(args.collection, args.release.resolve())
-    validate_packages(packages)
-    print(json.dumps({'claudeCandidates': packages, 'installedUpdateNeeded': needs_update(packages)}, indent=2))
-
-
-if __name__ == '__main__':
-    main()

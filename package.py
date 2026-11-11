@@ -1,6 +1,4 @@
-#!/usr/bin/env python3
 """Package pristine upstream files for Codex without rewriting skill content."""
-import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -8,8 +6,7 @@ import re
 import shutil
 import subprocess
 
-from portable import (GIT, agents_home, codex_home, extract_tar, posix, read_utf8, require_readable,
-                      staging_directory, write_utf8)
+from portable import GIT, extract_tar, posix, read_utf8, require_readable, staging_directory, write_utf8
 
 ROOT = Path(__file__).resolve().parent
 
@@ -151,44 +148,3 @@ def package(name, revision='HEAD', *, config=None, output_root=None):
         else:
             stage.rename(release)
     return release, receipt
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('build', 'verify'))
-    parser.add_argument('plugin', choices=tuple(json.loads(read_utf8(ROOT / 'sources.json'))))
-    args = parser.parse_args()
-    profile = json.loads(read_utf8(ROOT / 'sources.json'))[args.plugin]
-    if args.action == 'verify' and profile.get('kind') == 'standalone':
-        from standalone_package import verify_installed
-        release, receipt = verify_installed(args.plugin)
-        print(json.dumps({'plugin': args.plugin, 'release': str(release), 'version': receipt['version'],
-                          'preservedSkills': len(receipt['selectedSkills']), 'installedCacheVerified': True}, indent=2))
-        return
-    revision='HEAD'
-    if args.action=='verify':
-        marketplace=json.loads(read_utf8(agents_home()/'plugins/marketplace.json'))
-        entry=next(e for e in marketplace['plugins'] if e['name']==args.plugin)
-        installed_release=Path.home()/entry['source']['path']
-        revision=json.loads(read_utf8(installed_release/'.codex-plugin/upstream.json'))['commit']
-    release, receipt = package(args.plugin, revision)
-    result = {'plugin': args.plugin, 'release': str(release), 'version': receipt['version'],
-              'commit': receipt['commit']}
-    if 'preparation' in receipt:
-        result['preservedSkills'] = len(receipt['selectedSkillRoots'])
-        result['preparation'] = receipt['preparation']
-    elif 'selectedSkills' in receipt:
-        result['preservedSkills'] = len(receipt['selectedSkills'])
-        result['upstreamFilesRecorded'] = sum(len(v) for v in receipt['upstreamFileHashes'].values())
-    else:
-        result['upstreamFilesUnchanged'] = len(receipt['upstreamFileHashes'])
-    if args.action == 'verify':
-        cache = codex_home() / 'plugins/cache/personal' / args.plugin / receipt['version']
-        if not cache.is_dir() or files(cache) != files(release):
-            raise RuntimeError(f'Installed cache does not match upstream release: {cache}')
-        result['installedCacheVerified'] = str(cache)
-    print(json.dumps(result, indent=2))
-
-
-if __name__ == '__main__':
-    main()
