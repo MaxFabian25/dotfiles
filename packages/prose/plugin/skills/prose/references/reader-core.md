@@ -32,11 +32,16 @@ scope](source-evidence/plain-language.md#plain-language) when that designation m
 - Prefer a direct verb and the shortest exact word. Name the technical object, state, or action;
   preserve an established term and explain it when readers may not know it. Use one designation
   consistently for one concept.
+- Make the person or thing that acts the subject of the sentence and the action its verb. Recast a
+  sentence whose action sits in a noun or is missing, such as one whose verb says only that
+  something exists.
+- Put the point of a sentence in its main clause. Recast a sentence in which a reason, example, or
+  list delays the point.
 - Prefer active voice when responsibility matters. Passive voice can serve an unknown, irrelevant,
   or deliberately backgrounded actor. Keep modifiers and pronouns attached to their intended
   targets; check the scope of negation, conditions, and comparisons.
 - Use familiar context to introduce new information. Compare like with like and name an unclear
-  comparison basis. Match the strength of the claim to the evidence. Remove redundant hedges while
+  comparison basis. Say which quantity a number measures. Match the strength of the claim to the evidence. Remove redundant hedges while
   keeping distinct conditions and limitations. State what an evidence gap prevents you from
   concluding.
 - While researching for a deliverable, keep each factual claim with its source passage and link,

@@ -84,3 +84,9 @@ Interpret each source role under the [canonical role definitions](../source-mani
 | `AUTH-ISO-VERBAL-FORMS` | ISO permission, possibility, capability, conformity, and compliance distinctions |
 | `AUTH-NARA-RECORD-LIFECYCLE` | United States federal records lifecycle terminology |
 | `AUTH-NARA-DISPOSITION` | United States federal records disposition terminology |
+
+## Sentence processing
+
+| Authority | Functional scope |
+| --- | --- |
+| `AUTH-CLARK-MARTIN-MAHOWALD-2026` | English constructions linked to processing difficulty in generated text: omitted relativisers, nouns used as verbs, noun strings, and long dependencies. A preprint that measures frequency, not reader comprehension |

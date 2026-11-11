@@ -25,6 +25,11 @@ supports British data prose within that scope.
   organisation.
 - Keep an acronym, initialism, or abbreviation in its governed grammatical role. Use an ordinary
   English verb for the action.
+- Use a noun as a verb only when the applicable dictionary records that verb. Otherwise, use an
+  ordinary verb with the noun, as in *put it in the calendar*.
+- In new prose, keep *that* or the relative pronoun at the start of a clause, and keep articles.
+  Omit the pronoun only from a short clause that reads one way. To shorten a text, remove content
+  that readers do not need.
 - Use past tense for a completed procedure and its run-specific result. Use present tense for
   standing mechanics and immediate instructional results.
 - Use future tense only for an actual future event.
