@@ -135,8 +135,9 @@ def apply(setup: Setup, device: Device, current: Plan, *, builder=None, configur
             raise RuntimeError('The device changed after planning; run sync again to review its current state')
         builder = builder or Builder(setup, device.roots, device.roots.engine)
         operation = Apply(setup.for_platform(device.platform), device, current, builder)
-        operation.prepare()
-        operation.run()
+        with operation.owner.staging:
+            operation.prepare()
+            operation.run()
         after = replace(plan(setup, device, configurations=configurations),
                         held=tuple((held.path, held.holders) for held in operation.held))
         return after, operation.files.backup if operation.files.backup.exists() else None

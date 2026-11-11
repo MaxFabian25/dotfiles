@@ -4,6 +4,7 @@ import shutil
 import sys
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -221,6 +222,33 @@ class ProfilePluginsTest(unittest.TestCase):
                     kit.apply(mirrors)
                 self.assertTrue(old.is_dir())
                 self.assertFalse(kit.target.exists())
+
+    def test_a_copy_that_fails_leaves_no_work_folder_in_the_home(self):
+        with Home() as home:
+            kit = Fixture(home)
+            kit.install('1.0.0')
+            mirrors, _, _ = kit.inspect()
+            home.write(home.roots.home / 'backup/account-homes', 'a file where the backup folder goes')
+            with self.assertRaises(NotADirectoryError):
+                kit.apply(mirrors)
+            self.assertEqual([path.name for path in kit.cache.iterdir()], ['1.0.0'])
+
+    def test_a_copy_that_fails_after_the_old_tree_moved_leaves_no_work_folder_in_the_home(self):
+        with Home() as home:
+            kit = Fixture(home)
+            kit.install('1.0.0')
+            mirrors, _, _ = kit.inspect()
+            rename = Path.rename
+
+            def stop(path, target):
+                if path.name == 'staged':
+                    raise RuntimeError('stopped at the rename')
+                return rename(path, target)
+
+            with patch.object(Path, 'rename', stop), self.assertRaisesRegex(RuntimeError, 'stopped at the rename'):
+                kit.apply(mirrors)
+            self.assertEqual(list(kit.cache.iterdir()), [])
+            self.assertTrue((home.roots.home / 'backup/account-homes/account/personal/kit/1.0.0').is_dir())
 
     def test_trusted_hooks_need_approval_in_each_home(self):
         with Home() as home:

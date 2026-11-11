@@ -103,6 +103,7 @@ class InstallationTest(unittest.TestCase):
         self.seeds = ()
 
         def command(operation, host, *args):
+            self.operation = operation   # kept alive, so a staged tree goes only when apply leaves the staging stack
             self.calls.append((host, args))
             if args[:2] == ('plugin', 'add'):
                 release = operation.built['kit']
@@ -132,6 +133,197 @@ class InstallationTest(unittest.TestCase):
     def snapshot(self):
         return {p.relative_to(self.root): (p.lstat().st_mtime_ns, p.read_bytes() if p.is_file() else None)
                 for p in self.root.rglob('*')}
+
+    def staged_images(self):
+        scratch = self.roots.engine / '.sync/accepted-images'
+        return sorted(path.name for path in scratch.iterdir()) if scratch.is_dir() else []
+
+    def unnamed_work_folders(self):
+        """The replacement work folders on the device that no receipt names as its backup or its pending swap."""
+        named = set()
+        for path in self.receipt_paths():
+            receipt = json.loads(path.read_bytes())
+            accepted, pending = receipt['accepted'] or {}, receipt['pending'] or {}
+            named |= {Path(value).parent for value in
+                      (accepted.get('backup'), pending.get('staged'), pending.get('displaced')) if value}
+        return sorted(str(path.relative_to(self.roots.home)) for path in self.roots.home.rglob('.sync-*')
+                      if path.is_dir() and path not in named)
+
+    def revise_loose(self, text):
+        source = self.public / 'owned/loose'
+        (source / 'SKILL.md').write_text(text)
+        digest = self.roots.tree_digest(source)
+        skill = replace(self.setup.loose['loose'], source=LocalSource('owned/loose', digest))
+        self.setup = replace(self.setup, loose={'loose': skill},
+                             lock={**self.setup.lock, 'loose': Lock(intent(skill, {}), placements={SkillRoot.CODEX: digest})})
+
+    def loose_backup(self):
+        """Install, then replace the loose skill once, and give the tree that replacement moved aside."""
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.revise_loose('A second loose skill.\n')
+        self.assertEqual(self.run_apply().exit_code, 0)
+        backup, = (self.roots.codex_home / 'skills').glob('.sync-loose-*/displaced')
+        return backup
+
+    def test_a_sync_removes_the_plugin_trees_it_staged(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(self.staged_images(), [])
+
+    def test_a_sync_that_fails_removes_the_plugin_trees_it_staged(self):
+        def stop(destination):
+            raise RuntimeError('the native install stopped')
+
+        self.interrupt = stop
+        with self.assertRaisesRegex(RuntimeError, 'the native install stopped'):
+            self.run_apply()
+        self.assertEqual(self.staged_images(), [])
+
+    def test_a_sync_that_stops_while_preparing_removes_the_plugin_trees_it_staged(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.revise_loose('A second loose skill.\n')
+        (self.roots.codex_home / 'skills/loose/SKILL.md').write_text('My local edit.\n')
+        stopped = None
+        try:
+            self.run_apply()
+        except ConcurrentEdit as error:
+            stopped = error   # its traceback keeps the owner alive, so collecting the owner cannot remove the trees
+        self.assertIn('Unverified existing content preserved: codex:LOOSE_SKILL', str(stopped))
+        self.assertEqual(self.staged_images(), [])
+
+    def test_replacements_leave_only_the_work_folder_a_receipt_names(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(self.unnamed_work_folders(), [])
+        for text in ('A second loose skill.\n', 'A third loose skill.\n'):
+            self.revise_loose(text)
+            self.assertEqual(self.run_apply().exit_code, 0)
+            self.assertEqual((self.roots.codex_home / 'skills/loose/SKILL.md').read_text(), text)
+            self.assertEqual(self.unnamed_work_folders(), [])
+        backups = [path for path in (self.roots.codex_home / 'skills').glob('.sync-loose-*/displaced/SKILL.md')]
+        self.assertEqual([path.read_text() for path in backups], ['A second loose skill.\n'])
+
+    def test_a_replacement_stopped_after_its_swap_finishes_with_its_backup_named(self):
+        self.loose_backup()
+        self.revise_loose('A third loose skill.\n')
+        rename = Path.rename
+
+        def crash(path, target):
+            result = rename(path, target)
+            if path.name == 'staged':
+                raise RuntimeError('after the swap')
+            return result
+
+        with patch.object(Path, 'rename', crash), self.assertRaisesRegex(RuntimeError, 'after the swap'):
+            self.run_apply()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(self.unnamed_work_folders(), [])
+        backups = [path for path in (self.roots.codex_home / 'skills').glob('.sync-loose-*/displaced/SKILL.md')]
+        self.assertEqual([path.read_text() for path in backups], ['A second loose skill.\n'])
+
+    def test_a_release_that_changes_only_intent_keeps_the_backup_an_account_home_is_matched_against(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        profile = self.roots.home / '.local/share/orca/codex-accounts/account/home'
+        copy = profile / 'plugins/cache/personal/kit/1.0.0'
+        shutil.copytree(self.installed(), copy)
+        (profile / 'config.toml').write_text('[plugins."kit@personal"]\nenabled = true\n')
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the first reader'),))
+        with patch('profile_plugins.apply', side_effect=RuntimeError('before the account homes')), \
+                self.assertRaisesRegex(RuntimeError, 'before the account homes'):
+            self.run_apply()
+        backup, = self.installed().parent.glob('.sync-1.0.0-*/displaced')
+        self.setup = replace(self.setup, note_rules=(*self.setup.note_rules, NoteRule('Grep', 'a tool the kit never names')))
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the first reader', (copy / 'skills/one/SKILL.md').read_text())
+        self.assertIn('use the local reader', (backup / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(self.unnamed_work_folders(), [])
+
+    def test_a_destination_that_already_holds_the_new_release_drops_the_backup_of_the_one_before(self):
+        backup = self.loose_backup()
+        self.revise_loose('A third loose skill.\n')
+        (self.roots.codex_home / 'skills/loose/SKILL.md').write_text('A third loose skill.\n')
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertFalse(backup.parent.exists())
+        self.assertEqual(self.unnamed_work_folders(), [])
+
+    def test_a_work_folder_that_is_a_link_stays_with_the_tree_it_points_to(self):
+        work = self.loose_backup().parent
+        outside = self.root / 'outside'
+        shutil.move(work, outside)
+        work.symlink_to(outside, target_is_directory=True)
+        self.revise_loose('A third loose skill.\n')
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertTrue(work.is_symlink())
+        self.assertEqual((outside / 'displaced/SKILL.md').read_text(), 'A loose skill.\n')
+
+    def test_a_work_folder_that_holds_anything_else_stays(self):
+        backup = self.loose_backup()
+        note = backup.parent / 'note.txt'
+        note.write_text('mine')
+        self.revise_loose('A third loose skill.\n')
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(note.read_text(), 'mine')
+        self.assertEqual((backup / 'SKILL.md').read_text(), 'A loose skill.\n')
+
+    def test_a_receipt_that_names_a_backup_outside_its_own_work_folders_removes_nothing(self):
+        skills = self.loose_backup().parent.parent
+        receipt = next(path for path in self.receipt_paths() if 'LOOSE_SKILL' in json.loads(path.read_bytes())['identity'])
+        name = '.sync-loose-' + 'ab' * 16
+        for case, named in (('under another folder', self.root / 'elsewhere' / name / 'displaced'),
+                            ('of another skill', skills / ('.sync-other-' + 'ab' * 16) / 'displaced'),
+                            ('with a short suffix', skills / '.sync-loose-abcd/displaced'),
+                            ('holding another name', skills / name / 'kept')):
+            with self.subTest(case):
+                named.mkdir(parents=True)
+                (named / 'mine.txt').write_text('mine')
+                value = json.loads(receipt.read_bytes())
+                value['accepted']['backup'] = str(named)
+                receipt.write_text(json.dumps(value))
+                self.revise_loose(f'A loose skill {case}.\n')
+                self.assertEqual(self.run_apply().exit_code, 0)
+                self.assertEqual((named / 'mine.txt').read_text(), 'mine')
+
+    def test_a_version_change_removes_the_backup_beside_the_old_version(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        old, = self.installed().parent.glob('.sync-1.0.0-*')
+        (self.source / '.codex-plugin/plugin.json').write_text('{"name":"kit","version":"1.1.0"}')
+        digest = self.roots.tree_digest(self.source)
+        package = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
+        lock = replace(self.setup.lock['kit'], intent=intent(package, {}), trees={Host.CODEX: LockedTree('1.1.0', digest)})
+        self.setup = replace(self.setup, packages={'kit': package}, lock={**self.setup.lock, 'kit': lock})
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(self.installed().name, '1.1.0')
+        self.assertFalse(old.exists())
+        self.assertEqual(self.unnamed_work_folders(), [])
+
+    def claude_backup_folder(self, note):
+        """Replace the Claude cache in place with a release that carries note, and give the folder of its backup."""
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', note),))
+        self.assertEqual(self.run_apply().exit_code, 0)
+        return Path(json.loads(self._pending_claude_receipt().read_bytes())['accepted']['backup']).parent
+
+    def test_a_claude_backup_folder_goes_with_a_valid_orphan_marker_and_stays_with_an_invalid_one(self):
+        self._installed_claude()
+        marked = self.claude_backup_folder('a first note')
+        (marked / '.orphaned_at').write_text('1794063570885')
+        invalid = self.claude_backup_folder('a second note')
+        self.assertFalse(marked.exists())
+        (invalid / '.orphaned_at').write_text('not a time')
+        self.claude_backup_folder('a third note')
+        self.assertEqual(sorted(path.name for path in invalid.iterdir()), ['.orphaned_at', 'displaced'])
+
+    def test_a_stopped_replacement_whose_receipt_names_another_displaced_path_keeps_its_stage(self):
+        destination = self._installed_claude()
+        own_lease(destination / '.in_use')
+        self.revise_release('first revision\n')
+        self.assert_held(destination)
+        receipt = self._pending_claude_receipt()
+        value = json.loads(receipt.read_bytes())
+        staged = Path(value['pending']['staged'])
+        value['pending']['displaced'] = str(destination.parent / ('.sync-1.0.0-' + 'ab' * 16) / 'displaced')
+        receipt.write_text(json.dumps(value))
+        self.revise_release('second revision\n')
+        self.assert_held(destination)
+        self.assertTrue(staged.is_dir())
 
     def test_install_then_strict_noop_and_complete_manifest(self):
         after = self.run_apply()

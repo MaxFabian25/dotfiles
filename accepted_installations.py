@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass, replace
 import hashlib
 import json
@@ -17,7 +18,7 @@ from description import (AlignedInstall, LocalSource, RepoSource, SkillRoot, Sna
                          plugin_id)
 from drift import Difference, EntryRef, Kind
 from host_state import FactKey, Host, InstallDetail, Surface, Unpinned, bytes_digest
-from portable import process_running, staging_folder, replace as replace_path
+from portable import process_running, staging_directory, replace as replace_path
 from sync_files import ConcurrentEdit, contents
 from sync_sources import BuildError
 
@@ -272,6 +273,7 @@ class AcceptedInstallations:
                                       setup.roots.private.parent if setup.roots.private else None,
                                       self.roots, device.platform) if configurations else ()
         self._prepared = {}
+        self.staging = contextlib.ExitStack()   # holds the trees prepare stages; leaving it removes them
 
     def _path(self, artifact):
         return self.directory / (hashlib.sha256(artifact.identity.encode()).hexdigest() + '.json')
@@ -540,7 +542,8 @@ class AcceptedInstallations:
                 pristine = image(release.root)
                 scratch = self.roots.engine / '.sync/accepted-images'
                 scratch.mkdir(parents=True, exist_ok=True)
-                source = Path(staging_folder(prefix=package.name + '-', dir=scratch)) / 'tree'
+                source = Path(self.staging.enter_context(
+                    staging_directory(prefix=package.name + '-', dir=scratch))) / 'tree'
                 copy_tree(release.root, source)
                 install = next(i for i in package.placement(artifact.key.host).installs
                                if plugin_id(package.name, i, artifact.key.host) == artifact.key.subject)
@@ -642,28 +645,50 @@ class AcceptedInstallations:
         return str(old) == pending['target']['path'] or _same(self._read(artifact, old), pending['before'])
 
     def _discard(self, artifact, stale):
-        """Remove the work folder of a replacement a newer release took over, once its receipt no longer names it.
-        The folder goes only when it holds nothing but that replacement's own staged tree, plus in a Claude cache
-        the orphan marker Claude Code writes into every folder there that is not an installed version."""
+        """Remove the work folder of a replacement a newer release took over or that moved nothing aside, once
+        its receipt no longer names it."""
         staged = Path(stale['staged'])
-        work, destination = staged.parent, Path(stale['target']['path'])
+        if Path(stale['displaced']) == staged.parent / 'displaced':
+            self._remove_work(artifact, Path(stale['target']['path']), staged, stale['target']['image'])
+
+    def _remove_work(self, artifact, destination, held, expected=None):
+        """Remove the work folder beside destination that no receipt names any more. The folder goes only when it
+        holds nothing but held, a replacement's own staged tree or the tree one moved aside, plus in a Claude cache
+        the orphan marker Claude Code writes into every folder there that is not an installed version."""
+        work = held.parent
         suffix = work.name.removeprefix('.sync-' + destination.name + '-')
         if (work.parent != destination.parent or suffix == work.name or not re.fullmatch('[0-9a-f]{32}', suffix)
-                or staged != work / 'staged' or Path(stale['displaced']) != work / 'displaced'
-                or _linked(work) or not work.is_dir()):
+                or held.name not in ('staged', 'displaced') or _linked(work) or not work.is_dir()):
             return
-        allowed = {'staged', '.orphaned_at'} if artifact.claude_cache else {'staged'}
+        allowed = {held.name, '.orphaned_at'} if artifact.claude_cache else {held.name}
         try:
             names = {entry.name for entry in work.iterdir()}
             if names - allowed:
                 return
             if '.orphaned_at' in names:
                 _claude_runtime(work / '.orphaned_at')
-            if staged.exists() and not _same(image(staged), stale['target']['image']):
+            if expected is not None and held.exists() and not _same(image(held), expected):
                 return
         except ConcurrentEdit:
             return
         shutil.rmtree(work)
+
+    def _accept(self, artifact, record, accepted, pending):
+        """Save record as the accepted installation, with the tree its replacement moved aside as its backup, and
+        remove the work folders the receipt then no longer names: the replacement's own when it moved nothing
+        aside, and the one holding the backup of the record it replaces. With no replacement, as when a release
+        changes only the intent, the record keeps that backup while its path and image stay, because an account
+        home may still hold that copy."""
+        if pending and Path(pending['displaced']).exists():
+            record['backup'] = pending['displaced']
+        elif (not pending and accepted and accepted.get('backup') and accepted['path'] == record['path']
+              and _same(accepted['image'], record['image'])):
+            record['backup'] = accepted['backup']
+        self._save(artifact, record)
+        if pending and 'backup' not in record:
+            self._discard(artifact, pending)
+        if accepted and accepted.get('backup') and accepted['backup'] != record.get('backup'):
+            self._remove_work(artifact, Path(accepted['path']), Path(accepted['backup']))
 
     def _prepare_artifact(self, artifact, target, source, data, pristine):
         receipt = self._receipt(artifact)
@@ -742,17 +767,16 @@ class AcceptedInstallations:
         destination = artifact.destination
         record = {'path': str(destination), 'bindings': _bindings(artifact.aliases),
                   'intent': artifact.intent, 'image': prepared.target, 'provenance': artifact.provenance}
+        receipt = self._receipt(artifact)
+        accepted = receipt and receipt.get('accepted')
         if prepared.stale:
-            receipt = self._receipt(artifact)
             if not (receipt and _same(receipt.get('pending'), prepared.stale) and self._unstarted(artifact, prepared.stale)):
                 raise ConcurrentEdit(f'Pending replacement changed after preparation: {artifact.identity}')
         if _same(self._read(artifact, destination), prepared.target):
-            self._save(artifact, record)
+            self._accept(artifact, record, accepted, prepared.pending)
             if prepared.stale:
                 self._discard(artifact, prepared.stale)
             return
-        receipt = self._receipt(artifact)
-        accepted = receipt and receipt.get('accepted')
         work = destination.parent / ('.sync-' + destination.name + '-' + uuid.uuid4().hex)
         pending = prepared.pending or {'before': prepared.before, 'before_path': str(prepared.before_path),
                                        'bindings': prepared.bindings, 'destination_before': prepared.destination_before,
@@ -790,9 +814,7 @@ class AcceptedInstallations:
                 files.write(destination, data, expected=before)
         if not _same(self._read(artifact, destination), prepared.target):
             raise ConcurrentEdit(f'Effective output failed verification: {artifact.identity}')
-        if Path(pending['displaced']).exists():
-            record['backup'] = pending['displaced']
-        self._save(artifact, record)
+        self._accept(artifact, record, accepted, pending)
 
     def _tree(self, prepared, pending, accepted, actual):
         artifact = prepared.artifact

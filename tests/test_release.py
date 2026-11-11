@@ -42,7 +42,8 @@ class ReleaseTest(unittest.TestCase):
                                                            'tests/test_seed.py': PASSING_TEST,
                                                            '.gitignore': ALLOWLIST})
         first = git(self.public_origin, 'rev-parse', 'main')
-        self.private_origin = self.origin('private-origin', {'release.toml': f'public_commit = "{first}"\n'})
+        self.private_origin = self.origin('private-origin', {'release.toml': f'public_commit = "{first}"\n',
+                                                             release.DENYLIST: '# hosts\nseeded-host\n'})
         self.public = self.clone(self.public_origin, 'dotfiles')
         self.private = self.clone(self.private_origin, 'dotfiles-private')
         self.worktrees = self.root / 'worktrees'
@@ -213,13 +214,12 @@ class ReleaseTest(unittest.TestCase):
             self.assertEqual(release_main(finish, self.public), 0)
         self.assertIn('Ran 1 private tests in 1 folders: OK', output.getvalue())
         self.assertEqual(git(self.private_origin, 'ls-tree', '-r', '--name-only', 'main', 'config/'),
-                         'config/tool/helper.py\nconfig/tool/test_tool.py')
+                         f'{release.DENYLIST}\nconfig/tool/helper.py\nconfig/tool/test_tool.py')
 
     def test_finish_stops_on_a_public_line_the_private_denylist_names(self):
         release_main(['start', 'leak', *self.options()], self.public)
         tree, private = self.worktrees / 'leak/public', self.worktrees / 'leak/private'
-        (private / 'config/privacy').mkdir(parents=True)
-        (private / 'config/privacy/public-denylist.txt').write_text('# hosts\nsecret-host\n', encoding='utf-8')
+        (private / release.DENYLIST).write_text('# hosts\nsecret-host\n', encoding='utf-8')
         (tree / 'content').write_text('first\nreach Secret-Host over ssh\n', encoding='utf-8')
         (tree / 'notes.md').write_text('secret-host, but the allowlist keeps it out\n', encoding='utf-8')
         message = self.root / 'message'
@@ -238,6 +238,48 @@ class ReleaseTest(unittest.TestCase):
         self.assertIn('the public commit message in ', error.getvalue())
         message.write_text('Change the content\n', encoding='utf-8')
         self.assertEqual(release_main(finish, self.public), 0)
+
+    def test_finish_stops_when_the_private_denylist_is_missing_or_lists_no_strings(self):
+        message = self.root / 'message'
+        message.write_text('Change the content\n', encoding='utf-8')
+        for name, text in (('unlisted', None), ('emptied', ''), ('commented', '# hosts\n# seeded-host\n')):
+            with self.subTest(name):
+                release_main(['start', name, *self.options()], self.public)
+                tree, private = self.worktrees / name / 'public', self.worktrees / name / 'private'
+                if text is None:
+                    (private / release.DENYLIST).unlink()
+                else:
+                    (private / release.DENYLIST).write_text(text, encoding='utf-8')
+                (tree / 'content').write_text('reach seeded-host over ssh\n', encoding='utf-8')
+                finish = ['finish', name, '--message', str(message), '--private-message', str(message), *self.options()]
+                with redirect_stderr(io.StringIO()) as error:
+                    self.assertEqual(release_main(finish, self.public), 3)
+                self.assertIn(str(private / release.DENYLIST), error.getvalue())
+                self.assertEqual(git(tree, 'rev-parse', 'HEAD'), git(self.public_origin, 'rev-parse', 'main'))
+                self.assertEqual(git(private, 'rev-parse', 'HEAD'), git(self.private_origin, 'rev-parse', 'main'))
+
+    def test_a_denylist_stop_after_an_earlier_finish_committed_does_not_say_nothing_was_committed(self):
+        release_main(['start', 'again', *self.options()], self.public)
+        tree, private = self.worktrees / 'again/public', self.worktrees / 'again/private'
+        (tree / 'content').write_text('second\n', encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Change the content\n', encoding='utf-8')
+        finish = ['finish', 'again', '--message', str(message), '--private-message', str(message), *self.options()]
+        self.assertEqual(release_main(finish, self.public), 0)
+        self.assertEqual(git(tree, 'rev-list', '--count', 'origin/main..HEAD'), '1')
+
+        def stopped():
+            with redirect_stderr(io.StringIO()) as error:
+                self.assertEqual(release_main(finish, self.public), 3)
+            self.assertNotIn('nothing was committed', error.getvalue())
+            return error.getvalue()
+
+        (tree / 'content').write_text('reach seeded-host over ssh\n', encoding='utf-8')
+        self.assertIn('content:1 in ', stopped())
+        (private / release.DENYLIST).write_text('', encoding='utf-8')
+        self.assertIn(f'{private / release.DENYLIST} lists no strings', stopped())
+        (private / release.DENYLIST).unlink()
+        self.assertIn(f'{private / release.DENYLIST} is missing', stopped())
 
     def test_finish_reports_the_suite_result_and_its_log(self):
         message = self.root / 'message'
@@ -375,6 +417,7 @@ class ReleaseTest(unittest.TestCase):
             self.assertEqual(release_main(finish, self.public), 3)
         self.assertIn('plugin changed its selection', error.getvalue())
         self.assertIn('Raise packaging by one', error.getvalue())
+        self.assertIn('this run committed nothing', error.getvalue())
         self.assertIn('./two', git(self.public_origin, 'show', f'main:{PACKAGE}'))
         package.write_text(package_toml('a' * 40, ('./one',), 3), encoding='utf-8')
         self.assertEqual(release_main(finish, self.public), 0)
@@ -524,6 +567,7 @@ class ReleaseTest(unittest.TestCase):
                     self.assertEqual(release_main([*finish, *named], self.public), 3)
                     self.assertIn('changed after its tree was pinned', error.getvalue())
                     self.assertIn('--entry other --refresh-owned', error.getvalue())
+                    self.assertIn('this run committed nothing', error.getvalue())
                     self.assertNotIn('test suite failed', error.getvalue())  # stopped before the failing suite ran
         self.assertEqual(release.unpinned({'mine': 'skills/mine'}, ['mine'], True), {})
 
@@ -633,7 +677,7 @@ class ReleaseTest(unittest.TestCase):
 
         told = stopped(finish)
         self.assertIn('no --reviewed FILE names a review of it. Run release.py review coded', told)
-        self.assertIn('nothing was committed', told)
+        self.assertIn('this run committed nothing', told)
         self.assertEqual(git(self.worktrees / 'coded/public', 'rev-list', '--count', 'origin/main..HEAD'), '0')
         shown = self.review_output('coded')
         self.assertIn('code this branch changes: tests/test_other.py', shown)

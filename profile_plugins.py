@@ -15,7 +15,6 @@ from pathlib import Path
 import shutil
 import tempfile
 import tomllib
-import uuid
 
 from accepted_installations import copy_tree, image
 from codex_host import _hook_keys
@@ -23,7 +22,7 @@ from description import EngineInstall, Hooks, MarketplaceInstall, RepoSource, pl
 from drift import Difference, EntryRef, Kind
 from host_observation import Unread
 from host_state import Host, Note, NoteKind
-from portable import replace
+from portable import replace, staging_directory
 from sync_files import ConcurrentEdit, contents
 from sync_sources import BuildError, child
 
@@ -190,23 +189,22 @@ def apply(mirrors, roots, accepted, files):
         record = accepted(f'plugin:{Host.CODEX}:{mirror.subject}')
         if record is None or Path(record['path']) != mirror.canonical or image(mirror.canonical) != record['image']:
             raise ConcurrentEdit(f'~/.codex has no verified copy of {mirror.subject} to share: {mirror.canonical}')
-        work = mirror.target.parent / f'.sync-{mirror.target.name}-{uuid.uuid4().hex}'
-        staged = work / 'staged'
-        copy_tree(mirror.canonical, staged)
-        if image(staged) != record['image']:
-            raise ConcurrentEdit(f'Staged copy failed verification: {staged}')
-        preflight((mirror,))
-        backup = (files.backup / 'account-homes' / mirror.profile.parent.name /
-                  mirror.target.parent.relative_to(mirror.profile / 'plugins/cache'))
-        backup.mkdir(parents=True, exist_ok=True, mode=0o700)
-        moved = []
-        for path in (mirror.target, *(path for path, _ in mirror.superseded)):
-            if path.exists():
-                shutil.move(path, backup / path.name)
-                moved.append({'from': str(path), 'to': str(backup / path.name)})
-        (backup / 'moved.json').write_text(json.dumps(moved, indent=2) + '\n', encoding='utf-8')
-        staged.rename(mirror.target)
-        work.rmdir()
+        with staging_directory(prefix=f'.sync-{mirror.target.name}-', dir=mirror.target.parent) as work:
+            staged = Path(work) / 'staged'
+            copy_tree(mirror.canonical, staged)
+            if image(staged) != record['image']:
+                raise ConcurrentEdit(f'Staged copy failed verification: {staged}')
+            preflight((mirror,))
+            backup = (files.backup / 'account-homes' / mirror.profile.parent.name /
+                      mirror.target.parent.relative_to(mirror.profile / 'plugins/cache'))
+            backup.mkdir(parents=True, exist_ok=True, mode=0o700)
+            moved = []
+            for path in (mirror.target, *(path for path, _ in mirror.superseded)):
+                if path.exists():
+                    shutil.move(path, backup / path.name)
+                    moved.append({'from': str(path), 'to': str(backup / path.name)})
+            (backup / 'moved.json').write_text(json.dumps(moved, indent=2) + '\n', encoding='utf-8')
+            staged.rename(mirror.target)
         if image(mirror.target) != record['image']:
             raise ConcurrentEdit(f'Account home copy failed verification: {mirror.target}')
         _save(roots, mirror, record['image'])

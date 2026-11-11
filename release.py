@@ -199,11 +199,13 @@ def leaks(public, private, message=None):
     denylist names. One string per line, matched without regard to case; # starts a comment."""
     listed = private / DENYLIST
     if not listed.is_file():
-        return []
+        raise RuntimeError(f'{listed} is missing, so nothing checks the public side for the strings it names; '
+                           'restore it, then finish again; this run committed nothing')
     patterns = [line.strip() for line in listed.read_text(encoding='utf-8').splitlines()
                 if line.strip() and not line.strip().startswith('#')]
     if not patterns:
-        return []
+        raise RuntimeError(f'{listed} lists no strings, so nothing checks the public side; restore its strings, '
+                           'then finish again; this run committed nothing')
     found = subprocess.run([*GIT, '-C', str(public), 'grep', '-n', '-I', '-i', '-F', '--untracked', '--full-name',
                             *(part for pattern in patterns for part in ('-e', pattern)), '--'],
                            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=300)
@@ -625,17 +627,17 @@ def start(args, public_repo, private_repo):
 def finish(args, public_repo, private_repo):
     base, public, private = places(args)
     if stop := review_stop(public, private, args.reviewed, args.name):
-        raise RuntimeError(f'{stop}; nothing was committed')
+        raise RuntimeError(f'{stop}; this run committed nothing')
     if reused := reused_release_names(public, private):
         raise RuntimeError(f'{", ".join(reused)} changed its selection at the same upstream commit and packaging number, '
                            'so its release folder keeps its name and every machine\'s pull would stop with "Existing '
                            'release differs". Raise packaging by one in its setup/packages file, then finish again; '
-                           'nothing was committed')
+                           'this run committed nothing')
     if stale := unpinned(edited_owned(public, private), args.entry, args.refresh_owned):
         flags = ' '.join(f'--entry {name}' for name in sorted(stale))
         raise RuntimeError(f'{", ".join(sorted(stale.values()))} changed after its tree was pinned, so every '
                            f"machine's pull would stop on a stale lock. Finish again with {flags} --refresh-owned; "
-                           'nothing was committed')
+                           'this run committed nothing')
     python = [sys.executable, '-B']
     setups = ['--public', str(public / 'setup'), '--private', str(private / 'setup')]
     entries = [part for entry in args.entry for part in ('--entry', entry)]
@@ -655,7 +657,7 @@ def finish(args, public_repo, private_repo):
                                '--hooks-reapproved')
     if hits := leaks(public, private, args.message):
         raise RuntimeError(f'{", ".join(hits[:20])} in {public} hold a string that the private {DENYLIST} names; '
-                           'take it out of the public side, then finish again; nothing was committed')
+                           'take it out of the public side, then finish again; this run committed nothing')
     test_suite(public, private, base / 'build/tests.log')
     for tree in (public, private):
         if paths := dropped(tree):
