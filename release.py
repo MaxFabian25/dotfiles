@@ -44,6 +44,7 @@ ENGINE = Path(__file__).resolve().parent
 STATE = Path.home() / '.local/state/dotfiles'
 WAIT_FOR_PULL = 1200  # seconds a finish waits for another pull on this machine before its own
 PUBLIC_COMMIT = re.compile(r'^public_commit = ".*"$', re.MULTILINE)
+COMMIT_ID = re.compile(r'[0-9a-f]{40}(?:[0-9a-f]{24})?')
 # Push over HTTPS with the GitHub CLI's login, which the Mac and WSL hold, whatever helper or SSH origin the
 # checkout configures. The private checkout's SSH origin uses a read-only deploy key.
 GITHUB_SSH = re.compile(r'^(?:git@github\.com:|ssh://git@github\.com/)')
@@ -178,7 +179,9 @@ def dirty(root):
 
 
 def ahead(root):
-    return git(root, 'rev-parse', 'HEAD') != git(root, 'rev-parse', 'origin/main')
+    """Whether the branch has a commit that origin/main lacks. A branch that is only behind, because another
+    session pushed since it started, has nothing of its own to release or to pair."""
+    return int(git(root, 'rev-list', '--count', 'origin/main..HEAD')) > 0
 
 
 def dropped(root):
@@ -339,9 +342,10 @@ def unpinned(edited, entries, refresh_owned):
     return {name: path for name, path in edited.items() if name not in accepted}
 
 
-def git_bytes(tree, *args, passing=(0,)):
+def git_bytes(tree, *args, passing=(0,), environment=None):
     """A git command's output as bytes, or a stop with git's own words when it exits outside passing."""
-    done = subprocess.run([*GIT, '-C', str(tree), *args], capture_output=True, env=native_cli_environment(), timeout=120)
+    done = subprocess.run([*GIT, '-C', str(tree), *args], capture_output=True, timeout=120,
+                          env={**native_cli_environment(), **(environment or {})})
     if done.returncode not in passing:
         command = next(arg for arg in args if arg[:1] != '-' and '=' not in arg)
         raise RuntimeError(f'{tree.name}: git {command} exited {done.returncode}: '
@@ -361,9 +365,9 @@ def fork_bytes(tree, fork, name):
 
 def worktree_bytes(path):
     """A file's bytes in the worktree, None when it is no file. A link gives its own text, as git stores a link,
-    so that the bytes of whatever it points to stay out of the fingerprint."""
+    so that the bytes of whatever it points to stay out of the fingerprint. That text need not be UTF-8."""
     if path.is_symlink():
-        return os.readlink(path).encode()
+        return os.fsencode(os.readlink(path))
     return path.read_bytes() if path.is_file() else None
 
 
@@ -378,8 +382,10 @@ def branch_lines(old, new):
     """The lines a branch adds to and removes from one file, given its bytes at the fork point and now, None for
     no file. They carry no position and none of the lines around them, so a rebase over another session's edit
     elsewhere in the file leaves them as they were, and so does committing the file. A change of mode alone
-    gives no lines, so the file's name stands for it. A global git attributes file is left out, because its
-    rules for every file would apply to the two temporary files and change the lines."""
+    gives no lines, so the file's name stands for it. Git's marker for a last line without its newline is not
+    one of them, so adding or removing that newline on a last line the branch changes anyway leaves them as they
+    were. The user's and the machine's git attributes files are left out, because their rules for every file
+    would apply to the two temporary files and change the lines."""
     if old == new:
         return []
     with tempfile.TemporaryDirectory() as folder:
@@ -389,12 +395,13 @@ def branch_lines(old, new):
                 (Path(folder) / side).write_bytes(content)
             sides.append(os.devnull if content is None else side)
         shown = git_bytes(Path(folder), '-c', f'core.attributesFile={os.devnull}', 'diff', '--no-index',
-                          '--no-ext-diff', '--no-textconv', '--no-color', '-U0', '--', *sides, passing=(0, 1))
+                          '--no-ext-diff', '--no-textconv', '--no-color', '-U0', '--', *sides, passing=(0, 1),
+                          environment={'GIT_ATTR_NOSYSTEM': '1'})
     head, hunk, body = shown.partition(b'\n@@')
     if hunk:
         return [line for line in body.split(b'\n') if line[:1] in (b'+', b'-')]
-    # No line diff, as for a file git reads as binary: a hash of each side stands in, so there another session's
-    # edit to the same file changes the lines too.
+    # No line diff, as for a file git reads as binary or as larger than core.bigFileThreshold: a hash of each side
+    # stands in, so there another session's edit to the same file changes the lines too.
     return [sign + hashlib.sha256(content or b'').hexdigest().encode() for sign, content in ((b'-', old), (b'+', new))]
 
 
@@ -476,12 +483,38 @@ def public_pushed(base):
 
 
 def half_published(base, public):
-    """Whether an earlier finish of this release pushed the commit now at the public HEAD and then failed to push
-    the private half. The public branch then no longer differs from origin/main, so only this note says that the
-    private release.toml still has to name that commit. Without it a rerun pushed the private half naming the
-    public commit before, and pulls stopped on the mismatch."""
+    """Whether an earlier finish of this release pushed its public commit and then failed to push the private
+    half. The public branch then no longer differs from origin/main, so only this note says that the private
+    release.toml still has to name a public commit that holds this release. Without it a rerun pushed the
+    private half naming the public commit before, and pulls stopped on the mismatch. The public HEAD may have
+    moved on since, to another session's commit on top of the noted one, and still holds it. A note the HEAD
+    does not hold is a stop, because it cannot say whether the public half went out."""
     note = public_pushed(base)
-    return note.is_file() and note.read_text(encoding='utf-8').strip() == git(public, 'rev-parse', 'HEAD')
+    if not note.is_file():
+        return False
+    noted = note.read_text(encoding='utf-8', errors='replace').strip()
+    if not COMMIT_ID.fullmatch(noted):
+        problem = f'it holds {noted[:64]!r}, which is no full commit id'
+    else:
+        asked = subprocess.run([*GIT, '-C', str(public), 'merge-base', '--is-ancestor', noted, 'HEAD'],
+                               capture_output=True, text=True, encoding='utf-8', errors='replace',
+                               env=native_cli_environment(), timeout=60)
+        if asked.returncode == 0:
+            return True
+        problem = (f'the branch in {public} does not hold {noted}' if asked.returncode == 1 else
+                   f'git could not say whether the branch in {public} holds {noted}: {asked.stderr.strip()}')
+    raise RuntimeError(f'{note} should name the public commit that an earlier finish of this release pushed, and '
+                       f'{problem}. If that commit is on origin/main, write its full id into the note and bring the '
+                       'public branch up to origin/main; if it never reached origin/main, delete the note; then '
+                       'finish again. This run pushed nothing')
+
+
+def push_state(base):
+    """What a finish that stops says about origin. The note decides, not the attempt that stops: an earlier
+    attempt, or an earlier finish, may have pushed the public commit."""
+    if public_pushed(base).is_file():
+        return 'the public commit is on origin without its pair; finish again to push the private half that names it'
+    return 'nothing was pushed'
 
 
 def reapprovals(public, private):
@@ -550,7 +583,7 @@ def test_suite(public, private, log):
     print(f'Ran {total} private tests in {len(folders)} folders: OK; log {private_log}', flush=True)
 
 
-def device_check(public, private):
+def device_check(public, private, state):
     """Stop on a release that would stop the pull, which every device would then hit. Sync exits 1 when it
     only has changes to apply, as every release does, but so does a crash, which skips the closing summary.
     Name each Claude plugin cache that running sessions hold: the pull swaps it at once when only its skills'
@@ -560,7 +593,8 @@ def device_check(public, private):
                             cwd=public, capture_output=True, text=True, encoding='utf-8', timeout=1800)
     if result.returncode not in (0, 1) or 'Managed changes:' not in result.stdout:
         sys.stderr.write(result.stdout + result.stderr)
-        raise RuntimeError(f'the pull on this device would stop on this release (sync exited {result.returncode}); nothing was pushed')
+        raise RuntimeError(f'the pull on this device would stop on this release (sync exited {result.returncode}); '
+                           f'{state}')
     for line in result.stdout.splitlines():
         if line.startswith(LEASE):
             print(f'{line}; the pull here swaps it at once if only skill text changes, and otherwise applies the '
@@ -573,10 +607,13 @@ def push(root):
 
 
 def start(args, public_repo, private_repo):
-    _, public, private = places(args)
+    base, public, private = places(args)
     for repo, tree in ((public_repo, public), (private_repo, private)):
         git(repo, 'fetch', '--prune', 'origin')
         git(repo, 'worktree', 'add', '-q', '-b', args.name, str(tree), 'origin/main')
+    # Both branches are new, so a note here is from an abandoned release of the same name, whose worktrees were
+    # removed by hand. A start that stops above, on a branch that is still there, keeps the note for its finish.
+    public_pushed(base).unlink(missing_ok=True)
     print(f'Edit {public} and {private}, then run release.py finish {args.name} --message FILE')
     others = [f'  {name}/{side}: {text}' for name, side, text in releases(args, public_repo, private_repo)
               if name != args.name and text != 'on origin/main and clean']
@@ -652,20 +689,21 @@ def finish(args, public_repo, private_repo):
         if paired:
             pair(public, private, args.pair_message)
         if not ahead(public) and not ahead(private):
+            # Another session's pair already names a public commit that holds this release's, so the note of a
+            # half-published release has nothing left to say.
+            public_pushed(base).unlink(missing_ok=True)
             raise RuntimeError('nothing to release: both branches match origin/main')
-        device_check(public, private)
+        device_check(public, private, push_state(base))
         if not args.push:
             break
         # Again, because the commit took whatever the worktree held by then, minutes after the first check.
         if stop := review_stop(public, private, args.reviewed, args.name):
-            raise RuntimeError(f'{stop}; the code changed after its review')
-        published = False
+            raise RuntimeError(f'{stop}; the code changed after its review, and {push_state(base)}')
         try:
             for tree in (public, private):  # login and write access on both before either moves
                 git(tree, *CREDENTIALS, 'push', '--dry-run', '-q', push_url(tree), 'HEAD:main')
             if ahead(public):
                 push(public)
-                published = True
                 public_pushed(base).parent.mkdir(parents=True, exist_ok=True)
                 public_pushed(base).write_text(git(public, 'rev-parse', 'HEAD') + '\n', encoding='utf-8')
             push(private)
@@ -674,11 +712,10 @@ def finish(args, public_repo, private_repo):
         except RuntimeError as error:
             git(private, 'reset', '-q', '--hard', before)
             if not MOVED.search(str(error)):
-                state = ('the public commit is on origin without its pair; finish again to push the private half '
-                         'that names it') if published else 'nothing was pushed'
-                raise RuntimeError(f'push failed and {state}: {error}') from error
+                raise RuntimeError(f'push failed and {push_state(base)}: {error}') from error
             if attempt == ATTEMPTS:
-                raise RuntimeError(f'push failed {ATTEMPTS} times; origin keeps moving: {error}') from error
+                raise RuntimeError(f'push failed {ATTEMPTS} times because origin keeps moving, and '
+                                   f'{push_state(base)}: {error}') from error
     print(f'public {git(public, "rev-parse", "--short", "HEAD")}  private {git(private, "rev-parse", "--short", "HEAD")}'
           + ('  pushed' if args.push else '  not pushed'), flush=True)
     if args.push:
@@ -805,7 +842,15 @@ def result(args):
 
 
 def clean(args, public_repo, private_repo):
+    """Remove a release's worktrees, branches and build folder. Both branches and the note of a pushed public
+    commit are checked before anything goes, because a release whose public half alone is on origin still needs
+    its public worktree and that note for the finish that pairs it. The note alone tells such a release apart
+    when it changed only the public side, where both branches are on origin/main."""
     base, public, private = places(args)
+    if public_pushed(base).is_file() and not args.force:
+        raise RuntimeError(f'the public commit of {args.name} is on origin without its pair, as {public_pushed(base)} '
+                           f'notes; run its finish again, or pass --force to give the release up; nothing was removed')
+    sides = []
     for repo, tree in ((public_repo, public), (private_repo, private)):
         listed = subprocess.run([*GIT, '-C', str(repo), 'rev-parse', '--verify', '-q', args.name],
                                 capture_output=True, timeout=60).returncode == 0
@@ -814,7 +859,10 @@ def clean(args, public_repo, private_repo):
             merged = subprocess.run([*GIT, '-C', str(repo), 'merge-base', '--is-ancestor', args.name, 'origin/main'],
                                     capture_output=True, timeout=60).returncode == 0
             if not merged:
-                raise RuntimeError(f'{repo}: branch {args.name} is not on origin/main; push it, or pass --force')
+                raise RuntimeError(f'{repo}: branch {args.name} is not on origin/main; push it, or pass --force; '
+                                   'nothing was removed')
+        sides.append((repo, tree, listed))
+    for repo, tree, listed in sides:
         if tree.exists():
             git(repo, 'worktree', 'remove', *(['--force'] if args.force else []), str(tree))
         if listed:

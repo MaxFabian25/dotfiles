@@ -146,8 +146,14 @@ pull on the machine has ended. It stops first in each of these cases:
   neither half.
 
 When the private push fails after the public commit went out, `finish` says so and keeps a note of that commit
-in the release's `build/` folder. Run the same `finish` again: it pairs the private half with the commit it
-pushed. Before 11 November 2026 such a rerun pushed the private half still naming the public commit before.
+in `build/public-pushed` under the release's folder. Run the same `finish` again: it pairs the private half
+with the public commit then on origin, which is the one it pushed or another session's commit on top of it.
+The note is the only record that the public half went out. A rerun without it, after `build/` was deleted,
+leaves the private origin naming the public commit before: it pushes a private commit of its own unpaired, or
+stops with "nothing to release" when the release changed only the public side. Writing the pushed commit's
+full id into `build/public-pushed` and finishing again pairs it. So `clean` without `--force` stops on that
+note, as it does on a branch that is not on origin, and removes nothing. A `start` under the name of a release
+whose branches are gone deletes a note it finds, because that note is another release's.
 
 After a pull that changed skills or packages, it runs `skill_listing.py`, which warns when Claude Code
 lists skills without their descriptions. `clean NAME` removes the worktrees once `origin/main` has them.
