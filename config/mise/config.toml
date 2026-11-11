@@ -14,6 +14,7 @@ fzf = "0.74.5"
 bat = "0.26.1"
 delta = "0.20.1"
 just = "1.59.0"
+actionlint = { version = "1.7.12", os = ["linux", "macos"] }
 kubectl = "1.37.2"
 docker-cli = "29.9.3"
 docker-compose = "5.7.0"
