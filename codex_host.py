@@ -210,7 +210,7 @@ class CodexState:
                 # Codex records no commit for a copy taken from a checkout, only its version.
                 copied = repo is not None and repo.codex is not None and repo.codex.mode == MarketplaceMode.CHECKOUT
                 if isinstance(install, EngineInstall) or isinstance(package.source, (BuildSource, LocalSource)) or copied:
-                    pin = Released(tree.version) if install.enabled and tree else Unpinned()
+                    pin = Released(tree.version) if install.managed and tree else Unpinned()
                 elif repo is not None:
                     pin = Pinned(repo.commit)
                 elif via(install, _HOST) == PRIMARY_RUNTIME and setup.runtime is not None and install.enabled:
@@ -218,9 +218,10 @@ class CodexState:
                     pin = Released(setup.runtime.version)
                 else:
                     pin = Unpinned()
-                key = add(Surface.PLUGIN, plugin, PluginValue(install.enabled, pin), package.name)
+                kept = install.managed and not install.enabled
+                key = add(Surface.PLUGIN, plugin, PluginValue(install.enabled, pin, kept_current=kept), package.name)
                 owner = owner or key
-                if not install.enabled:
+                if not install.managed:
                     continue
                 owner = key
                 if tree:
@@ -230,9 +231,13 @@ class CodexState:
                     explicit = tuple(sorted(s for s, mode in package.modes.items() if mode == SkillMode.EXPLICIT))
                     add(Surface.OVERLAY, plugin, OverlaySpec(rules, placement.adaptation, explicit, placement.windows_hook_command,
                                                              placement.windows_replace), package.name, key)
-                if placement.hooks == Hooks.TRUSTED and lock and lock.hooks:
+                # Role files and hook approvals act in every session, so a kept-current install gets neither, even
+                # while its lock still lists them.
+                if not install.enabled or lock is None:
+                    continue
+                if placement.hooks == Hooks.TRUSTED and lock.hooks:
                     add(Surface.HOOK, plugin, Approved(lock.hooks), package.name, key)
-                for role, digest in (lock.roles if lock else {}).items():
+                for role, digest in lock.roles.items():
                     add(Surface.AGENT, role, FileValue(digest), package.name, key)
             for skill, mode in package.modes.items():
                 add(Surface.SKILL, f'{package.name}:{skill}', mode, package.name, owner)

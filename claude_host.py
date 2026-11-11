@@ -1,9 +1,9 @@
 """Every Claude encoding: plugin ids, settings.json, install records, frontmatter, aligned copies.
 
 Claude has no per-plugin skill toggle, so an off skill is spelled per install: an aligned copy leaves the skill out,
-a marketplace install turns it off in skillOverrides, and a disabled install has no off skills. An enabled
-personal-collections install cannot have one, because Claude Code ignored that override and description_checks
-rejects it.
+a marketplace install turns it off in skillOverrides, and a plainly disabled install has no off skills. An enabled or
+kept-current personal-collections install cannot have one, because Claude Code ignored that override and
+description_checks rejects it.
 An aligned copy keeps a skill the package has off when the package gives it a Claude mode, and takes that mode.
 """
 from __future__ import annotations
@@ -142,16 +142,17 @@ class ClaudeState:
                     add(Surface.MARKETPLACE, marketplace, EngineMarketplace(), None)
                 plugin = plugin_id(package.name, install, _HOST)
                 if isinstance(install, AlignedInstall) or isinstance(package.source, (BuildSource, LocalSource)):
-                    pin = Released(tree.version) if install.enabled and tree else Unpinned()
+                    pin = Released(tree.version) if install.managed and tree else Unpinned()
                 elif isinstance(package.source, RepoSource):
                     pin = Pinned(setup.repos[package.source.repo].commit)
                 else:
                     pin = Unpinned()
-                key = add(Surface.PLUGIN, plugin, PluginValue(install.enabled, pin), package.name)
-                if install.enabled and tree:
+                kept = install.managed and not install.enabled
+                key = add(Surface.PLUGIN, plugin, PluginValue(install.enabled, pin, kept_current=kept), package.name)
+                if install.managed and tree:
                     add(Surface.TREE, plugin, TreeValue(tree.digest), package.name, key)
                 share = install.skills if isinstance(install, EngineInstall) and install.skills else None
-                if (install.enabled and not isinstance(install, AlignedInstall)
+                if (install.managed and not isinstance(install, AlignedInstall)
                         and (package.tool_notes == ToolNotes.APPLY or package.claude.windows_replace)):
                     explicit = tuple(sorted(s for s, mode in package.modes.items()
                                             if mode == SkillMode.EXPLICIT and (share is None or s in share)))

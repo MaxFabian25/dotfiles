@@ -8,8 +8,8 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from homes import Home
-from description import (CodexPlacement, EngineInstall, LocalSource, MarketplaceInstall, Package, Roots, Setup,
-                         ToolNotes, Visibility)
+from description import (AlignedInstall, ClaudePlacement, CodexPlacement, EngineInstall, LocalSource, MarketplaceInstall,
+                         Package, Roots, Setup, ToolNotes, Visibility)
 from host_state import Host, SkillMode
 from sync_sources import Builder, BuildError
 
@@ -70,6 +70,26 @@ class PolicyExportTest(unittest.TestCase):
             for name in manifests:
                 self.assertEqual(json.loads((built.root / name).read_bytes())['version'], built.version)
                 self.assertEqual((source / name).read_bytes(), original)
+
+    def test_a_kept_current_install_builds_what_an_enabled_one_builds(self):
+        with Home() as home:
+            _, _, package, builder = self.fixture(home)
+            package = replace(package, claude=ClaudePlacement((AlignedInstall(True),)))
+            enabled = builder.codex(package, verify=False)
+            aligned = builder.claude(package, enabled, verify=False)['kit@codex-aligned']
+            self.assertIn('disable-model-invocation: true', (aligned.root / 'skills/publish/SKILL.md').read_text())
+            enabled_aligned = aligned.digest
+            kept = replace(package, codex=CodexPlacement((EngineInstall(False, keep_current=True),)),
+                           claude=ClaudePlacement((AlignedInstall(False, keep_current=True),)))
+            built = builder.codex(kept, verify=False)
+            self.assertEqual((built.version, built.digest), (enabled.version, enabled.digest))
+            self.assertIn('+explicit.', built.version)
+            claude = builder.claude(kept, built, verify=False)
+            self.assertEqual(list(claude), ['kit@codex-aligned'])
+            self.assertEqual(claude['kit@codex-aligned'].digest, enabled_aligned, 'the aligned copy carries the Codex overlay')
+            dormant = replace(kept, codex=CodexPlacement((EngineInstall(False),)), claude=ClaudePlacement((AlignedInstall(False),)))
+            self.assertEqual(builder.codex(dormant, verify=False).version, '1.0.0')
+            self.assertEqual(builder.claude(dormant, built, verify=False), {})
 
     def test_native_marketplace_source_keeps_publisher_version(self):
         with Home() as home:

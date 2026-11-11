@@ -35,8 +35,11 @@ class DiskHost:
         seen = Observer(self.host, self.roots)
         if (self.roots.agents_home / 'plugins/marketplace.json').is_file():
             seen.add(Surface.MARKETPLACE, 'personal', EngineMarketplace())
+        config = self.roots.codex_home / 'config.toml'
+        switches = tomllib.loads(config.read_text()).get('plugins', {}) if config.is_file() else {}
         for identity, (version, directory) in self.installed.items():
-            seen.add(Surface.PLUGIN, identity, PluginValue(True, Released(version)),
+            enabled = switches.get(identity, {}).get('enabled', True)
+            seen.add(Surface.PLUGIN, identity, PluginValue(enabled, Released(version)),
                      detail=InstallDetail(version, directory))
             if directory.is_dir():
                 seen.add(Surface.TREE, identity, TreeValue(self.roots.tree_digest(directory)))
@@ -498,14 +501,56 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual(self.snapshot(), before)
         self.assertEqual((self.installed() / 'ordinary.txt').read_text(), 'partial native output\n')
 
-    def test_catalog_only_drift_reconstructs_entries_without_reinstalling(self):
-        self.run_apply()
+    def assert_catalog_rebuilt_without_reinstalling(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
         catalog = self.roots.agents_home / 'plugins/marketplace.json'
         catalog.unlink()
         self.calls.clear()
         self.assertEqual(self.run_apply().exit_code, 0)
         self.assertEqual(json.loads(catalog.read_bytes())['plugins'][0]['name'], 'kit')
         self.assertFalse(any(args[:2] == ('plugin', 'add') for _, args in self.calls))
+
+    def test_catalog_only_drift_reconstructs_entries_without_reinstalling(self):
+        self.assert_catalog_rebuilt_without_reinstalling()
+
+    def keep_kit_current(self):
+        """kit switched off and kept current, its roles line dropped while its lock still lists the role file."""
+        kit = replace(self.setup.packages['kit'], codex=CodexPlacement((EngineInstall(False, keep_current=True),)))
+        self.setup = replace(self.setup, packages={'kit': kit},
+                             lock={**self.setup.lock, 'kit': replace(self.setup.lock['kit'], intent=intent(kit, {}))})
+
+    def switch(self):
+        return tomllib.loads((self.roots.codex_home / 'config.toml').read_text())['plugins']['kit@personal']['enabled']
+
+    def test_catalog_only_drift_reconstructs_a_kept_current_entry_without_reinstalling(self):
+        self.keep_kit_current()
+        self.assert_catalog_rebuilt_without_reinstalling()
+
+    def test_a_kept_current_install_whose_lock_still_lists_roles_installs_switched_off_without_them(self):
+        self.keep_kit_current()
+        self.assertEqual(self.setup.lock['kit'].roles, {'reviewer.toml': bytes_digest(self.role)})
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertTrue((self.installed() / 'ordinary.txt').is_file())
+        self.assertFalse((self.roots.codex_home / 'agents/reviewer.toml').exists())
+        self.assertIs(self.switch(), False)
+
+    def stopped_after_install(self):
+        """The switch config.toml holds once a sync stops on output that the native install, which writes the switch
+        on as `codex plugin add` does, left beside the release."""
+        def switch_on_and_leave_output(destination):
+            (self.roots.codex_home / 'config.toml').write_text('[plugins."kit@personal"]\nenabled = true\n')
+            (destination / 'ordinary.txt').write_text('partial native output\n')
+        self.interrupt = switch_on_and_leave_output
+        with self.assertRaisesRegex(ConcurrentEdit, 'Unknown native output preserved'):
+            self.run_apply()
+        return self.switch()
+
+    def test_a_sync_that_stops_after_installing_a_kept_current_plugin_leaves_it_switched_off(self):
+        self.keep_kit_current()
+        self.assertIs(self.stopped_after_install(), False)
+
+    def test_a_sync_that_stops_after_installing_an_enabled_plugin_leaves_the_switch_as_the_install_wrote_it(self):
+        self.assertIs(self.stopped_after_install(), True)
 
     def test_outside_home_source_is_staged_and_edited_cache_is_refused(self):
         self.run_apply()

@@ -159,6 +159,27 @@ class RenderTest(unittest.TestCase):
             changed = description_toml.load(roots.roots()).packages['hooked']
             self.assertNotEqual(description.intent(package, setup.repos), description.intent(changed, setup.repos))
 
+    def test_a_kept_current_install_round_trips_and_changes_intent(self):
+        with Roots() as roots:
+            path = roots.public / 'packages/cursor-team-kit.toml'
+            before = description_toml.load(roots.roots()).packages['cursor-team-kit']
+            text = path.read_text()
+            path.write_text(text.replace('install = [{ via = "personal", enabled = true }]',
+                                         'install = [{ via = "personal", enabled = false, keep_current = true }]')
+                                .replace('via = "codex-aligned", enabled = true, agents = []',
+                                         'via = "codex-aligned", enabled = false, keep_current = true, agents = []'))
+            setup = description_toml.load(roots.roots())
+            kit = setup.packages['cursor-team-kit']
+            self.assertEqual(kit.codex.installs, (description.EngineInstall(False, keep_current=True),))
+            self.assertEqual(kit.claude.installs, (description.AlignedInstall(False, frozenset(), keep_current=True),))
+            self.assertEqual(setup.stale(), frozenset({'cursor-team-kit'}), 'keep_current is intent, so the old lock is stale')
+            files = description_toml.render_root(setup, description.Visibility.PUBLIC, None)
+            self.assertIn(b'install = [{ via = "personal", enabled = false, keep_current = true }]',
+                          files['packages/cursor-team-kit.toml'])
+            path.write_bytes(files['packages/cursor-team-kit.toml'])
+            self.assertEqual(description_toml.load(roots.roots()).packages['cursor-team-kit'], kit)
+        self.assertNotEqual(description.intent(kit, setup.repos), description.intent(before, setup.repos))
+
     def test_an_unchanged_entry_keeps_its_bytes_comments_and_all(self):
         with Roots() as roots:
             setup = description_toml.load(roots.roots())
@@ -346,13 +367,73 @@ class InvariantTest(unittest.TestCase):
         with Roots() as roots:
             path = self.edit(roots, 'packages/impeccable.toml', 'install = [{ via = "impeccable", enabled = true }]',
                              'install = [{ via = "impeccable", enabled = true }, { via = "codex-aligned", enabled = true }]')
-            self.assertEqual(roots.problems(), [f'{path}:claude.install: at most one enabled install per host'])
+            self.assertEqual(roots.problems(), [f'{path}:claude.install: at most one enabled or kept-current install per host'])
 
     def test_an_enabled_aligned_copy_needs_an_enabled_codex_install(self):
         with Roots() as roots:
             path = self.edit(roots, 'packages/cursor-team-kit.toml', 'install = [{ via = "personal", enabled = true }]',
                              'install = [{ via = "personal", enabled = false }]')
-            self.assertEqual(roots.problems(), [f'{path}:claude.install[0]: an enabled aligned copy needs an enabled Codex install'])
+            self.assertEqual(roots.problems(), [f'{path}:claude.install[0]: an enabled or kept-current aligned copy needs an '
+                                                'enabled or kept-current Codex install'])
+
+    def test_a_kept_current_codex_install_can_build_an_aligned_copy(self):
+        with Roots() as roots:
+            self.edit(roots, 'packages/cursor-team-kit.toml', 'install = [{ via = "personal", enabled = true }]',
+                      'install = [{ via = "personal", enabled = false, keep_current = true }]')
+            kit = description_toml.load(roots.roots()).packages['cursor-team-kit']
+        self.assertEqual(kit.codex.installs, (description.EngineInstall(False, keep_current=True),))
+
+    def test_keep_current_is_only_for_a_switched_off_engine_or_aligned_install(self):
+        cases = {
+            ('cursor-team-kit', 'install = [{ via = "personal", enabled = true }]',
+             'install = [{ via = "personal", enabled = true, keep_current = true }]'):
+                'codex.install[0].keep_current: applies only with enabled = false; an enabled install is kept current already',
+            ('impeccable', 'install = [{ via = "impeccable", enabled = true }]',
+             'install = [{ via = "impeccable", enabled = false, keep_current = true }]'):
+                'claude.install[0].keep_current: needs an engine or aligned install, not impeccable',
+        }
+        for (name, old, new), problem in cases.items():
+            with Roots() as roots, self.subTest(new):
+                path = self.edit(roots, f'packages/{name}.toml', old, new)
+                self.assertEqual(roots.problems(), [f'{path}:{problem}'])
+
+    def test_a_kept_current_codex_install_takes_neither_roles_nor_trusted_hooks(self):
+        for keeps in ('roles', 'hooks'):
+            with Roots() as roots, self.subTest(keeps=keeps):
+                path = self.edit(roots, 'packages/impeccable.toml', 'install = [{ via = "personal", enabled = true }]',
+                                 'install = [{ via = "personal", enabled = false, keep_current = true }]')
+                text = path.read_text()
+                dropped = 'hooks = "trusted"\n' if keeps == 'roles' else text[text.index('[codex.roles]'):text.index('[claude]')]
+                path.write_text(text.replace(dropped, ''))
+                self.assertEqual(roots.problems(), [f'{path}:codex.install[0].keep_current: a kept-current install gets no '
+                                                    'Codex roles or hook approval; enable it, or drop its roles and trusted hooks'])
+
+    def test_a_kept_current_install_meets_the_rules_an_enabled_one_meets(self):
+        impeccable = 'install = [{ via = "impeccable", enabled = true }]'
+        cases = {
+            'claude.install: at most one enabled or kept-current install per host':
+                ('impeccable', [(impeccable, impeccable[:-1] + ', { via = "codex-aligned", enabled = false, keep_current = true }]')]),
+            'claude.install[0]: Claude Code runs this install from the catalog, where tool notes do not reach; '
+            'give it an aligned Claude install':
+                ('impeccable', [(impeccable, 'install = [{ via = "personal-collections", enabled = false, keep_current = true }]')]),
+            'claude.install[0]: Windows patches require a native marketplace install':
+                ('impeccable', [(impeccable, 'install = [{ via = "codex-aligned", enabled = false, keep_current = true }]\n'
+                                             'windows_replace = [{ path = "hooks/hooks.json", find = "a", replace = "b" }]')]),
+            'claude.install[0]: an enabled or kept-current aligned copy needs an enabled or kept-current Codex install':
+                ('cursor-team-kit', [('install = [{ via = "personal", enabled = true }]', 'install = [{ via = "personal", enabled = false }]'),
+                                     ('enabled = true, agents = []', 'enabled = false, keep_current = true, agents = []')]),
+            'skills.off: check-compiler-errors, fix-ci, fix-merge-conflicts, get-pr-comments, loop-on-ci, new-branch-and-pr, '
+            'review-and-ship, run-smoke-tests, workflow-from-chats stay offered in Claude Code, which ignores skillOverrides for a '
+            'personal-collections install; remove them from source.select and raise source.packaging':
+                ('cursor-team-kit', [('install = [{ via = "codex-aligned", enabled = true, agents = [] }]',
+                                      'install = [{ via = "personal-collections", enabled = false, keep_current = true }]'),
+                                     ('[claude.skills]\nexplicit = ["fix-ci"]\n', '')]),
+        }
+        for problem, (name, edits) in cases.items():
+            with Roots() as roots, self.subTest(problem):
+                for old, new in edits:
+                    path = self.edit(roots, f'packages/{name}.toml', old, new)
+                self.assertEqual(roots.problems(), [f'{path}:{problem}'])
 
     def test_a_skill_takes_one_mode(self):
         with Roots() as roots:

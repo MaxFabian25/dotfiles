@@ -172,7 +172,7 @@ class Builder:
         if isinstance(source, RepoSource) and source.imports:
             from composed_package import compose
             result = compose(package, result, self.setup.roots.private, self.directory, self.roots)
-        if package.codex and any(isinstance(i, EngineInstall) and i.enabled for i in package.codex.installs):
+        if package.codex and any(isinstance(i, EngineInstall) and i.managed for i in package.codex.installs):
             from codex_exports import export
             result = export(package, result, self.directory, self.roots)
         if verify:
@@ -297,7 +297,7 @@ class Builder:
         return plan(registry, [(label, identity, root)], overlay=overlay, adaptations=adaptations)[0]
 
     def effective(self, package: Package, built: Built) -> Path:
-        placement = next((i for i in package.codex.installs if i.enabled), None) if package.codex else None
+        placement = next((i for i in package.codex.installs if i.managed), None) if package.codex else None
         if placement is None:
             return built.root
         destination = self.directory / '.sync/effective' / package.name / built.version
@@ -330,13 +330,13 @@ class Builder:
         locked = self.setup.lock.get(package.name)
         expected = locked.trees.get(Host.CLAUDE) if locked else None
         for install in package.claude.installs:
-            if not install.enabled:
+            if not install.managed:
                 continue
             identity = plugin_id(package.name, install, Host.CLAUDE)
             if isinstance(install, AlignedInstall):
                 effective = self.effective(package, codex)
                 disabled = {f'{package.name}:{name}' for name, mode in package.modes.items() if mode == SkillMode.OFF}
-                provider = next(i for i in package.codex.installs if i.enabled)
+                provider = next(i for i in package.codex.installs if i.managed)
                 source_label = self.roots.codex_home / 'plugins/cache' / via(provider, Host.CODEX) / package.name / codex.version
                 catalog = self.directory / '.sync/claude-aligned'
                 if not verify:

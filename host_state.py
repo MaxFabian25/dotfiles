@@ -207,7 +207,7 @@ class Surface(enum.IntEnum):
     """What a fact is about. The numeric order is the order step 3 applies changes in."""
     MARKETPLACE = 1
     PLUGIN = 2
-    TREE = 3          # pristine bytes of an enabled install
+    TREE = 3          # pristine bytes of an enabled or kept-current install
     OVERLAY = 4       # tool notes and harness adaptation applied over the tree
     SKILL = 5         # off, explicit, or on (catalogs); absent means auto
     AGENT = 6         # a Codex custom agent role file
@@ -266,6 +266,7 @@ class PluginValue:
     enabled: bool
     pin: Pin
     file_on: bool = False            # Codex: off in effect, while config.toml still says on
+    kept_current: bool = False       # described off, and installed at its pin all the same
 
 
 class SkillMode(enum.StrEnum):

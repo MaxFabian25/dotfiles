@@ -1,3 +1,4 @@
+from dataclasses import replace
 import json
 from pathlib import Path
 import shutil
@@ -176,6 +177,17 @@ class ProfilePluginsTest(unittest.TestCase):
             operation.run()
             self.assertIn('Released.', (kit.target / 'skills/publish/SKILL.md').read_text())
             self.assertEqual(kit.inspect(), ((), (), ()))
+
+    def test_a_kept_current_plugin_a_home_has_on_is_mirrored_there(self):
+        with Home() as home:
+            kit = Fixture(home)
+            package = replace(kit.setup.packages['kit'], codex=CodexPlacement((EngineInstall(False, keep_current=True),)))
+            kit.setup = replace(kit.setup, packages={'kit': package})
+            kit.install('1.0.0')
+            mirrors, differences, notes = kit.inspect()
+            self.assertEqual((len(mirrors), [d.kind.value for d in differences], notes), (1, ['tree'], ()))
+            kit.apply(mirrors)
+            self.assertEqual(image(kit.target), kit.record['image'])
 
     def test_homes_that_disable_lack_or_configure_the_plugin_differently_are_left_alone(self):
         with Home() as home:

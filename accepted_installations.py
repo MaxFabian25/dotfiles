@@ -525,7 +525,7 @@ class AcceptedInstallations:
         built, claude, roles = {}, {}, {}
         for name in sorted(names):
             package = self.setup.packages[name]
-            if package.source is None or not any(p and any(i.enabled for i in p.installs) for p in (package.codex, package.claude)):
+            if package.source is None or not any(p and any(i.managed for i in p.installs) for p in (package.codex, package.claude)):
                 continue
             built[name] = builder.codex(package)
             claude.update(builder.claude(package, built[name]))

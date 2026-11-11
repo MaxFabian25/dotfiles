@@ -126,6 +126,35 @@ class ProjectTest(unittest.TestCase):
         self.assertEqual(facts[key(S.PLUGIN, 'kit@personal')].value, hs.PluginValue(False, hs.Unpinned()))
         self.assertNotIn(key(S.TREE, 'kit@personal'), facts)
 
+    def test_a_kept_current_build_is_switched_off_and_installed_at_its_release_with_its_overlay(self):
+        lock = {'kit': d.Lock(D1, {hs.Host.CODEX: d.LockedTree('1.0', D1)})}
+        state = codex_host.CodexState(homes.projection_roots(), 'codex')
+
+        def project(install):
+            return state.project(setup([package('kit', KIT.source, d.CodexPlacement((install,)), tool_notes=d.ToolNotes.APPLY)],
+                                       lock=lock))
+        kept, plain = project(d.EngineInstall(False, keep_current=True)), project(d.EngineInstall(False))
+        plugin = key(S.PLUGIN, 'kit@personal')
+        self.assertEqual({k: (f.value, f.follows) for k, f in kept.items() if k.surface != S.MARKETPLACE}, {
+            plugin: (hs.PluginValue(False, hs.Released('1.0'), kept_current=True), None),
+            key(S.TREE, 'kit@personal'): (hs.TreeValue(D1), plugin),
+            key(S.OVERLAY, 'kit@personal'): (hs.OverlaySpec(NOTES, None), plugin),
+        })
+        self.assertEqual({k: f.value for k, f in plain.items() if k.surface != S.MARKETPLACE},
+                         {plugin: hs.PluginValue(False, hs.Unpinned())})
+
+    def test_a_kept_current_install_gets_no_role_file_or_hook_approval_its_lock_still_lists(self):
+        lock = {'kit': d.Lock(D1, {hs.Host.CODEX: d.LockedTree('1.0', D1)}, {'reviewer.toml': D2}, hooks=3)}
+        state = codex_host.CodexState(homes.projection_roots(), 'codex')
+
+        def granted(install):
+            codex = d.CodexPlacement((install,), hooks=d.Hooks.TRUSTED)
+            facts = state.project(setup([package('kit', KIT.source, codex)], lock=lock))
+            return {k: f.value for k, f in facts.items() if k.surface in (S.AGENT, S.HOOK)}
+        self.assertEqual(granted(d.EngineInstall(True)), {key(S.AGENT, 'reviewer.toml'): hs.FileValue(D2),
+                                                         key(S.HOOK, 'kit@personal'): hs.Approved(3)})
+        self.assertEqual(granted(d.EngineInstall(False, keep_current=True)), {})
+
 
 def plugin(home, plugin_id, enabled, version, source):
     name, marketplace = plugin_id.split('@')

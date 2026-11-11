@@ -114,6 +114,15 @@ class PlanTest(unittest.TestCase):
             self.assertFalse(filtered.claude.installs[0].enabled)
             self.assertEqual(filtered.modes, {})
 
+    def test_a_kept_current_package_is_plainly_disabled_on_a_platform_it_is_not_for(self):
+        from description import ClaudePlacement, EngineInstall, Package, Roots, Setup, ToolNotes, Visibility
+        from host_state import Platform
+        package = Package('kit', Visibility.PRIVATE, '', None, {}, ToolNotes.AUDIT, None,
+                          ClaudePlacement((EngineInstall(False, keep_current=True),)), frozenset({Platform.MACOS}))
+        setup = Setup(Roots(Path('/public'), None), {'kit': package}, {}, {}, {}, None, (), frozenset(), {})
+        self.assertEqual(setup.for_platform(Platform.MACOS).packages['kit'].claude.installs, (EngineInstall(False, keep_current=True),))
+        self.assertEqual(setup.for_platform(Platform.LINUX).packages['kit'].claude.installs, (EngineInstall(False),))
+
     def test_disabled_missing_plugin_is_not_an_install_request(self):
         from drift import _classify
         from host_state import FactKey, Host, NoteKind, Observation, PluginValue, Surface, Unpinned
@@ -185,6 +194,73 @@ class PinnedBuildTest(unittest.TestCase):
         updated = refresh(setup, builder, ['drive'])
         self.assertEqual(updated.lock['drive'], Lock(intent(package, {})))
         builder.codex.assert_not_called()
+
+    def kept_and_dormant(self):
+        from dataclasses import replace
+        from description import (BuildSource, CodexPlacement, EngineInstall, GenericRecipe, Lock, LockedTree, Package, Roots,
+                                 Setup, ToolNotes, Visibility, intent)
+        from host_state import Digest, Host
+        source = BuildSource(GenericRecipe('https://example.invalid/kit.git', 'a' * 40, None, 'plugin.json', ()), 1, 'Kit')
+        kept = Package('kept', Visibility.PRIVATE, '', source, {}, ToolNotes.AUDIT,
+                       CodexPlacement((EngineInstall(False, keep_current=True),)), None)
+        dormant = replace(kept, name='dormant', codex=CodexPlacement((EngineInstall(False),)))
+        tree = {Host.CODEX: LockedTree('1.0', Digest('sha256:' + '1' * 64))}
+        lock = {p.name: Lock(intent(p, {}), tree) for p in (kept, dormant)}
+        return Setup(Roots(Path('/public'), Path('/private')), {'kept': kept, 'dormant': dormant}, {}, {}, {}, None, (),
+                     frozenset(), lock)
+
+    def builder(self):
+        from unittest.mock import Mock
+        builder = Mock()
+        builder.codex.return_value = SimpleNamespace(version='1.0', digest='sha256:' + '1' * 64)
+        builder.claude.return_value = {}
+        builder.roles.return_value = {}
+        return builder
+
+    def built(self, builder):
+        return [call.args[0].name for call in builder.codex.call_args_list]
+
+    def test_a_kept_current_package_without_a_locked_tree_is_stale_and_a_plain_disabled_one_is_not(self):
+        from dataclasses import replace
+        from description import Lock
+        setup = self.kept_and_dormant()
+        setup = replace(setup, lock={name: Lock(lock.intent) for name, lock in setup.lock.items()})
+        self.assertEqual(setup.stale(), frozenset({'kept'}))
+
+    def test_locking_builds_a_kept_current_package_and_skips_a_plain_disabled_one(self):
+        from host_state import Host
+        from lock_setup import refresh
+        setup = self.kept_and_dormant()
+        builder = self.builder()
+        updated = refresh(setup, builder, ['kept', 'dormant'])
+        self.assertEqual(self.built(builder), ['kept'])
+        self.assertEqual(updated.lock['kept'].trees[Host.CODEX].version, '1.0')
+
+    def test_the_build_check_verifies_a_kept_current_package_and_skips_a_plain_disabled_one(self):
+        import contextlib
+        import io
+        from unittest import mock
+        import build_setup
+        builder = self.builder()
+        with tempfile.TemporaryDirectory() as temp, \
+                mock.patch('build_setup.load', return_value=self.kept_and_dormant()), \
+                mock.patch('build_setup.Builder', return_value=builder), mock.patch('build_setup.Sources'), \
+                mock.patch('sys.argv', ['build_setup.py', '--public', '/public', '--output', temp, '--platform', 'linux']), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(build_setup.main(), 0)
+        self.assertEqual(self.built(builder), ['kept'])
+        self.assertIn('1 packages rebuilt and verified; 0 failed.', out.getvalue())
+
+    def test_a_sync_builds_a_kept_current_package_and_skips_a_plain_disabled_one(self):
+        from accepted_installations import AcceptedInstallations
+        from host_state import DeviceRoots, Platform
+        with tempfile.TemporaryDirectory() as temp:
+            device = SimpleNamespace(roots=DeviceRoots.current(Path(temp)), hosts=(), platform=Platform.LINUX)
+            owner = AcceptedInstallations(self.kept_and_dormant(), device, configurations=False)
+            builder = self.builder()
+            prepared = owner.prepare({}, builder, packages={'kept', 'dormant'})
+        self.assertEqual(self.built(builder), ['kept'])
+        self.assertEqual(sorted(prepared.built), ['kept'])
 
     def test_refreshing_an_owned_skill_stops_on_a_description_over_the_limit(self):
         from description import LocalSource, LooseSkill, Roots, Setup, SkillRoot, Visibility

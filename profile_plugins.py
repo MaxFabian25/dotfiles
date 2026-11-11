@@ -69,7 +69,7 @@ def _plugins(setup):
         if tree is None:
             continue
         for install in package.codex.installs:
-            if isinstance(install, (EngineInstall, MarketplaceInstall)) and install.enabled:
+            if isinstance(install, (EngineInstall, MarketplaceInstall)) and install.managed:
                 subject = plugin_id(package.name, install, Host.CODEX)
                 name, marketplace = subject.split('@', 1)
                 yield package, install, subject, marketplace, f'plugins/cache/{marketplace}/{name}/{tree.version}'

@@ -34,7 +34,7 @@ def main():
     for name, package in sorted(setup.packages.items()):
         if package.source is None or (args.package and name not in args.package):
             continue
-        if not any(p and any(i.enabled for i in p.installs) for p in (package.codex, package.claude)):
+        if not any(p and any(i.managed for i in p.installs) for p in (package.codex, package.claude)):
             continue
         try:
             codex = builder.codex(package)

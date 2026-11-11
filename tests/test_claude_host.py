@@ -74,6 +74,34 @@ class ProjectTest(unittest.TestCase):
             key(S.SKILL, 'playwright'): (M.ON, None),
         })
 
+    def test_a_kept_current_install_is_switched_off_and_installed_at_its_release_with_its_overlay(self):
+        source = d.BuildSource(d.CourseRecipe('https://github.com/example/course.git', NEW, ('s/a',), ''), 1, 'C')
+
+        def project(install):
+            course = d.Package('course', d.Visibility.PRIVATE, '', source, {'a': M.EXPLICIT}, d.ToolNotes.APPLY,
+                               d.CodexPlacement((d.EngineInstall(True),)), d.ClaudePlacement((install,)))
+            setup = d.Setup(roots=d.Roots(Path('/p'), None), packages={'course': course}, repos={}, loose={}, host_skills={},
+                            rules=None, note_rules=(), public_repositories=frozenset(),
+                            lock={'course': d.Lock(D1, {hs.Host.CLAUDE: d.LockedTree('0.1.claude1', D1)})})
+            return {k: (f.value, f.follows) for k, f in claude_host.ClaudeState(homes.projection_roots(), 'claude').project(setup).items()
+                    if k.surface != S.MARKETPLACE}
+        engine, aligned = key(S.PLUGIN, 'course@personal-collections'), key(S.PLUGIN, 'course@codex-aligned')
+        self.assertEqual(project(d.EngineInstall(False, keep_current=True)), {
+            engine: (hs.PluginValue(False, hs.Released('0.1.claude1'), kept_current=True), None),
+            key(S.TREE, 'course@personal-collections'): (hs.TreeValue(D1), engine),
+            key(S.OVERLAY, 'course@personal-collections'): (hs.OverlaySpec((), None, ('a',)), engine),
+            key(S.SKILL, 'course@personal-collections:a'): (M.EXPLICIT, engine),
+        })
+        self.assertEqual(project(d.AlignedInstall(False, keep_current=True)), {
+            aligned: (hs.PluginValue(False, hs.Released('0.1.claude1'), kept_current=True), None),
+            key(S.TREE, 'course@codex-aligned'): (hs.TreeValue(D1), aligned),
+            key(S.SKILL, 'course@codex-aligned:a'): (M.EXPLICIT, aligned),
+        })
+        self.assertEqual(project(d.EngineInstall(False)), {
+            engine: (hs.PluginValue(False, hs.Unpinned()), None),
+            key(S.SKILL, 'course@personal-collections:a'): (M.EXPLICIT, engine),
+        })
+
     def test_a_claude_mode_replaces_the_package_mode_in_the_aligned_copy_only(self):
         modes = {'handoff': M.OFF, 'shell': M.OFF, 'later': M.OFF, 'grill': M.EXPLICIT}
         kit = d.Package('kit', d.Visibility.PUBLIC, '',

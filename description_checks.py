@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path, PurePosixPath
 import subprocess
 
-from description import (AlignedInstall, BuildSource, CourseRecipe, EngineInstall, GenericRecipe, MarketplaceInstall,
+from description import (AlignedInstall, BuildSource, CourseRecipe, EngineInstall, GenericRecipe, Hooks, MarketplaceInstall,
                          LocalSource, Package, RepoSource, Roots, Setup, SkillRoot, SnapshotRecipe, SnapshotSource, ToolNotes,
                          Visibility, entry_path)
 from host_state import ANTHROPIC_SKILLS, CATALOGS, PRIMARY_RUNTIME, Host, SkillMode
@@ -146,23 +146,29 @@ def check_invariants(setup: Setup, errors: list[str]) -> None:
         for host in Host:
             placement = package.placement(host)
             installs = placement.installs if placement else ()
-            if sum(install.enabled for install in installs) > 1:
-                errors.append(f'{path}:{host.value}.install: at most one enabled install per host')
+            if sum(install.managed for install in installs) > 1:
+                errors.append(f'{path}:{host.value}.install: at most one enabled or kept-current install per host')
             for index, install in enumerate(installs):
                 key = f'{host.value}.install[{index}]'
                 if isinstance(install, EngineInstall) and package.source is None:
                     errors.append(f'{path}:{key}: an engine install needs a source')
                 # Claude Code runs these from the engine's catalog, which the install overlay's notes never reach.
-                if (host == Host.CLAUDE and isinstance(install, EngineInstall) and install.enabled
+                if (host == Host.CLAUDE and isinstance(install, EngineInstall) and install.managed
                         and package.tool_notes == ToolNotes.APPLY):
                     errors.append(f'{path}:{key}: Claude Code runs this install from the catalog, where tool notes do '
                                   'not reach; give it an aligned Claude install')
-                if (host == Host.CLAUDE and install.enabled and placement.windows_replace
+                if (host == Host.CLAUDE and install.managed and placement.windows_replace
                         and not isinstance(install, MarketplaceInstall)):
                     errors.append(f'{path}:{key}: Windows patches require a native marketplace install')
-                if isinstance(install, AlignedInstall) and install.enabled and not (
-                        package.codex and any(i.enabled for i in package.codex.installs)):
-                    errors.append(f'{path}:{key}: an enabled aligned copy needs an enabled Codex install')
+                if isinstance(install, AlignedInstall) and install.managed and not (
+                        package.codex and any(i.managed for i in package.codex.installs)):
+                    errors.append(f'{path}:{key}: an enabled or kept-current aligned copy needs an enabled or '
+                                  'kept-current Codex install')
+                # Role files and hook approvals act in every session, so they follow the switch, not keep_current.
+                if (host == Host.CODEX and not install.enabled and install.managed
+                        and (placement.roles is not None or placement.hooks == Hooks.TRUSTED)):
+                    errors.append(f'{path}:{key}.keep_current: a kept-current install gets no Codex roles or hook '
+                                  'approval; enable it, or drop its roles and trusted hooks')
         selected = package.source.recipe.skills() if isinstance(package.source, BuildSource) and package.source.recipe else ()
         splits = [i for i in (package.claude.installs if package.claude else ()) if isinstance(i, EngineInstall) and i.skills]
         if splits:
@@ -199,7 +205,7 @@ def _check_claude_off(package: Package, path: Path, errors: list[str]) -> None:
     off = {skill for skill, mode in package.modes.items() if mode == SkillMode.OFF}
     stuck = set()
     for install in package.claude.installs if package.claude else ():
-        if isinstance(install, EngineInstall) and install.enabled:
+        if isinstance(install, EngineInstall) and install.managed:
             stuck |= off & set(install.skills) if install.skills else off
     if stuck:
         errors.append(f'{path}:skills.off: {", ".join(sorted(stuck))} stay offered in Claude Code, which ignores '

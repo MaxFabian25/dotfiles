@@ -148,12 +148,17 @@ def _parse_install(table: _Table, index: int, raw: Any, host: Host) -> Install |
     item = _Table(table.path, raw, table.errors, f'{table.prefix}{key}.')
     name = item.get('via', str)
     enabled = item.get('enabled', bool)
+    keep_current = item.get('keep_current', bool, False)
+    if keep_current and enabled:
+        item.error('keep_current', 'applies only with enabled = false; an enabled install is kept current already')
     if name == ENGINE_MARKETPLACE[host]:
-        install = EngineInstall(enabled, item.get('name', str, None), item.strings('skills') or None)
+        install = EngineInstall(enabled, item.get('name', str, None), item.strings('skills') or None, keep_current)
     elif host == Host.CLAUDE and name == ALIGNED_MARKETPLACE:
         agents = item.strings('agents') if 'agents' in raw else None
-        install = AlignedInstall(enabled, frozenset(agents) if agents is not None else None)
+        install = AlignedInstall(enabled, frozenset(agents) if agents is not None else None, keep_current)
     else:
+        if keep_current:
+            item.error('keep_current', f'needs an engine or aligned install, not {name}')
         install = MarketplaceInstall(name, enabled)
     item.done()
     return install
@@ -580,6 +585,8 @@ def _dump_install(install: Install, host: Host) -> _Inline:
         if install.skills:
             out['skills'] = list(install.skills)
     out['enabled'] = install.enabled
+    if not isinstance(install, MarketplaceInstall) and install.keep_current:
+        out['keep_current'] = True
     if isinstance(install, AlignedInstall) and install.agents is not None:
         out['agents'] = sorted(install.agents)
     return _Inline(out)

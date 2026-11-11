@@ -103,7 +103,7 @@ def _classify(key: FactKey, expected: FactValue | None, observed: FactValue | No
                 return Kind.CHANGED
             if isinstance(expected.pin, Unpinned) or expected.pin == observed.pin:
                 return None
-            return NoteKind.DORMANT if not expected.enabled else Kind.CHANGED
+            return NoteKind.DORMANT if not (expected.enabled or expected.kept_current) else Kind.CHANGED
         if expected == observed:
             return None
         if surface == Surface.TREE:
@@ -112,7 +112,7 @@ def _classify(key: FactKey, expected: FactValue | None, observed: FactValue | No
             return Kind.OVERLAY_CONFLICT
         return {Surface.OVERLAY: Kind.OVERLAY, Surface.HOOK: Kind.APPROVAL}.get(surface, Kind.CHANGED)
     if expected is not None:
-        if surface == Surface.PLUGIN and not expected.enabled:
+        if surface == Surface.PLUGIN and not (expected.enabled or expected.kept_current):
             return NoteKind.DORMANT
         marketplace = key.subject.partition('@')[2]
         # A catalog the description pins is one sync installs, so its plugin is drift even before it is offered.
@@ -250,8 +250,9 @@ def _spell(value) -> str:
     match value:
         case None:
             return 'absent'
-        case PluginValue(enabled=enabled, pin=pin, file_on=file_on):
-            return ('enabled' if enabled else 'disabled, config.toml says on' if file_on else 'disabled') + (
+        case PluginValue(enabled=enabled, pin=pin, file_on=file_on, kept_current=kept_current):
+            return ('enabled' if enabled else 'disabled, config.toml says on' if file_on
+                    else 'disabled, kept current' if kept_current else 'disabled') + (
                 '' if isinstance(pin, Unpinned) else f' {_spell(pin)}')
         case Pinned(commit=commit):
             return commit[:7]

@@ -26,7 +26,7 @@ class Apply:
                     if d.key is not None and d.key.surface == Surface.MARKETPLACE and isinstance(d.expected, EngineMarketplace)}
         self.catalogs_needed = catalogs
         catalog_packages = {p.name for p in setup.packages.values() for host in Host
-                            if p.placement(host) and any((host, via(i, host)) in catalogs and i.enabled
+                            if p.placement(host) and any((host, via(i, host)) in catalogs and i.managed
                                                         for i in p.placement(host).installs)}
         self.packages = (changed_packages(current) | catalog_packages) & setup.packages.keys()
         self.owner = AcceptedInstallations(setup, device, configurations=current.configurations)
@@ -153,7 +153,7 @@ class Apply:
         entries = []
         for name, built in self.built.items():
             package = self.setup.packages[name]
-            if not package.codex or not any(isinstance(i, EngineInstall) and i.enabled for i in package.codex.installs):
+            if not package.codex or not any(isinstance(i, EngineInstall) and i.managed for i in package.codex.installs):
                 continue
             root = built.root
             if not root.is_relative_to(self.roots.agents_home.parent):
@@ -201,6 +201,11 @@ class Apply:
             self.command(host, 'plugin', 'add', identity, '--json')
         else:
             self.command(host, 'plugin', 'update' if existing else 'install', identity, '--scope', 'user', '--json')
+        # `codex plugin add` and `claude plugin install` switch the plugin on, and a sync can stop before its end.
+        if any(plugin_id(name, install, host) == identity and install.managed and not install.enabled
+               for name, package in self.setup.packages.items() if package.placement(host)
+               for install in package.placement(host).installs):
+            self._enabled(host, identity, False)
 
     def _plugins(self):
         wanted = {d.key: d.expected for d in self.current.changes if d.key and d.key.surface == Surface.PLUGIN}

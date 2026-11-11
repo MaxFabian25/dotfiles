@@ -151,12 +151,19 @@ class LocalSource:
 Source = BuildSource | RepoSource | LocalSource | None   # None: every install names a host catalog
 
 
+# `enabled` is only the user-level switch. `managed` says whether the engine builds, installs and updates the install's
+# files: an install with keep_current is switched off, so a project can turn it on, and kept at its release anyway.
 @dataclass(frozen=True)
 class EngineInstall:
     """via 'personal' in Codex, 'personal-collections' in Claude."""
     enabled: bool
     name: str | None = None                  # a Claude split, e.g. academic-writing-toolkit-extra
     skills: tuple[str, ...] | None = None    # that split's share of the selected skills
+    keep_current: bool = field(default=False, metadata={'intent': 'when-set'})
+
+    @property
+    def managed(self) -> bool:
+        return self.enabled or self.keep_current
 
 
 @dataclass(frozen=True)
@@ -164,12 +171,21 @@ class AlignedInstall:
     """via 'codex-aligned', Claude only: a copy built from the Codex install."""
     enabled: bool
     agents: frozenset[str] | None = None     # None keeps every agent; frozenset() keeps none
+    keep_current: bool = field(default=False, metadata={'intent': 'when-set'})
+
+    @property
+    def managed(self) -> bool:
+        return self.enabled or self.keep_current
 
 
 @dataclass(frozen=True)
 class MarketplaceInstall:
     marketplace: str                         # registered by a repo entry, or a host catalog
     enabled: bool
+
+    @property
+    def managed(self) -> bool:
+        return self.enabled
 
 
 Install = EngineInstall | AlignedInstall | MarketplaceInstall
@@ -377,7 +393,8 @@ class Setup:
             for host in Host:
                 placement = package.placement(host)
                 if placement is not None:
-                    changes = {'installs': tuple(replace(i, enabled=False) for i in placement.installs)}
+                    changes = {'installs': tuple(replace(i, enabled=False) if isinstance(i, MarketplaceInstall)
+                                                 else replace(i, enabled=False, keep_current=False) for i in placement.installs)}
                     if host == Host.CODEX:
                         changes.update(hooks=Hooks.OFF, roles=None, adaptation=None, windows_hook_command=None, windows_replace=())
                     else:
@@ -406,7 +423,7 @@ def _complete(entry: Package | LooseSkill, lock: Lock) -> bool:
         return set(entry.place) <= set(lock.placements)
     for host in Host:
         placement = entry.placement(host)
-        if placement and any(install.enabled for install in placement.installs) and host not in lock.trees:
+        if placement and any(install.managed for install in placement.installs) and host not in lock.trees:
             return False
     codex = entry.codex
     if codex and any(install.enabled for install in codex.installs):

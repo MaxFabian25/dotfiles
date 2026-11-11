@@ -310,6 +310,61 @@ class DiffTest(unittest.TestCase):
         self.assertIn('host-absent claude  host is not installed here', drift.render(absent))
         self.assertIn('stale-lock  the entry changed after its lock was written', drift.render(stale))
 
+    def switched_off(self, device, keep_current, versions=('1.0', '1.0-codex-aligned.x')):
+        """kit described off in both hosts and installed off, with its lock at `versions` for Codex and Claude."""
+        kit = device.setup.packages['kit']
+        kit = replace(kit, codex=d.CodexPlacement((d.EngineInstall(False, keep_current=keep_current),)),
+                      claude=d.ClaudePlacement((d.AlignedInstall(False, keep_current=keep_current),)))
+        trees = device.setup.lock['kit'].trees
+        lock = d.Lock(d.intent(kit, {}), {host: replace(trees[host], version=version)
+                                          for host, version in zip((hs.Host.CODEX, hs.Host.CLAUDE), versions)})
+        device.setup = replace(device.setup, packages={**device.setup.packages, 'kit': kit}, lock={**device.setup.lock, 'kit': lock})
+        for plugin in device.codex_inventory + device.claude_inventory:
+            if plugin.get('pluginId', plugin.get('id')).startswith('kit@'):
+                plugin['enabled'] = False
+
+    def plugins(self, result):
+        return [(x.kind, x.key.host.value, x.key.subject) for x in result.differences if x.key and x.key.surface == S.PLUGIN]
+
+    def dormant(self, result):
+        return sorted((n.host.value, n.subject) for n in result.notes if n.kind == hs.NoteKind.DORMANT and n.subject.startswith('kit@'))
+
+    def test_a_kept_current_plugin_installed_off_at_its_release_is_in_step(self):
+        with Device() as device:
+            self.switched_off(device, keep_current=True)
+            result = device.diff()
+        self.assertEqual(result.differences, ())
+        self.assertEqual(result.trees, 2, 'the installed bytes of a kept-current plugin are verified')
+        self.assertEqual(self.dormant(result), [])
+
+    def test_a_kept_current_plugin_behind_its_release_is_drift_and_a_plain_disabled_one_is_not(self):
+        newer = ('1.1', '1.1-codex-aligned.y')
+        with Device() as device:
+            self.switched_off(device, keep_current=True, versions=newer)
+            kept = device.diff()
+        with Device() as device:
+            self.switched_off(device, keep_current=False, versions=newer)
+            plain = device.diff()
+        self.assertEqual(self.plugins(kept), [(K.CHANGED, 'claude', 'kit@codex-aligned'), (K.CHANGED, 'codex', 'kit@personal')])
+        self.assertEqual(kept.exit_code, 1)
+        self.assertIn('want disabled, kept current 1.1 · have disabled 1.0', drift.render(kept))
+        self.assertEqual((plain.differences, plain.exit_code), ((), 0))
+
+    def test_a_missing_kept_current_plugin_is_drift_and_a_missing_plain_disabled_one_is_dormant(self):
+        def diff(keep_current):
+            with Device() as device:
+                self.switched_off(device, keep_current)
+                device.codex_inventory.clear()
+                device.claude_inventory.pop(0)
+                return device.diff()
+        kept, plain = diff(True), diff(False)
+        self.assertEqual(self.plugins(kept), [(K.MISSING, 'claude', 'kit@codex-aligned'), (K.MISSING, 'codex', 'kit@personal')])
+        self.assertEqual({x.kind.verdict for x in kept.differences}, {drift.Verdict.DRIFT})
+        self.assertEqual(kept.exit_code, 1)
+        self.assertEqual(self.dormant(kept), [])
+        self.assertEqual((plain.differences, plain.exit_code), ((), 0))
+        self.assertEqual(self.dormant(plain), [('claude', 'kit@codex-aligned'), ('codex', 'kit@personal')])
+
     def test_an_owned_source_edited_after_its_pin_needs_a_person(self):
         with Device() as device:
             source = device.roots.home / 'private/skills/mine'
