@@ -599,6 +599,201 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(release_main(['finish', 'quiet', *self.options()], self.public), 3)
         self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'first')
 
+    def review_output(self, name):
+        shown = io.StringIO()
+        with redirect_stdout(shown):
+            self.assertEqual(release_main(['review', name, *self.options()], self.public), 0)
+        return shown.getvalue()
+
+    def test_finish_stops_on_changed_code_until_a_record_reviews_exactly_that_code(self):
+        release_main(['start', 'coded', *self.options()], self.public)
+        module = self.worktrees / 'coded/public/tests/test_other.py'
+        module.write_text(PASSING_TEST, encoding='utf-8')
+        (self.worktrees / 'coded/private/tool.py').write_text('value = 1\n', encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Add a test\n', encoding='utf-8')
+        finish = ['finish', 'coded', '--message', str(message), '--private-message', str(message), '--push',
+                  *self.options()]
+        record = self.root / 'findings.md'
+
+        def stopped(arguments):
+            errors = io.StringIO()
+            with redirect_stderr(errors):
+                self.assertEqual(release_main(arguments, self.public, review=False), 3)
+            self.assertEqual(git(self.public_origin, 'ls-tree', '--name-only', 'main', 'tests/'), SEEDED_TESTS)
+            return errors.getvalue()
+
+        told = stopped(finish)
+        self.assertIn('no --reviewed FILE names a review of it. Run release.py review coded', told)
+        self.assertIn('nothing was committed', told)
+        self.assertEqual(git(self.worktrees / 'coded/public', 'rev-list', '--count', 'origin/main..HEAD'), '0')
+        shown = self.review_output('coded')
+        self.assertIn('code this branch changes: tests/test_other.py', shown)
+        self.assertIn('code this branch changes: tool.py', shown)
+        self.assertIn(str(self.public / 'docs/agents/coding-standards.md'), shown)
+        public_line, private_line = (line.split('writes: ')[1] for line in shown.splitlines() if 'writes: ' in line)
+        self.assertRegex(public_line, r'^Reviewed: public [0-9a-f]{16}$')
+        self.assertRegex(private_line, r'^Reviewed: private [0-9a-f]{16}$')
+        self.assertIn('is not a file', stopped([*finish, '--reviewed', str(record)]))
+        record.write_text(f'No findings.\n{public_line}\n', encoding='utf-8')
+        self.assertIn(f'lacks "{private_line}"', stopped([*finish, '--reviewed', str(record)]))
+        record.write_text(f'No findings.\n- {public_line}\n`{private_line}`\n', encoding='utf-8')
+        self.assertIn('on a line of its own', stopped([*finish, '--reviewed', str(record)]))
+        record.write_text(f'One finding, fixed.\n{public_line}\n{private_line}\n', encoding='utf-8')
+        module.write_text(PASSING_TEST + '\n# edited after the review\n', encoding='utf-8')
+        self.assertIn('reviews other code', stopped([*finish, '--reviewed', str(record)]))
+        module.write_text(PASSING_TEST, encoding='utf-8')
+        self.assertEqual(release_main([*finish, '--reviewed', str(record)], self.public, review=False), 0)
+        self.assertIn('tests/test_other.py', git(self.public_origin, 'ls-tree', '--name-only', 'main', 'tests/'))
+
+    def test_review_counts_scripts_and_named_build_files_and_leaves_out_text_and_stored_copies(self):
+        release_main(['start', 'kinds', *self.options()], self.public)
+        public, private = self.worktrees / 'kinds/public', self.worktrees / 'kinds/private'
+        (public / 'content').write_text('second\n', encoding='utf-8')
+        for relative, text in {'bin/tool': '#!/bin/sh\necho\n', 'notes.md': 'text\n', 'docker/Dockerfile': 'FROM x\n',
+                               'setup/snapshots/abc/stored.py': 'value = 1\n', 'config/run.ps1': 'exit 0\n',
+                               'units/pull.service': '[Unit]\n', '.github/workflows/tests.yml': 'on: push\n'}.items():
+            (private / relative).parent.mkdir(parents=True, exist_ok=True)
+            (private / relative).write_text(text, encoding='utf-8')
+        wanted = release.review_lines(public, private)
+        self.assertEqual(list(wanted), ['private'])
+        self.assertEqual(wanted['private'][0], ['.github/workflows/tests.yml', 'bin/tool', 'config/run.ps1',
+                                                'docker/Dockerfile', 'units/pull.service'])
+        (private / 'config/run.ps1').write_text('exit 1\n', encoding='utf-8')
+        self.assertNotEqual(release.review_lines(public, private), wanted)
+        (private / 'config/run.ps1').write_text('exit 0\n', encoding='utf-8')
+        self.assertEqual(release.review_lines(public, private), wanted)
+        self.assertIn('changes no code', self.review_output_of_a_text_release())
+
+    def review_output_of_a_text_release(self):
+        release_main(['start', 'words', *self.options()], self.public)
+        (self.worktrees / 'words/public/content').write_text('second\n', encoding='utf-8')
+        return self.review_output('words')
+
+    def test_review_counts_an_edited_and_a_deleted_tracked_file_and_survives_its_commit(self):
+        seed = self.clone(self.private_origin, 'script-seed')
+        (seed / 'tool').write_text('#!/bin/sh\necho\n', encoding='utf-8')
+        git(seed, 'add', '-A')
+        git(seed, 'commit', '-qm', 'Seed a script without a suffix')
+        git(seed, 'push', '-q', 'origin', 'HEAD:main')
+        git(self.private, 'pull', '-q')
+        release_main(['start', 'tracked', *self.options()], self.public)
+        public, private = self.worktrees / 'tracked/public', self.worktrees / 'tracked/private'
+        (private / 'tool').unlink()
+        (public / 'tests/test_seed.py').write_text(PASSING_TEST + '\n# edited\n', encoding='utf-8')
+        (public / 'tests/test_new.py').write_text(PASSING_TEST, encoding='utf-8')
+        (public / 'sync.py').unlink()
+        wanted = release.review_lines(public, private)
+        self.assertEqual(wanted['public'][0], ['sync.py', 'tests/test_new.py', 'tests/test_seed.py'])
+        self.assertEqual(wanted['private'][0], ['tool'])
+        git(public, 'add', '-A')
+        git(public, 'commit', '-qm', 'Edit, add and delete code')
+        self.assertEqual(release.review_lines(public, private), wanted)
+        (public / 'tests/test_seed.py').write_text(PASSING_TEST + '\n# edited again\n', encoding='utf-8')
+        self.assertNotEqual(release.review_lines(public, private), wanted)
+
+    def test_a_review_holds_through_a_rebase_over_another_edit_and_through_a_half_published_release(self):
+        release_main(['start', 'moved', *self.options()], self.public)
+        public, private = self.worktrees / 'moved/public', self.worktrees / 'moved/private'
+        (public / 'tests/test_seed.py').write_text(PASSING_TEST + '\n# this branch\n', encoding='utf-8')
+        (private / 'tool.py').write_text('value = 1\n', encoding='utf-8')
+        git(public, 'commit', '-qam', 'Edit the seed test')
+        wanted = release.review_lines(public, private)
+        other = self.clone(self.public_origin, 'other-public')
+        (other / 'tests/test_seed.py').write_text('# other\n# session\n' + PASSING_TEST, encoding='utf-8')
+        git(other, 'commit', '-qam', 'Another session adds lines above this branch\'s edit')
+        git(other, 'push', '-q', 'origin', 'HEAD:main')
+        git(public, 'fetch', '-q', 'origin')
+        git(public, 'rebase', '-q', 'origin/main')
+        self.assertIn('# other', (public / 'tests/test_seed.py').read_text(encoding='utf-8'))
+        self.assertEqual(release.review_lines(public, private), wanted)
+        git(public, 'push', '-q', 'origin', 'HEAD:main')
+        git(public, 'fetch', '-q', 'origin')
+        self.assertEqual(release.review_lines(public, private), {'private': wanted['private']})
+
+    def test_a_script_that_gains_a_line_above_its_first_line_is_still_code(self):
+        seed = self.clone(self.private_origin, 'script-seed')
+        (seed / 'tool').write_text('#!/bin/sh\nexit 1\n', encoding='utf-8')
+        git(seed, 'add', '-A')
+        git(seed, 'commit', '-qm', 'Seed a script without a suffix')
+        git(seed, 'push', '-q', 'origin', 'HEAD:main')
+        git(self.private, 'pull', '-q')
+        release_main(['start', 'above', *self.options()], self.public)
+        public, private = self.worktrees / 'above/public', self.worktrees / 'above/private'
+        (private / 'tool').write_text('# a note\n#!/bin/sh\nexec real "$@"\n', encoding='utf-8')
+        self.assertEqual(release.review_lines(public, private)['private'][0], ['tool'])
+
+    def test_the_fingerprint_tells_removed_lines_apart_and_one_file_from_another(self):
+        release_main(['start', 'cut', *self.options()], self.public)
+        public, private = self.worktrees / 'cut/public', self.worktrees / 'cut/private'
+        seen = []
+        for removed in ('import unittest\n', '        pass\n'):
+            (public / 'tests/test_seed.py').write_text(PASSING_TEST.replace(removed, ''), encoding='utf-8')
+            seen.append(release.review_lines(public, private)['public'][1])
+        git(public, 'checkout', '-q', '--', 'tests/test_seed.py')
+        for name in ('tests/test_a.py', 'tests/test_b.py'):
+            (public / name).write_text(PASSING_TEST, encoding='utf-8')
+            seen.append(release.review_lines(public, private)['public'][1])
+            (public / name).unlink()
+        self.assertEqual(len(set(seen)), 4)
+
+    def test_a_failed_read_of_the_fork_point_stops_with_gits_own_words(self):
+        with self.assertRaises(RuntimeError) as stop:
+            release.fork_bytes(self.public, 'no-such-commit', 'content')
+        self.assertIn('git --literal-pathspecs ls-tree exited 128', str(stop.exception))
+        self.assertIn('no-such-commit', str(stop.exception))
+        self.assertIsNone(release.fork_bytes(self.public, 'HEAD', 'tests'))
+        self.assertEqual(release.fork_bytes(self.public, 'HEAD', 'content'), b'first\n')
+
+    def test_the_pull_a_finish_starts_does_not_wait_a_second_time(self):
+        (self.public / 'pull.py').write_text(
+            'import pathlib, sys\npathlib.Path(__file__).with_name("pull-argv").write_text("\\n".join(sys.argv[1:]))\n',
+            encoding='utf-8')
+        release_main(['start', 'pulled', *self.options()], self.public)
+        (self.worktrees / 'pulled/public/content').write_text('second\n', encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Change the content\n', encoding='utf-8')
+        self.assertEqual(release_main(['finish', 'pulled', '--message', str(message), '--push', '--pull',
+                                       *self.options()], self.public), 0)
+        argv = (self.public / 'pull-argv').read_text(encoding='utf-8').split('\n')
+        self.assertEqual(argv[-4:], ['--update', '--apply', '--wait', '0'])
+
+    def test_a_detached_finish_stops_on_unreviewed_code_before_it_starts_a_unit(self):
+        release_main(['start', 'apart', *self.options()], self.public)
+        (self.worktrees / 'apart/public/tests/test_other.py').write_text(PASSING_TEST, encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Add a test\n', encoding='utf-8')
+        errors = io.StringIO()
+        # No systemd-run to find, so a finish that got past the stop would start nothing here either.
+        with redirect_stderr(errors), patch.object(release.shutil, 'which', return_value=None):
+            self.assertEqual(release_main(['finish', 'apart', '--detach', '--message', str(message), *self.options()],
+                                          self.public, review=False), 3)
+        self.assertIn('nothing was started', errors.getvalue())
+        errors = io.StringIO()
+        with redirect_stderr(errors):
+            self.assertEqual(release_main(['finish', 'apart', '--detach', '--message', str(message), '--reviewed',
+                                           'findings.md', *self.options()], self.public, review=False), 3)
+        self.assertIn('absolute path for findings.md', errors.getvalue())
+
+    def test_a_code_edit_made_while_finish_runs_is_stopped_before_the_push(self):
+        release_main(['start', 'late', *self.options()], self.public)
+        module = self.worktrees / 'late/public/tests/test_other.py'
+        module.write_text(PASSING_TEST, encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Add a test\n', encoding='utf-8')
+        suite = release.test_suite
+
+        def edit_during_the_suite(*arguments):
+            suite(*arguments)
+            module.write_text(PASSING_TEST + '\n# slipped in\n', encoding='utf-8')
+
+        errors = io.StringIO()
+        with redirect_stderr(errors), patch.object(release, 'test_suite', edit_during_the_suite):
+            self.assertEqual(release_main(['finish', 'late', '--message', str(message), '--push', *self.options()],
+                                          self.public), 3)
+        self.assertIn('the code changed after its review', errors.getvalue())
+        self.assertEqual(git(self.public_origin, 'ls-tree', '--name-only', 'main', 'tests/'), SEEDED_TESTS)
+
     def options(self):
         return ['--worktrees', str(self.worktrees), '--private', str(self.private)]
 
@@ -620,11 +815,22 @@ def package_toml(commit, select, packaging):
     return f'[source]\nbuild = "generic"\ncommit = "{commit}"\npackaging = {packaging}\nselect = [{chosen}]\n'
 
 
-def release_main(argv, engine):
-    """release.main with ENGINE set to the test's canonical public clone, and this machine's locks in its folder."""
+def release_main(argv, engine, review=True):
+    """release.main with ENGINE set to the test's canonical public clone, and this machine's locks in its folder.
+    A finish that changes code gets the review record it needs unless review is False, so that each test meets
+    only the stop it is about."""
     original = release.ENGINE, release.STATE
     release.ENGINE, release.STATE = engine, Path(engine).parent / 'state'
     try:
+        if review and argv[0] == 'finish' and '--reviewed' not in argv:
+            base = Path(argv[argv.index('--worktrees') + 1]) / argv[1]
+            if (base / 'public').is_dir():
+                wanted = release.review_lines(base / 'public', base / 'private')
+                if wanted:
+                    record = Path(engine).parent / f'review-{argv[1]}.md'
+                    record.write_text('No findings.\n' + ''.join(f'{line}\n' for _, line in wanted.values()),
+                                      encoding='utf-8')
+                    argv = [*argv, '--reviewed', str(record)]
         return release.main(argv)
     finally:
         release.ENGINE, release.STATE = original

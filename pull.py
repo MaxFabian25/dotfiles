@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -11,11 +12,16 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 import tomllib
 
-from portable import GIT, WINDOWS, exclusive_lock, native_cli_environment
+from portable import GIT, WINDOWS, exclusive_lock, lock_holder, native_cli_environment
 
 GIT_TIMEOUT = 180
+# Seconds a pull waits for another pull on this machine, whether a person, an agent or the schedule started it.
+# A pull that outlasts the wait is named in the stop. A release's own pull passes 0, because finish has waited.
+LOCK_WAIT = 300
+LOCK_POLL = 2
 
 
 def stop_process_tree(process):
@@ -140,11 +146,41 @@ def install_tools(home, state):
     record.write_text(digest + '\n', encoding='utf-8')
 
 
+def seconds(text):
+    value = float(text)
+    if not 0 <= value < float('inf'):
+        raise argparse.ArgumentTypeError('give a number of seconds, zero or more')
+    return value
+
+
+def pull_lock(path, patience):
+    """This pull's hold on the machine's pull lock, after waiting up to patience seconds for the pull that holds it,
+    or a stop that names that pull. Without the wait, a pull started while another runs stopped with the operating
+    system's "Resource temporarily unavailable", which names neither the lock nor its holder."""
+    stack = contextlib.ExitStack()
+    deadline, shown = time.monotonic() + patience, None
+    while True:
+        try:
+            stack.enter_context(exclusive_lock(path, record=True))
+            return stack
+        except BlockingIOError as error:
+            holder = lock_holder(path)
+            who = (f'PID {holder["pid"]} since {str(holder.get("since", ""))[11:16]}: {str(holder.get("command", ""))[:160]}'
+                   if holder else f'the run that holds {path}')
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f'another pull still runs on this machine after {patience:g} seconds ({who}); '
+                                   'pull again once it has ended') from error
+            if who != shown:
+                print(f'Waiting for another pull: {who}', file=sys.stderr, flush=True)
+                shown = who
+            time.sleep(LOCK_POLL)
+
+
 def run(args):
     root = args.root.resolve()
     private = args.private.resolve() if args.private else None
     state = Path.home() / '.local/state/dotfiles'
-    with exclusive_lock(state / 'pull.lock', record=True):
+    with pull_lock(state / 'pull.lock', args.wait):
         if args.update:
             update(root, private, signers())
         paired(root, private)
@@ -182,6 +218,8 @@ def main():
     parser.add_argument('--update', action='store_true', help='fetch and fast-forward clean paired checkouts')
     parser.add_argument('--apply', action='store_true', help='apply the verified device plan')
     parser.add_argument('--notes', action='store_true', help="list each of sync's notes in full instead of counting them")
+    parser.add_argument('--wait', type=seconds, default=LOCK_WAIT,
+                        help='seconds to wait for another pull on this machine before stopping')
     args = parser.parse_args()
     try:
         return run(args)

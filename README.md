@@ -124,6 +124,10 @@ locks and builds any `--entry` and `--package`, commits both worktrees, rebases 
 `origin/main` if another session pushed meanwhile, pairs `release.toml`, pushes, and pulls, once any other
 pull on the machine has ended. It stops first in each of these cases:
 
+- The release changes code that `--reviewed FILE` does not show another agent reviewed. `release.py review NAME`
+  prints the files, the command that shows their changes and the lines the reviewer writes, against
+  `docs/agents/coding-standards.md`. It checks again just before the push, because the commit takes whatever
+  the worktree holds by then.
 - Another release is finishing on this machine. It names that run's process and command;
   `release.py wait --timeout SECONDS` returns once no release, pull or sync runs here.
 - A test fails, or the suite writes into the worktree's `.sync/`, the engine cache that real pulls use

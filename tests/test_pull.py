@@ -1,3 +1,7 @@
+import argparse
+from contextlib import redirect_stderr
+import contextlib
+import io
 from pathlib import Path
 import os
 import shutil
@@ -10,7 +14,9 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from pull import git as pull_git, install_tools, paired, run, unsigned, update
+import portable
+import pull
+from pull import git as pull_git, install_tools, paired, pull_lock, run, unsigned, update
 
 
 def git(root, *args):
@@ -139,7 +145,7 @@ class PairedPullTest(unittest.TestCase):
     def test_repeated_success_does_not_rewrite_release_receipt(self):
         candidate = self.commit(self.public_origin, 'sync.py', 'raise SystemExit(0)\n')
         self.commit(self.private_origin, 'release.toml', f'public_commit = "{candidate}"\n')
-        args = SimpleNamespace(root=self.public, private=self.private, update=True, apply=True, notes=False)
+        args = SimpleNamespace(root=self.public, private=self.private, update=True, apply=True, notes=False, wait=0)
         pinned = self.root / 'home/.config/dotfiles/allowed_signers'
         pinned.parent.mkdir(parents=True)
         shutil.copyfile(self.signers, pinned)
@@ -159,13 +165,84 @@ class PairedPullTest(unittest.TestCase):
         for code, apply in ((0, False), (1, False), (2, True), (3, True), (1, True), (0, True)):
             candidate = self.commit(self.public_origin, 'sync.py', f'raise SystemExit({code})\n')
             self.commit(self.private_origin, 'release.toml', f'public_commit = "{candidate}"\n')
-            args = SimpleNamespace(root=self.public, private=self.private, update=True, apply=apply, notes=False)
+            args = SimpleNamespace(root=self.public, private=self.private, update=True, apply=apply, notes=False, wait=0)
             with patch('pull.Path.home', return_value=self.root / 'home'), \
                     patch('pull.install_tools', lambda home, state: calls.append((code, apply))):
                 self.assertEqual(run(args), code)
             # Changes that remain after applying leave the pair unrecorded, so only the last pull writes a receipt.
             self.assertEqual(receipt.exists(), (code, apply) == (0, True))
         self.assertEqual(calls, [(1, True), (0, True)])
+
+
+class PullLockTest(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.lock = Path(temp.name) / 'pull.lock'
+        poll = patch.object(pull, 'LOCK_POLL', 0.01)
+        poll.start()
+        self.addCleanup(poll.stop)
+
+    def test_a_pull_stops_by_naming_the_pull_that_still_holds_the_lock(self):
+        errors = io.StringIO()
+        with portable.exclusive_lock(self.lock, record=True), redirect_stderr(errors):
+            with self.assertRaises(RuntimeError) as stop:
+                pull_lock(self.lock, 0.05)
+        self.assertIn(f'PID {os.getpid()}', str(stop.exception))
+        self.assertIn('another pull still runs on this machine after 0.05 seconds', str(stop.exception))
+        self.assertEqual(errors.getvalue().count('Waiting for another pull'), 1)
+
+    def test_a_stop_without_a_holder_note_names_the_lock(self):
+        with portable.exclusive_lock(self.lock), redirect_stderr(io.StringIO()):
+            with self.assertRaises(RuntimeError) as stop:
+                pull_lock(self.lock, 0)
+        self.assertIn(f'the run that holds {self.lock}', str(stop.exception))
+
+    def test_a_pull_waits_for_the_pull_ahead_of_it_and_then_holds_the_lock(self):
+        ahead = contextlib.ExitStack()
+        ahead.enter_context(portable.exclusive_lock(self.lock, record=True))
+        errors = io.StringIO()
+        with patch.object(pull.time, 'sleep', side_effect=lambda delay: ahead.close()) as slept, \
+                redirect_stderr(errors), pull_lock(self.lock, 30):
+            with self.assertRaises(BlockingIOError):
+                with portable.exclusive_lock(self.lock):
+                    pass
+        self.assertEqual(slept.call_count, 1)
+        self.assertIn(f'Waiting for another pull: PID {os.getpid()}', errors.getvalue())
+        with portable.exclusive_lock(self.lock):
+            pass
+
+    def test_run_waits_on_the_lock_for_the_seconds_it_was_given(self):
+        home = Path(self.lock).parent / 'home'
+        args = SimpleNamespace(root=home, private=None, update=False, apply=False, notes=False, wait=0.05)
+        with patch('pull.Path.home', return_value=home), redirect_stderr(io.StringIO()), \
+                portable.exclusive_lock(home / '.local/state/dotfiles/pull.lock', record=True):
+            with self.assertRaises(RuntimeError) as stop:
+                run(args)
+        self.assertIn('another pull still runs on this machine after 0.05 seconds', str(stop.exception))
+
+    def test_a_pull_waits_by_default_and_refuses_a_wait_that_is_no_number_of_seconds(self):
+        seen = []
+        with patch.object(pull, 'run', side_effect=lambda args: seen.append(args.wait) or 0):
+            with patch.object(sys, 'argv', ['pull.py']):
+                self.assertEqual(pull.main(), 0)
+            with patch.object(sys, 'argv', ['pull.py', '--wait', 'nan']), redirect_stderr(io.StringIO()), \
+                    self.assertRaises(SystemExit):
+                pull.main()
+        self.assertEqual(seen, [pull.LOCK_WAIT])
+        self.assertGreater(pull.LOCK_WAIT, 0)
+
+    def test_the_wait_is_a_finite_number_of_seconds_from_zero(self):
+        self.assertEqual(pull.seconds('0'), 0)
+        for text in ('nan', 'inf', '-1'):
+            with self.assertRaises(argparse.ArgumentTypeError):
+                pull.seconds(text)
+
+    def test_a_free_lock_is_taken_without_a_word(self):
+        errors = io.StringIO()
+        with redirect_stderr(errors), pull_lock(self.lock, 0):
+            self.assertEqual(portable.lock_holder(self.lock)['pid'], os.getpid())
+        self.assertEqual(errors.getvalue(), '')
 
 
 class PullEnvironmentTest(unittest.TestCase):

@@ -7,7 +7,10 @@ test suite unless the release changes no code, runs the private folders' tests, 
 origin/main changed the same files meanwhile, rebases them onto it, pairs the private release.toml with the
 public commit, checks that this device's pull could apply the pair, naming each Claude plugin cache that
 running sessions hold, checks both pushes with --dry-run, pushes, and pulls, after any other pull here ends.
-Before all of that it stops on a package whose selection changed without a new packaging number, and on an owned
+Before all of that it stops on changed code that `--reviewed FILE` does not show another agent reviewed, for which
+`review NAME` prints the files, the command that shows their changes and the lines the reviewer writes, and checks
+that again before the push.
+It also stops first on a package whose selection changed without a new packaging number, and on an owned
 source edited without `--entry NAME --refresh-owned`, which every pull would refuse as a stale lock.
 One finish runs at a time on a machine; another stops and names it. `clean NAME` removes the worktrees and branches once origin/main has them. `status` lists what runs here and each open
 release worktree with the files it changes, and `start` lists the others. `wait --timeout SECONDS` returns
@@ -21,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -28,6 +32,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import tomllib
 
@@ -58,6 +63,16 @@ ALLOWLIST_BASE = '/*'
 # Strings the public tree must never hold, such as host and account names. The list is private, because a public
 # list would publish them.
 DENYLIST = 'config/privacy/public-denylist.txt'
+# What finish wants reviewed: a changed file with one of these suffixes or names, one in these folders, or one
+# that starts with #!.
+CODE_SUFFIXES = ('.py', '.ps1', '.psm1', '.sh', '.bash', '.zsh', '.cmd', '.bat', '.js', '.mjs', '.cjs', '.ts',
+                 '.service', '.timer', '.plist')
+CODE_NAMES = ('Dockerfile', 'Makefile')
+CODE_FOLDERS = ('.github/workflows/',)
+# Stored copies of loose skills, each folder named by the hash of its bytes, so an edit there breaks the name.
+# finish asks for no review of them; the standards file tells the reviewer to read a newly stored copy.
+STORED_COPIES = ('setup/snapshots/',)
+STANDARDS = 'docs/agents/coding-standards.md'
 
 
 def machine_locks():
@@ -324,6 +339,125 @@ def unpinned(edited, entries, refresh_owned):
     return {name: path for name, path in edited.items() if name not in accepted}
 
 
+def git_bytes(tree, *args, passing=(0,)):
+    """A git command's output as bytes, or a stop with git's own words when it exits outside passing."""
+    done = subprocess.run([*GIT, '-C', str(tree), *args], capture_output=True, env=native_cli_environment(), timeout=120)
+    if done.returncode not in passing:
+        raise RuntimeError(f'{tree.name}: git {" ".join(args[:2])} exited {done.returncode}: '
+                           f'{done.stderr.decode(errors="replace").strip()}')
+    return done.stdout
+
+
+def fork_bytes(tree, fork, name):
+    """A file's bytes at the fork point, or None when it was no file there. The name is matched as written, not
+    as a pattern, and a folder of that name is no file."""
+    for entry in git_bytes(tree, '--literal-pathspecs', 'ls-tree', '-z', fork, '--', name).split(b'\0'):
+        fields, _, path = entry.partition(b'\t')
+        if path == name.encode() and fields.split()[1:2] == [b'blob']:
+            return git_bytes(tree, 'cat-file', 'blob', fields.split()[2].decode())
+    return None
+
+
+def is_code(name, *contents):
+    """Whether a changed file is code, by its name or by a #! at the start of either side. The side at the fork
+    point counts, so that an edit which puts a line above a script's #! is still an edit to a script."""
+    return (name.endswith(CODE_SUFFIXES) or name.rsplit('/', 1)[-1] in CODE_NAMES or name.startswith(CODE_FOLDERS)
+            or any((content or b'')[:2] == b'#!' for content in contents))
+
+
+def branch_lines(old, new):
+    """The lines a branch adds to and removes from one file, given its bytes at the fork point and now, None for
+    no file. They carry no position and none of the lines around them, so a rebase over another session's edit
+    elsewhere in the file leaves them as they were, and so does committing the file. Moving a block within the
+    file, a change of mode and a final newline do not show in them."""
+    with tempfile.TemporaryDirectory() as folder:
+        sides = []
+        for side, content in (('old', old), ('new', new)):
+            if content is not None:
+                (Path(folder) / side).write_bytes(content)
+            sides.append(os.devnull if content is None else side)
+        shown = git_bytes(Path(folder), 'diff', '--no-index', '--no-ext-diff', '--no-textconv', '--no-color', '-U0',
+                          '--', *sides, passing=(0, 1))
+    head, hunk, body = shown.partition(b'\n@@')
+    if hunk:
+        return [line for line in body.split(b'\n') if line[:1] in (b'+', b'-')]
+    # No line diff, as for a binary file: a hash of each side stands in.
+    return [sign + hashlib.sha256(content or b'').hexdigest().encode() for sign, content in ((b'-', old), (b'+', new))]
+
+
+def code_changes(tree):
+    """The code files this tree's branch changes against origin/main, and a fingerprint of the lines it adds to
+    and removes from them. Hook commands inside JSON and TOML files are not counted."""
+    fork = git(tree, 'merge-base', 'HEAD', 'origin/main')
+    names, digest = [], hashlib.sha256()
+    for name in changed_files(tree):
+        if name.startswith(STORED_COPIES):
+            continue
+        path = tree / name
+        old, new = fork_bytes(tree, fork, name), path.read_bytes() if path.is_file() else None
+        if not is_code(name, old, new):
+            continue
+        names.append(name)
+        digest.update(name.encode() + b'\0' + b'\n'.join(branch_lines(old, new)) + b'\0')
+    return names, digest.hexdigest()[:16]
+
+
+def review_lines(public, private):
+    """For each tree whose branch changes code, its name with those files and the line a review record must hold.
+    Each tree has its own line, so that a release whose public half is already on origin still matches the
+    record that covered both."""
+    wanted = {}
+    for label, tree in (('public', public), ('private', private)):
+        names, fingerprint = code_changes(tree)
+        if names:
+            wanted[label] = (names, f'Reviewed: {label} {fingerprint}')
+    return wanted
+
+
+def review_stop(public, private, record, name):
+    """Why a release that changes code may not go out yet, or None once record holds a review of that code. On
+    10 November 2026 a launcher change that passed every test went out unreviewed, and a later release had to
+    repair what a reviewer would have asked about: what the caller does when its read of a vault fails."""
+    wanted = review_lines(public, private)
+    held = set()
+    if record is not None and record.is_file():
+        held = {line.strip() for line in record.read_text(encoding='utf-8', errors='replace').splitlines()}
+    missing = [line for _, line in wanted.values() if line not in held]
+    if not missing:
+        return None
+    if record is None:
+        problem = 'no --reviewed FILE names a review of it'
+    elif not record.is_file():
+        problem = f'{record} is not a file'
+    else:
+        problem = (f'{record} lacks ' + ' and '.join(f'"{line}"' for line in missing) + ' on a line of its own, '
+                   'so it reviews other code or holds the line inside other text')
+    return (f'this release changes code and {problem}. Run release.py review {name}, which prints the files, the '
+            'command that shows their changes and the lines a reviewer writes. Have an agent that did not write the change review it, '
+            'then finish again with --reviewed FILE')
+
+
+def review(args, public_repo, private_repo):
+    """Print what the reviewer of a release needs. It changes nothing, so it can run at any point."""
+    base, public, private = places(args)
+    wanted = review_lines(public, private)
+    if not wanted:
+        print(f'{args.name} changes no code, so finish asks for no review')
+        return 0
+    print(f'Review {args.name} against {ENGINE / STANDARDS}')
+    for label, tree in (('public', public), ('private', private)):
+        if label not in wanted:
+            continue
+        names, line = wanted[label]
+        fork = git(tree, 'merge-base', 'HEAD', 'origin/main')
+        print(f'{label}: {tree}\n'
+              f'  code this branch changes: {", ".join(names)}\n'
+              f'  its changes: git -C {tree} diff {fork[:12]}, and git -C {tree} status --short '
+              '--untracked-files=all for the new files, which that diff leaves out\n'
+              f'  the line its reviewer writes: {line}')
+    return 0
+
+
 def reapprovals(public, private):
     """Plugins with trusted Codex hooks whose installed Codex content this branch may change: their lock entry
     changed, or they apply tool notes and the notes changed, which the lock leaves out. Codex ties a hook's
@@ -427,6 +561,8 @@ def start(args, public_repo, private_repo):
 
 def finish(args, public_repo, private_repo):
     base, public, private = places(args)
+    if stop := review_stop(public, private, args.reviewed, args.name):
+        raise RuntimeError(f'{stop}; nothing was committed')
     if reused := reused_release_names(public, private):
         raise RuntimeError(f'{", ".join(reused)} changed its selection at the same upstream commit and packaging number, '
                            'so its release folder keeps its name and every machine\'s pull would stop with "Existing '
@@ -494,6 +630,9 @@ def finish(args, public_repo, private_repo):
         device_check(public, private)
         if not args.push:
             break
+        # Again, because the commit took whatever the worktree held by then, minutes after the first check.
+        if stop := review_stop(public, private, args.reviewed, args.name):
+            raise RuntimeError(f'{stop}; the code changed after its review')
         published = False
         try:
             for tree in (public, private):  # login and write access on both before either moves
@@ -519,8 +658,9 @@ def finish(args, public_repo, private_repo):
         if not wait(('pull', 'sync'), WAIT_FOR_PULL):
             raise RuntimeError(f'pushed, but another pull still runs here after {WAIT_FOR_PULL // 60} minutes; '
                                'pull once it ends')
-        result = subprocess.run([*python, str(public_repo / 'pull.py'), '--root', str(public_repo),
-                                 '--private', str(private_repo), '--update', '--apply'], cwd=public_repo, timeout=1800)
+        # --wait 0: the wait above was the wait, and a second one would run inside this time limit.
+        result = subprocess.run([*python, str(public_repo / 'pull.py'), '--root', str(public_repo), '--private',
+                                 str(private_repo), '--update', '--apply', '--wait', '0'], cwd=public_repo, timeout=1800)
         if result.returncode == 0 and (args.entry or args.package):
             subprocess.run([*python, str(public_repo / 'skill_listing.py')], cwd=public_repo, timeout=900)
         return result.returncode
@@ -574,9 +714,12 @@ def detach_command(args, argv, environ):
 
 
 def detach(args, argv):
-    for file in (args.message, args.private_message):
+    for file in (args.message, args.private_message, args.reviewed):
         if file and not file.is_absolute():
             raise RuntimeError(f'--detach needs an absolute path for {file}, because the unit runs in {ENGINE}')
+    base, public, private = places(args)
+    if stop := review_stop(public, private, args.reviewed, args.name):  # here, not minutes later in the unit's log
+        raise RuntimeError(f'{stop}; nothing was started')
     if not shutil.which('systemd-run'):
         raise RuntimeError('--detach needs systemd-run, which this machine lacks; run the finish in the foreground')
     log, status = detached_paths(args)
@@ -666,7 +809,7 @@ def main(argv=None):
 
 def dispatch(argv, report):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('action', choices=('start', 'finish', 'clean', 'status', 'wait', 'result'))
+    parser.add_argument('action', choices=('start', 'finish', 'review', 'clean', 'status', 'wait', 'result'))
     parser.add_argument('name', nargs='?', help='branch name, also the folder under --worktrees')
     parser.add_argument('--private', type=Path, default=ENGINE.parent / 'dotfiles-private', help='canonical private checkout')
     parser.add_argument('--worktrees', type=Path, default=Path.home() / 'worktrees')
@@ -679,6 +822,9 @@ def dispatch(argv, report):
     parser.add_argument('--push', action='store_true', help='push both branches to origin/main')
     parser.add_argument('--overlap-reviewed', action='store_true',
                         help='finish although origin changed files this branch changed, after reading those commits')
+    parser.add_argument('--reviewed', type=Path,
+                        help="finish a release that changes code: the file with another agent's review findings and "
+                             'the Reviewed lines that review NAME prints')
     parser.add_argument('--hooks-reapproved', action='store_true',
                         help='finish although a plugin with trusted Codex hooks may change, once the user approved them again')
     parser.add_argument('--pull', action='store_true', help='then pull and apply the pair on this device')
@@ -688,10 +834,10 @@ def dispatch(argv, report):
                              'for another release, pull or sync here')
     parser.add_argument('--detach', action='store_true',
                         help='finish: run as a systemd user unit and return at once, with absolute paths for the '
-                             'message files; read it with result NAME')
+                             'message files and --reviewed; read it with result NAME')
     parser.add_argument('--report', type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    if args.action in ('start', 'finish', 'clean', 'result') and not args.name:
+    if args.action in ('start', 'finish', 'review', 'clean', 'result') and not args.name:
         parser.error(f'{args.action} needs a NAME')
     if args.report:
         report.append(args.report)
@@ -721,7 +867,7 @@ def dispatch(argv, report):
                                               *(sys.argv[1:] if argv is None else argv)])
             with hold(machine_locks()['release']):
                 return finish(args, ENGINE, args.private.resolve())
-        action = {'start': start, 'clean': clean, 'status': status}[args.action]
+        action = {'start': start, 'review': review, 'clean': clean, 'status': status}[args.action]
         return action(args, ENGINE, args.private.resolve())
     except (RuntimeError, OSError, subprocess.SubprocessError) as error:
         print(f'Release stopped: {error}', file=sys.stderr)
