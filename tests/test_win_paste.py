@@ -185,6 +185,16 @@ class WinPaste(unittest.TestCase):
         self.assertNotIn(MINE, result.stdout + result.stderr)
         self.assertIn("the user's clipboard is back", result.stdout)
 
+    def test_plain_text_copied_in_a_chromium_app_is_accepted_with_its_two_source_markers(self):
+        # What the user's clipboard listed on 12 November 2026, after a copy of plain text in such an app.
+        types = ["CF_LOCALE", "CF_OEMTEXT", "CF_TEXT", "CF_UNICODETEXT", "Chromium internal source RFH token",
+                 "Chromium internal source URL"]
+        result, _, state = self.paste("x", types=types)
+        self.assertEqual((result.returncode, state["field"], state["text"]), (0, "old x", MINE))
+        result, calls, state = self.paste("x", types=types, modes=["lose-write"])  # the markers are still there
+        self.assertEqual((state["text"], [tool for tool, _ in calls].count("clipboard_write")), (MINE, 1))
+        self.assertIn("the user's clipboard is back", result.stdout)
+
     def test_the_click_is_at_the_pixel_and_the_paste_is_sent_in_the_foreground(self):
         _, calls, _ = self.paste("x")
         batch, read = dict(calls)["run_steps"], dict(calls)["get_window_state"]
@@ -201,7 +211,10 @@ class WinPaste(unittest.TestCase):
                          [None, ["ctrl", "a"], ["ctrl", "v"]])
 
     def test_a_clipboard_that_holds_more_than_plain_text_is_left_alone(self):
-        for types, text in ((["PNG"], None), (["CF_UNICODETEXT", "HTML Format"], MINE), (["CF_UNICODETEXT"], None)):
+        markers = ["Chromium internal source RFH token", "Chromium internal source URL"]
+        for types, text in ((["PNG"], None), (["CF_UNICODETEXT", "HTML Format"], MINE), (["CF_UNICODETEXT"], None),
+                            (["CF_UNICODETEXT", *markers, "HTML Format"], MINE), (markers, None),
+                            (["CF_UNICODETEXT", "Chromium Web Custom MIME Data Format"], MINE)):
             result, calls, state = self.paste("x", types=types, text=text)
             self.assertEqual((result.returncode, state["field"], state["types"], state["text"]),
                              (3, "old ", types, text), types)

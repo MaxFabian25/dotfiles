@@ -25,9 +25,11 @@ The key combinations bring the window to the front for a moment, which the user 
 sent in the background can arrive as plain letters. Tell the user before you run it.
 
 Exit 3 means nothing was changed: the clipboard holds something other than plain text, such as an image, a
-file or formatted text from a browser or Word, which this cannot put back. Exit 1 is any other failure. Its
-message says when the user's clipboard was not put back, and then tell the user. An empty clipboard cannot
-be made empty again, so it holds the pasted text afterwards, which the output says.
+file or formatted text from a browser or Word, which this cannot put back. A text clipboard can also list
+two formats that Chromium names for a copy's source page, which are accepted and do not come back with the
+text. Exit 1 is any other failure. Its message says when the user's clipboard was not put back, and then
+tell the user. An empty clipboard cannot be made empty again, so it holds the pasted text afterwards, which
+the output says.
 """
 
 import argparse
@@ -43,6 +45,9 @@ from typing import NoReturn
 DRIVER = "/mnt/c/Users/{user}/AppData/Local/Programs/Cua/cua-driver/bin/cua-driver.exe"
 SESSION = f"win-paste-{os.getpid()}"
 PLAIN_TEXT = {"CF_LOCALE", "CF_OEMTEXT", "CF_TEXT", "CF_UNICODETEXT"}  # what a text-only clipboard listed, 2026-11-11
+# Chromium names these two. On 12 November 2026 the user's clipboard listed both beside the four above, with
+# its text, and this refused it. By their names they record the page a copy came from, not the copy.
+PLAIN_TEXT |= {"Chromium internal source RFH token", "Chromium internal source URL"}
 TIMEOUT = float(os.environ.get("WIN_PASTE_TIMEOUT") or 20)  # per driver call; the tests shorten it
 # How long the clipboard keeps the text when nobody knows whether the steps still run; the tests shorten it.
 UNSURE_WAIT = float(os.environ.get("WIN_PASTE_UNSURE_WAIT") or 10)
