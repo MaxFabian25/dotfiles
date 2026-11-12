@@ -181,11 +181,15 @@ class ReleaseTest(unittest.TestCase):
         self.push_from_another_session(self.private_origin, 'seed', {
             entry: pinned.format('a', 'true'), 'setup/skills/moved.toml': pinned.format('a', 'true'),
             'setup/skills/noted.toml': pinned.format('a', 'true'),
+            **{f'setup/skills/{name}.toml': pinned.format('a', 'true') for name in ('tailed', 'ended', 'crlf')},
             'setup/skills/twin.toml': pinned.format('a', 'true') + 'tree = "a"\n', lock: 'a\n', 'notes': 'one\n'})
         release_main(['start', 'kit', *self.options()], self.public)
         mine = self.worktrees / 'kit/private'
         for relative, text in ((entry, pinned.format('b', 'true')), ('setup/skills/moved.toml', pinned.format('b', 'false')),
                                ('setup/skills/noted.toml', '# why it is placed\n' + pinned.format('b', 'true')),
+                               ('setup/skills/tailed.toml', pinned.format('b"  # why this tree', 'true')),
+                               ('setup/skills/ended.toml', pinned.format('b', 'true').rstrip('\n')),
+                               ('setup/skills/crlf.toml', pinned.format('b', 'true').replace('\n', '\r\n')),
                                ('setup/skills/twin.toml', pinned.format('b', 'true') + 'tree = "b"\n'),
                                ('setup/skills/new.toml', pinned.format('b', 'true')), (lock, 'b\n'), ('fresh', 'mine\n')):
             (mine / relative).write_text(text, encoding='utf-8')
@@ -194,9 +198,11 @@ class ReleaseTest(unittest.TestCase):
             lock: 'c\n', 'fresh': 'theirs\n'})
         before = git(mine, 'rev-parse', 'HEAD'), git(mine, 'status', '--porcelain')
 
-        regenerated = release.pin_only(mine, ['kit', 'moved', 'noted', 'twin', 'new', 'absent']) | {lock}
+        regenerated = release.pin_only(mine, ['kit', 'moved', 'noted', 'twin', 'tailed', 'ended', 'crlf', 'new',
+                                              'absent']) | {lock}
         # moved.toml also changed where the skill is placed, noted.toml gained a comment origin's copy lacks, and
-        # twin.toml changed a tree key outside its source
+        # twin.toml changed a tree key outside its source. tailed.toml gained a comment after its pin, ended.toml
+        # lost its final newline and crlf.toml changed its line endings, each of which origin's copy would undo.
         self.assertEqual(regenerated, {entry, lock})
         self.assertEqual(release.pin_only(mine, []), frozenset())
         self.assertEqual(release.conflicts(mine), ['fresh', lock, entry, 'setup/skills/moved.toml'])

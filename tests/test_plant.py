@@ -1,6 +1,7 @@
 """Tests for skills/planted-error-checks/scripts/plant.py."""
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -79,6 +80,18 @@ class Plant(unittest.TestCase):
         self.assertIn('the unchanged copy fails', error)
         self.assertIn('exited 1 and ended with:', error)
         self.assertIn('AssertionError: 15 != 6', error)  # the reason, which the caller would otherwise have to rerun for
+
+    def test_a_source_that_is_not_utf8_or_a_root_that_cannot_be_copied_stops_with_the_reason(self):
+        tripled = ['triples', 'number * 2', 'number * 3']
+        os.mkfifo(self.root / 'code/pipe')
+        status, lines, error = self.plant([tripled])
+        self.assertEqual((status, lines), (2, []))
+        self.assertRegex(error, r'^no copy of .*/code could run with .*value\.py: .*pipe')
+        (self.root / 'code/pipe').unlink()
+        (self.root / 'code/value.py').write_bytes(b'# caf\xe9\n' + SOURCE.encode())
+        status, lines, error = self.plant([tripled])
+        self.assertEqual((status, lines), (2, []))
+        self.assertRegex(error, r"^no copy of .* could run with .*value\.py: 'utf-8' codec can't decode")
 
     def test_a_plants_file_that_is_missing_malformed_or_empty_stops_with_the_reason(self):
         for plants, reason in (([], 'must hold a list of at least one [label, old, new]'),

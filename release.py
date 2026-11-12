@@ -58,7 +58,8 @@ MOVED = re.compile(r'\((?:fetch first|non-fast-forward)\)')
 # Files every release rewrites, so both sides changing them says nothing about clashing work.
 PAIRING_FILES = frozenset({'release.toml', 'setup/lock.toml'})
 LOCK = 'setup/lock.toml'
-TREE_LINE = re.compile(r'\s*tree\s*=')  # the line of a setup entry that pins its source's tree
+# The value of a tree key in a setup entry, which pins its source's tree. The rest of its line is the entry's own.
+TREE_VALUE = re.compile(rb'^([ \t]*tree[ \t]*=[ \t]*)"[^"\r\n]*"', re.MULTILINE)
 SETUP = 'setup/setup.toml'
 LEASE = 'Claude lease: '
 # The public .gitignore is an allowlist: this pattern drops every path that a later ! line does not bring back.
@@ -303,22 +304,22 @@ def overlap(root, regenerated=frozenset()):
 
 def pin_only(root, entries):
     """The setup files of the named entries in which this branch changed nothing beyond the tree its source pins:
-    no other value, such as a tree key of another table, and no other line, such as a comment, which origin's
-    copy would lose. A file the branch left as it was counts too, and cannot conflict. Locking with
+    no other value, such as a tree key of another table, and no other byte, such as a comment, a line ending or
+    the final newline, which origin's copy would lose. A file the branch left as it was counts too, and cannot conflict. Locking with
     --refresh-owned writes that pin anew, so origin's copy of such a file loses nothing."""
     def unpinned_text(description):
         return {**description, 'source': {key: value for key, value in description.get('source', {}).items()
                                           if key != 'tree'}}
 
-    def other_lines(text):
-        return [line for line in text.strip().splitlines() if not TREE_LINE.match(line)]  # git() strips too
+    def unpinned_bytes(content):
+        return TREE_VALUE.sub(rb'\1""', content)
     fork = git(root, 'merge-base', 'HEAD', 'origin/main')
     found = set()
     for path in (f'setup/{kind}/{entry}.toml' for kind in ('skills', 'packages') for entry in entries):
         before, after = started(root, path), current(root, path)
         if (before and after and unpinned_text(before) == unpinned_text(after)
-                and other_lines(git(root, 'show', f'{fork}:{path}'))
-                == other_lines((root / path).read_text(encoding='utf-8'))):
+                and unpinned_bytes(git_bytes(root, 'show', f'{fork}:{path}'))
+                == unpinned_bytes((root / path).read_bytes())):
             found.add(path)
     return frozenset(found)
 

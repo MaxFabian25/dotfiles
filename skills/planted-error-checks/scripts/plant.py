@@ -79,8 +79,12 @@ def main(argv):
     except SystemExit as stop:
         print(stop, file=sys.stderr)
         return 2
-    original = source.read_bytes().decode('utf-8')
-    status, output = run(root, source, test, original)
+    try:
+        original = source.read_bytes().decode('utf-8')
+        status, output = run(root, source, test, original)
+    except (OSError, UnicodeDecodeError) as error:  # a SOURCE that is not UTF-8, or a ROOT that cannot be copied
+        print(f'no copy of {root} could run with {source}: {error}', file=sys.stderr)
+        return 2
     if status != 0:
         print('the unchanged copy fails, so a failing plant would prove nothing. Its run '
               + (output if status is None else f'exited {status} and ended with:\n'
