@@ -3,7 +3,8 @@ Runs one fixed Excel job. excel.py writes job.json and calls this with Windows P
 job names: it opens the given workbook copy in a new, hidden Excel
 instance with macros, link updates and alerts off, rebuilds the calculation, reads and sets the given references,
 saves a copy, reopens that copy, and quits. It writes result.json beside job.json, and excel.pid and ps.pid first,
-so excel.py can stop this instance, and only this instance, after a timeout.
+so excel.py can stop this instance, and only this instance, after a timeout. A call that Excel turns away because it
+is busy waits and goes again, for up to the calculation timeout.
 #>
 param([Parameter(Mandatory = $true)] [string] $Job)
 $ErrorActionPreference = 'Stop'
@@ -11,11 +12,45 @@ $dir = Split-Path -Parent $Job
 $spec = Get-Content -Raw -LiteralPath $Job | ConvertFrom-Json
 Set-Content -LiteralPath (Join-Path $dir 'ps.pid') -Value $PID
 $sw = [Diagnostics.Stopwatch]::StartNew()
-$result = [ordered]@{ ok = $false; error = $null; excel = $null; open = $null; settings = $null; base = $null; errors = $null; after = $null; reopened = $null; timings_ms = [ordered]@{} }
+$result = [ordered]@{ ok = $false; error = $null; error_line = $null; busy_retries = 0; excel = $null; open = $null; settings = $null; base = $null; errors = $null; after = $null; reopened = $null; timings_ms = [ordered]@{} }
 $missing = [Type]::Missing
 $errorNames = @{ 2000 = '#NULL!'; 2007 = '#DIV/0!'; 2015 = '#VALUE!'; 2023 = '#REF!'; 2029 = '#NAME?'; 2036 = '#NUM!'; 2042 = '#N/A'; 2043 = '#GETTING_DATA'; 2045 = '#SPILL!'; 2046 = '#CONNECT!'; 2047 = '#BLOCKED!'; 2048 = '#UNKNOWN!'; 2049 = '#FIELD!'; 2050 = '#CALC!' }
 
 Add-Type -Namespace XlCom -Name Win -MemberDefinition '[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);'
+
+# While Excel calculates it turns calls away. Without this filter a call then fails with RPC_E_CALL_REJECTED, or a
+# property comes back as $null with no error, which shows later as "You cannot call a method on a null-valued
+# expression". With it, COM asks RetryRejectedCall, which has the call wait 200 ms and go again until LimitMs. The
+# filter belongs to this thread, which has to be a single-threaded apartment, as Windows PowerShell's is.
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+namespace XlCom {
+  [ComImport, Guid("00000016-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  public interface IOleMessageFilter {
+    [PreserveSig] int HandleInComingCall(int callType, IntPtr caller, int tick, IntPtr info);
+    [PreserveSig] int RetryRejectedCall(IntPtr callee, int tick, int rejectType);
+    [PreserveSig] int MessagePending(IntPtr callee, int tick, int pendingType);
+  }
+  public class BusyFilter : IOleMessageFilter {
+    [DllImport("ole32.dll")] static extern int CoRegisterMessageFilter(IOleMessageFilter filter, out IOleMessageFilter previous);
+    public static int LimitMs;
+    public static int Retries;
+    static BusyFilter registered;
+    public static int Register(int limitMs) {
+      IOleMessageFilter previous; LimitMs = limitMs; registered = new BusyFilter();
+      return CoRegisterMessageFilter(registered, out previous);
+    }
+    public int HandleInComingCall(int callType, IntPtr caller, int tick, IntPtr info) { return 0; }
+    // rejectType 2 is SERVERCALL_RETRYLATER, Excel's answer while busy. tick is the time this call has waited.
+    public int RetryRejectedCall(IntPtr callee, int tick, int rejectType) {
+      if (rejectType != 2 || tick >= LimitMs) { return -1; }
+      Retries++; return 200;
+    }
+    public int MessagePending(IntPtr callee, int tick, int pendingType) { return 2; }
+  }
+}
+"@
 
 function Convert-Cell($v) {
   # Excel returns numbers as doubles, so an Int32 here is an error value.
@@ -68,7 +103,9 @@ function Wait-Calculation($xl, $wb, [int] $seconds) {
   # to force full calculation reports xlPending (2) for as long as it is open, so that state counts as done there.
   $deadline = (Get-Date).AddSeconds($seconds)
   while ($true) {
-    $state = [int]$xl.CalculationState
+    $state = $xl.CalculationState
+    if ($null -eq $state) { throw 'Excel gave no calculation state' }
+    $state = [int]$state
     if ($state -eq 0 -or ($state -eq 2 -and $wb.ForceFullCalculation)) { return @('done', 'calculating', 'pending')[$state] }
     if ((Get-Date) -gt $deadline) { throw "calculation still $(@('done', 'calculating', 'pending')[$state]) after $seconds s" }
     Start-Sleep -Milliseconds 200
@@ -108,6 +145,8 @@ function Open-Book($xl, [string] $path, [bool] $readOnly) {
 
 $xl = $null; $wb = $null; $excelPid = 0
 try {
+  $registered = [XlCom.BusyFilter]::Register(1000 * [int]$spec.calc_timeout_s)
+  if ($registered -ne 0) { throw ('the busy filter did not register: 0x{0:X8}' -f $registered) }
   $xl = New-Object -ComObject Excel.Application
   $p = [uint32]0; [void][XlCom.Win]::GetWindowThreadProcessId([IntPtr]$xl.Hwnd, [ref]$p); $excelPid = [int]$p
   Set-Content -LiteralPath (Join-Path $dir 'excel.pid') -Value $excelPid
@@ -144,7 +183,10 @@ try {
   $result.ok = $true
 } catch {
   $result.error = $_.Exception.Message
+  $result.error_line = $_.InvocationInfo.ScriptLineNumber
 } finally {
+  # Closing and quitting wait for a busy Excel too, but briefly: the stop by process ID below is what ends it.
+  [XlCom.BusyFilter]::LimitMs = [Math]::Min([XlCom.BusyFilter]::LimitMs, 10000)
   try { if ($wb) { $wb.Close($false) } } catch { }
   try { if ($xl) { $xl.Quit() } } catch { }
   foreach ($o in @($wb, $xl)) { if ($o) { try { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($o) } catch { } } }
@@ -156,5 +198,6 @@ try {
     if ($left -and $left.ProcessName -eq 'EXCEL') { Stop-Process -Id $excelPid -Force; $result.killed_after_quit = $true }
   }
   $result.timings_ms.end = $sw.ElapsedMilliseconds
+  $result.busy_retries = [XlCom.BusyFilter]::Retries
   $result | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $dir 'result.json') -Encoding UTF8
 }

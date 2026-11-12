@@ -17,6 +17,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import time
 
 HERE = pathlib.Path(__file__).resolve().parent
 POWERSHELL = ["powershell.exe", "-NoProfile", "-NonInteractive"]
@@ -40,16 +41,31 @@ def windows_temp() -> tuple[pathlib.Path, str]:
     return pathlib.Path(wsl), win
 
 
-def stop(pid_file: pathlib.Path, program: str) -> dict | None:
-    """Stop the process whose ID the job wrote, if it is still the named program."""
+def recorded(pid_file: pathlib.Path) -> int | None:
+    """The process ID the job wrote, or None while the file is missing or still empty."""
     try:
-        pid = int(pid_file.read_text(encoding="utf-8-sig").strip())
+        return int(pid_file.read_text(encoding="utf-8-sig").strip())
     except (OSError, ValueError):
         return None
+
+
+def stop(pid_file: pathlib.Path, program: str) -> dict | None:
+    """Stop the process whose ID the job wrote, if it is still the named program and started before the job wrote it.
+
+    A process that started later only reuses the ID of one that has ended.
+    """
+    pid = recorded(pid_file)
+    if pid is None:
+        return None
+    written = int(pid_file.stat().st_mtime) + 5
     script = (f"$p = Get-Process -Id {pid} -ErrorAction SilentlyContinue; "
-              f"if ($p -and $p.ProcessName -eq '{program}') {{ Stop-Process -Id {pid} -Force; 'stopped' }} else {{ 'gone' }}")
-    done = subprocess.run([*POWERSHELL, "-Command", script], capture_output=True, text=True, timeout=60)
-    return {"pid": pid, "program": program, "outcome": done.stdout.strip()}
+              f"if ($p -and $p.ProcessName -eq '{program}' -and $p.StartTime.ToUniversalTime() -le [DateTimeOffset]::FromUnixTimeSeconds({written}).UtcDateTime) "
+              f"{{ Stop-Process -Id {pid} -Force; if ($p.WaitForExit(30000)) {{ 'stopped' }} else {{ 'still running' }} }} else {{ 'gone' }}")
+    try:
+        outcome = subprocess.run([*POWERSHELL, "-Command", script], capture_output=True, text=True, timeout=90).stdout.strip()
+    except subprocess.TimeoutExpired:
+        outcome = "the stop did not answer"
+    return {"pid": pid, "program": program, "outcome": outcome or "the stop printed nothing"}
 
 
 def run_job(book: pathlib.Path, read: list[str], sets: list[dict], save: pathlib.Path | None,
@@ -65,27 +81,46 @@ def run_job(book: pathlib.Path, read: list[str], sets: list[dict], save: pathlib
         spec = {"workbook": f"{work_win}\\in.xlsx", "out": f"{work_win}\\out.xlsx", "read": read, "set": sets,
                 "calc_timeout_s": calc_timeout, "hold_s": hold}
         (work / "job.json").write_text(json.dumps(spec), encoding="utf-8")
+        said = b""
+        driver = subprocess.Popen([*POWERSHELL, "-ExecutionPolicy", "Bypass", "-File", f"{work_win}\\excel-job.ps1",
+                                   "-Job", f"{work_win}\\job.json"], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, cwd=work)
         try:
-            subprocess.run([*POWERSHELL, "-ExecutionPolicy", "Bypass", "-File", f"{work_win}\\excel-job.ps1",
-                            "-Job", f"{work_win}\\job.json"], capture_output=True, timeout=job_timeout, cwd=work)
+            said = driver.communicate(timeout=job_timeout)[1]
         except subprocess.TimeoutExpired:
             runner["timed_out"] = True
+            # A limit that falls while Excel is starting finds no process ID yet. Ending PowerShell then would leave
+            # that Excel running with nothing to find it by, so give the job a moment to write the ID first.
+            deadline = time.monotonic() + 60
+            while recorded(work / "excel.pid") is None and driver.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.2)
+        report = work / "result.json"
+        if runner["timed_out"] or not report.exists():
+            # The job's PowerShell is past its limit, or ended before it could quit its Excel.
             for pid_file, program in (("excel.pid", "EXCEL"), ("ps.pid", "powershell")):
+                if program == "powershell" and driver.poll() is not None:
+                    continue  # It has ended, so its ID could only name another process by now.
                 outcome = stop(work / pid_file, program)
                 if outcome:
                     runner["stopped"].append(outcome)
-        report = work / "result.json"
+        if driver.poll() is None:
+            driver.kill()
+            driver.communicate()
         if report.exists():
             result = json.loads(report.read_text(encoding="utf-8-sig"))
         else:
-            result = {"ok": False, "error": "the job ended without a result" + (" (timed out)" if runner["timed_out"] else "")}
+            why = " (timed out)" if runner["timed_out"] else ": " + (said.decode(errors="replace").strip()[-800:] or "PowerShell printed no error")
+            result = {"ok": False, "error": "the job ended without a result" + why}
         if save and result.get("ok"):
             shutil.copyfile(work / "out.xlsx", save)
             result["saved"] = str(save)
         result["runner"] = runner
         return result
     finally:
-        shutil.rmtree(work, ignore_errors=True)
+        for _ in range(20):  # An Excel that has just ended can hold its workbook for a moment longer.
+            shutil.rmtree(work, ignore_errors=True)
+            if not work.exists():
+                break
+            time.sleep(0.5)
         if work.exists():
             print(f"excel.py: could not delete the job folder {work}", file=sys.stderr)
 
