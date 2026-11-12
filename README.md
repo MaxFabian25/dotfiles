@@ -177,7 +177,8 @@ whose branches are gone deletes a note it finds, because that note is another re
 After a pull that changed skills or packages, it runs `skill_listing.py`, which warns when Claude Code
 lists skills without their descriptions. `clean NAME` removes the worktrees once `origin/main` has them.
 `status` names what runs on the machine and lists every open release worktree with its commits, uncommitted
-files and the files it changes; `start` lists the other open releases.
+files and the files it changes; `start` lists the other open releases. Under each release both name the T3 Code
+thread it was started in, which `start` notes in `t3-thread` beside the worktrees when `T3CODE_THREAD_ID` is set.
 For a skill description change, `skill_triggers.py` counts how often the installed skills load in Claude Code for a
 set of prompts, and `codex_triggers.py` does the same in Codex. Measure the draft first, then release, then run the
 same prompts again after the pull. On Linux, `skill_draft.py DRAFT_SKILL.md -- COMMAND` runs either tool with the

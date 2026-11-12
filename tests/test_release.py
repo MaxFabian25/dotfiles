@@ -39,6 +39,10 @@ class ReleaseTest(unittest.TestCase):
         tailnet = patch.object(release, 'tailnet', return_value=None)  # no test asks the machine's own Tailscale
         tailnet.start()
         self.addCleanup(tailnet.stop)
+        environment = patch.dict(os.environ)  # start notes the T3 thread it runs in, so no test inherits one
+        environment.start()
+        self.addCleanup(environment.stop)
+        os.environ.pop('T3CODE_THREAD_ID', None)
         self.root = Path(self.temp.name)
         self.key = self.root / 'release'
         subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'release', '-f', str(self.key)], check=True)
@@ -717,6 +721,43 @@ class ReleaseTest(unittest.TestCase):
             '  first/public: 2 uncommitted: content, tests/notes.py',
             '  later/private: on origin/main and clean',
             '  later/public: on origin/main and clean'])
+
+    def test_status_and_a_later_start_name_the_t3_thread_that_started_each_release(self):
+        with patch.dict(os.environ, {'T3CODE_THREAD_ID': 'thread-first'}):
+            release_main(['start', 'first', *self.options()], self.public)
+        (self.worktrees / 'first/public/content').write_text('edited\n', encoding='utf-8')
+        with redirect_stdout(io.StringIO()) as output:
+            release_main(['start', 'later', *self.options()], self.public)
+        self.assertIn('Other open releases; read them before you edit the same files:\n'
+                      '  first/public: 1 uncommitted: content\n'
+                      '  first: T3 thread thread-first', output.getvalue())
+        with patch.object(release, 'running', return_value=[]), redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(release_main(['status', *self.options()], self.public), 0)
+        self.assertEqual(output.getvalue().splitlines()[1:], [
+            f'Release worktrees under {self.worktrees}:',
+            '  first/private: on origin/main and clean',
+            '  first/public: 1 uncommitted: content',
+            '  first: T3 thread thread-first',
+            '  later/private: on origin/main and clean',
+            '  later/public: on origin/main and clean'])
+
+    def test_a_start_outside_t3_drops_the_thread_noted_by_an_abandoned_release_of_its_name(self):
+        release.thread_note(self.worktrees / 'again').parent.mkdir(parents=True)
+        release.thread_note(self.worktrees / 'again').write_text('thread-abandoned\n', encoding='utf-8')
+        release_main(['start', 'again', *self.options()], self.public)
+        with patch.object(release, 'running', return_value=[]), redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(release_main(['status', *self.options()], self.public), 0)
+        self.assertNotIn('thread', output.getvalue())
+
+    def test_status_names_an_unreadable_thread_note_and_goes_on(self):
+        release_main(['start', 'first', *self.options()], self.public)
+        release_main(['start', 'later', *self.options()], self.public)
+        release.thread_note(self.worktrees / 'first').mkdir()
+        with patch.object(release, 'running', return_value=[]), redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(release_main(['status', *self.options()], self.public), 0)
+        lines = output.getvalue().splitlines()
+        self.assertTrue(lines[4].startswith('  first: T3 thread unreadable: '), lines)
+        self.assertEqual(lines[5:], ['  later/private: on origin/main and clean', '  later/public: on origin/main and clean'])
 
     def test_finish_stops_before_the_suite_on_an_owned_source_edited_without_its_pin(self):
         release_main(['start', 'owned', *self.options()], self.public)

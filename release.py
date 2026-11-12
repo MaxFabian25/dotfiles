@@ -13,7 +13,7 @@ that again before the push.
 It also stops first on a package whose selection changed without a new packaging number, and on an owned
 source edited without `--entry NAME --refresh-owned`, which every pull would refuse as a stale lock.
 One finish runs at a time on a machine; another stops and names it. `clean NAME` removes the worktrees and branches once origin/main has them. `status` lists what runs here and each open
-release worktree with the files it changes, and `start` lists the others. `wait --timeout SECONDS` returns
+release worktree with the files it changes and the T3 Code thread whose `start` made it, and `start` lists the others. `wait --timeout SECONDS` returns
 once no release, pull or sync runs on this machine. `finish NAME --detach` runs the finish as a systemd user unit,
 which a restart of the agent's host leaves running, after waiting up to --timeout seconds for another release,
 pull or sync here, and it starts again after such a wait, so it runs the engine that run may have pulled.
@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import hashlib
+import itertools
 import json
 import os
 from pathlib import Path
@@ -161,9 +162,36 @@ def status(args, public_repo, private_repo):
         print('Claimed: ' + claim)
     found = releases(args, public_repo, private_repo)
     print(f'Release worktrees under {args.worktrees}:' if found else f'No release worktrees under {args.worktrees}.')
-    for name, side, text in found:
-        print(f'  {name}/{side}: {text}')
+    for line in release_lines(args.worktrees, found):
+        print(line)
     return 0
+
+
+def release_lines(worktrees, found):
+    """The lines that list the release worktrees found, each release followed by the T3 Code thread its start noted,
+    so that a session that meets another open release can find the thread that owns it."""
+    lines = []
+    for name, rows in itertools.groupby(found, key=lambda row: row[0]):
+        lines += [f'  {name}/{side}: {text}' for _, side, text in rows]
+        if thread := noted_thread(worktrees / name):
+            lines.append(f'  {name}: {thread}')
+    return lines
+
+
+def thread_note(base):
+    """Where start notes the T3 Code thread it ran in, from T3CODE_THREAD_ID, beside the release's worktrees."""
+    return base / 't3-thread'
+
+
+def noted_thread(base):
+    """The T3 Code thread a release's start noted, as status names it, or None when start ran outside T3 Code."""
+    try:
+        thread = thread_note(base).read_text(encoding='utf-8').strip()
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeDecodeError) as error:
+        return f'T3 thread unreadable: {error}'
+    return f'T3 thread {thread}' if thread else None
 
 
 def places(args):
@@ -693,9 +721,14 @@ def start(args, public_repo, private_repo):
     # Both branches are new, so a note here is from an abandoned release of the same name, whose worktrees were
     # removed by hand. A start that stops above, on a branch that is still there, keeps the note for its finish.
     public_pushed(base).unlink(missing_ok=True)
+    thread = os.environ.get('T3CODE_THREAD_ID', '').strip()
+    if thread:
+        thread_note(base).write_text(thread + '\n', encoding='utf-8')
+    else:  # a note left by an abandoned release of the same name
+        thread_note(base).unlink(missing_ok=True)
     print(f'Edit {public} and {private}, then run release.py finish {args.name} --message FILE')
-    others = [f'  {name}/{side}: {text}' for name, side, text in releases(args, public_repo, private_repo)
-              if name != args.name and text != 'on origin/main and clean']
+    others = release_lines(args.worktrees, [row for row in releases(args, public_repo, private_repo)
+                                            if row[0] != args.name and row[2] != 'on origin/main and clean'])
     if others:
         print('Other open releases; read them before you edit the same files:', *others, sep='\n')
     return 0
