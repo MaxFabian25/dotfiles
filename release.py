@@ -37,6 +37,7 @@ import tempfile
 import time
 import tomllib
 
+import candidate_result
 import claims
 from portable import GIT, codex_home, exclusive_lock, lock_holder, native_cli_environment
 from pull import git
@@ -61,7 +62,6 @@ LOCK = 'setup/lock.toml'
 # The value of a tree key in a setup entry, which pins its source's tree. The rest of its line is the entry's own.
 TREE_VALUE = re.compile(rb'^([ \t]*tree[ \t]*=[ \t]*)"[^"\r\n]*"', re.MULTILINE)
 SETUP = 'setup/setup.toml'
-LEASE = 'Claude lease: '
 # The public .gitignore is an allowlist: this pattern drops every path that a later ! line does not bring back.
 ALLOWLIST_BASE = '/*'
 # Strings the public tree must never hold, such as host and account names. The list is private, because a public
@@ -659,21 +659,26 @@ def test_suite(public, private, log):
 
 def device_check(public, private, state):
     """Stop on a release that would stop the pull, which every device would then hit. Sync exits 1 when it
-    only has changes to apply, as every release does, but so does a crash, which skips the closing summary.
+    only has changes to apply, as every release does, but so does a crash, which writes no result.
     Name each Claude plugin cache that running sessions hold: the pull swaps it at once when only its skills'
     Markdown text changes, and otherwise applies the rest of the release and replaces it once they exit."""
-    result = subprocess.run([sys.executable, '-B', str(public / 'sync.py'), '--candidate', '--public',
+    result = subprocess.run([sys.executable, '-B', str(public / 'sync.py'), '--candidate', '--json', '--public',
                              str(public / 'setup'), '--private', str(private / 'setup')],
                             cwd=public, capture_output=True, text=True, encoding='utf-8', timeout=1800)
-    if result.returncode not in (0, 1) or 'Managed changes:' not in result.stdout:
-        sys.stderr.write(result.stdout + result.stderr)
-        raise RuntimeError(f'the pull on this device would stop on this release (sync exited {result.returncode}); '
-                           f'{state}')
-    for line in result.stdout.splitlines():
-        if line.startswith(LEASE):
-            print(f'{line}; the pull here swaps it at once if only skill text changes, and otherwise applies the '
-                  'rest of the release and replaces that cache once they exit',
-                  flush=True)
+    stopped = f'sync exited {result.returncode}'
+    try:
+        candidate = candidate_result.read(result.stdout)
+    except ValueError as error:
+        candidate = None
+        if result.returncode in (0, 1):
+            stopped += f'; {error}' if result.stdout.strip() else ' and printed no result'
+    if result.returncode not in (0, 1) or candidate is None or candidate.blocking:
+        sys.stderr.write(('' if candidate else result.stdout) + result.stderr)
+        raise RuntimeError(f'the pull on this device would stop on this release ({stopped}); {state}')
+    for held in candidate.held:
+        print(f'{held.lease}; the pull here swaps it at once if only skill text changes, and otherwise applies the '
+              'rest of the release and replaces that cache once they exit',
+              flush=True)
 
 
 def push(root):

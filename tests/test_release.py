@@ -17,7 +17,13 @@ def git(root, *args):
     return subprocess.check_output(['git', '-C', str(root), *args], stderr=subprocess.DEVNULL).decode().strip()
 
 
-SYNC_WITH_CHANGES = 'print("Managed changes: 1; blocking issues: 0.")\nraise SystemExit(1)\n'
+def sync_with_changes(*held):
+    """A worktree's sync.py whose candidate check finds one change to apply and the held Claude caches."""
+    result = json.dumps({'blocking': 0, 'held': list(held)})
+    return f'print({result!r})\nraise SystemExit(1)\n'
+
+
+SYNC_WITH_CHANGES = sync_with_changes()
 PASSING_TEST = 'import unittest\n\n\nclass Seed(unittest.TestCase):\n    def test_passes(self):\n        pass\n'
 FAILING_TEST = PASSING_TEST.replace('        pass', '        self.fail("broken")')
 ALLOWLIST = '/*\n!/.gitignore\n!/content\n!/doc\n!/sync.py\n!/tests/\n!/tests/**\n__pycache__/\n.sync/\n'
@@ -511,8 +517,8 @@ class ReleaseTest(unittest.TestCase):
 
     def test_finish_pushes_and_names_claude_sessions_holding_a_plugin_it_replaces(self):
         release_main(['start', 'held', *self.options()], self.public)
-        held = 'print("Claude lease: plugin:claude:kit@m at /cache/kit/1.0.0, held by running Claude processes 4242")\n'
-        (self.worktrees / 'held/public/sync.py').write_text(held + SYNC_WITH_CHANGES, encoding='utf-8')
+        held = sync_with_changes({'identity': 'plugin:claude:kit@m', 'cache': '/cache/kit/1.0.0', 'holders': [4242]})
+        (self.worktrees / 'held/public/sync.py').write_text(held, encoding='utf-8')
         message = self.root / 'message'
         message.write_text('Hold the plugin\n', encoding='utf-8')
         finish = ['finish', 'held', '--message', str(message), '--push', *self.options()]
@@ -520,7 +526,7 @@ class ReleaseTest(unittest.TestCase):
             self.assertEqual(release_main(finish, self.public), 0)
         self.assertIn('Claude lease: plugin:claude:kit@m at /cache/kit/1.0.0, held by running Claude processes 4242; '
                       'the pull here swaps it at once if only skill text changes', output.getvalue())
-        self.assertEqual(git(self.public_origin, 'show', 'main:sync.py'), (held + SYNC_WITH_CHANGES).strip())
+        self.assertEqual(git(self.public_origin, 'show', 'main:sync.py'), held.strip())
 
     def test_a_pushed_finish_says_which_of_the_users_other_machines_are_online(self):
         status = {'Self': {'UserID': 7, 'HostName': 'here', 'OS': 'linux'}, 'Peer': {
