@@ -15,6 +15,11 @@ The reviewer writes the `Reviewed:` lines into the findings file, each on a line
 it, and only when it has read the code and no finding of its own should hold the release back. The author does
 not write them. Say for each finding whether it holds the release back.
 
+The author names the findings file without "report" or "findings" in its name, such as `review-1.md`. Claude Code
+refuses a helper agent's Write to some file names and tells it to return its findings as text, and the reviewer
+then cannot write its lines: in a test on 12 November 2026, version 2.1.322 refused `findings.md` and
+`report-values-review-1.md` and wrote `values-review-1.md` and `report-values.txt`.
+
 A line covers the lines the branch adds to and removes from its code files. Adding, removing or changing a line
 changes it, so after a fix run `review NAME` again and take the new code back to its reviewer. Another
 session's edit elsewhere in the same file does not change it; `finish` stops on that separately. Neither does
