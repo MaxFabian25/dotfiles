@@ -300,6 +300,7 @@ class PullDeliversHomeFilesTest(unittest.TestCase):
         args = SimpleNamespace(root=self.public, private=self.private, update=False, apply=True, notes=False, wait=0)
         with patch('pull.Path.home', return_value=self.home), patch('pull.paired'), patch('pull.git', return_value='0' * 40), \
                 patch('pull.install_tools', side_effect=RuntimeError('mise install exited 1')), \
+                patch.object(pull.sys, 'platform', 'linux'), \
                 contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(RuntimeError, 'mise install'):
             pull.run(args)
         self.assertEqual((self.home / '.local/bin/tool').read_text(), 'tool 1\n')
@@ -308,7 +309,7 @@ class PullDeliversHomeFilesTest(unittest.TestCase):
         (self.public / 'sync.py').write_text('raise SystemExit(0)\n')
         args = SimpleNamespace(root=self.public, private=None, update=False, apply=True, notes=False, wait=0)
         with patch('pull.Path.home', return_value=self.home), patch('pull.paired'), patch('pull.install_tools'), \
-                patch('pull.git', return_value='0' * 40):
+                patch('pull.git', return_value='0' * 40), patch.object(pull.sys, 'platform', 'linux'):
             self.assertEqual(pull.run(args), 0)
         self.assertFalse((self.home / '.local/bin').exists())
 
