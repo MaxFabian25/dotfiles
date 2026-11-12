@@ -121,6 +121,61 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(git(self.private_origin, 'log', '-1', '--format=%B', 'main'),
                          'Pair the content change\n\nWith a body.')
 
+    def test_finish_stops_before_any_work_on_a_message_file_whose_subject_runs_into_its_body(self):
+        release_main(['start', 'run-on', *self.options()], self.public)
+        for tree in ('public', 'private'):
+            (self.worktrees / 'run-on' / tree / 'content').write_text('second\n', encoding='utf-8')
+        good, bad = self.root / 'message', self.root / 'run-on-message'
+        good.write_text('Change the content\n\nWith a body.\n', encoding='utf-8')
+        bad.write_text('Change the content\nwith a body that starts on line 2.\n', encoding='utf-8')
+        started = AssertionError('the finish, or its unit, was started')
+        for option in ('--message', '--private-message', '--pair-message'):
+            for detach in ([], ['--detach']):
+                with self.subTest(option=option, detach=detach):
+                    files = {'--message': good, '--private-message': good, option: bad}
+                    argv = ['finish', 'run-on', *(part for name, file in files.items() for part in (name, str(file))),
+                            '--push', *detach, *self.options()]
+                    errors = io.StringIO()
+                    with redirect_stderr(errors), patch.object(release, 'detach_command', side_effect=started), \
+                            patch.object(release, 'wait', side_effect=started), \
+                            patch.object(release, 'finish', side_effect=started):
+                        self.assertEqual(release_main(argv, self.public), 3)
+                    self.assertIn(f'Release stopped: {option} {bad}: line 2 is not blank', errors.getvalue())
+                    self.assertIn('nothing was started' if detach else 'this run committed nothing', errors.getvalue())
+        bad.write_text('\nChange the content\nwith a body under a blank first line.\n', encoding='utf-8')
+        errors = io.StringIO()
+        with redirect_stderr(errors):
+            self.assertEqual(release_main(['finish', 'run-on', '--message', str(bad), '--private-message', str(good),
+                                           *self.options()], self.public), 3)
+        self.assertIn('line 3 is not blank', errors.getvalue())
+        for text, reason in (('', ' holds no text'), (' \n\n', ' holds no text'), (None, ' cannot be read: [Errno 2]'),
+                             ('Change the content\n\xa0\nwith a line 2 that git does not count as blank.\n',
+                              ': line 2 is not blank')):
+            with self.subTest(text=text):
+                bad.unlink(missing_ok=True)
+                if text is not None:
+                    bad.write_text(text, encoding='utf-8')
+                errors = io.StringIO()
+                with redirect_stderr(errors):
+                    self.assertEqual(release_main(['finish', 'run-on', '--message', str(good), '--private-message',
+                                                   str(bad), *self.options()], self.public), 3)
+                self.assertIn(f'Release stopped: --private-message {bad}{reason}', errors.getvalue())
+        self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'first')
+
+    def test_finish_takes_a_message_of_one_line_or_of_a_subject_a_blank_line_and_a_body(self):
+        release_main(['start', 'worded-well', *self.options()], self.public)
+        for tree in ('public', 'private'):
+            (self.worktrees / 'worded-well' / tree / 'content').write_text('second\n', encoding='utf-8')
+        message, private_message = self.root / 'message', self.root / 'private-message'
+        message.write_text('Change the content', encoding='utf-8')
+        # Windows line ends, a second line of spaces and a form feed in the subject are all one subject to git.
+        private_message.write_bytes(b'\r\nChange the private\x0ccontent\r\n \t\r\nWith a body\r\nof two lines.\r\n')
+        self.assertEqual(release_main(['finish', 'worded-well', '--message', str(message), '--private-message',
+                                       str(private_message), '--push', *self.options()], self.public), 0)
+        self.assertEqual(git(self.public_origin, 'log', '-1', '--format=%s', 'main'), 'Change the content')
+        self.assertEqual(git(self.private_origin, 'log', '-2', '--format=%s', 'main').split('\n'),
+                         ['Pair "Change the content"', 'Change the private\x0ccontent'])
+
     def test_clean_keeps_an_unpushed_branch(self):
         release_main(['start', 'draft', *self.options()], self.public)
         (self.worktrees / 'draft/public/content').write_text('unpushed\n', encoding='utf-8')

@@ -70,14 +70,19 @@ faults go, and each test is a check.
   sees a failure.
 - `maintenance/ci-census/mutate.py` in the private dotfiles repository does this for the public
   dotfiles suite.
-- For the faults you choose yourself, such as one for each behaviour a change adds, run
-  `python3 -I scripts/plant.py SOURCE TEST PLANTS_JSON [ROOT]` from this skill's folder. The JSON
-  file lists `[label, old, new]` plants. Each runs TEST in its own copy of ROOT, without a sandbox,
-  after the unchanged copy has passed, and prints as CAUGHT, MISSED, TIMED OUT or NOT APPLIED. ROOT
-  must hold every file TEST reads, or the unchanged copy fails and the script prints the end of that
-  run. A CAUGHT line names the tests that failed: check that they are the tests of the planted
-  behaviour, because a test that fails for another reason, such as one that fails now and then on a
-  busy machine, counts as CAUGHT too.
+- For the faults you choose yourself, such as one for each behaviour a change adds, run `python3 -I
+  scripts/plant.py SOURCE TEST PLANTS_JSON [ROOT] [-- TEST_ARGUMENT...]` from this skill's folder.
+  The JSON file lists `[label, old, new]` plants. Each runs TEST in its own copy of ROOT, without a
+  sandbox, after the unchanged copy has passed, and prints as CAUGHT, MISSED, TIMED OUT or NOT
+  APPLIED. ROOT must hold every file TEST reads, or the unchanged copy fails and the script prints
+  the end of that run. Everything after `--` goes to TEST as its arguments, such as `-- -k finish`
+  to run only some tests of a unittest file. Write `{fresh}` in an argument for a TEST that needs a
+  folder that does not exist yet, such as `-- {fresh}`: each run gets the path of a new one, which
+  is removed when the run ends. A CAUGHT line names the tests that failed, from unittest's `FAIL:`
+  and `ERROR:` headings or, in a run without those, from lines a TEST prints as `FAIL`, two spaces
+  and the check's name: check that they are the tests of the planted behaviour, because a test that
+  fails for another reason, such as one that fails now and then on a busy machine, counts as CAUGHT
+  too.
 
 ## Report
 

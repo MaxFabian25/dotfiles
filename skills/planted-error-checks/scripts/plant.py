@@ -1,16 +1,21 @@
 """Plant one defect at a time in a copy of a source file and run its test file on each copy.
 
-Usage: python3 -I plant.py SOURCE TEST PLANTS_JSON [ROOT]
+Usage: python3 -I plant.py SOURCE TEST PLANTS_JSON [ROOT] [-- TEST_ARGUMENT...]
 
 PLANTS_JSON holds a list of [label, old, new]: each plant replaces the one place where `old` occurs in SOURCE
 with `new`. ROOT is the folder copied for each run, which must hold SOURCE, TEST and every file TEST reads; it
 defaults to SOURCE's folder. TEST runs from its own folder in the copy as `python -I -B TEST`, so it must find
-SOURCE by a path relative to itself.
+SOURCE by a path relative to itself. Everything after `--` is passed to TEST as its arguments. In each of them,
+`{fresh}` becomes the path of a folder that does not exist yet, a new one for each run, for a TEST that writes
+its results to a folder it must create itself. The folder goes when its run ends.
 
 Prints CAUGHT, MISSED, TIMED OUT or NOT APPLIED for each plant, after the unchanged copy has passed. A CAUGHT
-line names the tests that failed, or the run's last line when it names none, as a plant that breaks the import
-does: check that those are the tests of the planted behaviour. Exits 0 when every plant was caught, 1 when one
-was not, and 2, with the reason on stderr, when the unchanged copy fails or the arguments are wrong.
+line names the tests that failed, from unittest's `FAIL: name` and `ERROR: name` headings or, in a run without
+those, from lines that a TEST of its own making prints as `FAIL`, two spaces and the check's name, which ends at
+the next two spaces. It gives the run's last line when the run names none, as a plant that breaks the import
+does. Check that those are
+the tests of the planted behaviour. Exits 0 when every plant was caught, 1 when one was not, and 2, with the
+reason on stderr, when the unchanged copy fails or the arguments are wrong.
 """
 import json
 from pathlib import Path
@@ -22,19 +27,23 @@ import tempfile
 
 LIMIT = 1800  # seconds for one run of TEST
 FAILED = re.compile(r'^(?:FAIL|ERROR): (\S+)', re.MULTILINE)  # unittest's heading of a failed test
+# A failed check of a TEST that prints its own lines, such as "FAIL  totals match  expected 3, got 4"
+FAILED_CHECK = re.compile(r'^FAIL  (\S.*?)(?:  |$)', re.MULTILINE)
+FRESH = '{fresh}'  # in a TEST argument, the path of a folder that does not exist yet
 TAIL = 40  # lines of a failed unchanged run that stderr shows
 NAMED = 3  # failed tests a CAUGHT line names
 
 
-def run(root, source, test, text):
+def run(root, source, test, text, arguments=()):
     """The exit status and output of TEST in a fresh copy of ROOT whose SOURCE holds text, or None and the limit
-    when it ran past it."""
+    when it ran past it. TEST gets the arguments, with FRESH as a path beside the copy that holds nothing yet."""
     with tempfile.TemporaryDirectory() as folder:
         copy = Path(folder) / root.name
         shutil.copytree(root, copy, symlinks=True, ignore=shutil.ignore_patterns('__pycache__', '.git', '.venv'))
         (copy / source.relative_to(root)).write_bytes(text.encode('utf-8'))
         try:
-            done = subprocess.run([sys.executable, '-I', '-B', test.name], cwd=copy / test.parent.relative_to(root),
+            passed = [argument.replace(FRESH, str(Path(folder) / f'{root.name}.fresh')) for argument in arguments]
+            done = subprocess.run([sys.executable, '-I', '-B', test.name, *passed], cwd=copy / test.parent.relative_to(root),
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=LIMIT)
         except subprocess.TimeoutExpired:
             return None, f'ran past {LIMIT} s'
@@ -42,8 +51,8 @@ def run(root, source, test, text):
 
 
 def failures(output):
-    """What a CAUGHT line says failed: the tests unittest names, or the run's last line."""
-    names = list(dict.fromkeys(FAILED.findall(output)))
+    """What a CAUGHT line says failed: the tests the run names, or the run's last line."""
+    names = list(dict.fromkeys(FAILED.findall(output) or FAILED_CHECK.findall(output)))
     if names:
         more = f' and {len(names) - NAMED} more' if len(names) > NAMED else ''
         return f'{", ".join(names[:NAMED])}{more} failed'
@@ -65,6 +74,9 @@ def load(path):
 
 
 def main(argv):
+    arguments = []
+    if '--' in argv:
+        argv, arguments = argv[:argv.index('--')], argv[argv.index('--') + 1:]
     if len(argv) not in (3, 4):
         print(__doc__, file=sys.stderr)
         return 2
@@ -81,7 +93,7 @@ def main(argv):
         return 2
     try:
         original = source.read_bytes().decode('utf-8')
-        status, output = run(root, source, test, original)
+        status, output = run(root, source, test, original, arguments)
     except (OSError, UnicodeDecodeError) as error:  # a SOURCE that is not UTF-8, or a ROOT that cannot be copied
         print(f'no copy of {root} could run with {source}: {error}', file=sys.stderr)
         return 2
@@ -96,7 +108,7 @@ def main(argv):
             print(f'NOT APPLIED {label}: the text to replace occurs {original.count(old)} times'
                   + (' and the plant changes nothing' if old == new else ''), flush=True)
             continue
-        status, output = run(root, source, test, original.replace(old, new))
+        status, output = run(root, source, test, original.replace(old, new), arguments)
         if status is None:
             print(f'TIMED OUT {label}: the test {output}, which shows no test of it', flush=True)
         elif status == 0:

@@ -250,6 +250,32 @@ def leaks(public, private, message=None):
     return hits
 
 
+def message_stop(args):
+    """Why a commit message file would give a commit the wrong subject or none, or None. Git takes every line up
+    to the first blank one as the subject, and pair() copies the public subject into the private pair commit. On
+    12 November 2026 a file whose body began on line 2 gave both commits a 483-character subject."""
+    for option, file in (('--message', args.message), ('--private-message', args.private_message),
+                         ('--pair-message', args.pair_message)):
+        if not file:
+            continue
+        try:
+            text = file.read_bytes().decode('utf-8', errors='replace')
+        except OSError as error:
+            raise RuntimeError(f'{option} {file} cannot be read: {error}; give the file that holds the message, '
+                               'then finish again') from error
+        # Lines and blanks as git counts them: it splits at newlines only, and drops the blank lines above the subject.
+        lines = [line.strip(' \t\r') for line in text.split('\n')]
+        first = next((number for number, line in enumerate(lines) if line), None)
+        if first is None:
+            return (f'{option} {file} holds no text, so git would refuse the commit, after the tests; write the '
+                    'subject on line 1, then finish again')
+        if first + 1 < len(lines) and lines[first + 1]:
+            return (f'{option} {file}: line {first + 2} is not blank, so git would take every line up to the first '
+                    f'blank one as the commit\'s subject; put the subject by itself on line {first + 1} and leave '
+                    f'line {first + 2} blank, with the body below it, then finish again')
+    return None
+
+
 def commit(root, message):
     git(root, 'add', '-A')
     git(root, 'commit', '-q', '-F', str(message.resolve()))
@@ -908,8 +934,10 @@ def detach(args, argv):
     for file in (args.message, args.private_message, args.reviewed):
         if file and not file.is_absolute():
             raise RuntimeError(f'--detach needs an absolute path for {file}, because the unit runs in {ENGINE}')
+    if stop := message_stop(args):  # here, like the next stop, not minutes later in the unit's log
+        raise RuntimeError(f'{stop}; nothing was started')
     base, public, private = places(args)
-    if stop := review_stop(public, private, args.reviewed, args.name):  # here, not minutes later in the unit's log
+    if stop := review_stop(public, private, args.reviewed, args.name):
         raise RuntimeError(f'{stop}; nothing was started')
     if not shutil.which('systemd-run'):
         raise RuntimeError('--detach needs systemd-run, which this machine lacks; run the finish in the foreground')
@@ -1055,6 +1083,8 @@ def dispatch(argv, report):
         if args.action == 'finish' and args.detach:
             return detach(args, sys.argv[1:] if argv is None else list(argv))
         if args.action == 'finish':
+            if stop := message_stop(args):  # before the wait for another release, and before any work
+                raise RuntimeError(f'{stop}; this run committed nothing')
             if args.report:
                 waited = bool(running())
                 if not wait(None, args.timeout):

@@ -15,6 +15,16 @@ TEST = ('from pathlib import Path\nimport sys\nimport unittest\nsys.path.insert(
         'from value import double\n\n\nclass Value(unittest.TestCase):\n'
         '    def test_double(self):\n        self.assertEqual(double(3), 6)\n\n\nunittest.main()\n')
 
+# A test of its own making: it takes a folder that must not exist yet, and prints a PASS or FAIL line per check.
+CHECKS = ('from pathlib import Path\nimport sys\nsys.path.insert(0, str(Path(__file__).parent))\n'
+          'from value import double, label\n\nevidence = Path(sys.argv[1])\nevidence.mkdir()\n'
+          'checks = [("doubles a number", double(3) == 6, f"got {double(3)}"), ("labels", label(1) == "n=1", ""),\n'
+          '          ("takes its second argument", sys.argv[2:] == ["--strict"], str(sys.argv[2:])),\n'
+          '          ("its folder is outside the copy", not evidence.resolve().is_relative_to(Path.cwd()), "")]\n'
+          'for name, passed, detail in checks:\n'
+          '    print(f"{\'PASS\' if passed else \'FAIL\'}  {name}" + ("" if passed else f"  {detail}"))\n'
+          'sys.exit(not all(passed for _, passed, _ in checks))\n')
+
 
 class Plant(unittest.TestCase):
     def setUp(self):
@@ -25,14 +35,14 @@ class Plant(unittest.TestCase):
         (self.root / 'code/value.py').write_text(SOURCE, encoding='utf-8')
         (self.root / 'code/test_value.py').write_text(TEST, encoding='utf-8')
 
-    def plant(self, plants, *root):
+    def plant(self, plants, *root, test='test_value.py'):
         """Run the script on a plants file that holds this list, this text or, for None, on a missing file."""
         file = self.root.parent / 'plants.json'
         file.unlink(missing_ok=True)
         if plants is not None:
             file.write_text(plants if isinstance(plants, str) else json.dumps(plants), encoding='utf-8')
         done = subprocess.run([sys.executable, '-I', '-B', str(SCRIPT), str(self.root / 'code/value.py'),
-                               str(self.root / 'code/test_value.py'), str(self.root.parent / 'plants.json'), *root],
+                               str(self.root / 'code' / test), str(self.root.parent / 'plants.json'), *root],
                               capture_output=True, text=True, timeout=300)
         return done.returncode, done.stdout.splitlines(), done.stderr
 
@@ -50,6 +60,28 @@ class Plant(unittest.TestCase):
         self.assertEqual(self.plant([tripled], str(self.root))[:2],
                          (0, ['CAUGHT triples: test_double failed', '1 of 1 plants caught']))
         self.assertEqual(self.plant([relabelled])[0], 1)
+
+    def test_a_test_gets_the_arguments_after_two_dashes_with_a_fresh_folder_for_each_run(self):
+        (self.root / 'code/test_checks.py').write_text(CHECKS, encoding='utf-8')
+        both = ['relabels and triples', 'return number * 2\n\n\ndef label(number):\n    return f"n={number}"',
+                'return number * 3\n\n\ndef label(number):\n    return f"N={number}"']
+        plants = [['triples', 'number * 2', 'number * 3'], both]
+        status, lines, error = self.plant(plants, '--', '{fresh}', '--strict', test='test_checks.py')
+        self.assertEqual((status, lines), (0, ['CAUGHT triples: doubles a number failed',
+                                               'CAUGHT relabels and triples: doubles a number, labels failed',
+                                               '2 of 2 plants caught']), error)
+        status, lines, error = self.plant(plants[:1], test='test_checks.py')  # without the arguments it needs
+        self.assertEqual((status, lines), (2, []))
+        self.assertIn('IndexError', error)
+        self.root = self.root.rename(self.root.parent / 'fresh')  # a ROOT of that name is still not the fresh folder
+        self.assertEqual(self.plant(plants[:1], str(self.root), '--', '{fresh}', '--strict', test='test_checks.py')[:2],
+                         (0, ['CAUGHT triples: doubles a number failed', '1 of 1 plants caught']))
+
+    def test_a_unittest_run_that_also_prints_a_fail_line_names_only_its_failed_tests(self):
+        printing = TEST.replace('        self.assert', '        print("FAIL  printed by the test")\n        self.assert')
+        (self.root / 'code/test_value.py').write_text(printing, encoding='utf-8')
+        self.assertEqual(self.plant([['triples', 'number * 2', 'number * 3']])[:2],
+                         (0, ['CAUGHT triples: test_double failed', '1 of 1 plants caught']))
 
     def test_a_caught_plant_that_fails_no_named_test_says_how_the_run_ended(self):
         status, lines, _ = self.plant([['breaks the syntax', 'def double(number):', 'def double(number:']])
