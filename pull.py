@@ -146,6 +146,23 @@ def install_tools(home, state):
     record.write_text(digest + '\n', encoding='utf-8')
 
 
+def home_files(private, state, apply):
+    """Deliver the private checkout's home files on Linux, the platform of the machines that use them, and name
+    each one written and each one left as it is. Whether any still differs from the release: one left as it is,
+    or without --apply one waiting to be delivered."""
+    if private is None or not sys.platform.startswith('linux'):
+        return False
+    from home_files import deliver
+    try:
+        delivery = deliver(private, Path.home(), state, apply=apply)
+    except (RuntimeError, OSError) as error:
+        print(f'Home files not delivered: {error}', file=sys.stderr, flush=True)
+        return True
+    for line in delivery.lines(apply):
+        print(line, file=sys.stderr if line.startswith('Home file left') else sys.stdout, flush=True)
+    return bool(delivery.left) or (not apply and bool(delivery.written))
+
+
 def seconds(text):
     value = float(text)
     if not 0 <= value < float('inf'):
@@ -193,6 +210,9 @@ def run(args):
         result = subprocess.run(command, cwd=root, timeout=1200)
         # 1 after --apply: sync wrote what it could and nothing blocked it, but some managed changes did not take.
         # The pair is not applied, so it gets no receipt, but the mise config was written, so its tools still install.
+        # Before the tools, so that a failed install holds back no home file. It stops nothing itself, so the
+        # receipt and the tools follow whatever it finds.
+        left = home_files(private, state, args.apply) if result.returncode in (0, 1) else False
         if result.returncode == 1 and args.apply:
             print('Dotfiles pull: managed changes remain after applying, listed above under drift; the pair is not '
                   'recorded as applied, and the next pull retries them', file=sys.stderr)
@@ -208,7 +228,8 @@ def run(args):
                 data = {'at': datetime.now(timezone.utc).isoformat(), **commits}
                 Files(state / 'receipt-backups').write(receipt, (json.dumps(data, indent=2) + '\n').encode(), expected=before)
             install_tools(Path.home(), state)
-        return result.returncode
+        # 1 from a pair that is applied and recorded says that a home file still differs from it.
+        return result.returncode or int(left)
 
 
 def main():

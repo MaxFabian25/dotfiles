@@ -124,6 +124,15 @@ does not pin stops the pull before either checkout moves. Sign release commits w
 uv run --locked python pull.py --root . --private ../dotfiles-private --update --apply
 ```
 
+On Linux, a pull that sync did not block also copies each file under the private checkout's
+`config/agent-env/home/` to the same path under the home folder, with the source's executable bit
+(`home_files.py`). It replaces a copy only when the file is absent or still holds what a pull last delivered
+there, which `~/.local/state/dotfiles/home-files.json` records, and it saves each replaced copy under
+`~/.local/state/dotfiles/home-file-backups/`. A copy that was edited on the device stays as it is: the pull
+prints `Home file left as it is` with its path, applies the rest, records the pair and exits 1. A first pull
+has no record, so it takes over only the copies that already match. A pull removes no file that a release
+dropped from that folder. Without `--apply` it prints `Home file to deliver` for each file and exits 1.
+
 `release.py` runs a whole delivery from this checkout. `start NAME` makes a worktree of each repository
 at `origin/main` under `~/worktrees/NAME`. After editing there, `finish NAME --message FILE --push --pull`
 locks and builds any `--entry` and `--package`, commits both worktrees, rebases them onto a newer
