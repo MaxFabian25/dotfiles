@@ -7,7 +7,8 @@
 REF is a workbook-scoped name or a Sheet!A1 / Sheet!A1:B9 range. Excel opens a copy in a hidden instance of its own,
 rebuilds the calculation and reads each REF. With --set it changes those cells, recalculates and reads again. It then
 saves the copy, reopens it and reads once more. Prints the result as JSON, or writes it to --json and prints one line.
-Exits 0 when Excel finished the job and 1 when it did not.
+Exits 0 when Excel finished the job, every read gave an answer and the error scan could tell for every sheet, and 1
+otherwise.
 """
 
 import argparse
@@ -74,6 +75,35 @@ def stop(pid_file: pathlib.Path, program: str) -> dict | None:
     return {"pid": pid, "program": program, "outcome": outcome or "the stop printed nothing"}
 
 
+def unanswered(result: dict) -> tuple[int, list[str]]:
+    """How many reads failed, and a sentence for each kind of answer the result lacks: a read, or a sheet's error scan."""
+    # A REF that fails at every stage counts once for each, because each stage's value is missing.
+    stages = (("at open", result.get("base")), ("after the sets", result.get("after")),
+              ("after the save and reopen", (result.get("reopened") or {}).get("values")))
+    reads = [(ref, stage, entry) for stage, entries in stages for ref, entry in (entries or {}).items()]
+    failed = [read for read in reads if "read_error" in read[2]]
+    said = []
+    if failed:
+        ref, stage, entry = failed[0]
+        said.append(f"{len(failed)} of {len(reads)} reads failed; the first is {ref} {stage}: {entry['read_error']}")
+    skipped = result.get("errors_unscanned") or []
+    if skipped:
+        said.append(f"the error scan could not list the error cells of {len(skipped)} sheet{'s' if len(skipped) > 1 else ''}; "
+                    f"the first is {skipped[0]['sheet']}: {skipped[0]['reason']}")
+    return len(failed), said
+
+
+def settle(result: dict) -> None:
+    """Fail a result that lacks an answer, keeping what Excel itself said went wrong.
+
+    Where Excel finished, the copy it saved is whole. The result is not: a caller that reads only ok or the exit
+    status would take a read that failed for an empty value, or a sheet nobody scanned for one without errors.
+    """
+    gaps = unanswered(result)[1]
+    if gaps:
+        result["ok"], result["error"] = False, "; ".join(([result["error"]] if result.get("error") else []) + gaps)
+
+
 def run_job(book: pathlib.Path, read: list[str], sets: list[dict], save: pathlib.Path | None,
             job_timeout: int, calc_timeout: int, hold: int) -> dict:
     temp_wsl, temp_win = windows_temp()
@@ -119,6 +149,7 @@ def run_job(book: pathlib.Path, read: list[str], sets: list[dict], save: pathlib
         if save and result.get("ok"):
             shutil.copyfile(work / "out.xlsx", save)
             result["saved"] = str(save)
+        settle(result)
         result["runner"] = runner
         return result
     finally:
@@ -155,9 +186,8 @@ def main() -> int:
     if args.json:
         args.json.write_text(json.dumps(result, indent=1), encoding="utf-8")
         load = (result.get("open") or {}).get("load")
-        stages = (result.get("base"), result.get("after"), (result.get("reopened") or {}).get("values"))
-        unread = sum("read_error" in entry for stage in stages for entry in (stage or {}).values())
-        print(f"excel.py: ok={result.get('ok')} load={load} errors={len(result.get('errors') or [])} read_errors={unread} error={result.get('error')}")
+        print(f"excel.py: ok={result.get('ok')} load={load} errors={len(result.get('errors') or [])} "
+              f"unscanned_sheets={len(result.get('errors_unscanned') or [])} read_errors={unanswered(result)[0]} error={result.get('error')}")
     else:
         print(json.dumps(result, indent=1))
     return 0 if result.get("ok") else 1

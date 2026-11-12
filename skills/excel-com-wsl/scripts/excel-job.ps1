@@ -4,7 +4,8 @@ job names: it opens the given workbook copy in a new, hidden Excel
 instance with macros, link updates and alerts off, rebuilds the calculation, reads and sets the given references,
 saves a copy, reopens that copy, and quits. It writes result.json beside job.json, and excel.pid and ps.pid first,
 so excel.py can stop this instance, and only this instance, after a timeout. A call that Excel turns away because it
-is busy waits and goes again, for up to the calculation timeout.
+is busy waits and goes again, for up to the calculation timeout. ok here says that Excel finished the job; excel.py
+turns it to false when a read failed or the error scan could not tell for a sheet.
 #>
 param([Parameter(Mandatory = $true)] [string] $Job)
 $ErrorActionPreference = 'Stop'
@@ -12,7 +13,7 @@ $dir = Split-Path -Parent $Job
 $spec = Get-Content -Raw -LiteralPath $Job | ConvertFrom-Json
 Set-Content -LiteralPath (Join-Path $dir 'ps.pid') -Value $PID
 $sw = [Diagnostics.Stopwatch]::StartNew()
-$result = [ordered]@{ ok = $false; error = $null; error_line = $null; busy_retries = 0; excel = $null; open = $null; settings = $null; base = $null; errors = $null; after = $null; reopened = $null; timings_ms = [ordered]@{} }
+$result = [ordered]@{ ok = $false; error = $null; error_line = $null; busy_retries = 0; excel = $null; open = $null; settings = $null; base = $null; errors = $null; errors_unscanned = $null; after = $null; reopened = $null; timings_ms = [ordered]@{} }
 $missing = [Type]::Missing
 $errorNames = @{ 2000 = '#NULL!'; 2007 = '#DIV/0!'; 2015 = '#VALUE!'; 2023 = '#REF!'; 2029 = '#NAME?'; 2036 = '#NUM!'; 2042 = '#N/A'; 2043 = '#GETTING_DATA'; 2045 = '#SPILL!'; 2046 = '#CONNECT!'; 2047 = '#BLOCKED!'; 2048 = '#UNKNOWN!'; 2049 = '#FIELD!'; 2050 = '#CALC!' }
 
@@ -116,19 +117,46 @@ function Test-Refused($caught) {
 }
 
 function Find-Errors($wb) {
-  $found = @()
+  # The formula cells holding errors on each sheet, and the sheets where this could not tell. SpecialCells throws the
+  # same 0x800A03EC, with a message in Excel's display language, when no cell matches and when it cannot look, as on
+  # a protected sheet. So when it throws, Excel counts the cells holding error values, which works on a protected
+  # sheet and takes milliseconds on a used range of the whole sheet: every cell with content, less the numbers, the
+  # texts and the booleans. A count of 0 is a clean sheet. So is a count that the typed-in error values make up, which
+  # this scan has never listed, where Excel can list those. A call that a busy Excel refused ends the job.
+  $found = @(); $unscanned = @()
   $sheets = $wb.Worksheets; Confirm-Answer $sheets 'the sheets'
   foreach ($ws in $sheets) {
-    $used = $ws.UsedRange; Confirm-Answer $used 'the used range of a sheet'
-    # SpecialCells throws when a sheet has no error cells. A call that a busy Excel refused is no such answer.
-    $cells = $null
-    try { $cells = $used.SpecialCells(-4123, 16) } catch { if (Test-Refused $_) { throw }; continue }
-    Confirm-Answer $cells 'the error cells of a sheet'
     $name = $ws.Name; Confirm-Answer $name 'the sheet name'
-    $address = $cells.Address($false, $false); Confirm-Answer $address 'the address of the error cells'
-    $found += "'$name'!" + $address
+    $used = $ws.UsedRange; Confirm-Answer $used 'the used range of a sheet'
+    $cells = $null; $why = $null
+    try { $cells = $used.SpecialCells(-4123, 16) } catch { if (Test-Refused $_) { throw }; $why = $_.Exception.Message }
+    if (-not $why) {
+      Confirm-Answer $cells 'the error cells of a sheet'
+      $address = $cells.Address($false, $false); Confirm-Answer $address 'the address of the error cells'
+      $found += "'$name'!" + $address
+      continue
+    }
+    $area = $used.Address($false, $false); Confirm-Answer $area 'the address of the used range'
+    $total = $null; $failed = $null
+    try { $total = $ws.Evaluate("COUNTA($area)-COUNT($area)-COUNTIF($area,`"*`")-COUNTIF($area,TRUE)-COUNTIF($area,FALSE)") } catch { if (Test-Refused $_) { throw }; $failed = $_.Exception.Message }
+    if (-not $failed) {
+      Confirm-Answer $total 'the count of cells holding error values'
+      # Evaluate hands back an error value, not an exception, for a formula Excel cannot work out.
+      if ($total -isnot [double]) { $failed = 'the count came back as ' + $(if ($total -is [int]) { (Convert-Cell $total).error } else { "$total" }) }
+      elseif ($total -lt 0) { $failed = "the count came back as $total" }
+    }
+    if ($failed) { $unscanned += [ordered]@{ sheet = $name; reason = "Excel could not list the formula cells holding errors ($why) and could not count the cells holding error values: $failed" }; continue }
+    if ($total -eq 0) { continue }
+    $constants = $null; $typed = 'unknown'
+    try { $constants = $used.SpecialCells(2, 16) } catch { if (Test-Refused $_) { throw }; $typed = "unknown ($($_.Exception.Message))" }
+    if ($typed -eq 'unknown') {
+      Confirm-Answer $constants 'the typed-in error values'
+      $typed = $constants.Count; Confirm-Answer $typed 'the count of typed-in error values'
+      if ($typed -ge $total) { continue }
+    }
+    $unscanned += [ordered]@{ sheet = $name; reason = "cells holding error values: $total, of which typed in: $typed; Excel could not list the others: $why" }
   }
-  return , $found
+  return @{ found = $found; unscanned = $unscanned }
 }
 
 function Wait-Calculation($xl, $wb, [int] $seconds) {
@@ -197,7 +225,7 @@ try {
   $xl.CalculateFullRebuild(); $result.settings.calculation_state = Wait-Calculation $xl $wb $spec.calc_timeout_s
   $result.timings_ms.rebuild = $sw.ElapsedMilliseconds
   $result.base = Read-Refs $wb $spec.read
-  $result.errors = Find-Errors $wb
+  $scan = Find-Errors $wb; $result.errors = $scan.found; $result.errors_unscanned = $scan.unscanned
 
   if ($spec.set.Count -gt 0) {
     foreach ($s in $spec.set) { $t = Get-Target $wb $s.ref; if ($t.Count -ne 1) { throw "set target $($s.ref) is not one cell" }; Set-Cell $t $s.value }

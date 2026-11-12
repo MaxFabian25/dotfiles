@@ -59,6 +59,23 @@ def build(out: pathlib.Path) -> None:
     sheet["A1"], sheet["A2"], sheet["A3"] = "=1/0", "=NA()", 5
     book.save(out / "errors.xlsx")
 
+    # Excel cannot list the error cells of a protected sheet, so the scan has to say which sheet it could not tell
+    # for. A sheet whose only error value is typed in has no formula cell holding an error, and stays clean.
+    book = openpyxl.Workbook()
+    sheet = book.active
+    sheet.title = "Open"
+    sheet["A1"] = "=NA()"
+    sheet = book.create_sheet("Typed")
+    sheet["A1"], sheet["A2"], sheet["A3"], sheet["A4"] = "#N/A", "=1+1", "text", True
+    sheet["A5"], sheet["A6"], sheet["A7"], sheet["A8"] = False, '=""', "TRUE", "=1=2"
+    sheet["A9"] = "x" * 300  # A text longer than the 255 characters a COUNTIF criterion may have.
+    for title, formula in (("Locked", "=1/0"), ("LockedClean", "=1+1")):
+        sheet = book.create_sheet(title)
+        sheet["A1"], sheet["B2"] = formula, "=2+2"
+        sheet.protection.sheet = True
+        sheet.protection.password = "synthetic"
+    book.save(out / "protected.xlsx")
+
     with zipfile.ZipFile(out / "tiny.xlsx") as source, zipfile.ZipFile(out / "damaged.xlsx", "w", zipfile.ZIP_DEFLATED) as target:
         for item in source.infolist():
             data = source.read(item.filename)
@@ -146,8 +163,9 @@ def main() -> int:
     temp, temp_win = windows_temp()
 
     def start(name: str, book: str, *args: str) -> subprocess.Popen:
-        return subprocess.Popen([sys.executable, "-I", str(EXCEL), str(evidence / book), "--json", str(evidence / f"{name}.json"), *args],
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        with (evidence / f"{name}.out").open("wb") as said:
+            return subprocess.Popen([sys.executable, "-I", str(EXCEL), str(evidence / book), "--json", str(evidence / f"{name}.json"), *args],
+                                    stdout=said, stderr=subprocess.DEVNULL)
 
     def finish(name: str, running: subprocess.Popen) -> tuple[dict, int]:
         code = running.wait(timeout=500)
@@ -173,6 +191,32 @@ def main() -> int:
     result, code = job("errors", "errors.xlsx", "--read", "S!A1", "--read", "S!A2", "--read", "S!A1:A3")
     check("error values come back by name", result["base"]["S!A1"].get("value") == {"error": "#DIV/0!"} and result["base"]["S!A2"].get("value") == {"error": "#N/A"}, result.get("base"))
     check("the error scan lists the cells", bool(result.get("errors")), result.get("errors"))
+    check("a scan that ran on every sheet leaves the job passing", code == 0 and result.get("errors_unscanned") == [],
+          {key: result.get(key) for key in ("ok", "error", "errors_unscanned")})
+
+    kept = evidence / "unread-saved.xlsx"
+    result, code = job("unread", "tiny.xlsx", "--read", "NoSuchName", "--read", "Result", "--save", str(kept))
+    said = (evidence / "unread.out").read_text(encoding="utf-8")
+    check("a read that failed fails the job", code == 1 and result.get("ok") is False
+          and (result.get("error") or "").startswith("2 of 4 reads failed; the first is NoSuchName at open: ")
+          and " ok=False " in said and " read_errors=2 " in said,
+          {key: result.get(key) for key in ("ok", "error")} | {"exit": code, "printed": said})
+    check("the reads that worked stay in a failed job's result", near((result.get("base") or {}).get("Result"), 110.25)
+          and near(((result.get("reopened") or {}).get("values") or {}).get("Result"), 110.25)
+          and "read_error" in (result.get("base") or {}).get("NoSuchName", {}), result.get("base"))
+    check("--save keeps the copy of a job that Excel finished with a failed read", kept.is_file() and result.get("saved") == str(kept), result.get("saved"))
+
+    result, code = job("protected", "protected.xlsx", "--read", "Open!A1")
+    skipped = result.get("errors_unscanned") or []
+    check("the error scan names a sheet whose error cells it could not list, and no clean sheet", result.get("errors") == ["'Open'!A1"]
+          and [entry.get("sheet") for entry in skipped] == ["Locked"]
+          and (skipped[0].get("reason") or "").startswith("cells holding error values: 1, of which typed in: unknown ("),
+          {key: result.get(key) for key in ("errors", "errors_unscanned")})
+    said = (evidence / "protected.out").read_text(encoding="utf-8")
+    check("an error scan that could not tell for a sheet fails the job", code == 1 and result.get("ok") is False
+          and "the error scan could not list the error cells of 1 sheet; the first is Locked: " in (result.get("error") or "")
+          and (result.get("base") or {}).get("Open!A1", {}).get("value") == {"error": "#N/A"} and " unscanned_sheets=1 " in said,
+          {key: result.get(key) for key in ("ok", "error", "base")} | {"exit": code, "printed": said})
 
     result, code = job("damaged", "damaged.xlsx", "--read", "Result")
     recorded = result.get("ok") is False and len((result.get("open") or {}).get("failed_loads") or result.get("error") or "") > 0
@@ -297,10 +341,31 @@ def main() -> int:
     silent = [name for name in ("no_range", "no_count", "no_formula", "no_value", "no_values") if "read_error" not in reads.get(name, {})]
     check("a range whose row and column counts Excel refused still reads whole", reads.get("no_rows", {}).get("values") == [[1], [2]], reads.get("no_rows"))
     check("a read that Excel refused is an error, not an empty value", bool(reads) and not silent, {name: reads.get(name) for name in silent} or reads)
-    found = scans.get("finds_cells", {}).get("found") == ["'S'!A1:A2"] and scans.get("no_error_cells", {}).get("found") == []
+    found = (scans.get("finds_cells") == {"found": ["'S'!A1:A2"], "unscanned": []}
+             and scans.get("no_error_cells") == {"found": [], "unscanned": []} and scans.get("typed_only") == {"found": [], "unscanned": []})
     check("the error scan of stand-in sheets lists cells, or none", found, scans)
-    silent = [name for name in ("no_sheets", "no_used_range", "refused_call", "no_cells") if "scan_error" not in scans.get(name, {})]
+    skipped = {name: [entry.get("sheet") for entry in scans.get(name, {}).get("unscanned") or []]
+               for name in ("cannot_list", "spilled_only", "spilled_untyped", "locked_typed_only", "count_is_an_error", "count_throws", "negative_count")}
+    check("an error scan that could not tell for a sheet names it, and no clean sheet",
+          skipped == {"cannot_list": ["Locked"], "spilled_only": ["Spill"], "spilled_untyped": ["Spill"], "locked_typed_only": ["Locked"],
+                      "count_is_an_error": ["Old"], "count_throws": ["Odd"], "negative_count": ["Odd"]}
+          and scans.get("cannot_list", {}).get("found") == ["'Open'!A1:A2"]
+          and scans["spilled_only"]["unscanned"][0]["reason"].startswith("cells holding error values: 3, of which typed in: 1; ")
+          and "of which typed in: unknown (" in scans["locked_typed_only"]["unscanned"][0]["reason"]
+          and "protected sheet" in scans["locked_typed_only"]["unscanned"][0]["reason"].split("; Excel could not list")[0]
+          and scans["negative_count"]["unscanned"][0]["reason"].endswith("the count came back as -1")
+          and scans["count_is_an_error"]["unscanned"][0]["reason"].endswith("the count came back as code 2029")
+          and scans["count_throws"]["unscanned"][0]["reason"].endswith("protected sheet.\""), scans)
+    silent = [name for name in ("no_sheets", "no_used_range", "no_cells", "refused_call", "no_count", "refused_count", "no_typed_count", "refused_typed", "no_typed_cells")
+              if "scan_error" not in scans.get(name, {})]
     check("an error scan that Excel refused is an error, not an empty list", bool(scans) and not silent, {name: scans.get(name) for name in silent} or scans)
+    failed = {"ok": False, "error": "Excel stopped", "base": {"A": {"read_error": "no such name"}, "B": {"value": 1}}}
+    excel.settle(failed)
+    whole = {"ok": True, "error": None, "base": {"B": {"value": 1}}, "errors_unscanned": []}
+    excel.settle(whole)
+    check("a job that Excel stopped keeps its error beside its failed reads, and a whole result stays whole",
+          failed["error"] == "Excel stopped; 1 of 2 reads failed; the first is A at open: no such name" and failed["ok"] is False
+          and whole == {"ok": True, "error": None, "base": {"B": {"value": 1}}, "errors_unscanned": []}, [failed, whole])
     check("a process that started after its ID was written is not stopped", (spared or {}).get("outcome", "").startswith("gone; the ID now belongs to a process started") and spared_alive, spared)
     check("a process that wrote its own ID is stopped", (stopped or {}).get("outcome") == "stopped", stopped)
 
