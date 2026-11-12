@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Mapping, NewType, Protocol
 import portable
 
 if TYPE_CHECKING:
-    from description import Adaptation, NoteRule, Setup
+    from description import Setup
 
 Digest = NewType('Digest', str)        # 'sha256:' + 64 hex
 Commit = NewType('Commit', str)        # 40 lowercase hex
@@ -200,7 +200,6 @@ class Surface(enum.IntEnum):
     MARKETPLACE = 1
     PLUGIN = 2
     TREE = 3          # installed bytes of an enabled or kept-current install
-    OVERLAY = 4       # tool notes and harness adaptation applied over the tree
     SKILL = 5         # off, explicit, or on (catalogs); absent means auto
     AGENT = 6         # a Codex custom agent role file
     HOOK = 7          # a plugin's hooks approved on this device
@@ -273,25 +272,6 @@ class TreeValue:
 
 
 @dataclass(frozen=True)
-class OverlaySpec:
-    rules: tuple[NoteRule, ...]      # empty unless the package applies tool notes
-    adaptation: Adaptation | None
-    explicit: tuple[str, ...] = ()   # the install's explicit skills, which the overlay also writes
-    windows_hook_command: str | None = None  # the commandWindows the overlay writes on Windows only
-    windows_replace: tuple = ()      # text patches to plugin files the overlay makes on Windows only
-
-
-@dataclass(frozen=True)
-class OverlayPending:
-    files: int                       # files the spec would still change
-
-
-@dataclass(frozen=True)
-class OverlayBlocked:
-    problem: str
-
-
-@dataclass(frozen=True)
 class FileValue:
     digest: Digest                   # an agent role, a loose skill tree, the shared rules
 
@@ -308,8 +288,7 @@ class Approved:
     hooks: int                       # hooks of the plugin that are enabled and trusted here
 
 
-FactValue = (MarketplaceValue | PluginValue | TreeValue | OverlaySpec | OverlayPending | OverlayBlocked
-             | SkillMode | FileValue | WorkingCopy | Approved)
+FactValue = MarketplaceValue | PluginValue | TreeValue | SkillMode | FileValue | WorkingCopy | Approved
 
 
 @dataclass(frozen=True)
@@ -398,8 +377,7 @@ class Observation:
 class Request:
     """What an observation reads beyond the host's inventory and configuration, which it always reads whole.
     Subjects are spelled as that host's fact keys spell them."""
-    trees: frozenset[str] = frozenset()                                 # plugin ids whose installed tree to digest
-    overlays: Mapping[str, OverlaySpec] = field(default_factory=dict)   # plugin id -> the overlay it should carry
+    trees: frozenset[str] = frozenset()      # plugin ids whose installed tree to digest
     skills: frozenset[str] = frozenset()     # SKILL subjects whose flags to read on catalog and disabled installs
     everything: bool = False                 # also every enabled non-catalog tree, and every non-catalog flag
     disables: frozenset[str] = frozenset()   # config alone determines whether these requested disables are applied
@@ -408,7 +386,6 @@ class Request:
     def of(cls, expected: FactSet) -> Request:
         """What a comparison with these expected facts needs read."""
         return cls(frozenset(key.subject for key in expected if key.surface == Surface.TREE),
-                   {key.subject: fact.value for key, fact in expected.items() if key.surface == Surface.OVERLAY},
                    frozenset(key.subject for key in expected if key.surface == Surface.SKILL),
                    disables=frozenset(key.subject for key, fact in expected.items()
                                       if key.surface == Surface.SKILL and fact.value == SkillMode.OFF))
@@ -424,6 +401,6 @@ class HostState(Protocol):
         ...
 
     def observe(self, request: Request) -> Observation:
-        """Read-only: the facts this host shows now. The request only selects which trees, overlays and
-        flags to read; it never changes how anything else is read."""
+        """Read-only: the facts this host shows now. The request only selects which trees and flags to
+        read; it never changes how anything else is read."""
         ...

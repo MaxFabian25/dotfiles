@@ -252,7 +252,7 @@ class ClaudePlacement:
 
 
 class ToolNotes(enum.StrEnum):
-    AUDIT = 'audit'                  # default: the overlay check reports unnoted host tool names
+    AUDIT = 'audit'                  # default: sync adds no tool notes
     APPLY = 'apply'
     EXEMPT = 'exempt'
 

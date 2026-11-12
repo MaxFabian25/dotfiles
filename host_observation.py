@@ -5,11 +5,9 @@ from pathlib import Path
 import subprocess
 from typing import Callable, Mapping
 
-from invocation_overrides import plan, windows_overlay
 import portable
 from host_state import (Commit, Detail, DeviceRoots, Fact, FactKey, FactValue, FileValue, FolderDetail, Host, Note, NoteKind,
-                        Observation, OverlayBlocked, OverlayPending, OverlaySpec, Surface, TreeValue, Unknown, WorkingCopy,
-                        clone_url, parse_commit)
+                        Observation, Surface, TreeValue, Unknown, WorkingCopy, clone_url, parse_commit)
 
 
 COMMAND_SECONDS = 120
@@ -76,34 +74,6 @@ class Observer:
                            tuple(self.unknown), self.details)
 
 
-def overlay_state(roots: DeviceRoots, host: Host, identity: str, root: Path,
-                  spec: OverlaySpec) -> OverlaySpec | OverlayPending | OverlayBlocked:
-    """The spec itself when the overlay planned for this one install, from a registry derived from the spec,
-    would change no file; else how many files it would change, or why it cannot be planned."""
-    label, name = host.value.capitalize(), identity.split('@')[0]
-    registry = {'targets': {label: {}}, 'explicitTargets': {label: {identity: list(spec.explicit)}}}
-    adaptations: dict = {'plugins': {}}
-    if spec.adaptation is not None:
-        clone = next((path for path in sorted((roots.engine / 'harness-adaptations').glob('*'))
-                      if (found := checkout(path)) and found[0] == clone_url(spec.adaptation.repository)), None)
-        if clone is None:
-            raise Unread(f'no clone of {spec.adaptation.repository} under {{engine}}/harness-adaptations')
-        adaptations['plugins'][name] = {'repository': str(clone), 'baseRef': spec.adaptation.base,
-                                        'adaptedRef': spec.adaptation.adapted, 'hosts': [label], 'identities': [identity]}
-    if spec.rules:
-        adaptations['toolNotes'] = {'plugins': [name], 'rules': [{'match': r.match, 'note': r.note} for r in spec.rules]}
-    if portable.WINDOWS and (windows := windows_overlay(spec.windows_hook_command, spec.windows_replace)):
-        adaptations['windows'] = {name: windows}
-    try:
-        writes, _ = plan(registry, [(label, identity, root)], adaptations=adaptations)
-    except (OSError, subprocess.SubprocessError) as error:
-        raise Unread(f'overlay check failed: {error}') from error
-    except ValueError as error:
-        return OverlayBlocked(str(error))
-    pending = sum(old != new for _, old, new, _, _ in writes)
-    return OverlayPending(pending) if pending else spec
-
-
 def observe_loose(observer: Observer, folder: Path, keep: Callable[[Path], bool]) -> None:
     """Every loose skill folder under one skills root, by content digest; links are followed. A link into a
     checkout is described by that checkout when its folder is committed there, and is otherwise the user's
@@ -147,17 +117,10 @@ def _linked_checkout(folder: Path) -> tuple[str, Commit, str, bool] | None:
     return url, head, within, tracked and not changed
 
 
-def observe_trees(observer: Observer, trees: Mapping[str, Path], overlays: Mapping[str, tuple[Path, OverlaySpec]]) -> None:
-    roots = observer.roots
-    for plugin, (root, spec) in overlays.items():
-        try:
-            observer.add(Surface.OVERLAY, plugin, overlay_state(roots, observer.host, plugin, root, spec),
-                         observer.key(Surface.PLUGIN, plugin))
-        except Unread as error:
-            observer.unread(root, error, {Surface.OVERLAY}, {plugin})
+def observe_trees(observer: Observer, trees: Mapping[str, Path]) -> None:
     for plugin, root in trees.items():
         try:
-            digest = roots.tree_digest(root)
+            digest = observer.roots.tree_digest(root)
         except OSError as error:
             observer.unread(root, error, {Surface.TREE}, {plugin})
             continue

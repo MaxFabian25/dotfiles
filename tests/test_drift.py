@@ -280,18 +280,6 @@ class DiffTest(unittest.TestCase):
         self.assertEqual(kinds(stale), [(K.STALE_LOCK, None, None), (K.CHANGED, 'claude', 'kit@codex-aligned:weekly-review'),
                                         (K.CHANGED, 'codex', 'kit:weekly-review')])
 
-    def test_an_overlay_that_cannot_be_replayed_needs_a_person_and_says_why(self):
-        with Device() as device:
-            kit = d.Package(**{**device.setup.packages['kit'].__dict__, 'tool_notes': d.ToolNotes.APPLY})
-            device.setup = d.Setup(**{**device.setup.__dict__, 'packages': {**device.setup.packages, 'kit': kit},
-                                      'lock': {**device.setup.lock, 'kit': d.Lock(d.intent(kit, {}), device.setup.lock['kit'].trees)},
-                                      'note_rules': (d.NoteRule(r'\bTodoWrite\b', ' (Codex: `update_plan`)'),)})
-            device.write(device.roots.codex_home / 'plugins/cache/personal/kit/1.0/skills/deslop/SKILL.md', 'no frontmatter\n')
-            result = device.diff()
-        blocked = [x for x in result.differences if x.key and x.key.surface == S.OVERLAY and x.key.host == hs.Host.CODEX]
-        self.assertEqual([(x.kind, x.kind.verdict) for x in blocked], [(K.OVERLAY_CONFLICT, drift.Verdict.ATTENTION)])
-        self.assertIn('overlay-conflict  want applied · have Missing skill frontmatter', drift.render(result))
-
     def test_a_missing_host_and_a_stale_lock_need_a_person(self):
         with Device() as device:
             absent = device.diff(absent=(hs.Host.CLAUDE,))

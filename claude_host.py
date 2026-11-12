@@ -20,12 +20,12 @@ from typing import Sequence
 import yaml
 
 from description import (HOST_TOGGLES, RULES, AlignedInstall, BuildSource, EngineInstall, LocalSource, MarketplaceMode, RepoSource, Setup, SkillRoot,
-                         ToolNotes, plugin_id, via)
+                         plugin_id, via)
 from host_observation import Observer, Unread, checkout, observe_loose, observe_trees, run
 from invocation_overrides import frontmatter, read_text, skill_paths
 from host_state import (ALIGNED_MARKETPLACE as ALIGNED_VIA, ANTHROPIC_SKILLS, CATALOGS as ALL_CATALOGS, ENGINE_MARKETPLACE, DeviceRoots,
                         CheckoutMarketplace, Commit, EngineMarketplace, Fact, FactKey, FactSet, FileValue, GitMarketplace, Host, InstallDetail,
-                        MarketplaceDetail, NoteKind, Observation, OverlaySpec, Pinned, PluginValue, Released, Request,
+                        MarketplaceDetail, NoteKind, Observation, Pinned, PluginValue, Released, Request,
                         SkillMode, Surface, TreeValue, Unpinned, bytes_digest, clone_url, parse_commit)
 import portable
 
@@ -152,13 +152,6 @@ class ClaudeState:
                 if install.managed and tree:
                     add(Surface.TREE, plugin, TreeValue(tree.digest), package.name, key)
                 share = install.skills if isinstance(install, EngineInstall) and install.skills else None
-                if (install.managed and not isinstance(install, AlignedInstall)
-                        and (package.tool_notes == ToolNotes.APPLY or package.claude.windows_replace)):
-                    explicit = tuple(sorted(s for s, mode in package.modes.items()
-                                            if mode == SkillMode.EXPLICIT and (share is None or s in share)))
-                    rules = setup.note_rules if package.tool_notes == ToolNotes.APPLY else ()
-                    add(Surface.OVERLAY, plugin, OverlaySpec(rules, None, explicit,
-                        windows_replace=package.claude.windows_replace), package.name, key)
                 own = package.claude.modes if isinstance(install, AlignedInstall) else {}
                 modes = {**{s: m for s, m in package.modes.items() if s not in own},
                          **{s: m for s, m in own.items() if m == SkillMode.EXPLICIT}}
@@ -207,7 +200,7 @@ class ClaudeState:
             inventory, available = listed['installed'], listed['available']
         except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as error:
             seen.unread('claude plugin list --available --json', error,
-                        {Surface.PLUGIN, Surface.TREE, Surface.OVERLAY, Surface.SKILL})
+                        {Surface.PLUGIN, Surface.TREE, Surface.SKILL})
             inventory, available = None, []
         listed = inventory is not None
         inventory = inventory or []
@@ -389,8 +382,7 @@ class ClaudeState:
         enabled_trees = {plugin['id']: Path(plugin['installPath']) for plugin in user
                          if plugin['enabled'] and plugin['id'].split('@', 1)[1] not in CATALOGS}
         trees = {plugin: installed[plugin] for plugin in request.trees if plugin in installed}
-        observe_trees(seen, {**trees, **(enabled_trees if request.everything else {})},
-                      {plugin: (installed[plugin], spec) for plugin, spec in request.overlays.items() if plugin in installed})
+        observe_trees(seen, {**trees, **(enabled_trees if request.everything else {})})
         return seen.finish(version, offered)
 
     def _explicit(self, root: Path, wanted: set[str] | None, catalogs: dict[str, tuple[Path, dict]] | None = None,

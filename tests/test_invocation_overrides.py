@@ -11,12 +11,12 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
 
-def planned(writes):
-    return {path.name: new for path, _, new, _, _ in writes}
+def planned(writes, root):
+    return {path.relative_to(root).as_posix(): new for path, _, new, _, _ in writes}
 
 
-def changed(writes):
-    return {path.name: new for path, old, new, _, _ in writes if old != new}
+def changed(writes, root):
+    return {path.relative_to(root).as_posix(): new for path, old, new, _, _ in writes if old != new}
 
 
 class InvocationOverridesTest(unittest.TestCase):
@@ -46,8 +46,8 @@ class InvocationOverridesTest(unittest.TestCase):
             installs = [('Codex', 'review-agent@system', root)]
             writes, counts = module.plan(registry, installs)
             self.assertEqual(counts, {'Codex': 1, 'Claude': 0})
-            self.assertEqual(planned(writes)['SKILL.md'], original)
-            self.assertEqual(changed(writes), {'openai.yaml': 'policy:\n  allow_implicit_invocation: true\n'})
+            self.assertEqual(planned(writes, root)['SKILL.md'], original)
+            self.assertEqual(changed(writes, root), {'agents/openai.yaml': 'policy:\n  allow_implicit_invocation: true\n'})
 
     def test_only_requested_frontmatter_changes(self):
         original = '---\nname: sample\ndescription: >-\n  A task.\ndisable-model-invocation: true\nallowed-tools: [Read, Write]\nuser-invocable: true\n---\n\nAsk for approval before publishing.\n'
@@ -135,16 +135,17 @@ class InvocationOverridesTest(unittest.TestCase):
             registry = {'targets': {'Codex': {'plugin@m': ['sample']}, 'Claude': {}}}
             installs = [('Codex', 'plugin@m', root)]
             writes, _ = module.plan(registry, installs, adaptations)
-            effective = changed(writes)
-            self.assertEqual(set(effective), {'SKILL.md', 'openai.yaml', 'harnesses.md'})
-            self.assertIn('disable-model-invocation: false', effective['SKILL.md'])
-            self.assertTrue(effective['SKILL.md'].endswith(adapted_body))
-            self.assertEqual(effective['harnesses.md'], 'map\n')
+            effective = changed(writes, root)
+            self.assertEqual(set(effective), {'skills/sample/SKILL.md', 'skills/sample/agents/openai.yaml',
+                                              'skills/sample/references/harnesses.md'})
+            self.assertIn('disable-model-invocation: false', effective['skills/sample/SKILL.md'])
+            self.assertTrue(effective['skills/sample/SKILL.md'].endswith(adapted_body))
+            self.assertEqual(effective['skills/sample/references/harnesses.md'], 'map\n')
 
             for path, _, new, _, _ in writes:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(new)
-            self.assertEqual(changed(module.plan(registry, installs, adaptations)[0]), {})
+            self.assertEqual(changed(module.plan(registry, installs, adaptations)[0], root), {})
 
     def _adaptation_repository(self, directory):
         repository = directory / 'adaptation'
@@ -177,7 +178,7 @@ class InvocationOverridesTest(unittest.TestCase):
                                                    'adaptedRef': 'main', 'hosts': ['Codex']}}}
             registry = {'targets': {'Codex': {'plugin@m': []}, 'Claude': {}}}
             writes, _ = module.plan(registry, [('Codex', 'plugin@m', root)], adaptations)
-            self.assertEqual(planned(writes), {'a.md': 'one\nTWO\nthree\nfour\nFIVE\n'})
+            self.assertEqual(planned(writes, root), {'docs/a.md': 'one\nTWO\nthree\nfour\nFIVE\n'})
 
     def test_adaptation_merges_beside_a_flag_the_policy_export_flipped(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -204,22 +205,36 @@ class InvocationOverridesTest(unittest.TestCase):
                                                    'adaptedRef': 'main', 'hosts': ['Codex']}}}
             registry = {'targets': {'Codex': {'plugin@m': ['sample']}, 'Claude': {}}}
             writes, _ = module.plan(registry, [('Codex', 'plugin@m', root)], adaptations)
-            effective = {path.name: after for path, _, after, _, _ in writes}
-            self.assertEqual(effective['SKILL.md'], '---\nname: sample\ndescription: Use when asked for samples by name.\n'
-                                                    'disable-model-invocation: false\n---\nBody.\n')
+            self.assertEqual(planned(writes, root)['skills/sample/SKILL.md'],
+                             '---\nname: sample\ndescription: Use when asked for samples by name.\n'
+                             'disable-model-invocation: false\n---\nBody.\n')
 
-    def test_adaptation_may_not_add_or_rename_a_skill(self):
-        with tempfile.TemporaryDirectory() as directory:
-            directory = Path(directory).resolve()
-            repository, git = self._adaptation_repository(directory)
-            skill = repository / 'skills/new/SKILL.md'
-            skill.parent.mkdir(parents=True)
-            skill.write_text('---\nname: new\ndescription: d\n---\nbody\n')
-            module.subprocess.run([*git, 'add', '-A'], check=True)
-            module.subprocess.run([*git, 'commit', '-qm', 'add skill'], check=True)
-            adaptation = {'repository': str(repository), 'baseRef': 'upstream', 'adaptedRef': 'main', 'hosts': ['Codex']}
-            with self.assertRaisesRegex(ValueError, 'add, remove or rename'):
-                module.adaptation_files(adaptation)
+    def test_adaptation_may_not_add_remove_or_rename_a_skill(self):
+        original = '---\nname: sample\ndescription: d\n---\nbody\n'
+        cases = {'add': ('new', '---\nname: new\ndescription: d\n---\nbody\n'),
+                 'rename': ('sample', original.replace('name: sample', 'name: renamed')),
+                 'remove': ('sample', None)}
+        for case, (name, adapted) in cases.items():
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                repository = Path(directory).resolve() / 'adaptation'
+                (repository / 'skills/sample').mkdir(parents=True)
+                (repository / 'skills/sample/SKILL.md').write_text(original)
+                git = ['git', '-C', str(repository), '-c', 'user.name=t', '-c', 'user.email=t@t']
+                module.subprocess.run([*git[:3], 'init', '-q', '-b', 'main'], check=True)
+                module.subprocess.run([*git, 'add', '-A'], check=True)
+                module.subprocess.run([*git, 'commit', '-qm', 'upstream'], check=True)
+                module.subprocess.run([*git, 'branch', 'upstream'], check=True)
+                skill = repository / 'skills' / name / 'SKILL.md'
+                if adapted is None:
+                    skill.unlink()
+                else:
+                    skill.parent.mkdir(exist_ok=True)
+                    skill.write_text(adapted)
+                module.subprocess.run([*git, 'add', '-A'], check=True)
+                module.subprocess.run([*git, 'commit', '-qm', case], check=True)
+                adaptation = {'repository': str(repository), 'baseRef': 'upstream', 'adaptedRef': 'main', 'hosts': ['Codex']}
+                with self.assertRaisesRegex(ValueError, 'add, remove or rename'):
+                    module.adaptation_files(adaptation)
 
     def test_identities_scope_an_adaptation_to_the_installs_they_name(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -272,13 +287,13 @@ class InvocationOverridesTest(unittest.TestCase):
             installs = [('Codex', 'plugin@m', root)]
             writes, counts = module.plan(registry, installs)
             self.assertEqual(counts, {'Codex': 1, 'Claude': 0})
-            effective = changed(writes)
-            self.assertEqual(set(effective), {'SKILL.md', 'openai.yaml'})
-            _, front = module.frontmatter(effective['SKILL.md'])
+            effective = changed(writes, root)
+            self.assertEqual(set(effective), {'skills/sample/SKILL.md', 'skills/sample/agents/openai.yaml'})
+            _, front = module.frontmatter(effective['skills/sample/SKILL.md'])
             self.assertIs(front['disable-model-invocation'], True)
             self.assertEqual(front['description'], 'Only use when the user explicitly invokes this skill by name.')
-            self.assertTrue(effective['SKILL.md'].endswith('---\nPublish only with approval.\n'))
-            self.assertEqual(effective['openai.yaml'], 'policy:\n  allow_implicit_invocation: false\n')
+            self.assertTrue(effective['skills/sample/SKILL.md'].endswith('---\nPublish only with approval.\n'))
+            self.assertEqual(effective['skills/sample/agents/openai.yaml'], 'policy:\n  allow_implicit_invocation: false\n')
 
     def test_explicit_flag_replaces_a_false_value_only(self):
         original = '---\nname: sample\ndescription: A task.\ndisable-model-invocation: false\nallowed-tools: [Read]\n---\nBody\n'

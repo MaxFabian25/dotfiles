@@ -20,12 +20,12 @@ from typing import Sequence
 import yaml
 
 from description import (HOST_TOGGLES, RULES, BuildSource, EngineInstall, Hooks, LocalSource, MarketplaceMode, RepoSource, Setup, SkillRoot,
-                         ToolNotes, plugin_id, via)
+                         plugin_id, via)
 from host_observation import Observer, Unread, checkout, observe_loose, observe_trees, run
 from invocation_overrides import skill_paths
 from host_state import (CATALOGS as ALL_CATALOGS, ENGINE_MARKETPLACE, PRIMARY_RUNTIME, Approved, CheckoutMarketplace, DeviceRoots,
                         Commit, EngineMarketplace, Fact, FactKey, FactSet, FileValue, GitMarketplace, Host, InstallDetail,
-                        NoteKind, Observation, OverlaySpec, Pinned, PluginValue, Released, Request, SkillMode, Surface,
+                        NoteKind, Observation, Pinned, PluginValue, Released, Request, SkillMode, Surface,
                         TreeValue, Unpinned, bytes_digest, clone_url, parse_commit)
 import portable
 
@@ -226,11 +226,6 @@ class CodexState:
                 owner = key
                 if tree:
                     add(Surface.TREE, plugin, TreeValue(tree.digest), package.name, key)
-                if package.tool_notes == ToolNotes.APPLY or placement.adaptation or placement.windows_hook_command or placement.windows_replace:
-                    rules = setup.note_rules if package.tool_notes == ToolNotes.APPLY else ()
-                    explicit = tuple(sorted(s for s, mode in package.modes.items() if mode == SkillMode.EXPLICIT))
-                    add(Surface.OVERLAY, plugin, OverlaySpec(rules, placement.adaptation, explicit, placement.windows_hook_command,
-                                                             placement.windows_replace), package.name, key)
                 # Role files and hook approvals act in every session, so a kept-current install gets neither, even
                 # while its lock still lists them.
                 if not install.enabled or lock is None:
@@ -272,7 +267,7 @@ class CodexState:
             listed = json.loads(run([*self.cli, 'plugin', 'list', '--available', '--json'], PLUGIN_LISTING_SECONDS, env=home))
             inventory, available = listed['installed'], listed['available']
         except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as error:
-            seen.unread(listing, error, {Surface.PLUGIN, Surface.TREE, Surface.OVERLAY, Surface.HOOK, Surface.SKILL})
+            seen.unread(listing, error, {Surface.PLUGIN, Surface.TREE, Surface.HOOK, Surface.SKILL})
             inventory, available = None, []
         listed = inventory is not None
         inventory = inventory or []
@@ -561,9 +556,7 @@ class CodexState:
         enabled = {plugin_id: self._cache(plugin) for plugin_id, plugin in installed.items()
                    if plugin['enabled'] and plugin['marketplaceName'] not in CATALOGS}
         trees = {plugin_id: self._cache(installed[plugin_id]) for plugin_id in request.trees if plugin_id in installed}
-        observe_trees(seen, {**trees, **(enabled if request.everything else {})},
-                      {plugin_id: (self._cache(installed[plugin_id]), spec) for plugin_id, spec in request.overlays.items()
-                       if plugin_id in installed})
+        observe_trees(seen, {**trees, **(enabled if request.everything else {})})
         return seen.finish(version, offered)
 
     def _cache(self, plugin) -> Path:

@@ -17,7 +17,6 @@ import host_state
 import description
 import codex_host
 import host_observation
-import portable
 from device import Device as HostDevice
 from drift import Kind, diff
 from runtime_pin import RuntimePin
@@ -72,7 +71,6 @@ class ProjectTest(unittest.TestCase):
             key(S.SKILL, 'kit:fix-ci'): (M.OFF, 'kit', kit),
             key(S.SKILL, 'kit:deslop'): (M.EXPLICIT, 'kit', kit),
             impeccable: (hs.PluginValue(True, hs.Unpinned()), 'impeccable', None),
-            key(S.OVERLAY, 'impeccable@personal'): (hs.OverlaySpec(NOTES, None), 'impeccable', impeccable),
             key(S.HOOK, 'impeccable@personal'): (hs.Approved(3), 'impeccable', impeccable),
             key(S.AGENT, 'impeccable_documenter.toml'): (hs.FileValue(D2), 'impeccable', impeccable),
             connector: (hs.PluginValue(False, hs.Unpinned()), 'connector', None),
@@ -104,7 +102,7 @@ class ProjectTest(unittest.TestCase):
 
     def test_trusted_hooks_without_a_locked_count_project_nothing(self):
         facts = codex_host.CodexState(homes.projection_roots(), 'codex').project(setup([IMPECCABLE], [IMPECCABLE_REPO]))
-        self.assertEqual(sorted(k.surface.name for k in facts), ['MARKETPLACE', 'OVERLAY', 'PLUGIN'])
+        self.assertEqual(sorted(k.surface.name for k in facts), ['MARKETPLACE', 'PLUGIN'])
 
     def test_the_runtime_catalogs_installs_carry_the_pinned_version_on_linux_only(self):
         pin = RuntimePin('26.1025.11240', 'https://example.invalid/runtime.tar.xz', D1, 1, D2, 1, ('pdf',))
@@ -126,19 +124,17 @@ class ProjectTest(unittest.TestCase):
         self.assertEqual(facts[key(S.PLUGIN, 'kit@personal')].value, hs.PluginValue(False, hs.Unpinned()))
         self.assertNotIn(key(S.TREE, 'kit@personal'), facts)
 
-    def test_a_kept_current_build_is_switched_off_and_installed_at_its_release_with_its_overlay(self):
+    def test_a_kept_current_build_is_switched_off_and_installed_at_its_release(self):
         lock = {'kit': d.Lock(D1, {hs.Host.CODEX: d.LockedTree('1.0', D1)})}
         state = codex_host.CodexState(homes.projection_roots(), 'codex')
 
         def project(install):
-            return state.project(setup([package('kit', KIT.source, d.CodexPlacement((install,)), tool_notes=d.ToolNotes.APPLY)],
-                                       lock=lock))
+            return state.project(setup([package('kit', KIT.source, d.CodexPlacement((install,)))], lock=lock))
         kept, plain = project(d.EngineInstall(False, keep_current=True)), project(d.EngineInstall(False))
         plugin = key(S.PLUGIN, 'kit@personal')
         self.assertEqual({k: (f.value, f.follows) for k, f in kept.items() if k.surface != S.MARKETPLACE}, {
             plugin: (hs.PluginValue(False, hs.Released('1.0'), kept_current=True), None),
             key(S.TREE, 'kit@personal'): (hs.TreeValue(D1), plugin),
-            key(S.OVERLAY, 'kit@personal'): (hs.OverlaySpec(NOTES, None), plugin),
         })
         self.assertEqual({k: f.value for k, f in plain.items() if k.surface != S.MARKETPLACE},
                          {plugin: hs.PluginValue(False, hs.Unpinned())})
@@ -735,7 +731,7 @@ class ObserveTest(unittest.TestCase):
         self.assertNotIn(key(S.PLUGIN, 'kit@personal'), observation.facts)
         self.assertEqual([(u.source, u.surfaces, u.subjects) for u in observation.unknown],
                          [('codex plugin list --available --json',
-                           frozenset({S.PLUGIN, S.TREE, S.OVERLAY, S.HOOK, S.SKILL}), None)])
+                           frozenset({S.PLUGIN, S.TREE, S.HOOK, S.SKILL}), None)])
         self.assertTrue(observation.unknown[0].reason.startswith('Command'), observation.unknown[0].reason)
         self.assertEqual(observation.offered, frozenset())
 
@@ -835,71 +831,6 @@ class TreeTest(unittest.TestCase):
         self.assertNotIn(key(S.TREE, 'impeccable@personal'), observation.facts)
         self.assertEqual([(u.surfaces, u.subjects, u.reason) for u in observation.unknown if S.TREE in u.surfaces],
                          [(frozenset({S.TREE}), frozenset({'impeccable@personal'}), 'denied')])
-
-    def test_overlay_reads_as_its_spec_only_when_every_note_is_applied(self):
-        with Device() as device:
-            overlay = key(S.OVERLAY, 'impeccable@personal')
-            spec = hs.OverlaySpec(NOTES, None)
-            expected = hs.Request(overlays={'impeccable@personal': spec})
-            self.assertEqual(device.state().observe(expected).facts[overlay].value, hs.OverlayPending(1))
-            path = device.roots.codex_home / 'plugins/cache/personal/impeccable/4.5.2/skills/impeccable/SKILL.md'
-            path.write_text(path.read_text().replace('TodoWrite', 'TodoWrite (Codex: `update_plan`)'))
-            self.assertEqual(device.state().observe(expected).facts[overlay].value, spec)
-
-    def test_overlay_writes_the_windows_hook_command_on_windows_only(self):
-        command = 'cmd /c "${CLAUDE_PLUGIN_ROOT}\\run.cmd" hook'
-        hook_file = {'hooks': {'Stop': [{'hooks': [{'type': 'command', 'command': 'sh run hook', 'timeout': 5}]}]}}
-        with Device() as device:
-            cache = device.roots.codex_home / 'plugins/cache/personal/impeccable/4.5.2'
-            device.write(cache / 'hooks/hooks.json', json.dumps(hook_file, indent=2) + '\n')
-            skill = cache / 'skills/impeccable/SKILL.md'
-            skill.write_text(skill.read_text().replace('TodoWrite', 'TodoWrite (Codex: `update_plan`)'))
-            overlay = key(S.OVERLAY, 'impeccable@personal')
-            launcher = cache / 'skills/impeccable/scripts/impeccable.cmd'
-            device.write(launcher, '"%~1" engine-probe\n')
-            spec = hs.OverlaySpec(NOTES, None, (), command, (d.WindowsReplace('skills/impeccable/scripts/impeccable.cmd', '"%~1" engine-probe', 'call "%~1" engine-probe'),))
-            expected = hs.Request(overlays={'impeccable@personal': spec})
-            with patch.object(portable, 'WINDOWS', False):
-                self.assertEqual(device.state().observe(expected).facts[overlay].value, spec)
-            with patch.object(portable, 'WINDOWS', True):
-                self.assertEqual(device.state().observe(expected).facts[overlay].value, hs.OverlayPending(2))
-
-    def test_a_windows_hook_command_is_part_of_the_overlay_spec(self):
-        command = 'cmd /c "${CLAUDE_PLUGIN_ROOT}\\run.cmd" hook'
-        replace = d.WindowsReplace('a.cmd', 'find', 'put')
-        adapted = package('impeccable', d.RepoSource('impeccable', 'plugin'),
-                          d.CodexPlacement((d.EngineInstall(True),), windows_hook_command=command, windows_replace=(replace,)))
-        facts = codex_host.CodexState(homes.projection_roots(), 'codex').project(setup(
-            [adapted], [IMPECCABLE_REPO], [], {}, d.Rules(b''), {'impeccable': d.Lock(D1, {})}))
-        self.assertEqual(facts[key(S.OVERLAY, 'impeccable@personal')].value, hs.OverlaySpec((), None, (), command, (replace,)))
-
-    def test_overlay_checks_the_adaptation_against_its_clone(self):
-        with Device() as device:
-            r = device.roots
-            clone = r.engine / 'harness-adaptations/impeccable'
-            git = ['git', '-c', 'user.name=t', '-c', 'user.email=t@t', '-C', str(clone)]
-            device.write(clone / 'skills/impeccable/SKILL.md', '---\nname: impeccable\ndescription: impeccable\n---\nTrack it with TodoWrite.\n')
-            subprocess.run(['git', 'init', '-q', str(clone)], check=True)
-            subprocess.run([*git, 'remote', 'add', 'origin', 'https://github.com/example/adaptations.git'], check=True)
-            subprocess.run([*git, 'add', '-A'], check=True)
-            subprocess.run([*git, 'commit', '-qm', 'upstream'], check=True)
-            base = subprocess.run([*git, 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
-            device.write(clone / 'skills/impeccable/SKILL.md', '---\nname: impeccable\ndescription: impeccable\n---\nTrack it with update_plan.\n')
-            subprocess.run([*git, 'commit', '-qam', 'adapted'], check=True)
-            adapted = subprocess.run([*git, 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
-            overlay = key(S.OVERLAY, 'impeccable@personal')
-            spec = hs.OverlaySpec((), d.Adaptation('https://github.com/example/adaptations.git', base, adapted))
-            expected = hs.Request(overlays={'impeccable@personal': spec})
-            self.assertEqual(device.state().observe(expected).facts[overlay].value, hs.OverlayPending(1))
-            path = r.codex_home / 'plugins/cache/personal/impeccable/4.5.2/skills/impeccable/SKILL.md'
-            path.write_text(path.read_text().replace('TodoWrite', 'update_plan'))
-            self.assertEqual(device.state().observe(expected).facts[overlay].value, spec)
-            subprocess.run(['rm', '-rf', str(clone)], check=True)
-            observation = device.state().observe(expected)
-            self.assertNotIn(overlay, observation.facts)
-            self.assertEqual([(u.surfaces, u.subjects, u.reason) for u in observation.unknown],
-                             [(frozenset({S.OVERLAY}), frozenset({'impeccable@personal'}),
-                               'no clone of https://github.com/example/adaptations.git under {engine}/harness-adaptations')])
 
 
 if __name__ == '__main__':

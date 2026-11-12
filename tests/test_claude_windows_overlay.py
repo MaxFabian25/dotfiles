@@ -7,7 +7,6 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import claude_host
 import description as d
 import description_toml
 import homes
@@ -53,12 +52,6 @@ class ClaudeWindowsOverlayTest(unittest.TestCase):
             self.assertEqual([(p.name, new) for p, old, new, *_ in writes], [('run.cmd', 'before\nexit /b 1\nafter\n')])
             with patch('sync_sources.WINDOWS', False):
                 self.assertEqual(builder.overlay(package, hs.Host.CLAUDE, identity, root), [])
-            facts = claude_host.ClaudeState(device.roots, 'claude').project(setup)
-            key = hs.FactKey(hs.Host.CLAUDE, hs.Surface.OVERLAY, identity)
-            self.assertEqual(facts[key].value.windows_replace, package.claude.windows_replace)
-            disabled = replace(package, claude=replace(package.claude, installs=(d.MarketplaceInstall('impeccable', False),)))
-            facts = claude_host.ClaudeState(device.roots, 'claude').project(replace(setup, packages={'impeccable': disabled}))
-            self.assertNotIn(key, facts)
 
 
 if __name__ == '__main__':

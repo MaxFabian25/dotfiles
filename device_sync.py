@@ -38,8 +38,7 @@ def plan(setup: Setup, device: Device, *, configurations=True) -> Plan:
 
     projected = setup.for_platform(device.platform)
     projects = {state.host: state.project(projected) for state in device.hosts}
-    observations = {state.host: state.observe(replace(Request.of(projects[state.host]), overlays={}))
-                    for state in device.hosts}
+    observations = {state.host: state.observe(Request.of(projects[state.host])) for state in device.hosts}
     result = diff(setup, device, observations=observations)
     owner = AcceptedInstallations(projected, device, configurations=configurations)
     artifacts, owned = owner.inspect(observations)
@@ -53,7 +52,7 @@ def plan(setup: Setup, device: Device, *, configurations=True) -> Plan:
     stale = setup.stale()
     managed = {key for facts in projects.values() for key, fact in facts.items()
                if fact.entry not in stale and key.surface in
-               (Surface.TREE, Surface.OVERLAY, Surface.AGENT, Surface.LOOSE_SKILL, Surface.RULES)}
+               (Surface.TREE, Surface.AGENT, Surface.LOOSE_SKILL, Surface.RULES)}
     owned = tuple(d for d in owned if d.entry is None or d.entry.name not in stale)
     recoverable = owner.recoverable_missing_caches(artifacts, owned, observations)
 
@@ -114,7 +113,7 @@ def _expected(listed: frozenset[FactKey], unmanaged: tuple[Difference, ...], pla
 def changed_packages(current: Plan) -> frozenset[str]:
     return frozenset(d.entry.name for d in current.changes if d.entry is not None
                      and d.key is not None and d.key.surface in
-                     (Surface.PLUGIN, Surface.TREE, Surface.OVERLAY, Surface.SKILL, Surface.AGENT))
+                     (Surface.PLUGIN, Surface.TREE, Surface.SKILL, Surface.AGENT))
 
 
 def apply(setup: Setup, device: Device, current: Plan, *, builder=None, configurations=None):

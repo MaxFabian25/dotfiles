@@ -67,14 +67,13 @@ class ProjectTest(unittest.TestCase):
             key(S.SKILL, 'interfaces@interfaces:Better Interface'): (M.EXPLICIT, native),
             split: (hs.PluginValue(True, hs.Released('0.1.claude1')), None),
             key(S.TREE, 'course@personal-collections'): (hs.TreeValue(D1), split),
-            key(S.OVERLAY, 'course@personal-collections'): (hs.OverlaySpec((), None, ('a',)), split),
             key(S.SKILL, 'course@personal-collections:a'): (M.EXPLICIT, split),
             key(S.PLUGIN, 'course-extra@personal-collections'): (hs.PluginValue(False, hs.Unpinned()), None),
             key(S.SKILL, 'course-extra@personal-collections:b'): (M.EXPLICIT, key(S.PLUGIN, 'course-extra@personal-collections')),
             key(S.SKILL, 'playwright'): (M.ON, None),
         })
 
-    def test_a_kept_current_install_is_switched_off_and_installed_at_its_release_with_its_overlay(self):
+    def test_a_kept_current_install_is_switched_off_and_installed_at_its_release(self):
         source = d.BuildSource(d.CourseRecipe('https://github.com/example/course.git', NEW, ('s/a',), ''), 1, 'C')
 
         def project(install):
@@ -89,7 +88,6 @@ class ProjectTest(unittest.TestCase):
         self.assertEqual(project(d.EngineInstall(False, keep_current=True)), {
             engine: (hs.PluginValue(False, hs.Released('0.1.claude1'), kept_current=True), None),
             key(S.TREE, 'course@personal-collections'): (hs.TreeValue(D1), engine),
-            key(S.OVERLAY, 'course@personal-collections'): (hs.OverlaySpec((), None, ('a',)), engine),
             key(S.SKILL, 'course@personal-collections:a'): (M.EXPLICIT, engine),
         })
         self.assertEqual(project(d.AlignedInstall(False, keep_current=True)), {

@@ -11,8 +11,8 @@ from typing import Mapping
 from description import LocalSource, Setup, SkillRoot, Visibility
 from device import Device
 from host_state import (CATALOGS, Approved, CheckoutMarketplace, DeviceRoots, EngineMarketplace, EntryName, Fact, FactKey, FactSet, FactValue,
-                        FileValue, GitMarketplace, Host, Note, NoteKind, Observation, OverlayBlocked, OverlayPending, OverlaySpec,
-                        Pinned, Platform, PluginValue, Released, Request, Surface, TreeValue, Unknown, Unpinned, WorkingCopy)
+                        FileValue, GitMarketplace, Host, Note, NoteKind, Observation, Pinned, Platform, PluginValue, Released,
+                        Request, Surface, TreeValue, Unknown, Unpinned, WorkingCopy)
 
 class Verdict(enum.StrEnum):
     DRIFT = 'drift'                  # sync fixes it
@@ -24,8 +24,6 @@ class Kind(enum.StrEnum):
     EXTRA = 'extra'
     CHANGED = 'changed'
     TREE = 'tree'
-    OVERLAY = 'overlay'
-    OVERLAY_CONFLICT = 'overlay-conflict'   # the overlay cannot be replayed on the installed bytes
     APPROVAL = 'approval'
     LOCAL_EDIT = 'local-edit'
     STALE_LOCK = 'stale-lock'
@@ -38,9 +36,8 @@ class Kind(enum.StrEnum):
 
 
 _VERDICTS = {
-    Kind.MISSING: Verdict.DRIFT, Kind.EXTRA: Verdict.DRIFT, Kind.CHANGED: Verdict.DRIFT,
-    Kind.TREE: Verdict.DRIFT, Kind.OVERLAY: Verdict.DRIFT,
-    Kind.APPROVAL: Verdict.ATTENTION, Kind.LOCAL_EDIT: Verdict.ATTENTION, Kind.OVERLAY_CONFLICT: Verdict.ATTENTION,
+    Kind.MISSING: Verdict.DRIFT, Kind.EXTRA: Verdict.DRIFT, Kind.CHANGED: Verdict.DRIFT, Kind.TREE: Verdict.DRIFT,
+    Kind.APPROVAL: Verdict.ATTENTION, Kind.LOCAL_EDIT: Verdict.ATTENTION,
     Kind.STALE_LOCK: Verdict.ATTENTION, Kind.HOST_ABSENT: Verdict.ATTENTION, Kind.INCOMPLETE: Verdict.ATTENTION,
 }
 
@@ -106,9 +103,7 @@ def _classify(key: FactKey, expected: FactValue | None, observed: FactValue | No
             return NoteKind.DORMANT if not (expected.enabled or expected.kept_current) else Kind.CHANGED
         if expected == observed:
             return None
-        if isinstance(observed, OverlayBlocked):
-            return Kind.OVERLAY_CONFLICT
-        return {Surface.TREE: Kind.TREE, Surface.OVERLAY: Kind.OVERLAY, Surface.HOOK: Kind.APPROVAL}.get(surface, Kind.CHANGED)
+        return {Surface.TREE: Kind.TREE, Surface.HOOK: Kind.APPROVAL}.get(surface, Kind.CHANGED)
     if expected is not None:
         if surface == Surface.PLUGIN and not (expected.enabled or expected.kept_current):
             return NoteKind.DORMANT
@@ -266,12 +261,6 @@ def _spell(value) -> str:
             return 'engine output'
         case TreeValue(digest=digest) | FileValue(digest=digest):
             return digest[:19]
-        case OverlaySpec():
-            return 'applied'
-        case OverlayPending(files=files):
-            return f'{files} files pending'
-        case OverlayBlocked(problem=problem):
-            return problem
         case Approved(hooks=hooks):
             return f'{hooks} hooks approved'
         case enum.Enum():

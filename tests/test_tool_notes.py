@@ -63,10 +63,10 @@ class ToolNotesTest(unittest.TestCase):
             registry = {'targets': {'Codex': {}, 'Claude': {}}, 'explicitTargets': {'Codex': {}, 'Claude': {}}}
             installs = [('Codex', 'example-tools@personal', root)]
             writes, _ = module.plan(registry, installs, ADAPTATIONS)
-            noted = {path.name: new for path, old, new, _, _ in writes if old != new}
-            self.assertEqual(noted, {'SKILL.md': '---\nname: example\ndescription: Research.\n---\n'
-                                                 'Track with TodoWrite (Codex: `update_plan`).\n',
-                                     'process.md': "Use WebFetch (Codex: the web tool's `open`) to read it.\n"})
+            noted = {path.relative_to(root).as_posix(): new for path, old, new, _, _ in writes if old != new}
+            self.assertEqual(noted, {'skills/example/SKILL.md': '---\nname: example\ndescription: Research.\n---\n'
+                                                                'Track with TodoWrite (Codex: `update_plan`).\n',
+                                     'skills/example/references/process.md': "Use WebFetch (Codex: the web tool's `open`) to read it.\n"})
             for path, _, new, _, _ in writes:
                 path.write_text(new)
             self.assertEqual([path for path, old, new, _, _ in module.plan(registry, installs, ADAPTATIONS)[0] if old != new], [])
