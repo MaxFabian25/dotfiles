@@ -18,6 +18,7 @@ TEST = ('from pathlib import Path\nimport sys\nimport unittest\nsys.path.insert(
 # A test of its own making: it takes a folder that must not exist yet, and prints a PASS or FAIL line per check.
 CHECKS = ('from pathlib import Path\nimport sys\nsys.path.insert(0, str(Path(__file__).parent))\n'
           'from value import double, label\n\nevidence = Path(sys.argv[1])\nevidence.mkdir()\n'
+          'print("ERROR: the fixture was slow to answer")  # a line of its own, not a failed test\n'
           'checks = [("doubles a number", double(3) == 6, f"got {double(3)}"), ("labels", label(1) == "n=1", ""),\n'
           '          ("takes its second argument", sys.argv[2:] == ["--strict"], str(sys.argv[2:])),\n'
           '          ("its folder is outside the copy", not evidence.resolve().is_relative_to(Path.cwd()), "")]\n'

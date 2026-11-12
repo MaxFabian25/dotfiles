@@ -10,12 +10,12 @@ SOURCE by a path relative to itself. Everything after `--` is passed to TEST as 
 its results to a folder it must create itself. The folder goes when its run ends.
 
 Prints CAUGHT, MISSED, TIMED OUT or NOT APPLIED for each plant, after the unchanged copy has passed. A CAUGHT
-line names the tests that failed, from unittest's `FAIL: name` and `ERROR: name` headings or, in a run without
-those, from lines that a TEST of its own making prints as `FAIL`, two spaces and the check's name, which ends at
-the next two spaces. It gives the run's last line when the run names none, as a plant that breaks the import
-does. Check that those are
-the tests of the planted behaviour. Exits 0 when every plant was caught, 1 when one was not, and 2, with the
-reason on stderr, when the unchanged copy fails or the arguments are wrong.
+line names the tests that failed. In a run that holds unittest's `Ran N tests` line, those are its `FAIL: name`
+and `ERROR: name` headings. In any other run, they are the lines that a TEST of its own making prints as `FAIL`,
+two spaces and the check's name, which ends at the next two spaces. It gives the run's last line when the run
+names none, as a plant that breaks the import does. Check that those are the tests of the planted behaviour.
+Exits 0 when every plant was caught, 1 when one was not, and 2, with the reason on stderr, when the unchanged
+copy fails or the arguments are wrong.
 """
 import json
 from pathlib import Path
@@ -27,6 +27,7 @@ import tempfile
 
 LIMIT = 1800  # seconds for one run of TEST
 FAILED = re.compile(r'^(?:FAIL|ERROR): (\S+)', re.MULTILINE)  # unittest's heading of a failed test
+RAN = re.compile(r'^Ran \d+ tests? in ', re.MULTILINE)  # unittest's last line but one, which only its runs hold
 # A failed check of a TEST that prints its own lines, such as "FAIL  totals match  expected 3, got 4"
 FAILED_CHECK = re.compile(r'^FAIL  (\S.*?)(?:  |$)', re.MULTILINE)
 FRESH = '{fresh}'  # in a TEST argument, the path of a folder that does not exist yet
@@ -52,7 +53,7 @@ def run(root, source, test, text, arguments=()):
 
 def failures(output):
     """What a CAUGHT line says failed: the tests the run names, or the run's last line."""
-    names = list(dict.fromkeys(FAILED.findall(output) or FAILED_CHECK.findall(output)))
+    names = list(dict.fromkeys((FAILED if RAN.search(output) else FAILED_CHECK).findall(output)))
     if names:
         more = f' and {len(names) - NAMED} more' if len(names) > NAMED else ''
         return f'{", ".join(names[:NAMED])}{more} failed'

@@ -133,13 +133,20 @@ class ReleaseTest(unittest.TestCase):
             for detach in ([], ['--detach']):
                 with self.subTest(option=option, detach=detach):
                     files = {'--message': good, '--private-message': good, option: bad}
+                    # --report is what a detached unit's finish gets, and what makes it wait for another release.
                     argv = ['finish', 'run-on', *(part for name, file in files.items() for part in (name, str(file))),
-                            '--push', *detach, *self.options()]
+                            '--push', *(detach or ['--report', str(self.root / 'status')]), *self.options()]
+                    log = self.worktrees / 'run-on/build/finish.log'
+                    log.parent.mkdir(exist_ok=True)
+                    log.write_text('the log of an earlier finish\n', encoding='utf-8')
                     errors = io.StringIO()
                     with redirect_stderr(errors), patch.object(release, 'detach_command', side_effect=started), \
+                            patch.object(release, 'review_stop', side_effect=started), \
+                            patch.object(release, 'running', side_effect=started), \
                             patch.object(release, 'wait', side_effect=started), \
                             patch.object(release, 'finish', side_effect=started):
                         self.assertEqual(release_main(argv, self.public), 3)
+                    self.assertEqual(log.read_text(encoding='utf-8'), 'the log of an earlier finish\n')
                     self.assertIn(f'Release stopped: {option} {bad}: line 2 is not blank', errors.getvalue())
                     self.assertIn('nothing was started' if detach else 'this run committed nothing', errors.getvalue())
         bad.write_text('\nChange the content\nwith a body under a blank first line.\n', encoding='utf-8')
@@ -148,18 +155,24 @@ class ReleaseTest(unittest.TestCase):
             self.assertEqual(release_main(['finish', 'run-on', '--message', str(bad), '--private-message', str(good),
                                            *self.options()], self.public), 3)
         self.assertIn('line 3 is not blank', errors.getvalue())
-        for text, reason in (('', ' holds no text'), (' \n\n', ' holds no text'), (None, ' cannot be read: [Errno 2]'),
-                             ('Change the content\n\xa0\nwith a line 2 that git does not count as blank.\n',
-                              ': line 2 is not blank')):
-            with self.subTest(text=text):
-                bad.unlink(missing_ok=True)
-                if text is not None:
-                    bad.write_text(text, encoding='utf-8')
-                errors = io.StringIO()
-                with redirect_stderr(errors):
-                    self.assertEqual(release_main(['finish', 'run-on', '--message', str(good), '--private-message',
-                                                   str(bad), *self.options()], self.public), 3)
-                self.assertIn(f'Release stopped: --private-message {bad}{reason}', errors.getvalue())
+        for text, reason in ((b'', ' holds no text'), (b' \n\n', ' holds no text'), (None, ' cannot be read: [Errno 2]'),
+                             ('Change the content\n\xa0\nwith a line 2 that git does not count as blank.\n'.encode(),
+                              ': line 2 is not blank'),
+                             (b'Change the\0content\n', ' holds a NUL byte'),
+                             ('Change the content\n'.encode('utf-16'), ' holds a NUL byte'),
+                             ('\xc6ndr indholdet\n'.encode('latin-1'),
+                              ' is not UTF-8 (invalid continuation byte at byte 0)')):
+            for option, other in (('--message', '--private-message'), ('--private-message', '--message')):
+                with self.subTest(text=text, option=option):
+                    bad.unlink(missing_ok=True)
+                    if text is not None:
+                        bad.write_bytes(text)
+                    errors = io.StringIO()
+                    with redirect_stderr(errors):
+                        self.assertEqual(release_main(['finish', 'run-on', option, str(bad), other, str(good),
+                                                       *self.options()], self.public), 3)
+                    self.assertIn(f'Release stopped: {option} {bad}{reason}', errors.getvalue())
+                    self.assertIn('; this run committed nothing', errors.getvalue())
         self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'first')
 
     def test_finish_takes_a_message_of_one_line_or_of_a_subject_a_blank_line_and_a_body(self):
@@ -850,6 +863,10 @@ class ReleaseTest(unittest.TestCase):
             self.assertEqual(release_main(['finish', 'away', '--detach', '--message', 'm.txt', *self.options()],
                                           self.public), 3)
         self.assertIn('--detach needs an absolute path for m.txt', error.getvalue())
+        with redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(['finish', 'away', '--detach', '--message', '/tmp/m', '--pair-message', 'pair.txt',
+                                           *self.options()], self.public), 3)
+        self.assertIn('--detach needs an absolute path for pair.txt', error.getvalue())
         log.parent.mkdir(parents=True, exist_ok=True)
         log.write_text('Ran 3 tests: OK\nRelease stopped: nothing to release\n', encoding='utf-8')
         with redirect_stderr(io.StringIO()) as error, patch.object(release, 'unit_active', return_value=True):

@@ -79,10 +79,10 @@ faults go, and each test is a check.
   to run only some tests of a unittest file. Write `{fresh}` in an argument for a TEST that needs a
   folder that does not exist yet, such as `-- {fresh}`: each run gets the path of a new one, which
   is removed when the run ends. A CAUGHT line names the tests that failed, from unittest's `FAIL:`
-  and `ERROR:` headings or, in a run without those, from lines a TEST prints as `FAIL`, two spaces
-  and the check's name: check that they are the tests of the planted behaviour, because a test that
-  fails for another reason, such as one that fails now and then on a busy machine, counts as CAUGHT
-  too.
+  and `ERROR:` headings in a unittest run and otherwise from lines a TEST prints as `FAIL`, two
+  spaces and the check's name: check that they are the tests of the planted behaviour, because a
+  test that fails for another reason, such as one that fails now and then on a busy machine, counts
+  as CAUGHT too.
 
 ## Report
 

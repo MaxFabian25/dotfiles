@@ -251,18 +251,27 @@ def leaks(public, private, message=None):
 
 
 def message_stop(args):
-    """Why a commit message file would give a commit the wrong subject or none, or None. Git takes every line up
-    to the first blank one as the subject, and pair() copies the public subject into the private pair commit. On
-    12 November 2026 a file whose body began on line 2 gave both commits a 483-character subject."""
+    """Why a commit message file would give a commit the wrong subject or none, or stop the finish later than
+    here, or None. Git takes every line up to the first blank one as the subject, and pair() copies the public
+    subject into the private pair commit. On 12 November 2026 a file whose body began on line 2 gave both commits
+    a 483-character subject."""
     for option, file in (('--message', args.message), ('--private-message', args.private_message),
                          ('--pair-message', args.pair_message)):
         if not file:
             continue
         try:
-            text = file.read_bytes().decode('utf-8', errors='replace')
+            raw = file.read_bytes()
         except OSError as error:
-            raise RuntimeError(f'{option} {file} cannot be read: {error}; give the file that holds the message, '
-                               'then finish again') from error
+            return f'{option} {file} cannot be read: {error}; give the file that holds the message, then finish again'
+        if b'\0' in raw:
+            return (f'{option} {file} holds a NUL byte, which git refuses in a commit message, after the tests; a '
+                    "file that Windows PowerShell's > wrote is UTF-16 and holds them; save it as UTF-8, then finish "
+                    'again')
+        try:
+            text = raw.decode('utf-8')
+        except UnicodeDecodeError as error:
+            return (f'{option} {file} is not UTF-8 ({error.reason} at byte {error.start}), and finish reads its '
+                    'message files as UTF-8; save it as UTF-8, then finish again')
         # Lines and blanks as git counts them: it splits at newlines only, and drops the blank lines above the subject.
         lines = [line.strip(' \t\r') for line in text.split('\n')]
         first = next((number for number, line in enumerate(lines) if line), None)
@@ -931,7 +940,7 @@ def detach_command(args, argv, environ):
 
 
 def detach(args, argv):
-    for file in (args.message, args.private_message, args.reviewed):
+    for file in (args.message, args.private_message, args.pair_message, args.reviewed):
         if file and not file.is_absolute():
             raise RuntimeError(f'--detach needs an absolute path for {file}, because the unit runs in {ENGINE}')
     if stop := message_stop(args):  # here, like the next stop, not minutes later in the unit's log
