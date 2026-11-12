@@ -2,7 +2,7 @@ public = true
 
 [source]
 local = "skills/excel-com-wsl"
-tree = "sha256:ddacb897b5cfb698906b48474e3568b1e0a456b7491af14d3033a796bb531d5b"
+tree = "sha256:299f20572e200f9ae7c5989694757d853b22bbb8d7c0ae57646fcc3e20913b6e"
 
 [place]
 agents = true

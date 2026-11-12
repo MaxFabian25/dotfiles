@@ -12,6 +12,7 @@ Exits 0 when Excel finished the job and 1 when it did not.
 
 import argparse
 import json
+import math
 import pathlib
 import secrets
 import shutil
@@ -52,17 +53,22 @@ def recorded(pid_file: pathlib.Path) -> int | None:
 def stop(pid_file: pathlib.Path, program: str) -> dict | None:
     """Stop the process whose ID the job wrote, if it is still the named program and started before the job wrote it.
 
-    A process that started later only reuses the ID of one that has ended.
+    A process that started later only reuses the ID of one that has ended. The file's time is rounded up to the
+    second, which is as fine as the comparison on Windows is given.
     """
     pid = recorded(pid_file)
     if pid is None:
         return None
-    written = int(pid_file.stat().st_mtime) + 5
+    written = math.ceil(pid_file.stat().st_mtime)
     script = (f"$p = Get-Process -Id {pid} -ErrorAction SilentlyContinue; "
-              f"if ($p -and $p.ProcessName -eq '{program}' -and $p.StartTime.ToUniversalTime() -le [DateTimeOffset]::FromUnixTimeSeconds({written}).UtcDateTime) "
-              f"{{ Stop-Process -Id {pid} -Force; if ($p.WaitForExit(30000)) {{ 'stopped' }} else {{ 'still running' }} }} else {{ 'gone' }}")
+              f"$written = [DateTimeOffset]::FromUnixTimeSeconds({written}).UtcDateTime; "
+              f"if (-not $p) {{ 'gone' }} "
+              f"elseif ($p.ProcessName -ne '{program}') {{ 'gone; the ID now belongs to ' + $p.ProcessName }} "
+              f"elseif ($p.StartTime.ToUniversalTime() -gt $written) {{ 'gone; the ID now belongs to a process started ' + $p.StartTime.ToUniversalTime().ToString('o') + ', after ' + $written.ToString('o') }} "
+              f"else {{ $why = ''; try {{ Stop-Process -Id {pid} -Force -ErrorAction Stop }} catch {{ $why = ': ' + $_.Exception.Message }}; "
+              f"if ($p.WaitForExit(60000)) {{ 'stopped' }} else {{ 'still running' + $why }} }}")
     try:
-        outcome = subprocess.run([*POWERSHELL, "-Command", script], capture_output=True, text=True, timeout=90).stdout.strip()
+        outcome = subprocess.run([*POWERSHELL, "-Command", script], capture_output=True, text=True, timeout=120).stdout.strip()
     except subprocess.TimeoutExpired:
         outcome = "the stop did not answer"
     return {"pid": pid, "program": program, "outcome": outcome or "the stop printed nothing"}
@@ -149,7 +155,9 @@ def main() -> int:
     if args.json:
         args.json.write_text(json.dumps(result, indent=1), encoding="utf-8")
         load = (result.get("open") or {}).get("load")
-        print(f"excel.py: ok={result.get('ok')} load={load} errors={len(result.get('errors') or [])} error={result.get('error')}")
+        stages = (result.get("base"), result.get("after"), (result.get("reopened") or {}).get("values"))
+        unread = sum("read_error" in entry for stage in stages for entry in (stage or {}).values())
+        print(f"excel.py: ok={result.get('ok')} load={load} errors={len(result.get('errors') or [])} read_errors={unread} error={result.get('error')}")
     else:
         print(json.dumps(result, indent=1))
     return 0 if result.get("ok") else 1

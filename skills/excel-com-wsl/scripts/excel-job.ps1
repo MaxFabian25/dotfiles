@@ -67,21 +67,40 @@ function Get-Target($wb, [string] $ref) {
   return , $wb.Names.Item($ref).RefersToRange
 }
 
+function Confirm-Answer($value, [string] $what) {
+  # When a call's wait for a busy Excel runs out, PowerShell hands back $null for the property, with no error. An
+  # answer Excel always gives, such as a cell count, is checked here, so a refused read is an error and not an empty value.
+  if ($null -eq $value) { throw "Excel gave no answer for $what" }
+}
+
 function Read-Refs($wb, $refs) {
   $out = [ordered]@{}
   foreach ($ref in $refs) {
     try {
       $r = Get-Target $wb $ref
-      if ($r.Count -gt 2000) { throw "range has $($r.Count) cells; the limit is 2000" }
-      $entry = [ordered]@{ address = "'" + $r.Worksheet.Name + "'!" + $r.Address() }
-      if ($r.Count -eq 1) {
-        $entry.value = Convert-Cell $r.Value2
+      Confirm-Answer $r 'the range'
+      $count = $r.Count; Confirm-Answer $count 'the cell count'
+      if ($count -gt 2000) { throw "range has $count cells; the limit is 2000" }
+      $sheet = $r.Worksheet.Name; Confirm-Answer $sheet 'the sheet name'
+      $address = $r.Address(); Confirm-Answer $address 'the address'
+      $entry = [ordered]@{ address = "'" + $sheet + "'!" + $address }
+      if ($count -eq 1) {
+        # An empty cell has no value, but its formula is an empty string, so that tells it from a refused read.
+        $formula = $r.Formula2
+        if ($null -eq $formula) { $formula = $r.Formula }  # An Excel from before dynamic arrays has no Formula2.
+        Confirm-Answer $formula 'the formula'
+        $value = $r.Value2
+        if ($null -eq $value -and $formula -ne '') { throw 'Excel gave no answer for the value' }
+        $entry.value = Convert-Cell $value
         $entry.text = $r.Text
-        $entry.formula = $r.Formula2
+        $entry.formula = $formula
         $entry.has_spill = $r.HasSpill
       } else {
-        $v = $r.Value2; $rows = @()
-        for ($i = 1; $i -le $r.Rows.Count; $i++) { $row = @(); for ($j = 1; $j -le $r.Columns.Count; $j++) { $row += , (Convert-Cell $v[$i, $j]) }; $rows += , $row }
+        $v = $r.Value2
+        if ($v -isnot [array]) { throw 'Excel gave no answer for the values' }
+        # The size comes from the values themselves: a refused Rows or Columns would count as 0 with no error.
+        $rows = @()
+        for ($i = 1; $i -le $v.GetLength(0); $i++) { $row = @(); for ($j = 1; $j -le $v.GetLength(1); $j++) { $row += , (Convert-Cell $v[$i, $j]) }; $rows += , $row }
         $entry.values = $rows
       }
       $out[$ref] = $entry
@@ -90,10 +109,24 @@ function Read-Refs($wb, $refs) {
   return $out
 }
 
+function Test-Refused($caught) {
+  # RPC_E_CALL_REJECTED and RPC_E_SERVERCALL_RETRYLATER, wherever PowerShell wrapped them.
+  for ($e = $caught.Exception; $e; $e = $e.InnerException) { if ($e.HResult -in -2147418111, -2147417846) { return $true } }
+  return $false
+}
+
 function Find-Errors($wb) {
   $found = @()
-  foreach ($ws in $wb.Worksheets) {
-    try { $found += "'$($ws.Name)'!" + $ws.UsedRange.SpecialCells(-4123, 16).Address($false, $false) } catch { }
+  $sheets = $wb.Worksheets; Confirm-Answer $sheets 'the sheets'
+  foreach ($ws in $sheets) {
+    $used = $ws.UsedRange; Confirm-Answer $used 'the used range of a sheet'
+    # SpecialCells throws when a sheet has no error cells. A call that a busy Excel refused is no such answer.
+    $cells = $null
+    try { $cells = $used.SpecialCells(-4123, 16) } catch { if (Test-Refused $_) { throw }; continue }
+    Confirm-Answer $cells 'the error cells of a sheet'
+    $name = $ws.Name; Confirm-Answer $name 'the sheet name'
+    $address = $cells.Address($false, $false); Confirm-Answer $address 'the address of the error cells'
+    $found += "'$name'!" + $address
   }
   return , $found
 }
