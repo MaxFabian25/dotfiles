@@ -51,6 +51,20 @@ def git(root, *args):
     return stdout.strip()
 
 
+def fetch(root):
+    """Fetch origin, a second time when the first try fails. Fetches in two worktrees of one repository that both
+    find origin/main moved collide on that ref, and the loser exits 1 with "cannot lock ref": on 12 November 2026
+    each of 40 rounds of three such fetches lost one or two. The ref then stands where the winner put it, so the
+    second try has nothing left to change. A release finish fetches while another's pull does, since it runs its
+    checks and tests without the machine's release lock. A fetch that ran out of time is not tried again."""
+    try:
+        git(root, 'fetch', '--prune', 'origin')
+    except RuntimeError as error:
+        if 'did not finish within' in str(error):
+            raise
+        git(root, 'fetch', '--prune', 'origin')
+
+
 def signers():
     """Release signers are pinned per device, so a pushed commit cannot vouch for itself."""
     return Path.home() / '.config/dotfiles/allowed_signers'
@@ -84,7 +98,7 @@ def update(public, private, allowed):
         git(root, 'rev-parse', '--abbrev-ref', '@{upstream}')
         heads[root] = git(root, 'rev-parse', 'HEAD')
     for root in roots:
-        git(root, 'fetch', '--prune', 'origin')
+        fetch(root)
     selected = {root: git(root, 'rev-parse', '@{upstream}') for root in roots}
     if private:
         release = tomllib.loads(git(private, 'show', selected[private] + ':release.toml'))

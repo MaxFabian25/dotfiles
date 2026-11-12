@@ -137,20 +137,40 @@ dropped from that folder. Without `--apply` it prints `Home file to deliver` for
 
 `release.py` runs a whole delivery from this checkout. `start NAME` makes a worktree of each repository
 at `origin/main` under `~/worktrees/NAME`. After editing there, `finish NAME --message FILE --push --pull`
-locks and builds any `--entry` and `--package`, commits both worktrees, rebases them onto a newer
-`origin/main` if another session pushed meanwhile, pairs `release.toml`, pushes, and pulls, once any other
-pull on the machine has ended. It stops first in each of these cases:
+locks and builds any `--entry` and `--package`, runs the tests, commits both worktrees, rebases them onto a
+newer `origin/main` if another session pushed meanwhile, pairs `release.toml`, pushes, and pulls, once any
+other pull on the machine has ended.
+
+Several finishes run their checks and tests at the same time on one machine. A finish takes the machine's
+release lock only after its tests, for the steps from the commit to the pull, once no other release, pull or
+sync runs there. On 12 November 2026, when a finish still held the lock through its tests, two releases held
+it for 305 and 360 seconds, of which the tests took 88 and 78 per cent. A finish notes the worktrees whose
+tests passed in `build/tests-passed` under the release's folder, and a later finish of the same files does
+not run the tests again; delete that note to run them. A worktree without work of its own counts as
+`origin/main` there, wherever that stands, as no rebase is tested again either. A finish starts again from
+the engine as it is now when a pull or sync runs as it starts, once that has ended, and when a pull changed
+the engine before it takes the lock. It then runs its checks, locks and builds again, but not the tests, and
+`--timeout` counts anew. When it gives the lock up it prints how long it held it and how long it waited
+for it, and before it starts again how long it had waited by then. One finish runs per release, and a second one stops and names the first.
+
+It stops first in each of these cases:
 
 - The release changes code that `--reviewed FILE` does not show another agent reviewed. `release.py review NAME`
   prints the files, the command that shows their changes and the lines the reviewer writes, against
   `docs/agents/coding-standards.md`. It checks again just before the push, because the commit takes whatever
   the worktree holds by then.
-- Another release is finishing on this machine. It names that run's process and command;
-  `release.py wait --timeout SECONDS` returns once no release, pull or sync runs here.
+- Another release, pull or sync still runs on this machine `--timeout` seconds after the tests, 1800 unless
+  given. It names that run's process and command. Finish again, which does not run the tests a second time.
+  A pull or sync that runs as the finish starts is waited for as long, before any check.
+- A file changed while the tests ran, or between the tests and the commit. Finish again, which tests the
+  files as they are then.
 - A test fails, or the suite writes into the worktree's `.sync/`, the engine cache that real pulls use
   in the canonical checkout. It runs the whole public suite, in about 75 seconds, with the output in the
-  release's `build/tests.log`. `CODEX_HOME` and `CLAUDE_CONFIG_DIR` point at a missing folder, as in CI,
-  so no test reads this device's config.
+  release's `build/tests.log`, and the private folders' tests, with theirs in `build/private-tests.log`.
+  Each run moves the logs of the run before aside as `tests.DATE-TIME.log` and `private-tests.DATE-TIME.log`,
+  named for when they were written, and `finish --detach` does the same with `finish.log`, so a failed
+  attempt can still be read after a retry. `CODEX_HOME` and `CLAUDE_CONFIG_DIR` point at a missing folder, as
+  in CI, so no test reads this device's config.
 - A new file would be left out of the commit by this allowlist `.gitignore`. It names the file.
 - Origin changed a file this branch also changed. Read those commits, then pass `--overlap-reviewed`.
   It asks this before the tests, through a trial merge of the worktree as it stands, and again after the
@@ -178,8 +198,9 @@ whose branches are gone deletes a note it finds, because that note is another re
 
 After a pull that changed skills or packages, it runs `skill_listing.py`, which warns when Claude Code
 lists skills without their descriptions. `clean NAME` removes the worktrees once `origin/main` has them.
-`status` names what runs on the machine and lists every open release worktree with its commits, uncommitted
-files and the files it changes; `start` lists the other open releases. Under each release both name the T3 Code
+`status` names the release that holds the machine's lock and any pull or sync that runs, and lists every open
+release worktree with its commits, uncommitted files and the files it changes, with a line under each release
+whose finish runs, which covers one that is still in its checks and tests; `start` lists the other open releases. Under each release both name the T3 Code
 thread it was started in, which `start` notes in `t3-thread` beside the worktrees when `T3CODE_THREAD_ID` is set.
 For a skill description change, `skill_triggers.py` counts how often the installed skills load in Claude Code for a
 set of prompts, and `codex_triggers.py` does the same in Codex. Measure the draft first, then release, then run the

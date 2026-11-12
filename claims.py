@@ -5,8 +5,8 @@
     python -B claims.py release windows-desktop --who "THREAD TITLE OR ID"
     python -B claims.py status
 
-A pull, a sync and a release finish each hold a file lock for as long as their process runs, and `release.py status`
-names them. Work that spans many commands has no one process to hold a lock: driving a desktop app, a run of
+A pull and a sync each hold a file lock for as long as their process runs, a release finish holds one from its
+commit to its pull, and `release.py status` names them. Work that spans many commands has no one process to hold a lock: driving a desktop app, a run of
 writes to a machine's agent config, or pulls on another machine started from this one. A task records a claim on a
 name for that work instead, and other tasks read it here rather than asking each thread.
 

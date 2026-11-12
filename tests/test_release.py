@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -43,6 +44,11 @@ class ReleaseTest(unittest.TestCase):
         environment.start()
         self.addCleanup(environment.stop)
         os.environ.pop('T3CODE_THREAD_ID', None)
+        # A finish that starts again replaces its process, which here is the test run itself. A test of that names
+        # its own stand-in.
+        restart = patch.object(release.os, 'execv', side_effect=AssertionError('a finish started again'))
+        restart.start()
+        self.addCleanup(restart.stop)
         self.root = Path(self.temp.name)
         self.key = self.root / 'release'
         subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'release', '-f', str(self.key)], check=True)
@@ -504,6 +510,7 @@ class ReleaseTest(unittest.TestCase):
                 self.assertIn('broken', log.read_text(encoding='utf-8'))
 
     def test_finish_stops_on_a_new_file_the_allowlist_leaves_out(self):
+        import portable
         release_main(['start', 'notes', *self.options()], self.public)
         tree = self.worktrees / 'notes/public'
         (tree / 'notes.md').write_text('left out\n', encoding='utf-8')
@@ -511,14 +518,35 @@ class ReleaseTest(unittest.TestCase):
         (tree / 'tests/__pycache__/cache.pyc').write_bytes(b'cache')
         message = self.root / 'message'
         message.write_text('Add notes\n', encoding='utf-8')
-        finish = ['finish', 'notes', '--message', str(message), '--push', *self.options()]
-        with redirect_stderr(io.StringIO()) as error:
+        finish = ['finish', 'notes', '--message', str(message), '--push', '--timeout', '0', *self.options()]
+        # Before the wait for another release, which here would end in a stop of its own.
+        with portable.exclusive_lock(self.root / 'state/release.lock', record=True), \
+                redirect_stderr(io.StringIO()) as error:
             self.assertEqual(release_main(finish, self.public), 3)
         self.assertIn('.gitignore leaves out notes.md;', error.getvalue())
         (tree / 'notes.md').unlink()
         (tree / 'content').write_text('second\n', encoding='utf-8')
         self.assertEqual(release_main(finish, self.public), 0)
         self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'second')
+        # A file made while the finish waits for the lock stops it too, before the commit that would leave it out.
+        hold = release.hold
+
+        def make_a_file_during_the_wait(*arguments):
+            (tree / 'late.md').write_text('left out\n', encoding='utf-8')
+            return hold(*arguments)
+
+        (tree / 'content').write_text('third\n', encoding='utf-8')
+        with patch.object(release, 'hold', make_a_file_during_the_wait), redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(finish, self.public), 3)
+        self.assertIn('.gitignore leaves out late.md;', error.getvalue())
+        self.assertEqual(git(tree, 'status', '--porcelain'), 'M content')
+        self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'second')
+        # The next finish does not test these files again, and still stops on that file before it waits.
+        with portable.exclusive_lock(self.root / 'state/release.lock', record=True), \
+                redirect_stderr(io.StringIO()) as error, redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(release_main(finish, self.public), 3)
+        self.assertIn('The tests did not run again', output.getvalue())
+        self.assertIn('.gitignore leaves out late.md;', error.getvalue())
 
     def test_finish_stops_on_a_suite_that_writes_into_the_engine_cache(self):
         release_main(['start', 'cache', *self.options()], self.public)
@@ -749,21 +777,435 @@ class ReleaseTest(unittest.TestCase):
         self.assertIn('gpgsig -----BEGIN SSH SIGNATURE-----', git(mine, 'cat-file', 'commit', 'HEAD'))
         self.assertEqual(release.rebase(mine, regenerated), '')
 
-    def test_finish_stops_while_another_release_finishes_on_this_machine(self):
+    def test_a_finish_tests_without_the_lock_and_waits_for_another_release_only_to_commit(self):
         import portable
         release_main(['start', 'second', *self.options()], self.public)
-        (self.worktrees / 'second/public/content').write_text('second\n', encoding='utf-8')
+        tree = self.worktrees / 'second/public'
+        (tree / 'tests/test_other.py').write_text(PASSING_TEST, encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Add a test\n', encoding='utf-8')
+        finish = ['finish', 'second', '--message', str(message), '--push', '--timeout', '0', *self.options()]
+        lock = self.root / 'state/release.lock'
+        with portable.exclusive_lock(lock, record=True):
+            with redirect_stderr(io.StringIO()) as error, redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(release_main(finish, self.public), 3)
+        # The other release held the lock all the while, and this one's tests ran and passed all the same.
+        self.assertIn('Ran 2 tests', output.getvalue())
+        self.assertIn(f'another release, pull or sync still runs here after 0 seconds (release PID {os.getpid()} since',
+                      error.getvalue())
+        self.assertIn('committed nothing', error.getvalue())
+        self.assertEqual(git(tree, 'log', '-1', '--format=%s'), 'seed')
+        self.assertEqual(git(self.public_origin, 'ls-tree', '--name-only', 'main', 'tests/'), SEEDED_TESTS)
+        # The lock is this finish's own from the commit on: no other release can take it then.
+        commit, taken = release.commit, []
+
+        def commit_under_the_lock(*arguments):
+            with self.assertRaises(BlockingIOError):
+                with portable.exclusive_lock(lock):
+                    pass
+            taken.append(release.running(('release',)))
+            commit(*arguments)
+
+        with patch.object(release, 'commit', commit_under_the_lock), redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(release_main(finish, self.public), 0)
+        self.assertIn(f'release PID {os.getpid()} since', taken[0][0])
+        self.assertRegex(output.getvalue(), r'Held the release lock for \d+ seconds, after waiting \d+ seconds for it\n')
+        self.assertLess(output.getvalue().index('The tests did not run again'),
+                        output.getvalue().index('Held the release lock'))
+        self.assertIsNone(portable.lock_holder(lock))
+        with portable.exclusive_lock(lock):  # and it is free again once the finish has ended
+            pass
+        self.assertIn('tests/test_other.py', git(self.public_origin, 'ls-tree', '--name-only', 'main', 'tests/'))
+
+    def test_another_release_goes_out_while_a_finish_runs_its_tests(self):
+        message = self.root / 'message'
+        message.write_text('Change one file\n', encoding='utf-8')
+        for name, file in (('slow', 'content'), ('quick', 'doc')):
+            release_main(['start', name, *self.options()], self.public)
+            (self.worktrees / name / 'public' / file).write_text(f'{name}\n', encoding='utf-8')
+        suite, finished = release.test_suite, []
+
+        def release_the_other_during_the_suite(public, *arguments):
+            suite(public, *arguments)
+            if public.parent.name == 'slow':
+                finished.append(release_main(['finish', 'quick', '--message', str(message), '--push', *self.options()],
+                                             self.public))
+
+        with patch.object(release, 'test_suite', release_the_other_during_the_suite), \
+                redirect_stdout(io.StringIO()):
+            self.assertEqual(release_main(['finish', 'slow', '--message', str(message), '--push', *self.options()],
+                                          self.public), 0)
+        self.assertEqual(finished, [0])
+        self.assertEqual(git(self.public_origin, 'show', 'main:doc'), 'quick')
+        self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'slow')
+
+    def test_a_finish_waits_for_the_lock_and_again_when_another_waiter_took_it_first(self):
+        import portable
+        import threading
         message = self.root / 'message'
         message.write_text('Change the content\n', encoding='utf-8')
-        finish = ['finish', 'second', '--message', str(message), '--push', *self.options()]
-        with portable.exclusive_lock(self.root / 'state/release.lock', record=True):
-            with redirect_stderr(io.StringIO()) as error:
+        lock = self.root / 'state/release.lock'
+        # Without record the holder writes no note, which is what a waiter meets when another waiter took the lock
+        # a moment before it: running() names no release, and the lock is taken.
+        for name, record in (('noted', True), ('unnoted', False)):
+            release_main(['start', name, *self.options()], self.public)
+            (self.worktrees / name / 'public/content').write_text(f'{name}\n', encoding='utf-8')
+            held, freed = threading.Event(), threading.Event()
+
+            def hold_for_a_while():
+                with portable.exclusive_lock(lock, record=record):
+                    held.set()
+                    freed.wait(60)
+
+            holder = threading.Thread(target=hold_for_a_while)
+            holder.start()
+            self.addCleanup(holder.join)
+            self.addCleanup(freed.set)
+            self.assertTrue(held.wait(60))
+            suite = release.test_suite
+
+            def free_the_lock_after_the_suite(*arguments, suite=suite, freed=freed):
+                suite(*arguments)
+                threading.Timer(0.5, freed.set).start()
+
+            with self.subTest(name), patch.object(release, 'test_suite', free_the_lock_after_the_suite), \
+                    redirect_stderr(io.StringIO()) as error, redirect_stdout(io.StringIO()):
+                self.assertEqual(release_main(['finish', name, '--message', str(message), '--push', '--timeout', '60',
+                                               *self.options()], self.public), 0)
+                self.assertEqual('Waiting for release PID' in error.getvalue(), record)
+            self.assertEqual(git(self.public_origin, 'show', 'main:content'), name)
+        release_main(['start', 'late', *self.options()], self.public)
+        (self.worktrees / 'late/public/content').write_text('late\n', encoding='utf-8')
+        with portable.exclusive_lock(lock), redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(['finish', 'late', '--message', str(message), '--push', '--timeout', '0',
+                                           *self.options()], self.public), 3)
+        self.assertIn(f'still runs here after 0 seconds (another run holds {lock})', error.getvalue())
+        self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'unnoted')
+        # A pull is waited for like a release: one that runs as the finish starts, and one that starts during the tests.
+        pull, tested = portable.exclusive_lock(self.root / 'state/pull.lock', record=True), release.tested
+        finish = ['finish', 'late', '--message', str(message), '--push', '--timeout', '0', *self.options()]
+        with pull, redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(finish, self.public), 3)
+        self.assertIn('another pull or sync still runs here after 0 seconds; this run committed nothing', error.getvalue())
+
+        def pull_starts_during_the_tests(*arguments):
+            self.enterContext(portable.exclusive_lock(self.root / 'state/pull.lock', record=True))
+            return tested(*arguments)
+
+        with patch.object(release, 'tested', pull_starts_during_the_tests), redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(finish, self.public), 3)
+        self.assertIn(f'another release, pull or sync still runs here after 0 seconds (pull PID {os.getpid()} since',
+                      error.getvalue())
+        self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'unnoted')
+
+    def test_a_later_finish_of_the_same_files_does_not_run_the_tests_again(self):
+        import portable
+        release_main(['start', 'again', *self.options()], self.public)
+        tree = self.worktrees / 'again/public'
+        module = tree / 'tests/test_other.py'
+        module.write_text(FAILING_TEST, encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Add a test\n', encoding='utf-8')
+        finish = ['finish', 'again', '--message', str(message), '--push', '--timeout', '0', *self.options()]
+        note, lock = self.worktrees / 'again/build/tests-passed', self.root / 'state/release.lock'
+        suite, runs = release.test_suite, []
+
+        def counted(*arguments):
+            runs.append(arguments)
+            suite(*arguments)
+
+        def stopped_behind_the_tests():
+            with portable.exclusive_lock(lock, record=True), redirect_stderr(io.StringIO()), \
+                    redirect_stdout(io.StringIO()) as output:
                 self.assertEqual(release_main(finish, self.public), 3)
-        self.assertIn(f'another release is finishing on this machine (release PID {os.getpid()} since', error.getvalue())
-        self.assertIn('release.py wait --timeout SECONDS', error.getvalue())
+            return output.getvalue()
+
+        with patch.object(release, 'test_suite', counted):
+            stopped_behind_the_tests()  # on the failing test
+            self.assertFalse(note.exists())
+            module.write_text(PASSING_TEST, encoding='utf-8')
+            stopped_behind_the_tests()
+            self.assertEqual(len(runs), 2)  # a failed run vouches for nothing
+            self.assertIn('The tests did not run again: they passed on these files before', stopped_behind_the_tests())
+            self.assertEqual(len(runs), 2)
+            module.write_text(PASSING_TEST + '\n# another line\n', encoding='utf-8')
+            self.assertNotIn('The tests did not run again', stopped_behind_the_tests())
+            self.assertEqual(len(runs), 3)  # other files than the ones that passed
+            (tree / 'notes').write_text('untracked\n', encoding='utf-8')
+            (tree / '.gitignore').write_text(ALLOWLIST + '!/notes\n', encoding='utf-8')
+            stopped_behind_the_tests()
+            self.assertEqual(len(runs), 4)  # a new file counts too
+            note.write_text('not JSON', encoding='utf-8')
+            stopped_behind_the_tests()
+            self.assertEqual(len(runs), 5)  # a note that cannot be read vouches for nothing
+            git(tree, 'add', '-A')
+            git(tree, 'commit', '-qm', 'By hand')
+            stopped_behind_the_tests()
+            self.assertEqual(len(runs), 5)  # the same files, committed
+            (tree / 'notes').write_text('edited\n', encoding='utf-8')
+            git(tree, 'commit', '-qam', 'By hand again')
+            stopped_behind_the_tests()
+            self.assertEqual(len(runs), 6)  # a commit of other files is no worktree without work of its own
+            with redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(release_main(finish, self.public), 0)
+        self.assertEqual(len(runs), 6)
+        self.assertIn('The tests did not run again', output.getvalue())
+        self.assertEqual(git(self.public_origin, 'show', 'main:notes'), 'edited')
+
+    def test_a_worktree_without_work_of_its_own_stays_tested_when_origin_moves(self):
+        import portable
+        release_main(['start', 'half', *self.options()], self.public)
+        (self.worktrees / 'half/private/notes').write_text('mine\n', encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Add notes\n', encoding='utf-8')
+        finish = ['finish', 'half', '--private-message', str(message), '--push', '--timeout', '0', *self.options()]
+        with portable.exclusive_lock(self.root / 'state/release.lock', record=True), redirect_stderr(io.StringIO()), \
+                redirect_stdout(io.StringIO()):
+            self.assertEqual(release_main(finish, self.public), 3)
+        # Another session's push moves origin/main, and with it the public worktree, which holds none of this
+        # release's work. finish tests no rebase either.
+        self.push_from_another_session(self.public_origin, 'other', {'doc': 'theirs\n'})
+        git(self.public, 'fetch', '-q', 'origin')  # as that session's pull does, for every worktree of the checkout
+        with patch.object(release, 'test_suite', side_effect=AssertionError('the tests ran again')), \
+                redirect_stdout(io.StringIO()):
+            self.assertEqual(release_main(finish, self.public), 0)
+        self.assertEqual((self.worktrees / 'half/public/doc').read_text(encoding='utf-8'), 'theirs\n')
+        self.assertEqual(git(self.private_origin, 'show', 'main:notes'), 'mine')
+
+    def test_finish_stops_on_files_that_changed_during_or_after_their_tests(self):
+        message = self.root / 'message'
+        message.write_text('Change the content\n', encoding='utf-8')
+        suite, hold = release.test_suite, release.hold
+        for name, told in (('during', 'the worktrees changed while their tests ran (public: content), so the tests '
+                            'vouch for neither state; finish again once the edits are done; this run committed nothing'),
+                           ('after', 'the worktrees changed after their tests ran (public: content), and the commit '
+                            'took the change; finish again, which tests them as they are now; nothing was pushed')):
+            release_main(['start', name, *self.options()], self.public)
+            file = self.worktrees / name / 'public/content'
+            file.write_text(f'tested {name}\n', encoding='utf-8')
+
+            def edit_during_the_suite(*arguments):
+                suite(*arguments)
+                file.write_text(f'slipped in {name}\n', encoding='utf-8')
+
+            def edit_during_the_wait(*arguments):
+                file.write_text(f'slipped in {name}\n', encoding='utf-8')
+                return hold(*arguments)
+
+            late = (patch.object(release, 'test_suite', edit_during_the_suite) if name == 'during' else
+                    patch.object(release, 'hold', edit_during_the_wait))
+            finish = ['finish', name, '--message', str(message), '--push', *self.options()]
+            with self.subTest(name), late, redirect_stderr(io.StringIO()) as error, redirect_stdout(io.StringIO()):
+                self.assertEqual(release_main(finish, self.public), 3)
+            self.assertIn(told, error.getvalue())
+            self.assertEqual(git(self.public_origin, 'show', 'main:content'),
+                             'first' if name == 'during' else 'slipped in during')
+            self.assertEqual((self.worktrees / name / 'build/tests-passed').exists(), name == 'after')
+            # The next finish tests the files as they are now, and releases them.
+            runs = []
+
+            def counted(*arguments):
+                runs.append(arguments)
+                suite(*arguments)
+
+            with patch.object(release, 'test_suite', counted), redirect_stdout(io.StringIO()):
+                self.assertEqual(release_main(finish, self.public), 0)
+            self.assertEqual(len(runs), 1)
+            self.assertEqual(git(self.public_origin, 'show', 'main:content'), f'slipped in {name}')
+
+    def test_each_run_of_the_tests_keeps_the_logs_of_the_run_before(self):
+        import portable
+        release_main(['start', 'logs', *self.options()], self.public)
+        (self.worktrees / 'logs/public/tests/test_other.py').write_text(PASSING_TEST, encoding='utf-8')
+        folder = self.worktrees / 'logs/private/config/tool'
+        folder.mkdir(parents=True)
+        module = folder / 'test_tool.py'
+        module.write_text(FAILING_TEST, encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Add tests\n', encoding='utf-8')
+        finish = ['finish', 'logs', '--message', str(message), '--private-message', str(message), '--push',
+                  *self.options()]
+        build = self.worktrees / 'logs/build'
+        with redirect_stderr(io.StringIO()):
+            self.assertEqual(release_main(finish, self.public), 3)
+        self.assertIn('broken', (build / 'private-tests.log').read_text(encoding='utf-8'))
+        self.assertEqual(sorted(path.name for path in build.glob('*.log')), ['private-tests.log', 'tests.log'])
+        module.write_text(PASSING_TEST, encoding='utf-8')
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(release_main(finish, self.public), 0)
+        self.assertNotIn('broken', (build / 'private-tests.log').read_text(encoding='utf-8'))
+        for name, told in (('tests', 'Ran 2 tests'), ('private-tests', 'broken')):
+            kept = list(build.glob(f'{name}.*.log'))
+            self.assertEqual(len(kept), 1)
+            self.assertRegex(kept[0].name, rf'^{name}\.\d{{8}}-\d{{6}}\.log$')
+            self.assertIn(told, kept[0].read_text(encoding='utf-8'))
+            kept[0].unlink()
+        # Two logs written in the same second both stay, and an empty one is not worth a name.
+        log = build / 'private-tests.log'
+        stamp = time.strftime('%Y%m%d-%H%M%S', time.localtime(log.stat().st_mtime))
+        first = release.keep(log)
+        self.assertEqual(first.name, f'private-tests.{stamp}.log')
+        log.write_text('second\n', encoding='utf-8')
+        os.utime(log, (first.stat().st_mtime, first.stat().st_mtime))
+        self.assertEqual(release.keep(log).name, f'private-tests.{stamp}-2.log')
+        self.assertIn('== config/tool', first.read_text(encoding='utf-8'))
+        log.write_text('', encoding='utf-8')
+        self.assertIsNone(release.keep(log))
+        self.assertIsNone(release.keep(build / 'absent.log'))
+
+    def test_a_file_the_allowlist_leaves_out_keeps_the_tests_from_counting_as_passed(self):
+        release_main(['start', 'needed', *self.options()], self.public)
+        tree = self.worktrees / 'needed/public'
+        (tree / 'tests/test_other.py').write_text(
+            'from pathlib import Path\nimport unittest\n\n\nclass Needs(unittest.TestCase):\n'
+            '    def test_the_file_is_there(self):\n'
+            '        self.assertTrue((Path(__file__).resolve().parents[1] / "needed.md").is_file())\n', encoding='utf-8')
+        (tree / 'needed.md').write_text('the test passes only beside this file\n', encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Add a test\n', encoding='utf-8')
+        finish = ['finish', 'needed', '--message', str(message), '--push', *self.options()]
+        with redirect_stderr(io.StringIO()) as error, redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(release_main(finish, self.public), 3)
+        self.assertIn('Ran 2 tests', output.getvalue())
+        self.assertIn('.gitignore leaves out needed.md;', error.getvalue())
+        self.assertFalse((self.worktrees / 'needed/build/tests-passed').exists())
+        # Deleting the file, as the stop offers, leaves the files of the commit as they were. The tests run again.
+        (tree / 'needed.md').unlink()
+        with redirect_stderr(io.StringIO()) as error, redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(release_main(finish, self.public), 3)
+        self.assertNotIn('The tests did not run again', output.getvalue())
+        self.assertIn('the test suite failed', error.getvalue())
+        self.assertEqual(git(self.public_origin, 'ls-tree', '--name-only', 'main', 'tests/'), SEEDED_TESTS)
+
+    def test_a_failed_read_of_the_engines_commit_stops_the_finish_with_gits_words(self):
+        release_main(['start', 'unread', *self.options()], self.public)
+        tree = self.worktrees / 'unread/public'
+        (tree / 'content').write_text('unread\n', encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Change the content\n', encoding='utf-8')
+        finish = ['finish', 'unread', '--message', str(message), '--push', *self.options()]
+        read = release.git
+        for fails_at, done in ((1, 'nothing'), (2, 'the tests')):  # as the finish starts, and before it takes the lock
+            reads = []
+
+            def engine_unreadable(root, *arguments):
+                if root == self.public and arguments == ('rev-parse', 'HEAD'):
+                    reads.append(arguments)
+                    if len(reads) == fails_at:
+                        raise RuntimeError('dotfiles: git rev-parse failed: fatal: not a git repository')
+                return read(root, *arguments)
+
+            with self.subTest(fails_at=fails_at), patch.object(release, 'git', engine_unreadable), \
+                    redirect_stderr(io.StringIO()) as error, redirect_stdout(io.StringIO()):
+                self.assertEqual(release_main(finish, self.public), 3)
+            self.assertIn('Release stopped: dotfiles: git rev-parse failed: fatal: not a git repository', error.getvalue())
+            self.assertEqual(len(reads), fails_at)
+            self.assertEqual((self.worktrees / 'unread/build/tests-passed').exists(), done == 'the tests')
+            self.assertEqual(git(tree, 'log', '-1', '--format=%s'), 'seed')
+            self.assertFalse((self.root / 'state/release.lock.holder').exists())
         self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'first')
-        self.assertEqual(release_main(finish, self.public), 0)
-        self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'second')
+
+    def test_start_finish_and_clean_try_each_fetch_that_fails_a_second_time(self):
+        import pull
+        fetch, fetches = pull.git, []
+
+        def every_first_fetch_fails(root, *arguments):
+            if arguments[0] == 'fetch':
+                fetches.append(root)
+                if len(fetches) % 2:  # as when another release's pull fetches into the same repository at that moment
+                    raise RuntimeError(f"{root.name}: git fetch failed: error: cannot lock ref 'refs/remotes/origin/main'")
+            return fetch(root, *arguments)
+
+        message = self.root / 'message'
+        message.write_text('Change the content\n', encoding='utf-8')
+        # release.py and pull.py each hold the name git, and a fetch that went past the helper would use release's.
+        with patch.object(pull, 'git', every_first_fetch_fails), patch.object(release, 'git', every_first_fetch_fails), \
+                redirect_stdout(io.StringIO()):
+            self.assertEqual(release_main(['start', 'beside', *self.options()], self.public), 0)
+            self.assertEqual(len(fetches), 4)
+            (self.worktrees / 'beside/public/content').write_text('beside\n', encoding='utf-8')
+            self.assertEqual(release_main(['finish', 'beside', '--message', str(message), '--push', *self.options()],
+                                          self.public), 0)
+            finished = len(fetches)
+            self.assertEqual(release_main(['clean', 'beside', *self.options()], self.public), 0)
+        # start fetches both repositories; finish asks each tree for conflicts and overlap before the tests and after
+        # the commit, and rebases it; clean fetches both. Each of those fetched twice.
+        self.assertEqual(finished, 2 * (2 + 2 * (2 + 2 + 1)))
+        self.assertEqual(len(fetches), finished + 2 * 2)
+        self.assertEqual(fetches[0::2], fetches[1::2])
+        self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'beside')
+        self.assertFalse((self.worktrees / 'beside').exists())
+
+    def test_a_second_finish_of_one_release_stops_and_status_names_the_first(self):
+        release_main(['start', 'once', *self.options()], self.public)
+        (self.worktrees / 'once/public/content').write_text('once\n', encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Change the content\n', encoding='utf-8')
+        finish = ['finish', 'once', '--message', str(message), '--push', *self.options()]
+        suite, seen = release.test_suite, {}
+
+        def a_second_finish_and_status_during_the_suite(*arguments):
+            suite(*arguments)
+            with redirect_stderr(io.StringIO()) as error, redirect_stdout(io.StringIO()) as output:
+                seen['second'] = release_main(finish, self.public)
+                release_main(['status', *self.options()], self.public)
+            seen['error'], seen['status'] = error.getvalue(), output.getvalue()
+
+        with patch.object(release, 'test_suite', a_second_finish_and_status_during_the_suite), \
+                redirect_stdout(io.StringIO()):
+            self.assertEqual(release_main(finish, self.public), 0)
+        self.assertEqual(seen['second'], 3)
+        self.assertIn(f'another finish of once runs (PID {os.getpid()} since', seen['error'])
+        self.assertIn('this run did nothing', seen['error'])
+        self.assertIn('Running on this machine: no release, pull or sync', seen['status'])  # it is in its tests
+        self.assertIn(f'  once: its finish runs, PID {os.getpid()} since', seen['status'])
+        self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'once')
+        with redirect_stdout(io.StringIO()) as output:
+            release_main(['status', *self.options()], self.public)
+        self.assertNotIn('its finish runs', output.getvalue())
+        # The moment after another finish took the release's lock, before it wrote its note.
+        import portable
+        with portable.exclusive_lock(self.worktrees / 'once/build/finish.lock'), redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(finish, self.public), 3)
+        self.assertIn('another finish of once runs (no process it names)', error.getvalue())
+        # A finish of a release that was never started makes no folder for its lock.
+        with redirect_stderr(io.StringIO()):
+            self.assertEqual(release_main(['finish', 'absent', *self.options()], self.public), 3)
+        self.assertFalse((self.worktrees / 'absent').exists())
+
+    def test_a_finish_loads_the_engine_modules_it_needs_before_its_first_check(self):
+        release_main(['start', 'early', *self.options()], self.public)
+        loaded = []
+
+        def first_check(tree, name):
+            loaded.append(all(module in sys.modules for module in ('description', 'description_toml', 'drift', 'host_state')))
+            return 'stopped here'
+
+        with patch.dict(sys.modules), patch.object(release, 'unfinished', first_check), redirect_stderr(io.StringIO()):
+            for module in ('description_toml', 'drift', 'host_state'):
+                sys.modules.pop(module, None)
+            self.assertEqual(release_main(['finish', 'early', *self.options()], self.public), 3)
+        self.assertEqual(loaded, [True, True])
+
+    def test_a_stop_names_how_the_worktrees_changed(self):
+        release_main(['start', 'named', *self.options()], self.public)
+        public, private = self.worktrees / 'named/public', self.worktrees / 'named/private'
+        before = release.tested_state(public, private)
+        self.assertEqual(before, {'public': 'origin/main', 'private': 'origin/main'})
+        (public / 'content').write_text('named\n', encoding='utf-8')
+        first = release.tested_state(public, private)
+        self.assertEqual(release.state_changes(public, private, before, first), 'public: it holds work where it held none')
+        self.assertEqual(release.state_changes(public, private, first, before), 'public: its work is gone')
+        self.assertEqual(release.state_changes(public, private, first, first), '')
+        (public / '.gitignore').write_text(ALLOWLIST + '!/more/\n!/more/**\n', encoding='utf-8')
+        (public / 'more').mkdir()
+        for number in range(9):
+            (public / 'more' / f'file{number}').write_text('more\n', encoding='utf-8')
+        (private / 'notes').write_text('mine\n', encoding='utf-8')
+        second = release.tested_state(public, private)
+        self.assertEqual(release.state_changes(public, private, first, second),
+                         'public: .gitignore, more/file0, more/file1, more/file2, more/file3, more/file4, more/file5, '
+                         'more/file6 and 2 more; private: it holds work where it held none')
 
     def test_wait_returns_once_no_release_pull_or_sync_runs_here(self):
         import portable
@@ -776,7 +1218,7 @@ class ReleaseTest(unittest.TestCase):
         (self.root / 'state/pull.lock.holder').write_text(json.dumps({'pid': int(child.stdout), 'command': 'pull.py'}))
         with redirect_stdout(io.StringIO()) as output:
             self.assertEqual(release_main(['wait', '--timeout', '5'], self.public), 0)
-        self.assertIn('No release, pull or sync runs on this machine.', output.getvalue())
+        self.assertIn("No release holds this machine's lock and no pull or sync runs here.", output.getvalue())
 
     def test_status_and_start_list_the_open_releases(self):
         release_main(['start', 'first', *self.options()], self.public)
@@ -1321,7 +1763,7 @@ class ReleaseTest(unittest.TestCase):
         release_main(['start', 'late', *self.options()], self.public)
         status = self.root / 'finish.exit'
         argv = ['finish', 'late', '--report', str(status), *self.options()]
-        busy = iter([['release PID 1 since 23:54: release.py finish other'], []])
+        busy = iter([['pull PID 1 since 23:54: pull.py --update --apply'], []])
 
         class Restarted(Exception):
             pass
@@ -1336,10 +1778,99 @@ class ReleaseTest(unittest.TestCase):
         with patch.object(release.os, 'execv', restart), redirect_stderr(io.StringIO()):  # nothing to wait for
             self.assertEqual(release_main(argv, self.public), 3)
 
+    def test_a_finish_starts_again_before_the_lock_when_a_pull_changed_the_engine_meanwhile(self):
+        release_main(['start', 'tested', *self.options()], self.public)
+        (self.worktrees / 'tested/public/content').write_text('tested\n', encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Change the content\n', encoding='utf-8')
+        argv = ['finish', 'tested', '--message', str(message), '--push', *self.options()]
+        suite, runs = release.test_suite, []
+
+        class Restarted(Exception):
+            pass
+
+        def restart(program, arguments):
+            raise Restarted(arguments)
+
+        def pull_during_the_suite(*arguments):
+            runs.append(arguments)
+            suite(*arguments)
+            if len(runs) == 1:  # another release goes out and its pull moves the engine's checkout
+                self.push_from_another_session(self.public_origin, 'other', {'doc': 'theirs\n'})
+                git(self.public, 'pull', '-q', '--ff-only', 'origin', 'main')
+
+        with patch.object(release, 'test_suite', pull_during_the_suite), patch.object(release.os, 'execv', restart), \
+                redirect_stdout(io.StringIO()) as output:
+            with self.assertRaises(Restarted) as restarted:
+                release_main(argv, self.public)
+            self.assertEqual(restarted.exception.args[0][3:5], ['finish', 'tested'])
+            self.assertIn('Starting again because a pull changed the engine while this finish ran its checks or '
+                          'waited, to run the engine as it is now', output.getvalue())
+            self.assertRegex(output.getvalue(), r'Waited \d+ seconds for the release lock before the engine changed\n')
+            self.assertNotIn('Held the release lock', output.getvalue())
+            self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'first')  # it took no lock and no commit
+            self.assertEqual(git(self.worktrees / 'tested/public', 'log', '-1', '--format=%s'), 'seed')
+            self.assertFalse((self.root / 'state/release.lock.holder').exists())
+            self.assertEqual(release_main(argv, self.public), 0)  # as the engine starts it again
+        self.assertEqual(len(runs), 1)  # and the tests that passed did not run a second time
+        self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'tested')
+
+    def test_a_detached_finish_keeps_the_log_of_the_attempt_before_and_starts_no_second_unit(self):
+        release_main(['start', 'twice', *self.options()], self.public)
+        message = self.root / 'message'
+        message.write_text('Change the content\n', encoding='utf-8')
+        argv = ['finish', 'twice', '--detach', '--message', str(message), *self.options()]
+        log, status = self.worktrees / 'twice/build/finish.log', self.worktrees / 'twice/build/finish.exit'
+        log.parent.mkdir(parents=True)
+        log.write_text('Release stopped: the first attempt\n', encoding='utf-8')
+        status.write_text('3\n', encoding='utf-8')
+        started = []
+
+        def unit(args, argv, environ):
+            started.append(argv)
+            return [sys.executable, '-c', 'pass']
+
+        with patch.object(release, 'detach_command', unit), patch.object(release.shutil, 'which', return_value='/bin/x'):
+            with patch.object(release, 'unit_state', return_value='active'), redirect_stderr(io.StringIO()) as error:
+                self.assertEqual(release_main(argv, self.public), 3)
+            self.assertIn('a detached finish of twice still runs as unit dotfiles-release-twice', error.getvalue())
+            self.assertEqual(started, [])
+            self.assertEqual(log.read_text(encoding='utf-8'), 'Release stopped: the first attempt\n')
+            self.assertEqual(status.read_text(encoding='utf-8'), '3\n')
+            for state in ('inactive', None):  # None: systemd could not be asked
+                log.write_text(f'Release stopped: an attempt, unit {state}\n', encoding='utf-8')
+                with self.subTest(state=state), patch.object(release, 'unit_state', return_value=state), \
+                        redirect_stdout(io.StringIO()) as output:
+                    self.assertEqual(release_main(argv, self.public), 0)
+                    kept = sorted(log.parent.glob('finish.*.log'), key=lambda path: path.stat().st_mtime_ns)[-1]
+                    self.assertIn(f'The log of the attempt before is kept as {kept}', output.getvalue())
+                    self.assertEqual(kept.read_text(encoding='utf-8'), f'Release stopped: an attempt, unit {state}\n')
+                    self.assertEqual(log.read_text(encoding='utf-8'), '')
+                    self.assertFalse(status.exists())
+        self.assertEqual(len(started), 2)
+        self.assertEqual(len(list(log.parent.glob('finish.*.log'))), 2)
+        # result keeps waiting when systemd cannot be asked, and detach above went on.
+        with patch.object(release.subprocess, 'run', side_effect=OSError('no systemctl')):
+            self.assertIsNone(release.unit_state('twice'))
+            self.assertTrue(release.unit_active('twice'))
+        for state, active in (('active', True), ('deactivating', True), ('inactive', False), ('failed', False)):
+            with patch.object(release.subprocess, 'run', return_value=subprocess.CompletedProcess([], 3, f'{state}\n')):
+                self.assertEqual(release.unit_active('twice'), active)
+
     def test_finish_without_a_message_stops_before_committing(self):
         release_main(['start', 'quiet', *self.options()], self.public)
         (self.worktrees / 'quiet/public/content').write_text('edited\n', encoding='utf-8')
-        self.assertEqual(release_main(['finish', 'quiet', *self.options()], self.public), 3)
+        (self.worktrees / 'quiet/private/notes').write_text('mine\n', encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Change the content\n', encoding='utf-8')
+        # Before the tests, and so before the wait for the lock: the stop used to come after both.
+        for given, option, tree in (([], '--message', 'public'), (['--message', str(message)], '--private-message', 'private')):
+            with self.subTest(option), patch.object(release, 'test_suite', side_effect=AssertionError('the tests ran')), \
+                    redirect_stderr(io.StringIO()) as error:
+                self.assertEqual(release_main(['finish', 'quiet', *given, *self.options()], self.public), 3)
+            self.assertIn(f'{self.worktrees / "quiet" / tree}: pass {option} with the {tree} commit message; this run '
+                          'committed nothing', error.getvalue())
+            self.assertEqual(git(self.worktrees / 'quiet/public', 'log', '-1', '--format=%s'), 'seed')
         self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'first')
 
     def review_output(self, name):
@@ -1501,17 +2032,22 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(release.fork_bytes(self.public, 'HEAD', 'content'), b'first\n')
 
     def test_the_pull_a_finish_starts_does_not_wait_a_second_time(self):
+        # The stand-in also notes whether a release held this machine's lock while it ran, and exits 5.
         (self.public / 'pull.py').write_text(
-            'import pathlib, sys\npathlib.Path(__file__).with_name("pull-argv").write_text("\\n".join(sys.argv[1:]))\n',
-            encoding='utf-8')
+            'import pathlib, sys\npathlib.Path(__file__).with_name("pull-argv").write_text("\\n".join(sys.argv[1:]))\n'
+            'here = pathlib.Path(__file__).resolve().parent\n'
+            '(here / "pull-lock").write_text(str((here.parent / "state/release.lock.holder").exists()))\n'
+            'raise SystemExit(5)\n', encoding='utf-8')
         release_main(['start', 'pulled', *self.options()], self.public)
         (self.worktrees / 'pulled/public/content').write_text('second\n', encoding='utf-8')
         message = self.root / 'message'
         message.write_text('Change the content\n', encoding='utf-8')
         self.assertEqual(release_main(['finish', 'pulled', '--message', str(message), '--push', '--pull',
-                                       *self.options()], self.public), 0)
+                                       *self.options()], self.public), 5)  # the pull's own status
         argv = (self.public / 'pull-argv').read_text(encoding='utf-8').split('\n')
         self.assertEqual(argv[-4:], ['--update', '--apply', '--wait', '0'])
+        self.assertEqual((self.public / 'pull-lock').read_text(encoding='utf-8'), 'True')
+        self.assertFalse((self.root / 'state/release.lock.holder').exists())
 
     def test_a_file_without_a_line_diff_is_fingerprinted_by_both_sides(self):
         self.assertEqual(release.branch_lines(b'same\n', b'same\n'), [])
@@ -1930,14 +2466,15 @@ class ReleaseTest(unittest.TestCase):
         module.write_text(PASSING_TEST, encoding='utf-8')
         message = self.root / 'message'
         message.write_text('Add a test\n', encoding='utf-8')
-        suite = release.test_suite
+        check = release.reused_release_names
 
-        def edit_during_the_suite(*arguments):
-            suite(*arguments)
+        def edit_after_the_first_review_check(*arguments):
+            # Before the tests, so they run on the edited file and pass, and the commit holds what was tested.
             module.write_text(PASSING_TEST + '\n# slipped in\n', encoding='utf-8')
+            return check(*arguments)
 
         errors = io.StringIO()
-        with redirect_stderr(errors), patch.object(release, 'test_suite', edit_during_the_suite):
+        with redirect_stderr(errors), patch.object(release, 'reused_release_names', edit_after_the_first_review_check):
             self.assertEqual(release_main(['finish', 'late', '--message', str(message), '--push', *self.options()],
                                           self.public), 3)
         self.assertIn('the code changed after its review, and nothing was pushed', errors.getvalue())

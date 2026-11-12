@@ -86,6 +86,24 @@ class PairedPullTest(unittest.TestCase):
         update(self.public, self.private, self.signers)
         self.assertEqual((self.public / 'content').stat().st_mtime_ns, before)
 
+    def test_a_pull_tries_each_fetch_that_fails_a_second_time(self):
+        candidate = self.commit(self.public_origin, 'content', 'second')
+        private_commit = self.commit(self.private_origin, 'release.toml', f'public_commit = "{candidate}"\n')
+        fetches = []
+
+        def every_first_fetch_fails(root, *arguments):
+            if arguments[0] == 'fetch':
+                fetches.append(root)
+                if len(fetches) % 2:  # as when a release finish in a worktree of this checkout fetches at the same time
+                    raise RuntimeError(f"{root.name}: git fetch failed: error: cannot lock ref 'refs/remotes/origin/main'")
+            return pull_git(root, *arguments)
+
+        with patch('pull.git', every_first_fetch_fails):
+            update(self.public, self.private, self.signers)
+        self.assertEqual(fetches, [self.public, self.public, self.private, self.private])
+        self.assertEqual(git(self.public, 'rev-parse', 'HEAD'), candidate)
+        self.assertEqual(git(self.private, 'rev-parse', 'HEAD'), private_commit)
+
     def test_bad_pair_does_not_advance_either_checkout(self):
         self.commit(self.public_origin, 'content', 'second')
         self.commit(self.private_origin, 'release.toml', f'public_commit = "{"f" * 40}"\n')
@@ -256,6 +274,56 @@ class PullEnvironmentTest(unittest.TestCase):
                 'alias.dotfiles-pathext=!printf "%s" "$PATHEXT"', 'dotfiles-pathext')
             self.assertIn('.EXE', extensions.split(';'))
             self.assertEqual(os.environ['PATHEXT'], '')
+
+    def test_a_fetch_that_lost_origins_ref_to_another_fetch_is_tried_once_more(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            pull_git(root, 'init', '-q', '--bare', '-b', 'main', str(root / 'origin'))
+            pull_git(root, 'clone', '-q', str(root / 'origin'), str(root / 'seed'))
+            seed, clone = root / 'seed', root / 'clone'
+
+            def push(subject):
+                pull_git(seed, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-q',
+                         '--allow-empty', '-m', subject)
+                pull_git(seed, 'push', '-q', 'origin', 'HEAD:main')
+                return pull_git(seed, 'rev-parse', 'HEAD')
+
+            push('first')
+            pull_git(root, 'clone', '-q', str(root / 'origin'), str(clone))
+            # What a fetch meets while another fetch in a worktree of the same repository moves origin/main.
+            taken = clone / '.git/refs/remotes/origin/main.lock'
+            tries = []
+
+            def git_beside_another_fetch(tree, *arguments):
+                tries.append(arguments)
+                try:
+                    return pull_git(tree, *arguments)
+                finally:
+                    taken.unlink(missing_ok=True)  # the other fetch ends
+
+            second = push('second')
+            taken.write_text('', encoding='utf-8')
+            with patch('pull.git', git_beside_another_fetch):
+                pull.fetch(clone)
+            self.assertEqual(len(tries), 2)
+            self.assertEqual(pull_git(clone, 'rev-parse', 'origin/main'), second)
+            # A fetch that fails twice stops with git's words, and one that ran out of time is not tried again.
+            push('third')
+            taken.write_text('', encoding='utf-8')
+            with patch('pull.git', lambda tree, *arguments: (tries.append(arguments), pull_git(tree, *arguments))[1]), \
+                    self.assertRaisesRegex(RuntimeError, 'clone: git fetch failed: .*main.lock'):
+                pull.fetch(clone)
+            self.assertEqual(len(tries), 4)
+            self.assertEqual(pull_git(clone, 'rev-parse', 'origin/main'), second)
+            taken.unlink()
+
+            def out_of_time(tree, *arguments):
+                tries.append(arguments)
+                raise RuntimeError('clone: git fetch did not finish within 180 seconds')
+
+            with patch('pull.git', out_of_time), self.assertRaisesRegex(RuntimeError, 'did not finish within'):
+                pull.fetch(clone)
+            self.assertEqual(len(tries), 5)
 
     def test_git_stops_child_processes_at_its_time_limit(self):
         # A loaded machine can use up a short limit before Git reaches the alias, so a run with no marker proves nothing.
