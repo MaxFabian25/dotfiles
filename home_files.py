@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import stat
 import tempfile
 
 from sync_files import ConcurrentEdit, Files, contents
@@ -36,8 +37,29 @@ class Delivery:
 def source_files(private: Path) -> dict[str, Path]:
     """Path under the home folder to source file. Bytecode that a test run leaves in the source is no home file."""
     root = private / SOURCE
-    return {path.relative_to(root).as_posix(): path for path in sorted(root.rglob('*'))
-            if path.is_file() and '__pycache__' not in path.relative_to(root).parts}
+    try:
+        if not stat.S_ISDIR(root.stat().st_mode):
+            return {}
+    except FileNotFoundError:
+        return {}
+    except OSError as error:   # a folder above it that cannot be entered
+        raise RuntimeError(f'{root}: cannot read the home files: {error.strerror}') from error
+
+    def unlisted(error):
+        # A folder that cannot be listed would otherwise count as empty, and its files as not part of the release.
+        raise RuntimeError(f'{error.filename}: cannot list the home files: {error.strerror}')
+    found = {}
+    for folder, folders, names in os.walk(root, onerror=unlisted):
+        folders[:] = sorted(name for name in folders if name != '__pycache__')
+        for name in names:
+            path = Path(folder) / name
+            try:
+                plain = stat.S_ISREG(path.stat().st_mode)
+            except OSError as error:   # a folder that can be listed but not entered, or a link to nothing
+                raise RuntimeError(f'{path}: cannot read the home file: {error.strerror}') from error
+            if plain:
+                found[path.relative_to(root).as_posix()] = path
+    return dict(sorted(found.items()))
 
 
 def _digest(data: bytes) -> str:

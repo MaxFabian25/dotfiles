@@ -159,10 +159,14 @@ class HomeFilesTest(unittest.TestCase):
             self.deliver()
 
     def test_a_record_write_that_fails_leaves_no_temporary_file(self):
-        with patch.object(home_files.os, 'replace', side_effect=PermissionError('no replace')), \
-                self.assertRaises(PermissionError):
-            home_files._record(self.state / home_files.RECORD, {})
-        self.assertEqual(list(self.state.iterdir()), [])
+        for failing, error in (('replace', PermissionError('no replace')), ('fspath', None)):
+            # The second writes a value json cannot encode, so the write into the temporary file fails.
+            files = {} if failing == 'replace' else {'a': [object()]}
+            with self.subTest(failing=failing), \
+                    patch.object(home_files.os, 'replace', side_effect=error or home_files.os.replace), \
+                    self.assertRaises((PermissionError, TypeError)):
+                home_files._record(self.state / home_files.RECORD, files)
+            self.assertEqual(list(self.state.iterdir()), [])
 
     def test_a_file_a_release_dropped_and_a_later_one_brings_back_is_still_known(self):
         self.deliver()
@@ -191,6 +195,33 @@ class HomeFilesTest(unittest.TestCase):
         self.assertEqual(delivery.left[1], ('.local/bin/tool', 'changed while the pull delivered it'))
         (self.private / home_files.SOURCE / '.config/tool/rc').chmod(0o644)
         self.assertEqual(self.deliver().written, ('.config/tool/rc', '.local/bin/tool'))
+
+    def test_a_source_folder_that_cannot_be_listed_stops_the_delivery_and_names_the_folder(self):
+        self.deliver()
+        self.release({'.local/bin/tool': ('tool 2\n', True)})
+        folder = self.private / home_files.SOURCE / '.local/bin'
+        folder.chmod(0)
+        self.addCleanup(folder.chmod, 0o755)
+        with self.assertRaisesRegex(RuntimeError, rf'^{folder}: cannot list the home files: Permission denied$'):
+            self.deliver()
+        folder.chmod(0o400)   # listed, but not entered
+        with self.assertRaisesRegex(RuntimeError, rf'^{folder}/tool: cannot read the home file: Permission denied$'):
+            self.deliver()
+        folder.chmod(0o755)
+        # A link to nothing in the source is a broken release, which stops the delivery too.
+        (folder / 'gone').symlink_to(folder / 'nothing')
+        with self.assertRaisesRegex(RuntimeError, rf'^{folder}/gone: cannot read the home file: No such file or directory$'):
+            self.deliver()
+        (folder / 'gone').unlink()
+        above = self.private / 'config'
+        above.chmod(0)
+        self.addCleanup(above.chmod, 0o755)
+        with self.assertRaisesRegex(RuntimeError, 'cannot read the home files: Permission denied$'):
+            self.deliver()
+        above.chmod(0o755)
+        self.assertEqual(self.installed()['.local/bin/tool'], ('tool 1\n', True))
+        # A private checkout without the folder has no home files, which is not an error.
+        self.assertEqual(home_files.source_files(self.root / 'elsewhere'), {})
 
     def test_a_record_that_cannot_be_read_stops_the_delivery_before_any_file(self):
         self.deliver()
