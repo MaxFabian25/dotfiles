@@ -1,7 +1,9 @@
+import ctypes
 import importlib.util
 import io
 import os
 from pathlib import Path
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -100,8 +102,33 @@ class PortableTest(unittest.TestCase):
                                    capture_output=True, text=True, check=True)
             # A holder file a crashed run left behind names a process that has ended.
             lock.with_name('pull.lock.holder').write_text(json.dumps({'pid': int(child.stdout), 'command': 'pull.py'}))
-            if os.name != 'nt':
-                self.assertIsNone(portable.lock_holder(lock))
+            self.assertIsNone(portable.lock_holder(lock))
+
+    @unittest.skipIf(sys.platform == 'darwin', 'macOS has no /proc to read a start time from')
+    def test_a_holder_note_whose_process_id_another_program_now_holds_names_no_holder(self):
+        import json
+        import subprocess
+        with tempfile.TemporaryDirectory() as directory:
+            lock = Path(directory) / 'state/pull.lock'
+            with portable.exclusive_lock(lock, record=True):
+                note = json.loads(lock.with_name('pull.lock.holder').read_text())
+            with subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']) as other:
+                try:
+                    lock.with_name('pull.lock.holder').write_text(json.dumps({**note, 'pid': other.pid}))
+                    self.assertIsNone(portable.lock_holder(lock))
+                finally:
+                    other.kill()
+
+    def test_a_process_that_ended_does_not_run_while_another_still_holds_a_handle_to_it(self):
+        import subprocess
+        with subprocess.Popen([sys.executable, '-c', '']) as child:
+            child.wait()
+            self.assertFalse(portable.process_running(child.pid))
+
+    @unittest.skipUnless(os.name == 'nt' and not ctypes.windll.shell32.IsUserAnAdmin(),
+                         'Windows refuses to open its System process, PID 4, to a run that is not elevated')
+    def test_a_process_windows_will_not_open_counts_as_running(self):
+        self.assertTrue(portable.process_running(4, '1'))
 
     def test_extract_materialises_links_inside_the_archive(self):
         data = archive([('pkg', None), ('pkg/CLAUDE.md', b'rules\n'), ('pkg/AGENTS.md', ('link', 'CLAUDE.md')),

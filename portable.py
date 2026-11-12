@@ -190,8 +190,48 @@ def _proc_shows_host():
     return PurePosixPath(init).name in {'init', 'systemd'}
 
 
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+
+
+@functools.cache
+def _kernel32():
+    import ctypes
+    from ctypes import wintypes
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+    kernel32.GetProcessTimes.argtypes = (wintypes.HANDLE,) + (ctypes.POINTER(wintypes.FILETIME),) * 4
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    return kernel32
+
+
+def _windows_start(pid):
+    import ctypes
+    from ctypes import wintypes
+    kernel32 = _kernel32()
+    handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        if ctypes.get_last_error() == 87:  # ERROR_INVALID_PARAMETER: no process has this PID
+            raise ProcessLookupError(pid)
+        raise PermissionError(pid)
+    try:
+        code, times = wintypes.DWORD(), [wintypes.FILETIME() for _ in range(4)]
+        if not (kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+                and kernel32.GetProcessTimes(handle, *map(ctypes.byref, times))):
+            raise PermissionError(pid)
+        if code.value != 259:  # STILL_ACTIVE: an open handle keeps an ended process's record
+            raise ProcessLookupError(pid)
+        return times[0].dwHighDateTime << 32 | times[0].dwLowDateTime
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 def process_start():
-    """This process's start time in clock ticks, as field 22 of Linux /proc/self/stat gives it, or None."""
+    """This process's start time, or None: on Linux in clock ticks, as field 22 of /proc/self/stat gives it, and on
+    Windows in GetProcessTimes' 100-nanosecond steps."""
+    if WINDOWS:
+        return str(_windows_start(os.getpid()))
     try:
         return Path('/proc/self/stat').read_text().rsplit(')', 1)[1].split()[19]
     except (OSError, IndexError):
@@ -199,11 +239,17 @@ def process_start():
 
 
 def process_running(pid, start=None):
-    """Whether the process with this PID still runs, and on Linux is the one that started at start, a clock-tick
-    count from process_start. A process that later reuses the PID has another start time. Where this cannot
-    tell, as on Windows, it counts as running."""
+    """Whether the process with this PID still runs, and on Linux and Windows is the one that started at start, as
+    process_start on this machine gives it. A process that later reuses the PID has another start time. Where this
+    cannot tell, as on macOS or for a process Windows will not open, it counts as running."""
     if WINDOWS:
-        return True  # os.kill would end the process there
+        try:
+            started = str(_windows_start(pid))  # not os.kill, which would end the process there
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return start is None or not start.isdigit() or started == start
     if sys.platform.startswith('linux') and not _proc_shows_host():
         return True
     try:

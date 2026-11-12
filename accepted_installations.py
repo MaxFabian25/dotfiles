@@ -18,7 +18,7 @@ from description import (AlignedInstall, LocalSource, RepoSource, SkillRoot, Sna
                          plugin_id)
 from drift import Difference, EntryRef, Kind
 from host_state import FactKey, Host, InstallDetail, Surface, Unpinned, bytes_digest
-from portable import process_running, staging_directory, replace as replace_path
+from portable import WINDOWS, process_running, staging_directory, replace as replace_path
 from sync_files import ConcurrentEdit, contents
 from sync_sources import BuildError
 
@@ -80,7 +80,8 @@ def image(path: Path, fields=None, syntax='toml'):
 def _lease_held(marker):
     """Whether the Claude process a lease marker names still runs. A marker whose process has ended holds nothing,
     and sessions that exit uncleanly leave such markers behind. Linux markers record the process's start time."""
-    return process_running(marker['pid'], marker.get('procStart'))
+    # Claude's Windows markers write procStart in a format of their own, not the one process_start uses there.
+    return process_running(marker['pid'], None if WINDOWS else marker.get('procStart'))
 
 
 def _claude_runtime(path):

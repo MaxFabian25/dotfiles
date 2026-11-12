@@ -1791,6 +1791,16 @@ class LeaseHolderTest(unittest.TestCase):
                                capture_output=True, text=True, check=True)
         self.assertFalse(_lease_held({'pid': int(child.stdout)}))
 
+    def test_a_running_process_holds_its_lease_whatever_windows_start_it_records(self):
+        import os
+        from accepted_installations import _lease_held
+        self.assertTrue(_lease_held({'pid': os.getpid(), 'procStartFt': '1'}))
+
+    @unittest.skipUnless(os.name == 'nt', 'only Windows markers hold a procStart that is not the clock ticks Linux uses')
+    def test_a_running_process_holds_its_lease_whatever_procstart_claude_records_on_windows(self):
+        from accepted_installations import _lease_held
+        self.assertTrue(_lease_held({'pid': os.getpid(), 'procStart': '639202300505758780'}))
+
     @unittest.skipUnless(Path('/proc/self/stat').exists(), 'only Linux records the start time sync can compare')
     def test_a_reused_process_id_holds_no_lease(self):
         import os
