@@ -58,6 +58,7 @@ MOVED = re.compile(r'\((?:fetch first|non-fast-forward)\)')
 # Files every release rewrites, so both sides changing them says nothing about clashing work.
 PAIRING_FILES = frozenset({'release.toml', 'setup/lock.toml'})
 LOCK = 'setup/lock.toml'
+TREE_LINE = re.compile(r'\s*tree\s*=')  # the line of a setup entry that pins its source's tree
 SETUP = 'setup/setup.toml'
 LEASE = 'Claude lease: '
 # The public .gitignore is an allowlist: this pattern drops every path that a later ! line does not bring back.
@@ -290,14 +291,83 @@ def push_url(root):
     return GITHUB_SSH.sub('https://github.com/', git(root, 'remote', 'get-url', '--push', 'origin'))
 
 
-def overlap(root):
-    """Files origin/main changed since this branch left it that this branch changed too. A clean rebase can
-    still join two sessions' clashing designs for the same file."""
+def overlap(root, regenerated=frozenset()):
+    """Files origin/main changed since this branch left it that this branch changed too, committed or not. A
+    clean rebase can still join two sessions' clashing designs for the same file. A file finish writes anew is
+    no design of this branch's."""
     git(root, 'fetch', '--prune', 'origin')
     fork = git(root, 'merge-base', 'HEAD', 'origin/main')
-    theirs = set(git(root, 'diff', '--name-only', fork, 'origin/main').splitlines())
-    ours = set(git(root, 'diff', '--name-only', fork, 'HEAD').splitlines())
-    return sorted((theirs & ours) - PAIRING_FILES)
+    theirs = set(git(root, 'diff', '--name-only', '--no-renames', '-z', fork, 'origin/main').split('\0'))
+    return sorted((theirs & set(changed_files(root))) - PAIRING_FILES - regenerated)
+
+
+def pin_only(root, entries):
+    """The setup files of the named entries in which this branch changed nothing beyond the tree its source pins:
+    no other value, such as a tree key of another table, and no other line, such as a comment, which origin's
+    copy would lose. A file the branch left as it was counts too, and cannot conflict. Locking with
+    --refresh-owned writes that pin anew, so origin's copy of such a file loses nothing."""
+    def unpinned_text(description):
+        return {**description, 'source': {key: value for key, value in description.get('source', {}).items()
+                                          if key != 'tree'}}
+
+    def other_lines(text):
+        return [line for line in text.strip().splitlines() if not TREE_LINE.match(line)]  # git() strips too
+    fork = git(root, 'merge-base', 'HEAD', 'origin/main')
+    found = set()
+    for path in (f'setup/{kind}/{entry}.toml' for kind in ('skills', 'packages') for entry in entries):
+        before, after = started(root, path), current(root, path)
+        if (before and after and unpinned_text(before) == unpinned_text(after)
+                and other_lines(git(root, 'show', f'{fork}:{path}'))
+                == other_lines((root / path).read_text(encoding='utf-8'))):
+            found.add(path)
+    return frozenset(found)
+
+
+def snapshot(root):
+    """A commit of the worktree as finish would commit it, made without moving the branch or its index."""
+    if not dirty(root):
+        return git(root, 'rev-parse', 'HEAD')
+    with tempfile.TemporaryDirectory() as folder:
+        index = {'GIT_INDEX_FILE': str(Path(folder) / 'index')}
+        git_bytes(root, 'read-tree', 'HEAD', environment=index)
+        git_bytes(root, 'add', '-A', environment=index)
+        tree = git_bytes(root, 'write-tree', environment=index).decode().strip()
+    return git_bytes(root, 'commit-tree', tree, '-p', 'HEAD', '-m', 'Trial merge').decode().strip()
+
+
+def conflicts(root, regenerated=frozenset()):
+    """Files in which a merge of origin/main and this branch as it stands would conflict, outside those the
+    rebase settles by itself. The rebase would stop on them too, but only after the tests have run."""
+    git(root, 'fetch', '--prune', 'origin')
+    merged = subprocess.run([*GIT, '-C', str(root), 'merge-tree', '--write-tree', '--name-only', '--no-messages', '-z',
+                             'origin/main', snapshot(root)], capture_output=True, timeout=300,
+                            env=native_cli_environment())
+    # A merge git could try prints the merged tree's ID first. Without it exit 1 is no conflict: git also exits 1
+    # with nothing on stdout when it cannot read a commit.
+    tree, *names = merged.stdout.decode(errors='replace').split('\0')
+    if merged.returncode not in (0, 1) or not tree.strip():
+        raise RuntimeError(f'{root.name}: git merge-tree exited {merged.returncode}: '
+                           f'{merged.stderr.decode(errors="replace").strip()}')
+    return sorted({name for name in names if name and merged.returncode} - regenerated)
+
+
+def origin_stop(public, private, regenerated, overlap_reviewed):
+    """Why this release cannot go onto origin/main as it stands, or None. Asked before the tests, so that a stop
+    costs seconds, and again after the commit, because origin can move while the tests run."""
+    clashing = [f'{tree.name}: {", ".join(files)}' for tree in (public, private)
+                if (files := conflicts(tree, regenerated[tree]))]
+    if clashing:
+        return ('the branch conflicts with origin/main (' + '; '.join(clashing) + '). Commit the worktree, rebase '
+                'it by hand with git rebase origin/main, then finish again')
+    if overlap_reviewed:
+        return None
+    shared = [f'{tree.name}: {", ".join(files)}' for tree in (public, private)
+              if (files := overlap(tree, regenerated[tree]))]
+    if shared:
+        return ('another session changed the same files on origin/main since this branch started ('
+                + '; '.join(shared) + '). Read its commits with git log -p HEAD..origin/main -- FILE, '
+                'reconcile the two designs, then finish again with --overlap-reviewed')
+    return None
 
 
 def started(root, path):
@@ -659,6 +729,11 @@ def finish(args, public_repo, private_repo):
     if hits := leaks(public, private, args.message):
         raise RuntimeError(f'{", ".join(hits[:20])} in {public} hold a string that the private {DENYLIST} names; '
                            'take it out of the public side, then finish again; this run committed nothing')
+    repinned = args.entry if args.refresh_owned else []
+    regenerated = {tree: (frozenset({LOCK}) | pin_only(tree, repinned)) if args.entry else frozenset()
+                   for tree in (public, private)}
+    if stop := origin_stop(public, private, regenerated, args.overlap_reviewed):
+        raise RuntimeError(f'{stop}; this run committed nothing')
     test_suite(public, private, base / 'build/tests.log')
     for tree in (public, private):
         if paths := dropped(tree):
@@ -672,19 +747,14 @@ def finish(args, public_repo, private_repo):
         if not args.private_message:
             raise RuntimeError(f'{private}: pass --private-message with the private commit message')
         commit(private, args.private_message)
-    if not args.overlap_reviewed:
-        shared = [f'{tree.name}: {", ".join(files)}' for tree in (public, private) if (files := overlap(tree))]
-        if shared:
-            raise RuntimeError('another session changed the same files on origin/main since this branch started ('
-                               + '; '.join(shared) + '). Read its commits with git log -p HEAD..origin/main -- FILE, '
-                               'reconcile the two designs, then finish again with --overlap-reviewed')
+    if stop := origin_stop(public, private, regenerated, args.overlap_reviewed):
+        raise RuntimeError(stop)
     paired = ahead(public) or half_published(base, public)
-    regenerated = frozenset({LOCK}) if args.entry else frozenset()
     for attempt in range(1, ATTEMPTS + 1):
-        if rebase(public, regenerated) and args.entry:
+        if rebase(public, regenerated[public]) and args.entry:
             run(lock, public)
             amend(public)
-        if rebase(private, regenerated) == 'regenerate':
+        if rebase(private, regenerated[private]) == 'regenerate':
             run(lock, public)
             amend(public)
             amend(private)

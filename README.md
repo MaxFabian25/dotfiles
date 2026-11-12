@@ -136,6 +136,10 @@ pull on the machine has ended. It stops first in each of these cases:
   so no test reads this device's config.
 - A new file would be left out of the commit by this allowlist `.gitignore`. It names the file.
 - Origin changed a file this branch also changed. Read those commits, then pass `--overlap-reviewed`.
+  It asks this before the tests, through a trial merge of the worktree as it stands, and again after the
+  commit. A conflict stops it the same way: commit the worktree and rebase it by hand. `setup/lock.toml`,
+  and a `setup/skills` or `setup/packages` file in which the branch changed only the pinned `tree`, count
+  for neither stop when `--entry` or `--entry NAME --refresh-owned` writes them anew.
 - This device's pull would stop on the pair. It runs the pull's check on the worktrees
   (`sync.py --candidate`), plus two checks a pull otherwise reaches only while applying: the settings
   validation, and the comparison of each rule and configuration file with the copy it last accepted.

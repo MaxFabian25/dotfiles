@@ -145,6 +145,74 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(release_main([*finish, '--overlap-reviewed'], self.public), 0)
         self.assertEqual(git(self.public_origin, 'show', 'main:doc'), 'ONE\ntwo\nthree\nfour\nFIVE')
 
+    def push_from_another_session(self, origin, name, files):
+        other = self.clone(origin, name)
+        for relative, text in files.items():
+            (other / relative).parent.mkdir(parents=True, exist_ok=True)
+            (other / relative).write_text(text, encoding='utf-8')
+        git(other, 'add', '-A')
+        git(other, 'commit', '-qm', 'Another session')
+        git(other, 'push', '-q', 'origin', 'HEAD:main')
+
+    def test_finish_meets_origin_before_the_tests_and_commits_nothing(self):
+        message = self.root / 'message'
+        message.write_text('Edit the doc\n', encoding='utf-8')
+        release_main(['start', 'clash', *self.options()], self.public)
+        release_main(['start', 'shared', *self.options()], self.public)
+        (self.worktrees / 'clash/public/doc').write_text('MINE\ntwo\nthree\nfour\nfive\n', encoding='utf-8')
+        (self.worktrees / 'clash/public/tests/test_new.py').write_text(PASSING_TEST, encoding='utf-8')
+        (self.worktrees / 'shared/public/doc').write_text('one\ntwo\nthree\nfour\nMINE\n', encoding='utf-8')
+        self.push_from_another_session(self.public_origin, 'other-public', {'doc': 'THEIRS\ntwo\nthree\nfour\nfive\n'})
+        for name, stop in (('clash', r'conflicts with origin/main \(public: doc\). Commit the worktree'),
+                           ('shared', r'changed the same files on origin/main since this branch started \(public: doc\)')):
+            with self.subTest(name), redirect_stderr(io.StringIO()) as errors:
+                tree = self.worktrees / name / 'public'
+                before = git(tree, 'rev-parse', 'HEAD'), git(tree, 'status', '--porcelain')
+                self.assertEqual(release_main(['finish', name, '--message', str(message), '--push', '--overlap-reviewed'
+                                               if name == 'clash' else '--push', *self.options()], self.public), 3)
+                self.assertRegex(errors.getvalue(), stop)
+                self.assertIn('this run committed nothing', errors.getvalue())
+                self.assertEqual((git(tree, 'rev-parse', 'HEAD'), git(tree, 'status', '--porcelain')), before)
+                self.assertFalse((self.worktrees / name / 'build/tests.log').exists())
+
+    def test_a_trial_merge_reads_the_worktree_and_leaves_out_what_finish_writes_anew(self):
+        entry, lock = 'setup/skills/kit.toml', 'setup/lock.toml'
+        pinned = '[source]\nlocal = "skills/kit"\ntree = "sha256:{}"\n\n[place]\nagents = {}\n'
+        self.push_from_another_session(self.private_origin, 'seed', {
+            entry: pinned.format('a', 'true'), 'setup/skills/moved.toml': pinned.format('a', 'true'),
+            'setup/skills/noted.toml': pinned.format('a', 'true'),
+            'setup/skills/twin.toml': pinned.format('a', 'true') + 'tree = "a"\n', lock: 'a\n', 'notes': 'one\n'})
+        release_main(['start', 'kit', *self.options()], self.public)
+        mine = self.worktrees / 'kit/private'
+        for relative, text in ((entry, pinned.format('b', 'true')), ('setup/skills/moved.toml', pinned.format('b', 'false')),
+                               ('setup/skills/noted.toml', '# why it is placed\n' + pinned.format('b', 'true')),
+                               ('setup/skills/twin.toml', pinned.format('b', 'true') + 'tree = "b"\n'),
+                               ('setup/skills/new.toml', pinned.format('b', 'true')), (lock, 'b\n'), ('fresh', 'mine\n')):
+            (mine / relative).write_text(text, encoding='utf-8')
+        self.push_from_another_session(self.private_origin, 'theirs', {
+            entry: pinned.format('c', 'true'), 'setup/skills/moved.toml': pinned.format('c', 'true'),
+            lock: 'c\n', 'fresh': 'theirs\n'})
+        before = git(mine, 'rev-parse', 'HEAD'), git(mine, 'status', '--porcelain')
+
+        regenerated = release.pin_only(mine, ['kit', 'moved', 'noted', 'twin', 'new', 'absent']) | {lock}
+        # moved.toml also changed where the skill is placed, noted.toml gained a comment origin's copy lacks, and
+        # twin.toml changed a tree key outside its source
+        self.assertEqual(regenerated, {entry, lock})
+        self.assertEqual(release.pin_only(mine, []), frozenset())
+        self.assertEqual(release.conflicts(mine), ['fresh', lock, entry, 'setup/skills/moved.toml'])
+        self.assertEqual(release.conflicts(mine, regenerated), ['fresh', 'setup/skills/moved.toml'])
+        self.assertEqual(release.overlap(mine, regenerated), ['fresh', 'setup/skills/moved.toml'])
+        self.assertEqual(release.overlap(mine), ['fresh', entry, 'setup/skills/moved.toml'])
+        self.assertEqual((git(mine, 'rev-parse', 'HEAD'), git(mine, 'status', '--porcelain')), before)
+        # A merge that git could not try is a stop with git's words, not a merge without conflicts, though git
+        # exits 1 for both.
+        with patch.object(release, 'snapshot', return_value='0' * 40), \
+                self.assertRaisesRegex(RuntimeError, 'private: git merge-tree exited 1: .*0000.* not something'):
+            release.conflicts(mine)
+        (mine / 'fresh').unlink()
+        (mine / 'setup/skills/moved.toml').write_text(pinned.format('a', 'true'), encoding='utf-8')
+        self.assertEqual(release.conflicts(mine, regenerated), [])
+
     def test_a_refused_push_publishes_neither_half(self):
         release_main(['start', 'refused', *self.options()], self.public)
         (self.worktrees / 'refused/public/content').write_text('second\n', encoding='utf-8')
@@ -487,6 +555,70 @@ class ReleaseTest(unittest.TestCase):
                     redirect_stdout(io.StringIO()) as output:
                 release_main(['finish', 'told', '--message', str(message), '--push', *self.options()], self.public)
             self.assertIn(told, output.getvalue())
+
+    def test_finish_meets_an_origin_that_moved_while_the_tests_ran(self):
+        message = self.root / 'message'
+        message.write_text('Edit the doc\n', encoding='utf-8')
+        suite = release.test_suite
+        for name, theirs, flags, stop in (
+                ('clash', 'THEIRS\ntwo\nthree\nfour\nfive\n', ['--overlap-reviewed'],
+                 r'conflicts with origin/main \(public: doc\). Commit the worktree'),
+                ('shared', 'THEIRS\ntwo\nthree\nfour\nFIVE\n', [],
+                 r'changed the same files on origin/main since this branch started \(public: doc\)')):
+            release_main(['start', name, *self.options()], self.public)
+            tree = self.worktrees / name / 'public'
+            (tree / 'doc').write_text('MINE\ntwo\nthree\nfour\nfive\n' if name == 'clash' else
+                                      'one\ntwo\nMINE\nfour\nfive\n', encoding='utf-8')
+
+            def push_during_the_suite(*arguments):
+                suite(*arguments)
+                self.push_from_another_session(self.public_origin, f'other-{name}', {'doc': theirs})
+
+            with self.subTest(name), redirect_stderr(io.StringIO()) as errors, \
+                    patch.object(release, 'test_suite', push_during_the_suite):
+                self.assertEqual(release_main(['finish', name, '--message', str(message), '--push', *flags,
+                                               *self.options()], self.public), 3)
+            self.assertRegex(errors.getvalue(), stop)
+            self.assertNotIn('committed nothing', errors.getvalue())  # the commit was made before origin moved
+            self.assertEqual(git(tree, 'log', '-1', '--format=%s'), 'Edit the doc')
+            self.assertEqual(git(self.public_origin, 'show', 'main:doc'), theirs.strip())
+
+    def test_finish_leaves_out_of_both_stops_only_what_its_flags_write_anew(self):
+        kit, pack, lock = 'setup/skills/kit.toml', 'setup/packages/pack.toml', 'setup/lock.toml'
+        pinned = '[source]\nlocal = "skills/kit"\ntree = "sha256:{}"\n'
+        allowed = ALLOWLIST + '!/setup/\n!/setup/**\n'
+        self.push_from_another_session(self.public_origin, 'seed-public', {pack: pinned.format('a'), '.gitignore': allowed})
+        self.push_from_another_session(self.private_origin, 'seed-private', {kit: pinned.format('a'),
+                                                                               lock: '[kit]\ntree = "a"\n'})
+        release_main(['start', 'pins', *self.options()], self.public)
+        public, private = self.worktrees / 'pins/public', self.worktrees / 'pins/private'
+        for tree, files in ((public, {pack: pinned.format('b'), 'content': 'mine\n'}),
+                            (private, {kit: pinned.format('b'), lock: '[kit]\ntree = "b"\n', 'notes': 'mine\n'})):
+            for relative, text in files.items():
+                (tree / relative).write_text(text, encoding='utf-8')
+        self.push_from_another_session(self.public_origin, 'their-public', {pack: pinned.format('c')})
+        self.push_from_another_session(self.private_origin, 'their-private', {kit: pinned.format('c'),
+                                                                                lock: '[kit]\ntree = "c"\n'})
+        message = self.root / 'message'
+        message.write_text('Pin the kit\n', encoding='utf-8')
+        finish = ['finish', 'pins', '--message', str(message), '--private-message', str(message), *self.options()]
+        both = ['--entry', 'kit', '--entry', 'pack']
+        # The fixture has no lock_setup.py, and each case here ends before or without a relock that matters.
+        with patch.object(release, 'run'):
+            for flags, named in (([], f'(public: {pack}; private: {lock}, {kit})'),
+                                 (both, f'(public: {pack}; private: {kit})'),  # only --refresh-owned pins anew
+                                 (['--entry', 'kit', '--refresh-owned'], f'(public: {pack})')):
+                with self.subTest(flags=flags), redirect_stderr(io.StringIO()) as errors:
+                    self.assertEqual(release_main([*finish, *flags], self.public), 3)
+                    self.assertIn(f'conflicts with origin/main {named}. Commit the worktree', errors.getvalue())
+                    self.assertIn('this run committed nothing', errors.getvalue())
+            # With both entries pinned anew nothing is left to stop on, and each rebase takes origin's copies.
+            self.assertEqual(release_main([*finish, *both, '--refresh-owned'], self.public), 0)
+        self.assertEqual((public / pack).read_text(encoding='utf-8'), pinned.format('c'))
+        self.assertEqual((private / kit).read_text(encoding='utf-8'), pinned.format('c'))
+        self.assertEqual((private / lock).read_text(encoding='utf-8'), '[kit]\ntree = "c"\n')
+        self.assertEqual(((public / 'content').read_text(encoding='utf-8'),
+                          (private / 'notes').read_text(encoding='utf-8')), ('mine\n', 'mine\n'))
 
     def test_a_rebase_takes_origins_copy_of_a_regenerated_file_only_where_it_alone_conflicts(self):
         lock = 'setup/lock.toml'
