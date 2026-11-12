@@ -265,13 +265,18 @@ def message_stop(args):
             return f'{option} {file} cannot be read: {error}; give the file that holds the message, then finish again'
         if b'\0' in raw:
             return (f'{option} {file} holds a NUL byte, which git refuses in a commit message, after the tests; a '
-                    "file that Windows PowerShell's > wrote is UTF-16 and holds them; save it as UTF-8, then finish "
-                    'again')
+                    "file that Windows PowerShell's > wrote is UTF-16, which holds NUL bytes; save it as UTF-8, then "
+                    'finish again')
+        if raw.startswith(b'\xef\xbb\xbf'):
+            return (f'{option} {file} starts with a byte-order mark, which git would keep at the start of the '
+                    "commit's subject; Windows PowerShell's Out-File -Encoding utf8 writes one; save the file as "
+                    'UTF-8 without it, then finish again')
         try:
             text = raw.decode('utf-8')
         except UnicodeDecodeError as error:
-            return (f'{option} {file} is not UTF-8 ({error.reason} at byte {error.start}), and finish reads its '
-                    'message files as UTF-8; save it as UTF-8, then finish again')
+            return (f'{option} {file} is not UTF-8 ({error.reason} at byte {error.start}), so git would read each '
+                    'byte that is not UTF-8 as Latin-1, which gives wrong characters for any other encoding; save it '
+                    'as UTF-8, then finish again')
         # Lines and blanks as git counts them: it splits at newlines only, and drops the blank lines above the subject.
         lines = [line.strip(' \t\r') for line in text.split('\n')]
         first = next((number for number, line in enumerate(lines) if line), None)

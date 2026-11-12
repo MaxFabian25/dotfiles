@@ -80,6 +80,10 @@ class Plant(unittest.TestCase):
 
     def test_a_unittest_run_that_also_prints_a_fail_line_names_only_its_failed_tests(self):
         printing = TEST.replace('        self.assert', '        print("FAIL  printed by the test")\n        self.assert')
+        # A second test, so unittest writes "Ran 2 tests" where the other tests' runs end "Ran 1 test".
+        printing = printing.replace('\n\n\nunittest.main()',
+                                    '\n\n    def test_runs(self):\n        pass\n\n\nunittest.main()')
+        self.assertIn('def test_runs', printing)
         (self.root / 'code/test_value.py').write_text(printing, encoding='utf-8')
         self.assertEqual(self.plant([['triples', 'number * 2', 'number * 3']])[:2],
                          (0, ['CAUGHT triples: test_double failed', '1 of 1 plants caught']))

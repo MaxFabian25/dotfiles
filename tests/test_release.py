@@ -136,9 +136,10 @@ class ReleaseTest(unittest.TestCase):
                     # --report is what a detached unit's finish gets, and what makes it wait for another release.
                     argv = ['finish', 'run-on', *(part for name, file in files.items() for part in (name, str(file))),
                             '--push', *(detach or ['--report', str(self.root / 'status')]), *self.options()]
-                    log = self.worktrees / 'run-on/build/finish.log'
+                    log, status = (self.worktrees / 'run-on/build' / name for name in ('finish.log', 'finish.exit'))
                     log.parent.mkdir(exist_ok=True)
                     log.write_text('the log of an earlier finish\n', encoding='utf-8')
+                    status.write_text('3\n', encoding='utf-8')
                     errors = io.StringIO()
                     with redirect_stderr(errors), patch.object(release, 'detach_command', side_effect=started), \
                             patch.object(release, 'review_stop', side_effect=started), \
@@ -147,6 +148,7 @@ class ReleaseTest(unittest.TestCase):
                             patch.object(release, 'finish', side_effect=started):
                         self.assertEqual(release_main(argv, self.public), 3)
                     self.assertEqual(log.read_text(encoding='utf-8'), 'the log of an earlier finish\n')
+                    self.assertEqual(status.read_text(encoding='utf-8'), '3\n')  # result NAME still reads that finish
                     self.assertIn(f'Release stopped: {option} {bad}: line 2 is not blank', errors.getvalue())
                     self.assertIn('nothing was started' if detach else 'this run committed nothing', errors.getvalue())
         bad.write_text('\nChange the content\nwith a body under a blank first line.\n', encoding='utf-8')
@@ -159,9 +161,15 @@ class ReleaseTest(unittest.TestCase):
                              ('Change the content\n\xa0\nwith a line 2 that git does not count as blank.\n'.encode(),
                               ': line 2 is not blank'),
                              (b'Change the\0content\n', ' holds a NUL byte'),
-                             ('Change the content\n'.encode('utf-16'), ' holds a NUL byte'),
+                             ('Change the content\n'.encode('utf-16'), ' holds a NUL byte, which git refuses in a commit '
+                              "message, after the tests; a file that Windows PowerShell's > wrote is UTF-16, which holds "
+                              'NUL bytes; save it as UTF-8'),
+                             ('Change the content\n\nWith a body.\n'.encode('utf-8-sig'), ' starts with a byte-order mark'),
+                             ('\n'.encode('utf-8-sig'), ' starts with a byte-order mark'),
                              ('\xc6ndr indholdet\n'.encode('latin-1'),
-                              ' is not UTF-8 (invalid continuation byte at byte 0)')):
+                              ' is not UTF-8 (invalid continuation byte at byte 0), so git would read each byte that is '
+                              'not UTF-8 as Latin-1, which gives wrong characters for any other encoding; save it as '
+                              'UTF-8')):
             for option, other in (('--message', '--private-message'), ('--private-message', '--message')):
                 with self.subTest(text=text, option=option):
                     bad.unlink(missing_ok=True)
