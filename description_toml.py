@@ -7,7 +7,7 @@ whose parsed content is unchanged.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
 import tomllib
 from typing import Any, Mapping
@@ -323,10 +323,17 @@ def _parse_host_skills(path: Path, data: Mapping, errors: list[str]) -> dict[str
     return modes
 
 
-def _parse_device(path: Path, data: Mapping, errors: list[str]) -> frozenset[FactKey]:
+def _parse_device(path: Path, data: Mapping, errors: list[str]) -> tuple[frozenset[FactKey], tuple[str, ...]]:
     """A [host] table per host, listing subjects by surface as sync reports them:
-    loose_skill = ["{claude_home}/skills/orca-cli"]."""
+    loose_skill = ["{claude_home}/skills/orca-cli"]. Above them, account_homes lists the Codex homes of other apps
+    as globs under the home folder: account_homes = [".local/share/orca/codex-accounts/*/home"]."""
     table = _Table(path, data, errors)
+    account_homes = table.strings('account_homes')
+    for pattern in account_homes:
+        parts = PureWindowsPath(pattern).parts
+        if not parts or PureWindowsPath(pattern).anchor or parts[0] == '~' or '..' in parts:
+            table.error('account_homes', f'expected a glob under the home folder, not {pattern!r}')
+            account_homes = ()
     keys = set()
     for host in Host:
         if (surfaces := table.sub(host.value)) is not None:
@@ -334,7 +341,7 @@ def _parse_device(path: Path, data: Mapping, errors: list[str]) -> frozenset[Fac
                 keys.update(FactKey(host, surface, subject) for subject in surfaces.strings(surface.name.lower()))
             surfaces.done()
     table.done()
-    return frozenset(keys)
+    return frozenset(keys), account_homes
 
 
 def _parse_lock(path: Path, data: Mapping, errors: list[str]) -> dict[EntryName, Lock]:
@@ -375,6 +382,7 @@ class _Root:
     lock_path: Path | None = None
     expected_unmanaged: dict[Platform, frozenset[FactKey]] = field(default_factory=dict)
     runtime: runtime_pin.RuntimePin | None = None
+    account_homes: dict[Platform, tuple[str, ...]] = field(default_factory=dict)
 
 
 def _toml(path: Path, errors: list[str]) -> dict | None:
@@ -432,7 +440,7 @@ def _read_root(root: Path, visibility: Visibility, errors: list[str]) -> _Root:
     for platform in Platform:
         path = root / 'devices' / f'{platform.value}.toml'
         if path.is_file() and (data := _toml(path, errors)) is not None:
-            found.expected_unmanaged[platform] = _parse_device(path, data, errors)
+            found.expected_unmanaged[platform], found.account_homes[platform] = _parse_device(path, data, errors)
     rules_path = root / 'rules/AGENTS.md'
     if rules_path.is_file():
         found.rules = Rules(rules_path.read_bytes())
@@ -492,7 +500,8 @@ def _merge(roots: Roots, public: _Root, private: _Root) -> Setup:
         loose={**public.loose, **private.loose}, host_skills={**public.host_skills, **private.host_skills},
         rules=private.rules or public.rules, note_rules=public.note_rules,
         public_repositories=public.public_repositories, lock={**public.lock, **private.lock},
-        expected_unmanaged={**public.expected_unmanaged, **private.expected_unmanaged}, runtime=public.runtime)
+        expected_unmanaged={**public.expected_unmanaged, **private.expected_unmanaged}, runtime=public.runtime,
+        account_homes=private.account_homes)
 
 
 @dataclass(frozen=True)

@@ -1,6 +1,8 @@
-"""Keep the plugins of the Orca account homes on this device on the copies ~/.codex accepted.
+"""Keep the plugins of the account homes on this device on the copies ~/.codex accepted.
 
-Each Orca account home is a separate Codex home with its own plugin cache. Codex refreshes a plugin there from
+An account home is a separate Codex home that another app keeps, such as each account of the Orca desktop app,
+with its own plugin cache. The private devices/<platform>.toml lists them as account_homes, and a device whose
+file lists none has none. Codex refreshes a plugin there from
 the catalog, which lacks the install overlay and harness adaptation the accepted ~/.codex copy carries. Sync
 replaces that native copy, an older version, its own earlier copy, or the ~/.codex copy a release replaced at the
 same version with the accepted ~/.codex copy, for plugins the home already has installed and enabled. It installs nothing new, enables nothing, approves no hook, and leaves
@@ -29,11 +31,8 @@ from sync_sources import BuildError, child
 _ABSENT = {'kind': 'absent'}
 
 
-def profiles(home):
-    parents = (home / '.local/share/orca/codex-accounts', home / 'AppData/Roaming/orca/codex-accounts',
-               home / 'Library/Application Support/Orca/codex-accounts',
-               home / 'Library/Application Support/orca/codex-accounts')
-    return tuple(sorted({path for parent in parents for path in parent.glob('*/home') if path.is_dir()}))
+def profiles(home, patterns):
+    return tuple(sorted({path for pattern in patterns for path in home.glob(pattern) if path.is_dir()}))
 
 
 @dataclass(frozen=True)
@@ -99,16 +98,17 @@ def _known_copy(actual, references):
                                                 for reference in references) for path, value in entries.items())
 
 
-def inspect(setup, roots, accepted, approved=None):
+def inspect(setup, roots, patterns, accepted, approved=None):
     """The mirrors this device's account homes need, what blocks them, and notes on plugins left alone.
 
+    patterns are the device's account_homes globs.
     accepted(identity) returns the receipt's accepted record of a ~/.codex install, or None while it is pending.
     approved(home) returns the plugin hook keys Codex reports trusted in that home; None skips the hook check.
     """
     mirrors, differences, notes = [], [], []
     canonical_config = contents(roots.codex_home / 'config.toml')
     markets = tomllib.loads(canonical_config.decode('utf-8')).get('marketplaces', {}) if canonical_config else {}
-    for profile in profiles(roots.home):
+    for profile in profiles(roots.home, patterns):
         config = contents(profile / 'config.toml')
         if config is None:
             continue
@@ -163,7 +163,7 @@ def inspect(setup, roots, accepted, approved=None):
                         if missing := defined - trusted:
                             differences.append(Difference(Kind.APPROVAL, None, None, None, entry, host=Host.CODEX,
                                                           detail=f'{profile}: approve {len(missing)} {subject} '
-                                                                 'hooks in this Orca home'))
+                                                                 'hooks in this account home'))
             except Unread as error:
                 differences.append(Difference(Kind.INCOMPLETE, None, None, None, entry, host=Host.CODEX,
                                               detail=f'{profile}: {error}'))

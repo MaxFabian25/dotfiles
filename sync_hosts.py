@@ -51,7 +51,8 @@ class Apply:
         self._plugins()
         self._skills()
         # Planned again, because the steps above can replace the accepted ~/.codex copy the homes mirror.
-        mirrors, _, _ = profile_plugins.inspect(self.setup, self.roots, self.owner.accepted)
+        mirrors, _, _ = profile_plugins.inspect(self.setup, self.roots,
+                                                self.setup.account_homes.get(self.device.platform, ()), self.owner.accepted)
         profile_plugins.apply(mirrors, self.roots, self.owner.accepted, self.files)
 
     def command(self, host, *args):

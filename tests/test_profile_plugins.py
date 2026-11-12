@@ -14,18 +14,19 @@ from accepted_installations import image
 from description import CodexPlacement, EngineInstall, Hooks, LocalSource, Lock, LockedTree, Package, Roots, Setup
 from description import ToolNotes, Visibility
 from host_observation import Unread
-from host_state import Host
+from host_state import Host, Platform
 import profile_plugins
 from sync_files import ConcurrentEdit, Files
 import sync_hosts
 
 VERSION = '2.0.0+explicit.abc'
+ACCOUNT_HOMES = ('.local/share/orca/codex-accounts/*/home',)
 MARKETPLACE = '[marketplaces.personal]\nsource_type = "local"\nsource = "/home/user"\n'
 HOOK = 'kit@personal:hooks/hooks.json:session_start:0:0'
 
 
 class Fixture:
-    """A ~/.codex with an accepted kit copy, the catalog export Codex installs from, and one Orca account home."""
+    """A ~/.codex with an accepted kit copy, the catalog export Codex installs from, and one account home."""
 
     def __init__(self, home, *, hooks=Hooks.OFF):
         self.home = home
@@ -66,8 +67,9 @@ class Fixture:
         shutil.copytree(source or self.native, self.cache / version)
         return self.cache / version
 
-    def inspect(self, *, hooks=False):
-        return profile_plugins.inspect(self.setup, self.home.roots, self.accepted, self.approved if hooks else None)
+    def inspect(self, *, hooks=False, patterns=ACCOUNT_HOMES):
+        return profile_plugins.inspect(self.setup, self.home.roots, patterns, self.accepted,
+                                       self.approved if hooks else None)
 
     def apply(self, mirrors, backup='backup'):
         files = Files(self.home.roots.home / backup)
@@ -76,6 +78,15 @@ class Fixture:
 
 
 class ProfilePluginsTest(unittest.TestCase):
+    def test_a_home_the_device_file_does_not_list_is_left_alone(self):
+        with Home() as home:
+            kit = Fixture(home, hooks=Hooks.TRUSTED)
+            kit.install('1.0.0')
+            before = image(kit.cache)
+            self.assertEqual(kit.inspect(hooks=True, patterns=()), ((), (), ()))
+            self.assertEqual(kit.inspect(hooks=True, patterns=('.local/share/other/*/home',)), ((), (), ()))
+            self.assertEqual(image(kit.cache), before)
+
     def test_older_version_becomes_the_accepted_copy_and_moves_to_the_backup(self):
         with Home() as home:
             kit = Fixture(home)
@@ -167,7 +178,8 @@ class ProfilePluginsTest(unittest.TestCase):
                 kit.record = {'path': str(kit.canonical), 'image': image(kit.canonical)}
 
             operation = sync_hosts.Apply.__new__(sync_hosts.Apply)
-            operation.setup, operation.roots = kit.setup, home.roots
+            operation.setup, operation.roots = replace(kit.setup, account_homes={Platform.LINUX: ACCOUNT_HOMES}), home.roots
+            operation.device = SimpleNamespace(platform=Platform.LINUX)
             operation.current = SimpleNamespace(profile_mirrors=planned)
             operation.files = Files(home.roots.home / 'backup')
             operation.owner = SimpleNamespace(preflight=lambda prepared: None, apply=release, accepted=kit.accepted)
@@ -269,7 +281,7 @@ class ProfilePluginsTest(unittest.TestCase):
             kit.apply(kit.inspect(hooks=True)[0])
             _, differences, _ = kit.inspect(hooks=True)
             self.assertEqual([d.kind.value for d in differences], ['approval'])
-            self.assertIn('approve 1 kit@personal hooks in this Orca home', differences[0].detail)
+            self.assertIn('approve 1 kit@personal hooks in this account home', differences[0].detail)
             kit.trusted = frozenset({HOOK})
             self.assertEqual(kit.inspect(hooks=True), ((), (), ()))
             kit.trusted = Unread('Native hooks/list timed out')

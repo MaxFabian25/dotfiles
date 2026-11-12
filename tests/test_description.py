@@ -299,11 +299,18 @@ class LeakTest(unittest.TestCase):
         with Roots() as roots:
             (roots.private / 'devices').mkdir()
             (roots.private / 'devices/macos.toml').write_text(
+                'account_homes = [".local/share/orca/codex-accounts/*/home"]\n'
                 '[codex]\nplugin = ["chrome@openai-bundled"]\n[claude]\nloose_skill = ["{claude_home}/skills/orca-cli"]\n')
-            listed = description_toml.load(roots.roots()).expected_unmanaged
+            setup = description_toml.load(roots.roots())
+            self.assertEqual(setup.account_homes, {host_state.Platform.MACOS: ('.local/share/orca/codex-accounts/*/home',)})
+            listed = setup.expected_unmanaged
             self.assertEqual(listed, {host_state.Platform.MACOS: frozenset({
                 host_state.FactKey(H.CODEX, host_state.Surface.PLUGIN, 'chrome@openai-bundled'),
                 host_state.FactKey(H.CLAUDE, host_state.Surface.LOOSE_SKILL, '{claude_home}/skills/orca-cli')})})
+            for outside in ('/home/x/*/home', 'C:/Users/x/*/home', '~/x/*/home', '../x/*/home', 'x/../../y', '', '.'):
+                (roots.private / 'devices/linux.toml').write_text(f'account_homes = ["{outside}"]\n')
+                self.assertEqual(roots.problems(), [f'{roots.private}/devices/linux.toml:account_homes: expected a glob '
+                                                    f'under the home folder, not {outside!r}'])
             (roots.private / 'devices/linux.toml').write_text('[codex]\nplugins = ["x"]\n')
             self.assertEqual(roots.problems(), [f'{roots.private}/devices/linux.toml:codex.plugins: unknown key'])
             (roots.private / 'devices/linux.toml').unlink()

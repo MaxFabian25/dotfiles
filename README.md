@@ -47,8 +47,10 @@ same policy as the canonical cache. Harness adaptations remain a separate instal
 
 Native publisher plugins keep their publisher versions and catalog ownership.
 
-Each Orca account home on this device is a separate Codex home with its own plugin cache. When Codex starts
-there, its `plugin/list` call installs a newer catalog version, which lacks the install overlay and harness
+An account home is a separate Codex home that another app keeps, such as each account of the Orca desktop app,
+with its own plugin cache. The private `devices/<platform>.toml` lists them as globs under the home folder,
+`account_homes = [".local/share/orca/codex-accounts/*/home"]`, and a device whose file lists none has none. When Codex starts
+in one, its `plugin/list` call installs a newer catalog version, which lacks the install overlay and harness
 adaptation of the accepted `~/.codex` copy. So for each plugin a home has installed and enabled, a sync
 copies the accepted `~/.codex` copy into that home in place of an older version, the native copy, its own
 earlier copy, or the `~/.codex` copy a release replaced at the same version, which a home that already

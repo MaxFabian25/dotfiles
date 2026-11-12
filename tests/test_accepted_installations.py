@@ -223,13 +223,27 @@ class InstallationTest(unittest.TestCase):
         backups = [path for path in (self.roots.codex_home / 'skills').glob('.sync-loose-*/displaced/SKILL.md')]
         self.assertEqual([path.read_text() for path in backups], ['A second loose skill.\n'])
 
+    def test_a_plan_covers_only_the_account_homes_the_device_file_lists(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        profile = self.roots.home / '.local/share/orca/codex-accounts/account/home'
+        shutil.copytree(self.installed(), profile / 'plugins/cache/personal/kit/0.9.0')
+        (profile / 'config.toml').write_text('[plugins."kit@personal"]\nenabled = true\n')
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the first reader'),))
+        current = plan(self.setup, self.device)
+        self.assertEqual((current.profile_mirrors, current.exit_code), ((), 1))
+        self.assertEqual(self.run_apply(current).exit_code, 0)
+        self.assertEqual([path.name for path in (profile / 'plugins/cache/personal/kit').iterdir()], ['0.9.0'])
+        self.setup = replace(self.setup, account_homes={Platform.LINUX: ('.local/share/orca/codex-accounts/*/home',)})
+        self.assertEqual([mirror.profile for mirror in plan(self.setup, self.device).profile_mirrors], [profile])
+
     def test_a_release_that_changes_only_intent_keeps_the_backup_an_account_home_is_matched_against(self):
         self.assertEqual(self.run_apply().exit_code, 0)
         profile = self.roots.home / '.local/share/orca/codex-accounts/account/home'
         copy = profile / 'plugins/cache/personal/kit/1.0.0'
         shutil.copytree(self.installed(), copy)
         (profile / 'config.toml').write_text('[plugins."kit@personal"]\nenabled = true\n')
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the first reader'),))
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the first reader'),),
+                             account_homes={Platform.LINUX: ('.local/share/orca/codex-accounts/*/home',)})
         with patch('profile_plugins.apply', side_effect=RuntimeError('before the account homes')), \
                 self.assertRaisesRegex(RuntimeError, 'before the account homes'):
             self.run_apply()

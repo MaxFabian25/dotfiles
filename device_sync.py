@@ -47,7 +47,7 @@ def plan(setup: Setup, device: Device, *, configurations=True) -> Plan:
     codex = next((state for state in device.hosts if state.host == Host.CODEX), None)
     approved = (lambda home: codex_host._approved_hooks(codex.cli, device.roots.home, codex_home=home)) if codex else None
     profile_mirrors, profile_differences, profile_notes = profile_plugins.inspect(
-        projected, device.roots, owner.accepted, approved)
+        projected, device.roots, setup.account_homes.get(device.platform, ()), owner.accepted, approved)
     owned += profile_differences
     stale = setup.stale()
     managed = {key for facts in projects.values() for key, fact in facts.items()

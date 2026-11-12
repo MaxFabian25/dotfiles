@@ -369,6 +369,8 @@ class Setup:
     # Unmanaged items each platform's device is known to carry, from the private devices/<platform>.toml.
     expected_unmanaged: Mapping[Platform, frozenset[FactKey]] = field(default_factory=dict)
     runtime: RuntimePin | None = None   # the public setup/codex-runtime.toml, kept only on its platform
+    # Other apps' Codex homes on each platform's device, as globs under the home folder, from the same private file.
+    account_homes: Mapping[Platform, tuple[str, ...]] = field(default_factory=dict)
 
     def for_platform(self, platform: Platform) -> Setup:
         packages = {}
