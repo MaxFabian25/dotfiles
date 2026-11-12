@@ -85,6 +85,14 @@ def late(flags):
     enter(flags)
 os.unshare = late
 '''
+DRAFT_EDITED_AFTER_THE_CHECKS = '''
+import os, pathlib
+enter = os.unshare
+def late(flags):
+    pathlib.Path(DRAFT).write_text('edited late', encoding='utf-8')
+    enter(flags)
+os.unshare = late
+'''
 STOP_BEFORE_THE_COMMAND_STARTS = '''
 import os, signal, subprocess
 start = subprocess.Popen
@@ -398,8 +406,7 @@ class NamespaceTest(unittest.TestCase):
                             sys.executable, '-c', f'open({str(marker)!r}, "w")')
         self.assertEqual(run.returncode, 1, run.stderr)
         self.assertNotIn('Traceback', run.stderr)
-        self.assertIn(os.strerror(errno.EEXIST), run.stderr)
-        self.assertIn(str(copy.parent), run.stderr)
+        self.assertIn(f'{copy.parent} exists, though the checks did not find it', run.stderr)
         self.assertNotIn('sessions read', run.stderr)
         self.assertFalse(marker.exists(), 'the command ran')
         self.assertEqual(copy.read_text(encoding='utf-8'), 'installed late')
@@ -411,8 +418,22 @@ class NamespaceTest(unittest.TestCase):
         lost = claude / 'skills/foo/SKILL.md'
         stderr = self.refused(self.draft, '--new', claude=claude)
         self.assertIn(f'{lost} could not be read', stderr)
+        self.assertIn('inside the other', stderr)
         self.assertNotIn('sessions read', stderr)
         self.assertEqual((os.listdir(outer), os.listdir(claude / 'skills')), (['nested'], []))
+
+    def test_a_draft_edited_after_the_checks_stops_before_the_command(self):
+        copy = self.install(self.copy('.agents'))
+        marker = self.root / 'ran'
+        run = self.run_main(f'DRAFT = {str(self.draft)!r}\n{DRAFT_EDITED_AFTER_THE_CHECKS}', self.draft, '--',
+                            sys.executable, '-c', f'open({str(marker)!r}, "w")')
+        self.assertEqual(run.returncode, 1, run.stderr)
+        self.assertNotIn('Traceback', run.stderr)
+        self.assertIn(f'{copy} held other text once the draft was placed there', run.stderr)
+        self.assertNotIn('inside the other', run.stderr)
+        self.assertNotIn('sessions read', run.stderr)
+        self.assertFalse(marker.exists(), 'the command ran')
+        self.assertEqual(copy.read_text(encoding='utf-8'), INSTALLED)
 
     def test_new_adds_the_skill_under_a_home_whose_name_is_not_utf_8(self):
         self.home = Path(os.fsdecode(os.fsencode(self.root) + b'/h\xffme'))

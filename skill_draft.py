@@ -61,7 +61,11 @@ def add_empty_file(libc, path):
     (folder / 'work').mkdir()
     options = f'lowerdir=/proc/self/fd/{lower},upperdir={folder}/upper,workdir={folder}/work'
     mount(libc, f'to mount an overlay on {folder}', folder, b'overlay', b'overlay', data=os.fsencode(options))
-    path.parent.mkdir()
+    try:
+        path.parent.mkdir()
+    except FileExistsError:
+        raise OSError(f'{path.parent} exists, though the checks did not find it, so --new cannot add the skill there. '
+                      'Run the tool again, without --new if the skill is installed now.') from None
     path.touch()
 
 
@@ -136,8 +140,9 @@ def main():
         overlaid = set()
         for path in copies:
             folder = path.parent.parent.resolve()
-            # The two skills folders can be one folder through a link, and then the first pass added the file. A file
-            # that exists for any other reason was installed since the checks, and must not run without the overlay.
+            # The two skills folders can be one folder through a link, and then the first pass added the file. When
+            # the file exists for any other reason, the checks did not see it, and the command must not run without
+            # the overlay.
             if args.new and folder not in overlaid:
                 add_empty_file(libc, path)
                 overlaid.add(folder)
@@ -148,8 +153,8 @@ def main():
     except OSError as error:
         sys.exit(str(error))
     if lost := [f'{path} {problem}' for path in copies if (problem := difference(path, draft))]:
-        sys.exit(f'{", ".join(lost)} once the draft was placed there, so the command was not started. One cause is a '
-                 'skills folder that lies inside the other.')
+        sys.exit(f'{", ".join(lost)} once the draft was placed there, so the command was not started.'
+                 + ' One cause is a skills folder that lies inside the other.' * args.new)
     for path in copies:
         where = f'as {path}, a skill added for the command only' if args.new else f'in place of {path}'
         print(f"The command's sessions read {args.draft} {where}", file=sys.stderr)

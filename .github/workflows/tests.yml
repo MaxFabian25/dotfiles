@@ -23,6 +23,10 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
         with:
           python-version: "3.14"
+      # skill_draft.py's tests need a private user namespace, which Ubuntu 24.04 refuses to unprivileged programs
+      # while this setting is on. The suite's "Skipped tests:" line names test_skill_draft.py when they did not run.
+      - if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       # The runner points CODEX_HOME and CLAUDE_CONFIG_DIR at a missing folder, as release.py does, so tests that
       # resolve device roots never read real config.
       - run: uv run --locked python -B tests/run.py
