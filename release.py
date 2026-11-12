@@ -437,11 +437,22 @@ def origin_stop(public, private, regenerated, overlap_reviewed):
 def started(root, path):
     """A TOML file as this branch found it on origin/main, or {} where it was absent."""
     fork = git(root, 'merge-base', 'HEAD', 'origin/main')
-    return tomllib.loads(git(root, 'show', f'{fork}:{path}')) if git(root, 'ls-tree', fork, path) else {}
+    if not git(root, 'ls-tree', fork, path):
+        return {}
+    return toml(lambda: git(root, 'show', f'{fork}:{path}'), f'{path} as origin/main held it at {fork[:7]}',
+                f'; no finish should have let it go there, and git log origin/main -- {path} names the commit that did')
 
 
 def current(root, path):
-    return tomllib.loads((root / path).read_text(encoding='utf-8')) if (root / path).is_file() else {}
+    return toml(lambda: (root / path).read_text(encoding='utf-8'), root / path) if (root / path).is_file() else {}
+
+
+def toml(read, name, then=''):
+    """The parsed file, or a stop that names it, where the error itself would end a detached finish as a crash."""
+    try:
+        return tomllib.loads(read())
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError) as error:
+        raise RuntimeError(f'{name} is not TOML ({error}){then}') from error
 
 
 def reused_release_names(public, private):
@@ -459,18 +470,62 @@ def reused_release_names(public, private):
     return reused
 
 
-def edited_owned(public, private):
+def edited_owned(public, private, private_repo):
     """Owned sources whose files differ from the tree their entry pins, as entry name to source path. The device
     check finds the same thing, but only after the suites have run. Empty for a tree without a setup description."""
     if not (public / SETUP).is_file():
         return {}
-    from description import Roots
+    from description import DescriptionError, Roots
     from description_toml import load
     from drift import _edited_owned
     from host_state import DeviceRoots
     private_setup = private / 'setup'
-    setup = load(Roots(public / 'setup', private_setup if private_setup.is_dir() else None))
+    try:
+        setup = load(Roots(public / 'setup', private_setup if private_setup.is_dir() else None))
+    except DescriptionError as error:
+        raise RuntimeError(unloadable({public: ENGINE, private: private_repo}, error)) from error
     return _edited_owned(setup, DeviceRoots.current())
+
+
+def holds(tree, commit):
+    """Whether the tree's HEAD holds the commit, or a stop with git's own words when git cannot tell."""
+    result = subprocess.run([*GIT, '-C', str(tree), 'merge-base', '--is-ancestor', commit, 'HEAD'],
+                            capture_output=True, text=True, timeout=60)
+    if result.returncode not in (0, 1):
+        raise RuntimeError(f'{tree}: git merge-base exited {result.returncode}: {result.stderr.strip()}')
+    return result.returncode == 0
+
+
+def unloadable(checkouts, error):
+    """Why finish stops on a setup that this engine cannot load, given each worktree's canonical checkout. The
+    engine runs from those checkouts, which a pull moves on while a worktree stays where it started: on 12 November
+    2026 a finish that had waited for another release ran an engine that had retired a build the worktree's older
+    setup still named. finish does not rebase here, because a rebase before the overlap check would hide from it the
+    files another session changed meanwhile."""
+    problem = f'the setup does not load:\n{error}\n'
+    try:
+        older = [canonical for tree, canonical in checkouts.items()
+                 if not holds(canonical, git(tree, 'merge-base', 'HEAD', 'origin/main'))]
+        behind = [tree for tree, canonical in checkouts.items() if not holds(tree, git(canonical, 'rev-parse', 'HEAD'))]
+        shared = [f'{tree.name}: {", ".join(files)}' for tree in behind if (files := overlap(tree))]
+    except RuntimeError as failure:
+        return (f'{problem}finish could not tell whether the worktrees are older than the engine: {failure}\n'
+                'Fix the setup or bring the worktrees up to date, then finish again; this run committed nothing')
+    if older:
+        return (f'{problem}The engine is older than this branch: {", ".join(map(str, older))} lacks commits the '
+                f'branch started from. Pull this machine with {sys.executable} -B {ENGINE / "pull.py"} --update '
+                '--apply, then finish again; this run committed nothing')
+    if not behind:
+        return f'{problem}Fix it, then finish again; this run committed nothing'
+    first = (('Another session changed the same files on origin/main since this branch started ('
+             + '; '.join(shared) + '). Read its commits with git log -p HEAD..origin/main -- FILE and reconcile '
+             'the two designs before you rebase, because the rebase hides them from the overlap check. ')
+             if shared else '')
+    rebases = ' and '.join(f'git -C {tree} rebase origin/main' for tree in behind)
+    return (f'{problem}This branch is older than the engine: {", ".join(map(str, behind))} lacks commits the '
+            f'engine holds, and the setup may load once the branch has them. {first}Commit the work in each such '
+            f'worktree with its release message, unless it is committed, run {rebases}, settle any conflict it '
+            'stops on and git rebase --continue, then finish again; this run committed nothing')
 
 
 def unpinned(edited, entries, refresh_owned):
@@ -769,8 +824,55 @@ def start(args, public_repo, private_repo):
     return 0
 
 
+# What git keeps while a step that applies commits has stopped part way, the step and how to go on with it. A
+# stopped git am also leaves rebase-apply, so its own marker comes first.
+STOPPED_STEPS = (('rebase-merge', 'rebase', 'rebase --continue'), ('rebase-apply/applying', 'git am', 'am --continue'),
+                 ('rebase-apply', 'rebase', 'rebase --continue'), ('MERGE_HEAD', 'merge', 'merge --continue'),
+                 ('CHERRY_PICK_HEAD', 'cherry-pick', 'cherry-pick --continue'),
+                 ('REVERT_HEAD', 'revert', 'revert --continue'),
+                 ('sequencer', 'cherry-pick or revert', 'cherry-pick --continue or git revert --continue'))
+
+
+def unfinished(tree, name):
+    """Why a worktree is not ready to finish: a step that applies commits stopped part way, or the worktree is off
+    its release branch. A finish there would release the commits applied so far and leave out the rest."""
+    for marker, step, going_on in STOPPED_STEPS:
+        if Path(git(tree, 'rev-parse', '--path-format=absolute', '--git-path', marker)).exists():
+            return (f'a {step} stopped part way in {tree}; settle its conflicts, git add each file and run '
+                    f'git -C {tree} {going_on}, then finish again')
+    head = subprocess.run([*GIT, '-C', str(tree), 'symbolic-ref', '-q', 'HEAD'], capture_output=True, text=True,
+                          timeout=60)
+    if head.returncode not in (0, 1):  # 1 is a detached HEAD
+        raise RuntimeError(f'{tree}: git symbolic-ref exited {head.returncode}: {head.stderr.strip()}')
+    if head.stdout.strip() == f'refs/heads/{name}':  # --short would print heads/stash beside a stash
+        return None
+    if not head.stdout.strip() and holds(tree, f'refs/heads/{name}'):
+        return (f'{tree} is on a detached HEAD that holds its release branch {name} and may hold commits of its '
+                f'own; move the branch there with git -C {tree} switch -C {name}, then finish again')
+    return (f'{tree} is off its release branch {name}; git -C {tree} log {name}..HEAD lists the commits only HEAD '
+            f'holds. Bring those you want onto {name}, switch to it, then finish again')
+
+
 def finish(args, public_repo, private_repo):
     base, public, private = places(args)
+    if stops := [stop for tree in (public, private) if (stop := unfinished(tree, args.name))]:
+        raise RuntimeError('; '.join(stops) + '; this run committed nothing')
+    unmerged = [f'{tree.name}: {", ".join(sorted(set(files)))}' for tree in (public, private)
+                if (files := git(tree, 'diff', '--name-only', '--diff-filter=U').splitlines())]
+    if unmerged:
+        # git add -A would mark them settled and commit their conflict markers.
+        raise RuntimeError(f'files in a conflict that is not settled ({"; ".join(unmerged)}); take out the conflict '
+                           'markers and git add each file, then finish again; this run committed nothing')
+    for tree in (public, private):
+        # A worktree with no work of its own holds nothing a rebase could lose or the overlap check could name, so
+        # it moves to where a pull brought origin/main; otherwise the engine that pull brought may not read it.
+        if not dirty(tree) and not ahead(tree):
+            # An ignored file is the worktree's own too: the public allowlist ignores a new file until its ! line.
+            try:
+                git(tree, 'merge', '-q', '--ff-only', '--no-overwrite-ignore', 'origin/main')
+            except RuntimeError as error:
+                raise RuntimeError(f'{tree} has no work of its own to rebase, but finish could not bring it up to '
+                                   f'origin/main: {error}; this run committed nothing') from error
     if stop := review_stop(public, private, args.reviewed, args.name):
         raise RuntimeError(f'{stop}; this run committed nothing')
     if reused := reused_release_names(public, private):
@@ -778,7 +880,7 @@ def finish(args, public_repo, private_repo):
                            'so its release folder keeps its name and every machine\'s pull would stop with "Existing '
                            'release differs". Raise packaging by one in its setup/packages file, then finish again; '
                            'this run committed nothing')
-    if stale := unpinned(edited_owned(public, private), args.entry, args.refresh_owned):
+    if stale := unpinned(edited_owned(public, private, private_repo), args.entry, args.refresh_owned):
         flags = ' '.join(f'--entry {name}' for name in sorted(stale))
         raise RuntimeError(f'{", ".join(sorted(stale.values()))} changed after its tree was pinned, so every '
                            f"machine's pull would stop on a stale lock. Finish again with {flags} --refresh-owned; "
