@@ -1,3 +1,6 @@
+from contextlib import redirect_stdout
+import io
+import json
 import os
 from pathlib import Path
 import sys
@@ -56,6 +59,23 @@ class SessionModelTest(unittest.TestCase):
                                        ('{"model": 7}', 'opus'), ('not json', 'opus'), ('[]', 'opus')):
                     settings.write_text(text, encoding='utf-8')
                     self.assertEqual(skill_triggers.session_model(), expected, text)
+
+
+    def test_a_measurement_counts_hits_on_should_trigger_queries_apart_from_near_miss_triggers(self):
+        items = [{'query': 'Proofread this', 'target': 'prose', 'should_trigger': True},
+                 {'query': 'Write a poem', 'target': 'prose', 'should_trigger': False},
+                 {'query': 'Fix my essay', 'target': 'prose', 'should_trigger': False}]
+        loaded = {'Proofread this': ['prose:prose'], 'Write a poem': ['prose:prose'], 'Fix my essay': []}
+        with tempfile.TemporaryDirectory() as temporary:
+            queries, out = Path(temporary) / 'queries.json', Path(temporary) / 'out.json'
+            queries.write_text(json.dumps(items), encoding='utf-8')
+            with patch.object(sys, 'argv', ['skill_triggers.py', str(queries), str(out), '--runs', '1', '--model', 'm']), \
+                    patch('skill_triggers.run_one', side_effect=lambda query, *rest: {'skills': loaded[query]}), \
+                    redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(skill_triggers.main(), 0)
+            rows = json.loads(out.read_text(encoding='utf-8'))
+        self.assertEqual(output.getvalue(), 'model: m\nprose: should-trigger 1/1, near-miss false triggers 1/2\n')
+        self.assertEqual([row['triggered'] for row in rows], [True, True, False])
 
 
 if __name__ == '__main__':

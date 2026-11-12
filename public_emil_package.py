@@ -5,7 +5,7 @@ import re
 
 from description import BuildSource, PublicEmilRecipe
 from package import files, git, require_clean
-from portable import extract_tar, read_utf8, staging_directory, write_utf8
+from portable import extract_tar, read_utf8, replace, staging_directory, write_utf8
 
 
 def build(name: str, recipe: PublicEmilRecipe, source: BuildSource, checkout: Path, *, output_root: Path):
@@ -106,5 +106,5 @@ def build(name: str, recipe: PublicEmilRecipe, source: BuildSource, checkout: Pa
             if files(release) != files(stage):
                 raise RuntimeError(f'Existing immutable release differs: {release}')
         else:
-            stage.rename(release)
+            replace(stage, release)
     return release, receipt

@@ -1,14 +1,21 @@
 from pathlib import Path
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from description import BuildSource, GenericRecipe
 import package
+from homes import hold_built_trees_once, isolate_git
+
+
+def setUpModule():
+    isolate_git()
 
 
 def head(repository):
@@ -84,6 +91,28 @@ class SharedSkillRoot(unittest.TestCase):
                          ['skills/flat', 'skills/group/keep'])
         self.assertEqual(receipt['selectedSkillRoots'], ['./skills/group/keep', './skills/flat'])
         self.assertEqual(receipt['omittedUpstreamFiles'], ['skills/group/drop/SKILL.md', 'skills/other/SKILL.md'])
+
+    def test_a_release_a_windows_process_briefly_holds_is_moved_into_place_once_it_is_free(self):
+        held = hold_built_trees_once(self)
+        release, receipt, manifest = self.build(['./skills/flat'], 'skills/flat')
+        self.assertEqual(held, [release])
+        self.assertEqual(release.name, receipt['version'])
+        self.assertTrue((release / 'skills/flat/SKILL.md').is_file())
+
+    def test_an_upstream_that_ships_a_codex_plugin_folder_keeps_its_files_beside_the_written_manifest(self):
+        release, receipt, manifest = self.build(['./skills/flat'], 'skills/flat', '.codex-plugin')
+        self.assertEqual(manifest['name'], 'kit')
+        self.assertIn('.codex-plugin/SKILL.md', receipt['upstreamFileHashes'])
+        self.assertTrue((release / '.codex-plugin/SKILL.md').is_file())
+
+    def test_a_checkout_with_local_changes_is_refused(self):
+        release, _, _ = self.build(['./skills/flat'], 'skills/flat')
+        source = release.parents[2] / 'source'
+        (source / 'skills/flat/SKILL.md').write_text('Local edit.\n')
+        recipe = GenericRecipe('https://example.invalid/s.git', head(source), None, '.cursor-plugin/plugin.json', ())
+        profile = BuildSource(recipe, 0, 'E', metadata={'url': 'https://example.invalid/s'})
+        with self.assertRaisesRegex(RuntimeError, f'^Upstream checkout has local changes: {re.escape(str(source))}$'):
+            package.package('kit', recipe, profile, source, output_root=release.parents[2] / 'again')
 
     def test_a_selection_outside_skills_stays_as_named(self):
         release, receipt, manifest = self.build(['./tool-a'], 'tool-a', 'tool-b')

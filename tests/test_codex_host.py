@@ -20,6 +20,12 @@ import host_observation
 from device import Device as HostDevice
 from drift import Kind, diff
 from runtime_pin import RuntimePin
+
+
+def setUpModule():
+    homes.isolate_git()
+
+
 d, hs = description, host_state
 S, M = hs.Surface, hs.SkillMode
 C1, C2 = 'a' * 40, 'b' * 40
@@ -397,6 +403,12 @@ class ObserveTest(unittest.TestCase):
                     self.assertEqual([unknown.subjects for unknown in observation.unknown],
                                      [frozenset({'kit@personal'})])
 
+    def test_a_plugin_that_follows_a_branch_is_known_by_its_installed_version(self):
+        with Device() as device:
+            device.inventory.append(plugin(device, 'tracker@skills', True, '2.0', {'source': 'git', 'url': 'u', 'ref': 'main'}))
+            observation = device.state().observe(hs.Request())
+        self.assertEqual(observation.facts[key(S.PLUGIN, 'tracker@skills')].value, hs.PluginValue(True, hs.Released('2.0')))
+
     def test_reads_effective_state_from_the_cli_config_and_caches(self):
         with Device() as device:
             observation = device.state().observe(hs.Request())
@@ -475,13 +487,14 @@ class ObserveTest(unittest.TestCase):
         with Device() as device:
             own = device.roots.codex_home / 'hooks.json'
             device.write(own, json.dumps({'hooks': {}}))
-            gone = device.roots.home / 'Documents/old/.codex/hooks.json'
+            gone, also_gone = (device.roots.home / f'Documents/{name}/.codex/hooks.json' for name in ('old', 'older'))
             config = device.roots.codex_home / 'config.toml'
+            # One approval whose file is gone has no enabled key, which counts as on.
             config.write_text(config.read_text() + ''.join(
-                f'\n[hooks.state."{path.as_posix()}:session_start:0:0"]\nenabled = true\ntrusted_hash = "sha256:z"\n'
-                for path in (own, gone)))
+                f'\n[hooks.state."{path.as_posix()}:session_start:0:0"]\n{enabled}trusted_hash = "sha256:z"\n'
+                for path, enabled in ((own, 'enabled = true\n'), (gone, ''), (also_gone, 'enabled = true\n'))))
             observation = device.state().observe(hs.Request())
-        self.assertIn(('residue', 'hooks.state', '1 approvals of hooks no installed plugin or hooks file defines'),
+        self.assertIn(('residue', 'hooks.state', '2 approvals of hooks no installed plugin or hooks file defines'),
                       [(n.kind.value, n.subject, n.detail) for n in observation.notes])
 
     def test_hook_approvals_use_current_native_trust_and_enablement(self):

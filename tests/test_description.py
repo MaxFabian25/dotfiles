@@ -186,6 +186,72 @@ class RenderTest(unittest.TestCase):
             self.assertEqual(description_toml.load(roots.roots()).packages['cursor-team-kit'], kit)
         self.assertNotEqual(description.intent(kit, setup.repos), description.intent(before, setup.repos))
 
+    def test_each_recipe_kind_is_written_with_every_key_it_holds_in_one_order(self):
+        commit = 'a' * 40
+
+        def written(recipe, **source):
+            package = description.Package(
+                'kit', description.Visibility.PRIVATE, '', description.BuildSource(recipe, 2, 'Kit', **source), {},
+                description.ToolNotes.AUDIT, description.CodexPlacement((description.EngineInstall(False),)), None)
+            return description_toml.render_entry(package).partition('\n[codex]\n')[0]
+
+        self.assertEqual(written(description.CourseRecipe('example/course', commit, ('skills/one',), 'pre-', ('one',)),
+                                 metadata={'url': 'https://example.invalid/kit'}), f'''\
+[source]
+build = "course"
+repository = "example/course"
+commit = "{commit}"
+packaging = 2
+display_name = "Kit"
+prefix = "pre-"
+trim_descriptions = ["one"]
+select = ["skills/one"]
+
+[source.metadata]
+url = "https://example.invalid/kit"
+''')
+        self.assertEqual(written(description.GenericRecipe('https://example.invalid/kit.git', commit, 'nested',
+                                                           '.cursor-plugin/plugin.json', ('./skills/keep',))), f'''\
+[source]
+build = "generic"
+repository = "https://example.invalid/kit.git"
+commit = "{commit}"
+subdirectory = "nested"
+manifest = ".cursor-plugin/plugin.json"
+packaging = 2
+display_name = "Kit"
+select = ["./skills/keep"]
+''')
+        self.assertEqual(written(description.PublicEmilRecipe('example/emil', commit, ('skills/one', 'skills/two'),
+                                                              {'two': 'second', 'one': 'first'}),
+                                 frozen=description.Frozen('2026-01-01', 'b' * 40, 'Upstream changed its licence.')), f'''\
+[source]
+build = "public-emil"
+repository = "example/emil"
+commit = "{commit}"
+packaging = 2
+display_name = "Kit"
+select = ["skills/one", "skills/two"]
+rename = {{ one = "first", two = "second" }}
+frozen = {{ since = "2026-01-01", upstream = "{'b' * 40}", reason = "Upstream changed its licence." }}
+''')
+        self.assertEqual(written(description.SnapshotRecipe('sha256:' + 'c' * 64, {
+            'one': None, 'two': description.Origin('example/two', 'skills/two', commit)}),
+                                 metadata={'description': 'Snapshot skills.'}), f'''\
+[source]
+build = "snapshot"
+snapshot = "sha256:{'c' * 64}"
+packaging = 2
+display_name = "Kit"
+
+[source.origins]
+one = {{}}
+two = {{ repository = "example/two", path = "skills/two", commit = "{commit}" }}
+
+[source.metadata]
+description = "Snapshot skills."
+''')
+
     def test_an_unchanged_entry_keeps_its_bytes_comments_and_all(self):
         with Roots() as roots:
             setup = description_toml.load(roots.roots())

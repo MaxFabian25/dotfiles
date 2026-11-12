@@ -430,16 +430,16 @@ class CodexState:
                 seen.unread(source.get('path', ''), error, {Surface.PLUGIN}, {plugin['pluginId']})
                 continue
             seen.add(Surface.PLUGIN, plugin['pluginId'], value, detail=detail)
-        for plugin_id, table in config.get('plugins', {}).items():
+        for configured_id, table in config.get('plugins', {}).items():
             if 'mcp_servers' in table:
-                seen.note(NoteKind.UNMODELED, f'plugins."{plugin_id}".mcp_servers', ', '.join(sorted(table['mcp_servers'])))
+                seen.note(NoteKind.UNMODELED, f'plugins."{configured_id}".mcp_servers', ', '.join(sorted(table['mcp_servers'])))
             if 'enabled' not in table or not listed:
                 continue
-            if plugin_id not in installed:
-                seen.note(NoteKind.RESIDUE, plugin_id, 'config.toml has an entry for a plugin Codex does not have')
-            elif installed[plugin_id]['enabled'] != table['enabled']:
-                seen.note(NoteKind.RESIDUE, plugin_id, f'config.toml says {"on" if table["enabled"] else "off"}, '
-                                                       f'Codex reports {"on" if installed[plugin_id]["enabled"] else "off"}')
+            if configured_id not in installed:
+                seen.note(NoteKind.RESIDUE, configured_id, 'config.toml has an entry for a plugin Codex does not have')
+            elif installed[configured_id]['enabled'] != table['enabled']:
+                seen.note(NoteKind.RESIDUE, configured_id, f'config.toml says {"on" if table["enabled"] else "off"}, '
+                                                           f'Codex reports {"on" if installed[configured_id]["enabled"] else "off"}')
 
         def owner(name):
             plugins = named.get(name, [])

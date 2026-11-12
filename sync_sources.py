@@ -13,7 +13,7 @@ from description import (AlignedInstall, BuildSource, CourseRecipe, EngineInstal
                          GeneratedRoles, GenericRecipe, LocalSource, Package, PluginRoles, PublicEmilRecipe,
                          RepoRoles, RepoSource, Setup, SnapshotRecipe, ToolNotes, plugin_id, via)
 from host_state import DeviceRoots, Digest, Host, SkillMode, bytes_digest, clone_url, parse_commit
-from portable import GIT, WINDOWS, extract_tar, read_utf8, staging_directory, staging_folder
+from portable import GIT, WINDOWS, extract_tar, read_utf8, replace, staging_directory, staging_folder
 
 
 class BuildError(RuntimeError):
@@ -163,7 +163,7 @@ class Builder:
                     if selected != checkout:
                         shutil.copytree(selected, Path(temp) / 'package')
                         selected = Path(temp) / 'package'
-                    selected.rename(parent)
+                    replace(selected, parent)
                 tree = parent
         else:
             raise BuildError(f'{package.name} is supplied by the application, not built by sync')

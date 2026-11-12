@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from codex_host import CodexState
 from configuration import desired
 from description import (Adaptation, AlignedInstall, ClaudePlacement, CodexPlacement, EngineInstall, Hooks, LocalSource, Lock, LockedTree,
@@ -17,11 +18,16 @@ from description import (Adaptation, AlignedInstall, ClaudePlacement, CodexPlace
                          ToolNotes, Visibility, intent)
 from device import Device
 from device_sync import apply, plan
+from homes import hold_built_trees_once, isolate_git
 from host_observation import Observer, Unread
 from host_state import (Approved, DeviceRoots, EngineMarketplace, FactKey, FileValue, Host, InstallDetail,
                         Platform, PluginValue, Released, SkillMode, Surface, TreeValue, Unknown, bytes_digest)
 from sync_files import ConcurrentEdit
 from sync_sources import BuildError, Builder, Sources
+
+
+def setUpModule():
+    isolate_git()
 
 
 class DiskHost:
@@ -341,6 +347,17 @@ class InstallationTest(unittest.TestCase):
         self.revise_release('second revision\n')
         self.assert_held(destination)
         self.assertTrue(staged.is_dir())
+
+    def test_a_tree_windows_briefly_holds_is_moved_once_it_is_free(self):
+        held = hold_built_trees_once(self)
+        self.assertEqual(self.run_apply().exit_code, 0)
+        installed = self.installed()
+        self.assertIn(installed, held)
+        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('displaced', [path.name for path in held], 'the replaced tree is moved aside')
+        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
 
     def test_install_then_strict_noop_and_complete_manifest(self):
         after = self.run_apply()
@@ -1240,8 +1257,8 @@ class InstallationTest(unittest.TestCase):
         self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the second replacement'),))
         current = plan(self.setup, self.device)
         self.assertEqual([d.detail for d in current.blocked],
-                         [f'{{claude_home}}/plugins/cache/personal-collections/kit/1.0.0: cache not on disk: '
-                          f'{{claude_home}}/plugins/cache/personal-collections/kit/1.0.0'])
+                         ['{claude_home}/plugins/cache/personal-collections/kit/1.0.0: cache not on disk: '
+                          '{claude_home}/plugins/cache/personal-collections/kit/1.0.0'])
         with self.assertRaisesRegex(RuntimeError, 'blocked'):
             self.run_apply(current)
         self.assertFalse(destination.exists())

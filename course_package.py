@@ -8,7 +8,7 @@ import subprocess
 import yaml
 
 from description import BuildSource, CourseRecipe
-from portable import GIT, extract_tar, read_utf8, require_readable, staging_directory, write_utf8
+from portable import GIT, extract_tar, read_utf8, replace, require_readable, staging_directory, write_utf8
 
 
 def sha(data):
@@ -125,5 +125,5 @@ def build(name: str, recipe: CourseRecipe, source: BuildSource, checkout: Path, 
             if files(release) != files(stage):
                 raise RuntimeError(f'Existing immutable release differs: {release}')
         else:
-            stage.rename(release)
+            replace(stage, release)
     return release, receipt

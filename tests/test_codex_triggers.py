@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
+import warnings
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -35,8 +36,11 @@ class CodexTriggersTest(unittest.TestCase):
                 yield Path(temporary)
 
     def run_stand_in(self, body, entry=ENTRY):
-        with self.stand_in(body):
-            return codex_triggers.run_one(entry)
+        with self.stand_in(body), warnings.catch_warnings(record=True) as warned:
+            warnings.simplefilter('always', ResourceWarning)
+            found = codex_triggers.run_one(entry)
+        self.assertEqual([str(w.message) for w in warned if w.category is ResourceWarning], [])
+        return found
 
     def measure(self, body):
         with self.stand_in(body) as folder:
@@ -92,6 +96,16 @@ class CodexTriggersTest(unittest.TestCase):
         with patch.object(codex_triggers, 'TIMEOUT', 0.2):
             self.assertFalse(self.run_stand_in('time.sleep(30)\n'))
         self.assertLess(time.monotonic() - started, 10)
+
+    def test_a_measurement_scores_and_reports_each_query(self):
+        call = event('command_execution', command='cat /home/me/.agents/skills/prose/SKILL.md')
+        with self.stand_in(prints(call)) as folder:
+            queries, out = folder / 'queries.json', folder / 'out.json'
+            queries.write_text(json.dumps([ENTRY]), encoding='utf-8')
+            run = subprocess.run([sys.executable, '-I', codex_triggers.__file__, str(queries), str(out), '--runs', '1'],
+                                 capture_output=True, text=True, encoding='utf-8')
+            self.assertEqual((run.returncode, run.stdout), (0, '1/1  should  prose: Proofread this paragraph\n'))
+            self.assertEqual(json.loads(out.read_text(encoding='utf-8')), [{**ENTRY, 'hits': 1, 'runs': 1}])
 
     def test_a_failed_turn_stops_the_measurement_and_names_the_failure(self):
         warning = event('error', message='`[features].multi_agent` is deprecated.')

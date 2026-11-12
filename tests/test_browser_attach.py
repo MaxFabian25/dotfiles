@@ -1,5 +1,7 @@
 """The attach helpers press only their own attach's prompts and stop only their own session's daemon."""
 
+from contextlib import redirect_stderr
+import io
 import os
 import subprocess
 import sys
@@ -155,7 +157,9 @@ class SessionTest(unittest.TestCase):
         (self.root / 'mine.pid').write_text(str(mine.pid))
         (self.root / 'wrong.pid').write_text(str(theirs.pid))
         self.assertFalse(ab_session.stop_daemon('wrong', self.root))  # the PID belongs to another session
-        self.assertTrue(ab_session.stop_daemon('mine', self.root))
+        with redirect_stderr(io.StringIO()) as errors:
+            self.assertTrue(ab_session.stop_daemon('mine', self.root))
+        self.assertEqual(errors.getvalue(), f"ab_session: mine's daemon ignored close, so process {mine.pid} was stopped\n")
         self.assertIsNotNone(mine.wait(timeout=5))
         self.assertIsNone(theirs.poll())
 

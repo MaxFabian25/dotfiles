@@ -116,15 +116,21 @@ def posix(path):
     return PurePath(path).as_posix()
 
 
-def replace(source, target, attempts=20, delay=0.25):
-    # Windows refuses to replace a file another process holds open; Codex or Claude may be reading it.
+def while_held(move, attempts=20, delay=0.25):
+    """Run move, again while Windows refuses it. Windows refuses to replace a file or move a folder that another
+    process holds open: Codex or Claude may be reading it, or a scanner the folder it has just seen appear. It refuses
+    a move onto a folder that already exists the same way, so that one fails only after the last attempt."""
     for attempt in range(attempts):
         try:
-            return os.replace(source, target)
+            return move()
         except PermissionError:
             if not WINDOWS or attempt == attempts - 1:
                 raise
             time.sleep(delay)
+
+
+def replace(source, target, attempts=20, delay=0.25):
+    return while_held(lambda: os.replace(source, target), attempts, delay)
 
 
 def staging_folder(prefix, dir):

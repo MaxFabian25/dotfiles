@@ -14,9 +14,15 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from homes import isolate_git
 import portable
 import pull
 from pull import git as pull_git, install_tools, paired, pull_lock, run, unsigned, update
+
+
+def setUpModule():
+    isolate_git()
 
 
 def git(root, *args):
@@ -184,9 +190,10 @@ class PairedPullTest(unittest.TestCase):
             candidate = self.commit(self.public_origin, 'sync.py', f'raise SystemExit({code})\n')
             self.commit(self.private_origin, 'release.toml', f'public_commit = "{candidate}"\n')
             args = SimpleNamespace(root=self.public, private=self.private, update=True, apply=apply, notes=False, wait=0)
-            with patch('pull.Path.home', return_value=self.root / 'home'), \
+            with patch('pull.Path.home', return_value=self.root / 'home'), redirect_stderr(io.StringIO()) as errors, \
                     patch('pull.install_tools', lambda home, state: calls.append((code, apply))):
                 self.assertEqual(run(args), code)
+            self.assertEqual('managed changes remain after applying' in errors.getvalue(), (code, apply) == (1, True))
             # Changes that remain after applying leave the pair unrecorded, so only the last pull writes a receipt.
             self.assertEqual(receipt.exists(), (code, apply) == (0, True))
         self.assertEqual(calls, [(1, True), (0, True)])
@@ -252,6 +259,10 @@ class PullLockTest(unittest.TestCase):
                     pull.main()
         self.assertEqual(seen, [pull.LOCK_WAIT, 0.5])
         self.assertGreater(pull.LOCK_WAIT, 0)
+        with patch.object(pull, 'run', side_effect=RuntimeError('another pull still runs')), \
+                patch.object(sys, 'argv', ['pull.py']), redirect_stderr(io.StringIO()) as errors:
+            self.assertEqual(pull.main(), 3)
+        self.assertEqual(errors.getvalue(), 'Dotfiles pull stopped: another pull still runs\n')
 
     def test_the_wait_is_a_finite_number_of_seconds_from_zero(self):
         self.assertEqual(pull.seconds('0'), 0)

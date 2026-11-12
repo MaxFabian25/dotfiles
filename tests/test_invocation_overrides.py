@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -6,6 +7,14 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from homes import isolate_git
+
+
+def setUpModule():
+    isolate_git()
+
+
 spec = importlib.util.spec_from_file_location('invocation_overrides', Path(__file__).resolve().parents[1] / 'invocation_overrides.py')
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
@@ -76,6 +85,36 @@ class InvocationOverridesTest(unittest.TestCase):
         self.assertEqual(changed, source.replace('false #', 'true #'))
         self.assertEqual(module.transform_policy(changed), changed)
         self.assertEqual(module.transform_policy(None), 'policy:\n  allow_implicit_invocation: true\n')
+        self.assertEqual(module.transform_policy('policy:\n  products: [codex]\n'),
+                         'policy:\n  allow_implicit_invocation: true\n  products: [codex]\n')
+
+    def test_a_text_replacement_applies_once_and_an_ambiguous_one_stops(self):
+        registry = {'textReplacements': {'p:sample': [{'from': 'Use Task', 'to': 'Use a subagent'}]}}
+        skill = '---\nname: sample\ndescription: A task.\n---\nUse Task here.\n'
+        self.assertEqual(module.transform_skill(skill, 'p:sample', registry), skill.replace('Use Task', 'Use a subagent'))
+        with self.assertRaisesRegex(ValueError, 'Ambiguous text replacement: p:sample'):
+            module.transform_skill(skill + 'Use Task there.\n', 'p:sample', registry)
+
+    def test_skills_are_not_collected_from_reference_example_or_test_folders(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            for folder in ('skills/kept', 'skills/group/nested', 'skills/group/tests/fixture', 'skills/references/sample'):
+                (root / folder).mkdir(parents=True)
+                (root / folder / 'SKILL.md').write_text(f'---\nname: {Path(folder).name}\n---\nA skill.\n')
+            self.assertEqual(sorted(module.skill_paths(root)), ['kept', 'nested'])
+
+    def test_a_policy_export_sets_each_exported_skills_sidecar(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            for name in ('open', 'closed'):
+                (root / 'skills' / name).mkdir(parents=True)
+                (root / 'skills' / name / 'SKILL.md').write_text(f'---\nname: {name}\n---\nA skill.\n')
+            (root / '.dotfiles-policy.json').write_text(json.dumps({'implicit': ['open'], 'explicit': ['closed']}))
+            policies = module.exported_policies(root)
+            self.assertEqual(sorted(policies), ['skills/closed/agents/openai.yaml', 'skills/open/SKILL.md',
+                                                'skills/open/agents/openai.yaml'])
+            self.assertEqual(policies['skills/closed/agents/openai.yaml'](None), 'policy:\n  allow_implicit_invocation: false\n')
+            self.assertEqual(policies['skills/open/agents/openai.yaml'](None), 'policy:\n  allow_implicit_invocation: true\n')
 
     def test_adaptation_merges_upstream_edits_and_stops_on_conflicts(self):
         base = 'one\ntwo\nthree\nfour\nfive\n'

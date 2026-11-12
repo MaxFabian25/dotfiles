@@ -1,8 +1,9 @@
 """What `sync.py --candidate --json` tells `release.py` about whether this device's pull could apply a release.
 
-The release.py that reads a result is one release older than the sync.py that wrote it, whenever a release changes
-the result. The reader ignores a key it does not know, so adding a key takes one release. Removing or renaming a
-key takes two: first stop reading it, then stop writing it."""
+The release.py that reads a result is the canonical checkout's, so it is at least one release older than the sync.py
+that wrote it whenever a release changes the result. The reader ignores a key it does not know, so adding a key takes
+one release. Removing or renaming a key takes two: first stop reading it, then, once every machine that finishes
+releases has pulled the first, stop writing it."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -40,7 +41,7 @@ def read(text):
     try:
         data = json.loads(text)
     except json.JSONDecodeError as error:
-        raise ValueError(f'the candidate result is not JSON: {error.msg} at line {error.lineno}') from None
+        raise ValueError(f'the candidate result is not JSON: {error.msg}, line {error.lineno}') from None
     _fields(data, 'the candidate result', {'blocking': int, 'held': list})
     held = []
     for number, entry in enumerate(data['held']):

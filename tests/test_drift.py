@@ -17,6 +17,12 @@ import codex_host
 import claude_host
 import device
 import drift
+
+
+def setUpModule():
+    homes.isolate_git()
+
+
 d, hs = description, host_state
 S, M, K = hs.Surface, hs.SkillMode, drift.Kind
 C1, OLD = 'a' * 40, 'c' * 40
@@ -139,7 +145,9 @@ class DiffTest(unittest.TestCase):
         self.assertEqual(result.differences, ())
         self.assertEqual(result.exit_code, 0)
         self.assertEqual(result.trees, 2)
-        self.assertIn('\nIn step. No differences.\n', drift.render(result))
+        rendered = drift.render(result)
+        self.assertIn('\nIn step. No differences.\n', rendered)
+        self.assertEqual([line.split()[-2] for line in rendered.splitlines()[:2]], ['3', '0'], 'entries per repository')
         self.assertEqual([(n.kind, n.subject, n.detail) for n in result.notes if n.kind == hs.NoteKind.DORMANT],
                          [(hs.NoteKind.DORMANT, 'interfaces@interfaces',
                            f'disabled at {OLD[:7]}; the description pins {device.marketplace_pin[:7]}')])
@@ -293,7 +301,7 @@ class DiffTest(unittest.TestCase):
                                         (K.CHANGED, 'codex', 'kit:weekly-review')])
         self.assertEqual(stale.exit_code, 2)
         self.assertIn('host-absent claude  host is not installed here', drift.render(absent))
-        self.assertIn('stale-lock  the entry changed after its lock was written', drift.render(stale))
+        self.assertIn(f'\n  {"kit":<30} stale-lock  the entry changed after its lock was written\n', drift.render(stale))
 
     def switched_off(self, device, keep_current, versions=('1.0', '1.0-codex-aligned.x')):
         """kit described off in both hosts and installed off, with its lock at `versions` for Codex and Claude."""
@@ -333,6 +341,9 @@ class DiffTest(unittest.TestCase):
         self.assertEqual(self.plugins(kept), [(K.CHANGED, 'claude', 'kit@codex-aligned'), (K.CHANGED, 'codex', 'kit@personal')])
         self.assertEqual(kept.exit_code, 1)
         self.assertIn('want disabled, kept current 1.1 · have disabled 1.0', drift.render(kept))
+        [codex] = [d for d in json.loads(drift.to_json(kept))['differences'] if d['subject'] == 'kit@personal']
+        self.assertEqual((codex['expected']['type'], codex['observed']['type']), ('PluginValue', 'PluginValue'))
+        self.assertEqual((codex['expected']['enabled'], codex['observed']['enabled']), (False, False))
         self.assertEqual((plain.differences, plain.exit_code), ((), 0))
 
     def test_a_missing_kept_current_plugin_is_drift_and_a_missing_plain_disabled_one_is_dormant(self):
@@ -365,8 +376,8 @@ class DiffTest(unittest.TestCase):
         self.assertEqual(kinds(fresh), [])
         self.assertEqual(kinds(edited), [(K.STALE_LOCK, None, None)])
         self.assertEqual(edited.exit_code, 2)
-        self.assertIn('stale-lock  skills/mine changed after its tree was pinned; '
-                      'run lock_setup.py --entry mine --refresh-owned --write', drift.render(edited))
+        self.assertIn(f'\n  {"mine (private)":<30} stale-lock  skills/mine changed after its tree was pinned; '
+                      'run lock_setup.py --entry mine --refresh-owned --write\n', drift.render(edited))
 
 
 if __name__ == '__main__':

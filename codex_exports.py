@@ -7,7 +7,7 @@ import shutil
 
 from host_state import SkillMode
 from invocation_overrides import read_text, skill_paths, transform_policy, transform_skill
-from portable import staging_directory
+from portable import replace, staging_directory
 
 
 def explicit_skills(package):
@@ -78,5 +78,5 @@ def export(package, built, directory, roots):
             if roots.tree_digest(destination) != expected:
                 raise BuildError(f'{package.name}: immutable policy export was edited: {destination}')
         else:
-            staged.rename(destination)
+            replace(staged, destination)
     return Built(package.name, destination, version, expected, pristine=built.root)

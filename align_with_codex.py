@@ -195,6 +195,6 @@ def build_from(name, source, disabled, catalog_root, *, kept_skills=frozenset(),
             if relocations:
                 receipt['developmentManifests'] = relocations
             write_json(stage / '.claude-plugin/codex-alignment.json', receipt)
-            stage.rename(target)
+            replace(stage, target)
     return {'name': name, 'source': './' + posix(target.relative_to(catalog_root)),
             'version': version, 'description': data.get('description', name)}

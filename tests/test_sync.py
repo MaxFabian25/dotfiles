@@ -1,3 +1,5 @@
+from contextlib import redirect_stderr, redirect_stdout
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -7,6 +9,12 @@ from types import SimpleNamespace
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from homes import isolate_git
+
+
+def setUpModule():
+    isolate_git()
 
 
 class FileSafetyTest(unittest.TestCase):
@@ -103,7 +111,7 @@ class PlanTest(unittest.TestCase):
 
     def test_mac_only_package_is_disabled_elsewhere_not_installed(self):
         from description import (ClaudePlacement, Package, MarketplaceInstall, Roots, Setup, ToolNotes, Visibility)
-        from host_state import Host, Platform, SkillMode
+        from host_state import Platform, SkillMode
         package = Package('swift-lsp', Visibility.PRIVATE, '', None, {'swift': SkillMode.EXPLICIT}, ToolNotes.AUDIT,
                           None, ClaudePlacement((MarketplaceInstall('claude-plugins-official', True),)),
                           frozenset({Platform.MACOS}))
@@ -228,13 +236,36 @@ class PinnedBuildTest(unittest.TestCase):
         self.assertEqual(setup.stale(), frozenset({'kept'}))
 
     def test_locking_builds_a_kept_current_package_and_skips_a_plain_disabled_one(self):
+        from description import LockedTree
         from host_state import Host
         from lock_setup import refresh
         setup = self.kept_and_dormant()
         builder = self.builder()
+        claude = SimpleNamespace(version='1.0.claude1', digest='sha256:' + '2' * 64)
+        builder.claude.side_effect = lambda entry, built, verify: {f'{entry.name}@personal-collections': claude}
         updated = refresh(setup, builder, ['kept', 'dormant'])
         self.assertEqual(self.built(builder), ['kept'])
-        self.assertEqual(updated.lock['kept'].trees[Host.CODEX].version, '1.0')
+        self.assertEqual(updated.lock['kept'].trees, {Host.CODEX: LockedTree('1.0', 'sha256:' + '1' * 64),
+                                                      Host.CLAUDE: LockedTree('1.0.claude1', 'sha256:' + '2' * 64)})
+
+    def test_the_lock_command_lists_the_files_it_would_write_and_writes_none_without_the_flag(self):
+        import contextlib
+        from dataclasses import replace
+        import io
+        from unittest import mock
+        from description import Roots
+        import lock_setup
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            setup = replace(self.kept_and_dormant(), roots=Roots(root / 'public/setup', root / 'private/setup'))
+            argv = ['lock_setup.py', '--public', str(root / 'public/setup'), '--output', str(root / 'out'), '--entry', 'kept']
+            with mock.patch('lock_setup.load', return_value=setup), mock.patch('lock_setup.Builder', return_value=self.builder()), \
+                    mock.patch('lock_setup.Sources'), mock.patch('sys.argv', argv), \
+                    contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(lock_setup.main(), 0)
+            lines = out.getvalue().splitlines()
+            self.assertTrue(lines and all(line.startswith(f'would write {root}') for line in lines), lines)
+            self.assertFalse((root / 'public').exists() or (root / 'private').exists())
 
     def test_the_build_check_verifies_a_kept_current_package_and_skips_a_plain_disabled_one(self):
         import contextlib
@@ -283,6 +314,8 @@ class PinnedBuildTest(unittest.TestCase):
             with self.assertRaisesRegex(BuildError, 'SKILL.md: the description has 1025 characters; the limit is 1024'):
                 refresh(setup, builder, ['mine'], owned=True)
             builder.roots.tree_digest.assert_not_called()
+            # Without --refresh-owned an edited owned tree keeps its declared digest and its text is not checked.
+            self.assertEqual(refresh(setup, builder, ['mine']).loose['mine'].source.digest, Digest('sha256:' + '0' * 64))
 
     def test_rebuild_uses_the_pin_even_after_upstream_moves_and_rejects_changed_output(self):
         from dataclasses import replace
@@ -657,19 +690,25 @@ class SyncMainTest(unittest.TestCase):
             with self.assertRaises(AttributeError):
                 sync.main(['--candidate'])
 
-    def test_a_blocked_apply_prints_the_rows_that_block_it(self):
+    def test_a_blocked_apply_prints_the_rows_that_block_it_and_an_applied_one_only_its_result(self):
         from unittest import mock
         import sync
         device = mock.Mock()
         device.roots.installed_engine.return_value = None
-        current = SimpleNamespace(blocked=('row',), changes=(), result='plan')
-        with mock.patch('sync.load'), mock.patch('sync.Device.current', return_value=device), \
-                mock.patch('sync.plan', return_value=current), \
-                mock.patch('sync.render', return_value='attention\n  kit  stale-lock  run lock_setup.py\n'), \
-                mock.patch('sync.apply', side_effect=RuntimeError('Sync is blocked')), \
-                mock.patch('sys.stdout') as stdout, mock.patch('sys.stderr'):
-            self.assertEqual(sync.main(['--apply']), 3)
-        self.assertIn('stale-lock  run lock_setup.py', ''.join(call.args[0] for call in stdout.write.call_args_list))
+        applied = SimpleNamespace(blocked=(), changes=('a',), unmanaged=(), expected=(), held=(), result='applied',
+                                  exit_code=0)
+        summary = 'Managed changes: 1; blocking issues: 0; unmanaged differences left untouched: 0.\n'
+        for blocked, outcome, code, printed in (
+                (('row',), RuntimeError('Sync is blocked'), 3, 'plan  kit  stale-lock  run lock_setup.py\n'),
+                ((), (applied, None), 0, 'applied  kit  stale-lock  run lock_setup.py\n' + summary)):
+            current = SimpleNamespace(blocked=blocked, changes=('a',), result='plan')
+            with self.subTest(blocked=blocked), mock.patch('sync.load'), \
+                    mock.patch('sync.Device.current', return_value=device), mock.patch('sync.plan', return_value=current), \
+                    mock.patch('sync.render', side_effect=lambda result, notes: f'{result}  kit  stale-lock  run lock_setup.py\n'), \
+                    mock.patch('sync.apply', side_effect=[outcome]), \
+                    redirect_stdout(io.StringIO()) as stdout, redirect_stderr(io.StringIO()):
+                self.assertEqual(sync.main(['--apply']), code)
+                self.assertEqual(stdout.getvalue(), printed)
 
 
 if __name__ == '__main__':

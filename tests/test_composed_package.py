@@ -5,7 +5,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from homes import Home
+from homes import Home, hold_built_trees_once
 from composed_package import compose
 from description import CodexPlacement, EngineInstall, Package, RepoSource, ToolNotes, Visibility
 from standalone_package import snapshot
@@ -18,7 +18,7 @@ class CompositionTest(unittest.TestCase):
         home.skill(base, 'original')
         home.write(base / 'references/keep.md', 'Preserve this reference.\n')
         home.write(base / '.codex-plugin/plugin.json',
-                   '{"name":"kit","version":"1.0.0","skills":["./skills/original"]}\n')
+                   '{"name":"kit","version":"1.0.0","description":"Kit für Café","skills":["./skills/original"]}\n')
         extra = home.roots.home / 'extra'
         home.skill(extra, 'addition')
         home.write(extra / 'skills/addition/reference.md', 'Preserve this addition.\n')
@@ -32,6 +32,7 @@ class CompositionTest(unittest.TestCase):
     def test_composition_preserves_sources_and_carries_discovery_and_provenance(self):
         with Home() as home:
             package, base, private, stored = self.fixture(home)
+            held = hold_built_trees_once(self)
             source_digest = home.roots.tree_digest(stored)
             result = compose(package, base, private, home.roots.engine, home.roots)
             self.assertEqual(home.roots.tree_digest(base.root), base.digest)
@@ -42,8 +43,12 @@ class CompositionTest(unittest.TestCase):
                              (base.root / 'references/keep.md').read_bytes())
             self.assertEqual((result.root / 'skills/addition/reference.md').read_bytes(),
                              (stored / 'skills/addition/reference.md').read_bytes())
-            manifest = json.loads((result.root / '.codex-plugin/plugin.json').read_bytes())
-            self.assertEqual(manifest['skills'], ['./skills/original', './skills/addition'])
+            self.assertRegex(result.version, r'^1\.0\.0\+composed\.[0-9a-f]{16}$')
+            self.assertEqual(held, [result.root])
+            text = (result.root / '.codex-plugin/plugin.json').read_bytes().decode('utf-8')
+            self.assertIn('"description": "Kit für Café"', text)
+            manifest = json.loads(text)
+            self.assertEqual((manifest['version'], manifest['skills']), (result.version, ['./skills/original', './skills/addition']))
             receipt = json.loads((result.root / '.dotfiles-composition.json').read_bytes())
             self.assertEqual(receipt['imports']['addition']['snapshot'], package.source.imports['addition'])
             self.assertEqual(compose(package, base, private, home.roots.engine, home.roots), result)

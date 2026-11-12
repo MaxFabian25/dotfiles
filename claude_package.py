@@ -9,7 +9,7 @@ import yaml
 
 from invocation_overrides import transform_policy
 from package import files
-from portable import read_utf8, staging_directory, write_utf8
+from portable import read_utf8, replace, staging_directory, write_utf8
 
 MARKETPLACE = 'personal-collections'
 
@@ -108,7 +108,7 @@ def build(collection, codex_release, definitions, packaging, catalog_root, expli
                 if files(release) != files(stage):
                     raise RuntimeError(f'Immutable Claude release differs: {release}')
             else:
-                stage.rename(release)
+                replace(stage, release)
         packages.append({'name': name, 'id': name + '@' + MARKETPLACE, 'version': version,
                          'commit': source['commit'], 'release': str(release), 'skills': entry['skills']})
     return packages

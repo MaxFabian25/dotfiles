@@ -7,7 +7,7 @@ import shutil
 import subprocess
 
 from description import BuildSource, GenericRecipe
-from portable import GIT, extract_tar, posix, read_utf8, require_readable, staging_directory, write_utf8
+from portable import GIT, extract_tar, posix, read_utf8, replace, require_readable, staging_directory, write_utf8
 
 
 def files(root):
@@ -132,5 +132,5 @@ def package(name: str, recipe: GenericRecipe, source: BuildSource, checkout: Pat
             if files(release) != files(stage):
                 raise RuntimeError(f'Existing release differs: {release}')
         else:
-            stage.rename(release)
+            replace(stage, release)
     return release, receipt

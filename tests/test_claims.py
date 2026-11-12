@@ -18,7 +18,7 @@ class ClaimsTest(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.folder = Path(temporary.name) / 'claims'
+        self.folder = Path(temporary.name) / 'state/claims'   # a fresh machine has no state folder yet
 
     def run_claims(self, *arguments):
         with redirect_stdout(io.StringIO()) as output, redirect_stderr(io.StringIO()) as errors:
@@ -33,6 +33,13 @@ class ClaimsTest(unittest.TestCase):
         self.assertIn('restart the app', errors)
         self.assertEqual(self.run_claims('release', 'windows-desktop', '--who', 'thread B')[0], 3)
         self.assertEqual(claims.running(self.folder)['windows-desktop']['who'], 'thread A')
+
+    def test_a_command_that_finds_another_one_running_stops_with_status_3(self):
+        from portable import exclusive_lock
+        with exclusive_lock(self.folder / '.lock'):
+            self.assertEqual(self.run_claims('take', 'windows-desktop', '--who', 'thread A'),
+                             (3, '', 'Another claims command is running; run this one again\n'))
+        self.assertEqual(claims.running(self.folder), {})
 
     def test_the_holder_renews_and_releases_its_own_claim(self):
         self.run_claims('take', 'windows-config', '--who', 'thread A', '--note', 'two settings', '--hours', '1')

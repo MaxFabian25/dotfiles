@@ -20,20 +20,23 @@ GOOD = {'blocking': 0, 'held': []}
 
 class ReadTest(unittest.TestCase):
     def test_what_dump_writes_reads_back_as_the_same_result(self):
-        result = CandidateResult(1, (HELD,))
+        result = CandidateResult(2, (HELD,))
         self.assertEqual(read(dump(result)), result)
 
     def test_a_missing_key_is_named(self):
-        with self.assertRaisesRegex(ValueError, '^the candidate result has no blocking$'):
-            read(json.dumps({'held': []}))
+        for key in GOOD:
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, f'^the candidate result has no {key}$'):
+                read(json.dumps({k: v for k, v in GOOD.items() if k != key}))
 
     def test_a_held_cache_missing_its_holders_is_named(self):
         with self.assertRaisesRegex(ValueError, '^held cache 0 has no holders$'):
             read(json.dumps({**GOOD, 'held': [{'identity': 'kit', 'cache': '/c'}]}))
 
     def test_a_wrong_type_is_named_with_its_value(self):
-        with self.assertRaisesRegex(ValueError, "^the candidate result has blocking '0', which is not of type int$"):
-            read(json.dumps({**GOOD, 'blocking': '0'}))
+        for value, shown in (('0', "'0'"), (0.0, '0.0')):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                    ValueError, f'^the candidate result has blocking {shown}, which is not of type int$'):
+                read(json.dumps({**GOOD, 'blocking': value}))
 
     def test_a_count_given_as_true_is_refused(self):
         with self.assertRaisesRegex(ValueError, 'has blocking True, which is not of type int'):
@@ -50,12 +53,14 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(read(json.dumps({'blocking': 0, 'held': [held], 'unmanaged': 4})), CandidateResult(0, (HELD,)))
 
     def test_output_after_the_result_is_refused(self):
-        with self.assertRaisesRegex(ValueError, '^the candidate result is not JSON: Extra data at line 2$'):
+        with self.assertRaisesRegex(ValueError, '^the candidate result is not JSON: Extra data, line 2$'):
             read(json.dumps(GOOD) + '\n{}\n')
 
     def test_text_that_is_not_json_is_named(self):
-        with self.assertRaisesRegex(ValueError, '^the candidate result is not JSON: Expecting value at line 1$'):
-            read('Managed changes: 2; blocking issues: 0.\n')
+        for text, error in (('Managed changes: 2; blocking issues: 0.\n', 'Expecting value, line 1'),
+                            ('{"blocking', 'Unterminated string starting at, line 1')):
+            with self.subTest(text=text), self.assertRaisesRegex(ValueError, f'^the candidate result is not JSON: {error}$'):
+                read(text)
 
     def test_json_that_is_not_an_object_is_named(self):
         with self.assertRaisesRegex(ValueError, '^the candidate result is of type list, not an object$'):
@@ -63,15 +68,9 @@ class ReadTest(unittest.TestCase):
 
 
 def candidate_sync(result, code=1, rows=''):
-    """A worktree's sync.py that, asked for its candidate result, writes rows to stderr and this result to stdout, and
-    exits with code. Asked for anything else, it prints only the human summary."""
-    return ('import sys\n'
-            'if "--candidate" in sys.argv and "--json" in sys.argv:\n'
-            f'    sys.stderr.write({rows!r})\n'
-            f'    print({result!r})\n'
-            'else:\n'
-            '    print("Managed changes: 2; blocking issues: 0; unmanaged differences left untouched: 0.")\n'
-            f'raise SystemExit({code})\n')
+    """A worktree's sync.py that writes rows to stderr and this candidate result to stdout, and exits with code."""
+    return f'import sys\nsys.stderr.write({rows!r})\nprint({result!r})\nraise SystemExit({code})\n'
+
 
 
 class DeviceCheckTest(unittest.TestCase):
@@ -83,7 +82,11 @@ class DeviceCheckTest(unittest.TestCase):
         self.private.mkdir()
 
     def check(self, sync):
-        (self.public / 'sync.py').write_text(sync, encoding='utf-8')
+        """Runs device_check on a worktree whose sync.py first stops unless it is asked for the candidate result of
+        this release's public and private setup."""
+        asked = ['--candidate', '--json', '--public', str(self.public / 'setup'), '--private', str(self.private / 'setup')]
+        guard = f'import sys\nif sys.argv[1:] != {asked!r}:\n    sys.exit("sync.py was given " + repr(sys.argv[1:]))\n'
+        (self.public / 'sync.py').write_text(guard + sync, encoding='utf-8')
         with redirect_stdout(io.StringIO()) as output, redirect_stderr(io.StringIO()) as error:
             try:
                 release.device_check(self.public, self.private, 'nothing was pushed')
@@ -110,10 +113,17 @@ class DeviceCheckTest(unittest.TestCase):
                                'result); nothing was pushed')
         self.assertIn("KeyError: 'models'", error)
 
+    def test_a_sync_that_exits_0_or_prints_only_a_blank_line_without_a_result_stops(self):
+        for code, sync in ((0, 'raise SystemExit(0)\n'), (1, 'print()\nraise SystemExit(1)\n')):
+            with self.subTest(code=code, sync=sync):
+                output, error, stop = self.check(sync)
+                self.assertEqual(stop, f'the pull on this device would stop on this release (sync exited {code} and '
+                                       'printed no result); nothing was pushed')
+
     def test_a_crash_after_other_output_stops_and_shows_that_output(self):
         output, error, stop = self.check('print("Managed changes: 1; blocking issues: 0.")\nraise KeyError("models")\n')
         self.assertEqual(stop, 'the pull on this device would stop on this release (sync exited 1; the candidate '
-                               'result is not JSON: Expecting value at line 1); nothing was pushed')
+                               'result is not JSON: Expecting value, line 1); nothing was pushed')
         self.assertTrue(error.startswith('Managed changes: 1; blocking issues: 0.\n'), error)
         self.assertIn("KeyError: 'models'", error)
 
@@ -147,14 +157,24 @@ class CandidateOutputTest(unittest.TestCase):
         import sync
         device = mock.Mock()
         device.roots.installed_engine.return_value = None
-        current = SimpleNamespace(changes=('a', 'b'), blocked=blocked, unmanaged=('c',), expected=(), observations={},
-                                  result='plan', exit_code=2 if blocked else 1)
-        with mock.patch('sync.load'), mock.patch('sync.Device.current', return_value=device), \
-                mock.patch('sync.plan', return_value=current), mock.patch('sync.render', return_value='rows\n'), \
-                mock.patch('accepted_installations.AcceptedInstallations') as owner, \
-                mock.patch('configuration.validate_runtime'), mock.patch('sync_hosts.Rehearsal'), \
+        current = SimpleNamespace(changes=('a', 'b'), blocked=blocked, unmanaged=('c',), expected=(),
+                                  observations={'kit': 'observed'}, result='plan', exit_code=2 if blocked else 1)
+        owner = mock.Mock()
+        owner.held_replacements.side_effect = lambda observed: (
+            [(HELD.identity, HELD.cache, list(HELD.holders))] if observed is current.observations else [])
+
+        def validate(configurations, roots, *, proposed):
+            if (configurations, roots, proposed) != (owner.configurations, device.roots, True):
+                raise ValueError('settings checked against the wrong configurations')
+
+        # Each step answers only for this device's setup, so a step given the wrong one fails the run.
+        with mock.patch('sync.load') as load, mock.patch('sync.Device.current', return_value=device), \
+                mock.patch('sync.plan', side_effect=lambda setup, on: current if (setup, on) == (load.return_value, device)
+                           else None), mock.patch('sync.render', return_value='rows\n'), \
+                mock.patch('accepted_installations.AcceptedInstallations', side_effect=lambda setup, on: owner
+                           if (setup, on) == (load.return_value.for_platform.return_value, device) else None), \
+                mock.patch('configuration.validate_runtime', side_effect=validate), mock.patch('sync_hosts.Rehearsal'), \
                 redirect_stdout(io.StringIO()) as output, redirect_stderr(io.StringIO()) as error:
-            owner.return_value.held_replacements.return_value = [(HELD.identity, HELD.cache, list(HELD.holders))]
             code = sync.main(['--candidate', *flags])
         return code, output.getvalue(), error.getvalue()
 

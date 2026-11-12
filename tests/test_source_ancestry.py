@@ -6,10 +6,16 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from description import Adaptation, CodexPlacement, EngineInstall, Package, Roots, Setup, ToolNotes, Visibility
 from host_state import DeviceRoots, Host
 from portable import GIT
 from sync_sources import BuildError, Built, Builder, Sources
+from homes import isolate_git
+
+
+def setUpModule():
+    isolate_git()
 
 
 def git(root, *arguments):

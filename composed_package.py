@@ -8,7 +8,7 @@ import shutil
 
 from standalone_package import content_hashes
 from sync_sources import BuildError, Built, child
-from portable import staging_directory
+from portable import replace, staging_directory
 
 
 def compose(package, built, private, directory, roots):
@@ -65,5 +65,5 @@ def compose(package, built, private, directory, roots):
             if roots.tree_digest(destination) != expected:
                 raise BuildError(f'{package.name}: immutable composed export was edited: {destination}')
         else:
-            staged.rename(destination)
+            replace(staged, destination)
     return Built(package.name, destination, version, expected)

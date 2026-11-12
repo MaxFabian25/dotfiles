@@ -1,8 +1,11 @@
 """Synthetic device homes for the host tests: config files, caches and a CLI that replays recorded JSON."""
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
+import unittest
+from unittest import mock
 
 ENGINE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ENGINE))
@@ -31,6 +34,41 @@ sys.stdout.write(answers[key])
 '''
 
 
+def isolate_git():
+    """As a test module's setUpModule: git reads no global or system config until the module's tests end. A
+    developer's own config, such as commit.gpgsign = true, would otherwise stop or change the fixtures' commits."""
+    patcher = mock.patch.dict(os.environ, {'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1'})
+    patcher.__enter__()  # not start(), which a test's patch.stopall() would undo for the rest of the module
+    unittest.addModuleCleanup(patcher.__exit__, None, None, None)
+
+
+def hold_built_trees_once(case):
+    """As a test's setUp: the first move of each tree out of its staging folder, or into one beside it, is refused
+    the way Windows refuses it while another process holds the folder. Returns the targets refused so far."""
+    import portable
+    refused, device = [], portable.WINDOWS
+    case.addCleanup(setattr, portable, 'WINDOWS', device)
+
+    def held_once(move):
+        def attempt(source, target, *args, **kwargs):
+            source, target = Path(source), Path(target)
+            if (source.parent.name.startswith('.') and target.parent == source.parent.parent or
+                    target.parent.name.startswith('.') and source.parent == target.parent.parent):
+                if target not in refused:
+                    refused.append(target)
+                    portable.WINDOWS = True  # portable.replace retries only there, so the device is Windows until the retry
+                    raise PermissionError(13, 'Access is denied', str(target))
+                portable.WINDOWS = device
+            return move(source, target, *args, **kwargs)
+        return attempt
+
+    for patcher in (mock.patch.object(portable.time, 'sleep'), mock.patch('os.rename', held_once(os.rename)),
+                    mock.patch('os.replace', held_once(os.replace))):
+        patcher.start()
+        case.addCleanup(patcher.stop)
+    return refused
+
+
 def projection_roots():
     """Roots for tests that only project a description. The home does not exist, so neither this device's
     config nor a CODEX_HOME or CLAUDE_CONFIG_DIR exported by an agent session can reach the test."""
@@ -56,7 +94,7 @@ class Home:
     def write(self, path, text):
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        path.write_text(text, encoding='utf-8', newline='\n')  # the same bytes on Windows as elsewhere
         return path
 
     def calls(self, name):

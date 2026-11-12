@@ -11,18 +11,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 spec = importlib.util.spec_from_file_location('alignment', Path(__file__).resolve().parents[1] / 'align_with_codex.py')
 alignment = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(alignment)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from homes import hold_built_trees_once  # noqa: E402
 
 
 def write_agents(root, *names):
     (root / 'agents').mkdir()
     for name in names:
-        (root / 'agents' / f'{name}.md').write_text(f'---\nname: {name}\ndescription: Test agent.\n---\nBody\n')
+        (root / 'agents' / f'{name}.md').write_text(f'---\nname: {name}\ndescription: Test agent.\n---\nBody\n', newline='\n')
 
 
 def write_skills(root, *names):
     for name in names:
         (root / 'skills' / name).mkdir(parents=True)
-        (root / 'skills' / name / 'SKILL.md').write_text(f'---\nname: {name}\ndescription: Test skill.\n---\nBody\n')
+        (root / 'skills' / name / 'SKILL.md').write_text(f'---\nname: {name}\ndescription: Test skill.\n---\nBody\n',
+                                                       newline='\n')
 
 
 def plugin_source(root, *skills):
@@ -64,12 +67,14 @@ class ClaudeSkillTests(unittest.TestCase):
         self.assertEqual(alignment.excluded_skill_names(disabled, 'cursor-team-kit'), ['cursor-team-kit:fix-ci'])
 
     def test_a_built_copy_keeps_the_claude_skill_that_codex_has_off(self):
+        held = hold_built_trees_once(self)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = plugin_source(root, 'claude-handoff', 'handoff', 'tdd')
             disabled = {'example:claude-handoff', 'example:handoff'}
             entry = alignment.build_from('example', source, disabled, root / 'catalog', kept_skills={'claude-handoff'})
             built = root / 'catalog' / entry['source']
+            self.assertEqual(held, [built])
             self.assertEqual(sorted(path.name for path in (built / 'skills').iterdir()), ['claude-handoff', 'tdd'])
             receipt = json.loads((built / '.claude-plugin/codex-alignment.json').read_text())
             self.assertEqual(receipt['excludedSkillNames'], ['example:handoff'])
@@ -97,6 +102,7 @@ class ClaudeSkillTests(unittest.TestCase):
             every = alignment.build_from('example', source, set(), root / 'every', agents=None)
             self.assertEqual(every['version'], unselected['version'])
             # What build_from gave this source at f17b0ab, before the selection counted; existing locks name such versions.
+            # The fixture writes LF on every platform, so the pin holds on Windows too.
             self.assertEqual(every['version'], '1.0.0+codex-aligned.6f5a2679a652')
 
 
@@ -120,6 +126,16 @@ class InvocableSkillTests(unittest.TestCase):
             self.assertIn('disable-model-invocation: true', (built / 'skills/leaf/SKILL.md').read_text())
             self.assertIn('disable-model-invocation: true', (root / 'catalog' / plain['source'] / 'skills/mode/SKILL.md').read_text())
             self.assertIn('disable-model-invocation: true', (source / 'skills/mode/SKILL.md').read_text())
+
+    def test_a_skill_codex_keeps_explicit_only_by_its_sidecar_is_explicit_only_in_the_claude_copy(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = plugin_source(root, 'mode', 'leaf')
+            (source / 'skills/mode/agents').mkdir()
+            (source / 'skills/mode/agents/openai.yaml').write_text('policy:\n  allow_implicit_invocation: false\n')
+            built = root / 'catalog' / alignment.build_from('example', source, set(), root / 'catalog')['source']
+            self.assertIn('disable-model-invocation: true', (built / 'skills/mode/SKILL.md').read_text())
+            self.assertNotIn('disable-model-invocation', (built / 'skills/leaf/SKILL.md').read_text())
 
 
 class DevelopmentManifestTests(unittest.TestCase):

@@ -6,6 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 import subprocess
 import sys
+import traceback
 
 from description import AlignedInstall, EngineInstall, Roots
 from description_toml import load
@@ -26,14 +27,16 @@ def main():
                              'engine, with its engine and codex-aligned installs switched on, verified only where the '
                              'lock holds its tree, and print each built digest')
     args = parser.parse_args()
+    # Git runs each fetch inside the checkout it fills, where a relative source path names nothing.
+    output, seeds = args.output.absolute(), tuple(seed.absolute() for seed in args.seed)
     setup = load(Roots(args.public, args.private))
     if setup.stale():
         parser.error('stale locks: ' + ', '.join(sorted(setup.stale())))
     platform = Platform(args.platform) if args.platform else Platform.WINDOWS if sys.platform == 'win32' else Platform.MACOS if sys.platform == 'darwin' else Platform.LINUX
     setup = setup.for_platform(platform)
-    roots = replace(DeviceRoots.current(), engine=args.output)
-    sources = Sources(args.output / '.sync/sources', seeds=tuple(args.seed))
-    builder = Builder(setup, roots, args.output, sources=sources)
+    roots = replace(DeviceRoots.current(), engine=output)
+    sources = Sources(output / '.sync/sources', seeds=seeds)
+    builder = Builder(setup, roots, output, sources=sources)
     errors = []
     built = unmanaged = 0
     for name, package in sorted(setup.packages.items()):
@@ -42,6 +45,7 @@ def main():
         managed = any(p and any(i.managed for i in p.installs) for p in (package.codex, package.claude))
         if not managed:
             # A codex-aligned copy is built from the Codex engine install, so without one there is nothing to switch on.
+            # That leaves out a package whose only engine install is Claude's too; no package has that shape.
             if not (args.unmanaged and package.codex and any(isinstance(i, EngineInstall) for i in package.codex.installs)):
                 continue
             package = replace(package, **{host.value: switched_on(package.placement(host)) for host in Host})
@@ -56,9 +60,14 @@ def main():
             roles = builder.roles(package, codex) if package.codex and any(i.enabled for i in package.codex.installs) else {}
             built += 1
             print(f'verified {name}: Codex tree, {len(claude)} Claude tree(s), {len(roles)} role(s)', flush=True)
-        except (BuildError, ValueError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
+        except Exception as error:  # a fault in one builder fails its package, not the run
             errors.append(name)
-            print(f'FAILED {name}: {error}', flush=True)
+            # Their text names the fault. Any other is a fault in the engine: a KeyError's text is only the key, so it
+            # prints with its type, and its traceback says where.
+            worded = isinstance(error, (BuildError, ValueError, OSError, RuntimeError, subprocess.CalledProcessError))
+            print(f'FAILED {name}: {error if worded else repr(error)}', flush=True)
+            if not worded:
+                traceback.print_exc()
     built_unmanaged = f'{unmanaged} unmanaged packages built; ' if args.unmanaged else ''
     print(f'{built} packages rebuilt and verified; {built_unmanaged}{len(errors)} failed. '
           'No host configuration or installed cache changed.')

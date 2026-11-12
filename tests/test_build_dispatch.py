@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -13,8 +14,10 @@ import unittest
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from description import (BuildSource, ClaudePlacement, CodexPlacement, CourseRecipe, EngineInstall,  # noqa: E402
-                         GenericRecipe, Package, PublicEmilRecipe, Roots, Setup, SnapshotRecipe, ToolNotes, Visibility)
+                         GenericRecipe, LocalSource, Package, PublicEmilRecipe, Repo, RepoSource, Roots, Setup, SnapshotRecipe, ToolNotes, Visibility)
+from homes import hold_built_trees_once  # noqa: E402
 from host_state import DeviceRoots  # noqa: E402
 from portable import GIT  # noqa: E402
 from sync_sources import Builder, BuildError, Sources  # noqa: E402
@@ -48,6 +51,7 @@ class BuildDispatch(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.upstream = self.root / 'upstream'
+        self.held = hold_built_trees_once(self)
 
     def write(self, root, files):
         for relative, text in files.items():
@@ -67,6 +71,13 @@ class BuildDispatch(unittest.TestCase):
         git(self.upstream, 'commit', '-q', '--allow-empty', '-m', 'Later')
         return pinned
 
+    def assertRebuildKeepsTheRelease(self, source, release):
+        """A rebuild finds the release it built before, and refuses one edited since rather than replacing it."""
+        self.assertEqual(self.build(source), release)
+        (release / '.codex-plugin/plugin.json').write_text('{}\n')
+        with self.assertRaisesRegex(RuntimeError, f'(?i)^(existing )?immutable release differs: {re.escape(str(release))}$'):
+            self.build(source)
+
     def assertText(self, path, expected, **values):
         """Each value is one the fixture cannot know in advance, written in the expected text as {name}."""
         text = path.read_bytes().decode()
@@ -74,16 +85,16 @@ class BuildDispatch(unittest.TestCase):
             text = text.replace(json.dumps(str(value))[1:-1], '{' + name + '}')
         self.assertEqual(text, expected)
 
-    def builder(self, package):
-        setup = Setup(Roots(self.root / 'public/setup', self.root / 'private/setup'), {'kit': package}, {}, {}, {},
-                      None, (), frozenset(), {})
+    def builder(self, package, *, private=True, repos=None):
+        setup = Setup(Roots(self.root / 'public/setup', self.root / 'private/setup' if private else None),
+                      {package.name: package}, repos or {}, {}, {}, None, (), frozenset(), {})
         roots = replace(DeviceRoots.current(self.root), engine=self.root / 'engine')
         return Builder(setup, roots, roots.engine, sources=Sources(self.root / 'sources', seeds=(self.upstream,)))
 
-    def build(self, source):
+    def build(self, source, *, private=True):
         package = Package('kit', Visibility.PUBLIC, '', source, {}, ToolNotes.AUDIT,
                           CodexPlacement((EngineInstall(False),)), None)
-        return self.builder(package).codex(package, verify=False).root
+        return self.builder(package, private=private).codex(package, verify=False).root
 
     def snapshot(self, *skills):
         from standalone_package import snapshot
@@ -101,6 +112,7 @@ class BuildDispatch(unittest.TestCase):
         recipe = GenericRecipe(URL, commit, 'nested', '.cursor-plugin/plugin.json', ('./skills/keep',))
         release = self.build(BuildSource(recipe, 5, 'Kit', metadata={'url': 'https://example.invalid/kit'}))
         self.assertEqual(release.name, f'2.0.0+upstream.{commit[:12]}.codex5')
+        self.assertIn(release, self.held)
         manifest = read(release / '.codex-plugin/plugin.json')
         self.assertEqual((manifest['interface']['displayName'], manifest['interface']['websiteURL']),
                          ('Kit', 'https://example.invalid/kit'))
@@ -210,20 +222,23 @@ class BuildDispatch(unittest.TestCase):
         commit = self.commit({
             'LICENSE': 'License.\n',
             'skills/alpha/SKILL.md': '---\nname: alpha\ndescription: "Alpha work. Triggers on: alpha"\n---\nBody.\n',
-            'skills/beta/SKILL.md': '---\nname: beta\ndescription: "Beta work. Triggers on: beta"\n---\nBody.\n'}, later={
+            'skills/beta/SKILL.md': '---\nname: beta\ndescription: "Beta work. Triggers on: beta"\n---\nBody.\n---\nMore.\n'}, later={
             'skills/alpha/SKILL.md': '---\nname: alpha\ndescription: "Alpha work. Triggers on: alpha"\n---\nLater.\n'})
         recipe = CourseRecipe(URL, commit, ('skills/alpha', 'skills/beta'), 'course-', ('course-alpha',))
-        release = self.build(BuildSource(recipe, 3, 'Course', metadata={
+        source = BuildSource(recipe, 3, 'Course', metadata={
             'url': 'https://example.invalid/course', 'description': 'Course skills.', 'repository': 'example/course',
             'collection': 'course', 'branch': 'main',
             'skillMetadata': {'course-alpha': {'normalizations': ['trimmed'], 'allowImplicitInvocation': True},
-                              'course-beta': {'normalizations': []}}}))
+                              'course-beta': {'normalizations': []}}})
+        release = self.build(source)
         self.assertEqual(release.name, f'0.1.0+upstream.{commit[:12]}.codex3')
+        self.assertIn(release, self.held)
         self.assertEqual(sorted(p.name for p in (release / 'skills').iterdir()), ['course-alpha', 'course-beta'])
         descriptions = {name: yaml.safe_load((release / 'skills' / name / 'SKILL.md').read_text().split('---')[1])
                         for name in ('course-alpha', 'course-beta')}
         self.assertEqual(descriptions['course-alpha'], {'name': 'course-alpha', 'description': 'Alpha work.'})
         self.assertEqual(descriptions['course-beta']['description'], 'Beta work. Triggers on: beta')
+        self.assertTrue((release / 'skills/course-beta/SKILL.md').read_text().endswith('---\nBody.\n---\nMore.\n'))
         policy = yaml.safe_load((release / 'skills/course-alpha/agents/openai.yaml').read_text())
         self.assertIs(policy['policy']['allow_implicit_invocation'], True)
         self.assertEqual(read(release / 'skills/course-alpha/.course-source.json')['normalizations'], ['trimmed'])
@@ -235,7 +250,7 @@ class BuildDispatch(unittest.TestCase):
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "kit",
-  "version": "0.1.0+upstream.17ce30aa6cf9.codex3",
+  "version": "0.1.0+upstream.cf198a0a5e6f.codex3",
   "description": "Course skills.",
   "repository": "https://example.invalid/course",
   "extensions": {
@@ -254,7 +269,7 @@ class BuildDispatch(unittest.TestCase):
         self.assertText(release / '.codex-plugin/plugin.json', '''\
 {
   "name": "kit",
-  "version": "0.1.0+upstream.17ce30aa6cf9.codex3",
+  "version": "0.1.0+upstream.cf198a0a5e6f.codex3",
   "description": "Course skills.",
   "repository": "https://example.invalid/course",
   "skills": "./skills/",
@@ -271,8 +286,8 @@ class BuildDispatch(unittest.TestCase):
 {
   "repository": "https://example.invalid/course",
   "branch": "main",
-  "commit": "17ce30aa6cf9bf0d8e02b95ad4acafae1e85dc4b",
-  "version": "0.1.0+upstream.17ce30aa6cf9.codex3",
+  "commit": "cf198a0a5e6fe0e4c0ed5305b22d9b1028150102",
+  "version": "0.1.0+upstream.cf198a0a5e6f.codex3",
   "selectedSkills": [
     {
       "sourcePath": "skills/alpha",
@@ -295,7 +310,7 @@ class BuildDispatch(unittest.TestCase):
       "SKILL.md": "7aec8e84bdc27eafe39688d2499416238eecacab6641c5d20fdf8fee3d74dcaa"
     },
     "course-beta": {
-      "SKILL.md": "061b92b7538af86dabaa486057060a1ab017418a3c83ecf93e64986105adeb7d"
+      "SKILL.md": "f55f4074d3a0a88fdbd5bcebeb0aaf929c1d3c214c2d35086419b5d1acf4e425"
     }
   },
   "compatibilityChangedFiles": {
@@ -309,14 +324,14 @@ class BuildDispatch(unittest.TestCase):
     ]
   },
   "packagedFileHashes": {
-    ".codex-plugin/plugin.json": "91ba895e532f5a0edfc136fb020cfc695afca7516eff90adb35589cdeef395e8",
+    ".codex-plugin/plugin.json": "4f16cad92f38fe3e49781650df76324322ecaf9a1bb239baa65b3ed7acf3d74d",
     "LICENSE": "b4e18e9cacee1924815525f824ed5eeb98778a4fbecac79ee79e9c92f480defc",
-    "plugin.json": "af7f94b382c4bf17ff203852f1045fd56e400ed0883ecaf7af9569e86d695d80",
-    "skills/course-alpha/.course-source.json": "4329edc1779f2675afd1a9d3e159206d7c1b16121f6ab5077e3525d878f0d760",
+    "plugin.json": "b8d4e5b411d8d92c744d4e6859b7b35d55319c838d33211e7198216c90648b9a",
+    "skills/course-alpha/.course-source.json": "4430d15981a2934f6bfc2891d42676035e0f542b6a7f19f678f4df501babd9db",
     "skills/course-alpha/SKILL.md": "65ffe0f81e6f6b85aad254b604236b2d496121a9b39159163a408b9670a3ccf6",
     "skills/course-alpha/agents/openai.yaml": "e7faa81d7fb0008e73246daf553e3750481bf05df0cba6ff3a39249d1c39b3da",
-    "skills/course-beta/.course-source.json": "1274d0dea417c329a76c9f8f6eff0bf0628fea5ea7e1339c16b4ceed08235dd6",
-    "skills/course-beta/SKILL.md": "15a1fc1bd74cc65a92c068bc28268322abeaa4af2e3411a83364b9e19d10fb07",
+    "skills/course-beta/.course-source.json": "f0b8fc9f4418b53564c22ddf35f022e21eb24ca88823c3f279e5fd2d8f280725",
+    "skills/course-beta/SKILL.md": "93824f6b26d285e4c0cb53f0a9e9bfc06b90ea00fce50d9d0263a77277b48e29",
     "skills/course-beta/agents/openai.yaml": "691a6870d47cea8b0d8c73e0e27de653bdf302168b9d288b050d029a90ed7d1e"
   }
 }
@@ -324,7 +339,7 @@ class BuildDispatch(unittest.TestCase):
         self.assertText(release / 'skills/course-alpha/.course-source.json', '''\
 {
   "repo": "example/course",
-  "commit": "17ce30aa6cf9bf0d8e02b95ad4acafae1e85dc4b",
+  "commit": "cf198a0a5e6fe0e4c0ed5305b22d9b1028150102",
   "collection": "course",
   "sourcePath": "skills/alpha",
   "sourceName": "alpha",
@@ -337,6 +352,7 @@ class BuildDispatch(unittest.TestCase):
   }
 }
 ''')
+        self.assertRebuildKeepsTheRelease(source, release)
 
     def test_a_course_recipe_applies_its_replacements_display_name_prefix_and_provenance_file(self):
         commit = self.commit({
@@ -413,17 +429,19 @@ class BuildDispatch(unittest.TestCase):
     def test_a_public_emil_recipe_builds_renamed_licensed_skills_with_their_metadata(self):
         commit = self.commit({
             'LICENSE': 'MIT License.\n',
-            'skills/motion/SKILL.md': '---\nname: motion\ndescription: Motion.\ndisable-model-invocation: true\n---\nBody.\n'},
+            'skills/motion/SKILL.md': '---\nname: motion\ndescription: Motion.\ndisable-model-invocation: true\n---\nBody.\n---\nMore.\n'},
             later={'skills/motion/SKILL.md': '---\nname: motion\ndescription: Motion.\n---\nLater.\n'})
         sidecar = 'policy:\n  allow_implicit_invocation: false\n'
         recipe = PublicEmilRecipe(URL, commit, ('skills/motion',), {'motion': 'emil-motion'})
-        release = self.build(BuildSource(recipe, 2, 'Motion', metadata={
+        source = BuildSource(recipe, 2, 'Motion', metadata={
             'url': 'https://example.invalid/emil', 'description': 'Motion skills.', 'branch': 'main',
             'skillMetadata': {'emil-motion': {'removeDisableModelInvocation': True, 'openaiYaml': sidecar,
-                                              'legacyProvenance': True}}}))
+                                              'legacyProvenance': True}}})
+        release = self.build(source)
         self.assertEqual(release.name, f'0.1.0+upstream.{commit[:12]}.codex2')
+        self.assertIn(release, self.held)
         skill = release / 'skills/emil-motion'
-        self.assertEqual((skill / 'SKILL.md').read_text(), '---\nname: emil-motion\ndescription: Motion.\n---\nBody.\n')
+        self.assertEqual((skill / 'SKILL.md').read_text(), '---\nname: emil-motion\ndescription: Motion.\n---\nBody.\n---\nMore.\n')
         self.assertEqual((skill / 'LICENSE.txt').read_text(), 'MIT License.\n')
         self.assertEqual((skill / 'agents/openai.yaml').read_text(), sidecar)
         self.assertEqual(read(skill / '.emil-upstream.json')['localName'], 'emil-motion')
@@ -433,7 +451,7 @@ class BuildDispatch(unittest.TestCase):
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "kit",
-  "version": "0.1.0+upstream.a4d715364f61.codex2",
+  "version": "0.1.0+upstream.b6d0d5683990.codex2",
   "description": "Motion skills.",
   "repository": "https://example.invalid/emil",
   "license": "MIT",
@@ -453,7 +471,7 @@ class BuildDispatch(unittest.TestCase):
         self.assertText(release / '.codex-plugin/plugin.json', '''\
 {
   "name": "kit",
-  "version": "0.1.0+upstream.a4d715364f61.codex2",
+  "version": "0.1.0+upstream.b6d0d5683990.codex2",
   "description": "Motion skills.",
   "repository": "https://example.invalid/emil",
   "license": "MIT",
@@ -471,8 +489,8 @@ class BuildDispatch(unittest.TestCase):
 {
   "repository": "https://example.invalid/emil",
   "branch": "main",
-  "commit": "a4d715364f61d7b8af3d99631a1d6dda66966021",
-  "version": "0.1.0+upstream.a4d715364f61.codex2",
+  "commit": "b6d0d568399099dae6e71371affb2e52d7ebf0a7",
+  "version": "0.1.0+upstream.b6d0d5683990.codex2",
   "selectedSkills": [
     {
       "sourcePath": "skills/motion",
@@ -485,7 +503,7 @@ class BuildDispatch(unittest.TestCase):
   ],
   "upstreamFileHashes": {
     "emil-motion": {
-      "SKILL.md": "ac44d4072b4d1e28da4f2580b24511350a40d3878a72711d44daa9cb9be59ace"
+      "SKILL.md": "88b8e0817fe87a8c200dad1330b49fd81e44fa965a62cbedd523cf4fd27517bd"
     }
   },
   "compatibilityChangedFiles": {
@@ -497,12 +515,12 @@ class BuildDispatch(unittest.TestCase):
     ]
   },
   "packagedFileHashes": {
-    ".codex-plugin/plugin.json": "dc55f3eee565609a12ce8c9b15792c9d4eea9087cccf6036c281055945936feb",
+    ".codex-plugin/plugin.json": "3c04183ac3651c32c7489fd8c77179c2ce4ff15720db66d67a3c04102a0319d8",
     "LICENSE": "a87cb046863d7850bd6d389fa5a0bb1e8fc7edd9cf4baa1d96e478049bc421aa",
-    "plugin.json": "0d34f9aa4d34bf77f4113014e7c5473793685c1d7dd1479c14675574de34da27",
-    "skills/emil-motion/.emil-upstream.json": "f8411c157f1ddcfdf0f8b4f6262279b29ccde2c6f2d7dbfb389b54134de27fdf",
+    "plugin.json": "aaf17a056c476a900e5fe11b0ccfb10833d18f8ed32fadf0575839b81b0fb546",
+    "skills/emil-motion/.emil-upstream.json": "09a86cb2a2c33428f79474a8657a29cdd317578d633f34e413bbf123b4a4aae8",
     "skills/emil-motion/LICENSE.txt": "a87cb046863d7850bd6d389fa5a0bb1e8fc7edd9cf4baa1d96e478049bc421aa",
-    "skills/emil-motion/SKILL.md": "5ecfcd19e3e5596a14125b56105d8de4b1732b629bd5915790b0597d131b6f01",
+    "skills/emil-motion/SKILL.md": "59b2c121bb0559ba41141698555632202b8ba1ac0e7712877c7915181e760ce1",
     "skills/emil-motion/agents/openai.yaml": "a1499d95abd8447558c535fe5554adcc3c9b988a0a39264a6283d430effe1e94"
   }
 }
@@ -511,7 +529,7 @@ class BuildDispatch(unittest.TestCase):
 {
   "source": "https://example.invalid/emil.git",
   "ref": "main",
-  "commit": "a4d715364f61d7b8af3d99631a1d6dda66966021",
+  "commit": "b6d0d568399099dae6e71371affb2e52d7ebf0a7",
   "sourceDirectory": "skills/motion",
   "licenseSource": "LICENSE",
   "sourceName": "motion",
@@ -529,13 +547,36 @@ class BuildDispatch(unittest.TestCase):
   ]
 }
 ''')
+        self.assertRebuildKeepsTheRelease(source, release)
+
+    def test_a_public_emil_skill_keeps_its_upstream_files_and_refuses_other_upstream_invocation_metadata(self):
+        sidecar = 'policy:\n  allow_implicit_invocation: false\n'
+        for shipped, refused in ((sidecar, False), ('policy:\n  allow_implicit_invocation: true\n', True)):
+            with self.subTest(refused=refused):
+                self.upstream = self.root / f'upstream-{refused}'
+                commit = self.commit({'LICENSE': 'MIT License.\n', 'skills/motion/agents/openai.yaml': shipped,
+                                      'skills/motion/notes.md': 'Notes.\n',
+                                      'skills/motion/SKILL.md': '---\nname: motion\ndescription: Motion.\n---\nBody.\n'},
+                                     later={})
+                source = BuildSource(PublicEmilRecipe(URL, commit, ('skills/motion',), {'motion': 'motion'}), 2, 'Motion',
+                                     metadata={'url': 'https://example.invalid/emil', 'description': 'Motion skills.',
+                                               'branch': 'main', 'skillMetadata': {'motion': {'openaiYaml': sidecar}}})
+                if refused:
+                    with self.assertRaisesRegex(RuntimeError, '^Upstream added conflicting invocation metadata: motion$'):
+                        self.build(source)
+                else:
+                    skill = self.build(source) / 'skills/motion'
+                    self.assertEqual([(skill / name).read_text() for name in ('agents/openai.yaml', 'notes.md')],
+                                     [sidecar, 'Notes.\n'])
 
     def test_a_snapshot_recipe_builds_its_selected_skills_with_its_metadata(self):
         stored = self.snapshot()
         recipe = SnapshotRecipe('sha256:' + stored.name, {'one': None})
-        release = self.build(BuildSource(recipe, 7, 'Snap', metadata={
-            'description': 'Snapshot skills.', 'sourceKind': 'personal', 'repository': 'example/snap'}))
+        source = BuildSource(recipe, 7, 'Snap', metadata={
+            'description': 'Snapshot skills.', 'sourceKind': 'personal', 'repository': 'example/snap'})
+        release = self.build(source)
         self.assertEqual(release.name, f'0.1.0+snapshot.{stored.name[:12]}.personal7')
+        self.assertEqual(self.held, [stored, release])
         manifest = read(release / '.codex-plugin/plugin.json')
         self.assertEqual((manifest['repository'], manifest['interface']['displayName'], manifest['description']),
                          ('https://github.com/example/snap', 'Snap', 'Snapshot skills.'))
@@ -583,6 +624,7 @@ class BuildDispatch(unittest.TestCase):
 }
 ''',
                         snapshot=self.root / 'engine/standalone-snapshots/kit' / stored.name)
+        self.assertRebuildKeepsTheRelease(source, release)
 
     def test_a_claude_collection_takes_its_packaging_and_description_from_the_recipe_metadata(self):
         stored = self.snapshot()
@@ -595,6 +637,7 @@ class BuildDispatch(unittest.TestCase):
         codex = builder.codex(package, verify=False)
         [claude] = builder.claude(package, codex, verify=False).values()
         self.assertEqual(claude.version, f'0.1.0+snapshot.{stored.name[:12]}.personal1.claude3')
+        self.assertIn(claude.root, self.held)
         manifest = read(claude.root / '.claude-plugin/plugin.json')
         self.assertEqual((manifest['name'], manifest['description']), ('kit', 'Claude snapshot skills.'))
         self.assertEqual(read(claude.root / '.claude-plugin/upstream.json')['selectedSkills'], ['one'])
@@ -641,6 +684,21 @@ class BuildDispatch(unittest.TestCase):
   }
 }
 ''', codex=codex.root)
+
+    def test_a_claude_collection_edited_after_it_was_built_is_refused_rather_than_replaced(self):
+        stored = self.snapshot()
+        source = BuildSource(SnapshotRecipe('sha256:' + stored.name, {'one': None}), 1, 'Snap', metadata={
+            'description': 'Snapshot skills.', 'sourceKind': 'personal', 'claudePackaging': 1,
+            'claudeDescriptions': {'kit': 'Claude snapshot skills.'}})
+        package = Package('kit', Visibility.PRIVATE, '', source, {}, ToolNotes.AUDIT,
+                          CodexPlacement((EngineInstall(False),)), ClaudePlacement((EngineInstall(True),)))
+        builder = self.builder(package)
+        codex = builder.codex(package, verify=False)
+        [claude] = builder.claude(package, codex, verify=False).values()
+        self.assertEqual(list(builder.claude(package, codex, verify=False).values()), [claude])
+        (claude.root / '.claude-plugin/plugin.json').write_text('{}\n')
+        with self.assertRaisesRegex(RuntimeError, f'^Immutable Claude release differs: {re.escape(str(claude.root))}$'):
+            builder.claude(package, codex, verify=False)
 
     def test_a_claude_collection_split_in_two_builds_each_plugin_at_the_default_packaging(self):
         stored = self.snapshot('one', 'two')
@@ -750,6 +808,43 @@ class BuildDispatch(unittest.TestCase):
             with self.subTest(metadata), \
                     self.assertRaisesRegex(BuildError, '^kit: missing snapshot build metadata; migrate its recipe first$'):
                 self.build(BuildSource(SnapshotRecipe('sha256:' + 'a' * 64, {}), 1, 'Kit', metadata=metadata))
+
+    def test_a_repository_source_without_a_path_builds_the_folder_its_marketplace_lists_for_the_plugin(self):
+        skill = '---\nname: {0}\ndescription: {0}.\n---\nBody.\n'
+        commit = self.commit({
+            '.claude-plugin/marketplace.json': json.dumps({'plugins': [
+                {'name': 'kit', 'source': './plugins/kit'},
+                {'name': 'other', 'source': {'source': 'local', 'path': './plugins/other'}}]}),
+            'plugins/kit/.claude-plugin/plugin.json': json.dumps({'name': 'kit', 'version': '1.0.0'}),
+            'plugins/kit/skills/one/SKILL.md': skill.format('one'),
+            'plugins/other/.claude-plugin/plugin.json': json.dumps({'name': 'other', 'version': '2.0.0'}),
+            'plugins/other/skills/two/SKILL.md': skill.format('two')}, {})
+        repos = {'upstream': Repo('upstream', Visibility.PUBLIC, '', URL, commit, None, None)}
+        for name, kept in (('kit', 'one'), ('other', 'two')):
+            with self.subTest(name=name):
+                package = Package(name, Visibility.PUBLIC, '', RepoSource('upstream'), {}, ToolNotes.AUDIT,
+                                  CodexPlacement((EngineInstall(False),)), None)
+                root = self.builder(package, repos=repos).codex(package, verify=False).root
+                self.assertEqual([p.name for p in (root / 'skills').iterdir()], [kept])
+
+    def test_an_owned_source_edited_after_it_was_built_is_refused_rather_than_built_from_its_old_copy(self):
+        owned = self.root / 'public/owned/kit'
+        self.write(owned, {'.codex-plugin/plugin.json': json.dumps({'version': '1.0.0'}),
+                           'skills/one/SKILL.md': '---\nname: one\ndescription: One.\n---\nBody.\n'})
+        source = LocalSource('owned/kit', DeviceRoots.current(self.root).tree_digest(owned))
+        built = self.build(source)
+        self.assertEqual((built / 'skills/one/SKILL.md').read_text(), '---\nname: one\ndescription: One.\n---\nBody.\n')
+        self.write(owned, {'skills/one/SKILL.md': '---\nname: one\ndescription: One.\n---\nEdited.\n'})
+        with self.assertRaisesRegex(BuildError, 'Owned source owned/kit does not match its declared tree'):
+            self.build(source)
+
+    def test_a_snapshot_recipe_without_its_private_repository_or_its_snapshot_is_refused(self):
+        source = BuildSource(SnapshotRecipe('sha256:' + 'b' * 64, {}), 1, 'Kit',
+                             metadata={'description': 'D', 'sourceKind': 'personal'})
+        with self.assertRaisesRegex(BuildError, '^kit: its source snapshot needs the private repository$'):
+            self.build(source, private=False)
+        with self.assertRaisesRegex(BuildError, f'^kit: missing source snapshot sha256:{"b" * 64}$'):
+            self.build(source)
 
     def test_a_recipe_of_no_known_kind_names_the_package_and_its_type(self):
         with self.assertRaisesRegex(BuildError, '^kit: no builder for RetiredRecipe$'):

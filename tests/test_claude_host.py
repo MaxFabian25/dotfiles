@@ -13,6 +13,12 @@ import homes
 import host_state
 import description
 import claude_host
+
+
+def setUpModule():
+    homes.isolate_git()
+
+
 d, hs = description, host_state
 S, M = hs.Surface, hs.SkillMode
 NEW, OLD = 'a' * 40, 'c' * 40
@@ -258,6 +264,16 @@ class ObserveTest(unittest.TestCase):
         self.assertTrue(any(u.subjects == frozenset({'interfaces'}) and 'local changes' in u.reason
                             for u in observation.unknown))
 
+    def test_a_native_git_cache_cloned_from_another_origin_is_unknown(self):
+        with Device() as device:
+            native, _ = device.native_git_marketplace()
+            subprocess.run(['git', '-C', str(native), 'remote', 'set-url', 'origin', 'https://github.com/other/interfaces.git'],
+                           capture_output=True, check=True)
+            observation = device.state().observe(hs.Request())
+        self.assertNotIn(key(S.MARKETPLACE, 'interfaces'), observation.facts)
+        self.assertTrue(any(u.subjects == frozenset({'interfaces'}) and 'different origin' in u.reason
+                            for u in observation.unknown))
+
     def test_a_git_directory_preserves_its_origin_and_checkout_pin_separately_from_the_install_pin(self):
         with Device() as device:
             _, commit = device.git_marketplace()
@@ -323,6 +339,27 @@ class ObserveTest(unittest.TestCase):
             ('residue', 'enabledPlugins', '1 entries for plugins that are not installed'),
             ('unmodeled', 'extraKnownMarketplaces.personal-collections', 'directory source'),
         ])
+
+    @unittest.skipIf(sys.platform == 'win32', 'Windows links require privileges')
+    def test_a_loose_skill_linked_into_a_checkout_is_its_committed_folder_until_it_has_uncommitted_work(self):
+        url = 'https://github.com/example/skills.git'
+        with Device() as device:
+            repository = device.roots.home / 'work/skills'
+            device.write(repository / 'linked/SKILL.md', '---\nname: linked\n---\n')
+            for args in (('init', '-q'), ('remote', 'add', 'origin', url), ('add', '.'),
+                         ('-c', 'user.name=T', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'Skill')):
+                subprocess.run(['git', '-C', str(repository), *args], capture_output=True, check=True)
+            head = subprocess.check_output(['git', '-C', str(repository), 'rev-parse', 'HEAD'], text=True).strip()
+            link = device.roots.claude_home / 'skills/linked'
+            link.symlink_to(repository / 'linked', target_is_directory=True)
+            linked = key(S.LOOSE_SKILL, '{claude_home}/skills/linked')
+            committed = device.state().observe(hs.Request())
+            digest = device.roots.tree_digest(link)
+            (repository / 'linked/SKILL.md').write_text('---\nname: linked\n---\nDraft.\n')
+            edited = device.state().observe(hs.Request())
+        self.assertEqual((committed.facts[linked].value, committed.details[linked]),
+                         (hs.FileValue(digest), hs.FolderDetail(link, url, head, 'linked')))
+        self.assertEqual((edited.facts[linked].value, edited.details[linked]), (hs.WorkingCopy(url, 'linked'), hs.FolderDetail(link)))
 
     def test_overrides_of_anthropics_own_skills_are_skills_under_their_listed_name_not_residue(self):
         with Device() as device:

@@ -6,7 +6,7 @@ import shutil
 
 from description import BuildSource, SnapshotRecipe
 from package import files
-from portable import read_utf8, staging_directory, write_utf8
+from portable import read_utf8, replace, staging_directory, write_utf8
 
 
 def read(path):
@@ -28,7 +28,7 @@ def snapshot(skills, source_record, destination):
             staged = Path(tmp) / 'snapshot'
             shutil.copytree(skills, staged / 'skills', ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '.DS_Store'))
             write_utf8(staged / 'source.json', json.dumps(source_record, indent=2) + '\n')
-            staged.rename(target)
+            replace(staged, target)
     else:
         if content_hashes(target / 'skills') != source_record['fileHashes']:
             raise RuntimeError(f'Edited source snapshot: {target}')
@@ -75,5 +75,5 @@ def build_snapshot(name: str, recipe: SnapshotRecipe, source: BuildSource, sourc
             if files(release) != files(stage):
                 raise RuntimeError(f'Immutable release differs: {release}')
         else:
-            stage.rename(release)
+            replace(stage, release)
     return release, receipt

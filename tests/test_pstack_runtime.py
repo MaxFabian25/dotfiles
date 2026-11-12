@@ -13,6 +13,13 @@ runtime = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runtime)
 
 
+class Written(io.StringIO):
+    """A stdin that keeps what was sent after the caller closes it."""
+    def close(self):
+        self.written = self.getvalue()
+        super().close()
+
+
 class PstackRuntimeTests(unittest.TestCase):
     def native_process(self, pages):
         messages = [{'id': 1, 'result': {}}]
@@ -94,10 +101,14 @@ class PstackRuntimeTests(unittest.TestCase):
         for resolved in (True, False):
             process = self.native_process([{'config': {'features': {'multi_agent_v2': {
                 runtime.OVERRIDE_KEY: resolved}}}}])
+            process.stdin = Written()
             with patch.object(runtime.portable, 'codex_cli', return_value='codex'), \
-                    patch.object(runtime.subprocess, 'Popen', return_value=process):
+                    patch.object(runtime.subprocess, 'Popen', return_value=process) as popen:
                 if resolved:
                     runtime.validate_codex(True, proposed=True)
+                    self.assertIn(f'features.multi_agent_v2.{runtime.OVERRIDE_KEY}=true', popen.call_args.args[0])
+                    sent = [json.loads(line) for line in process.stdin.written.splitlines()]
+                    self.assertIn({'id': 2, 'method': 'config/read', 'params': {'includeLayers': False}}, sent)
                 else:
                     with self.assertRaisesRegex(RuntimeError, 'did not resolve'):
                         runtime.validate_codex(True, proposed=True)

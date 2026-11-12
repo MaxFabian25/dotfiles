@@ -9,11 +9,17 @@ from unittest.mock import patch
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import align_with_codex
 import course_package
 from description import BuildSource, CourseRecipe, GenericRecipe
 import package
 from portable import GIT
+from homes import isolate_git
+
+
+def setUpModule():
+    isolate_git()
 
 
 def head(repository):

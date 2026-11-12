@@ -25,6 +25,11 @@ from drift import Kind
 import host_state as hs
 import runtime_pin as rp
 
+
+def setUpModule():
+    homes.isolate_git()
+
+
 BUILD = '/tmp/codex-primary-runtime-AbC123/python-download/python'
 GIT = ('git', '-c', 'user.name=Runtime Test', '-c', 'user.email=runtime-test@example.invalid',
        '-c', 'commit.gpgsign=false')
@@ -300,6 +305,20 @@ class InstallTest(unittest.TestCase):
                 runtime.install(pin)
             self.assertEqual(runtime.verify(pin), 2)
 
+    @unittest.skipIf(sys.platform == 'win32', 'Windows links require privileges')
+    def test_a_link_replaced_by_a_copy_of_what_it_points_to_is_a_local_edit(self):
+        with Runtime() as runtime:
+            pin = runtime.publish('26.1.1')
+            runtime.install(pin)
+            link = runtime.bundle / 'dependencies/bin/node'
+            target = link.resolve()
+            link.unlink()
+            link.write_bytes(target.read_bytes())
+            link.chmod(target.stat().st_mode)
+            [change] = runtime.inspect(pin)
+            self.assertEqual(change.kind, Kind.LOCAL_EDIT)
+            self.assertIn('dependencies/bin/node', change.observed.problem)
+
     def test_an_edit_that_keeps_the_size_and_mtime_is_a_local_edit(self):
         with Runtime() as runtime:
             pin = runtime.publish('26.1.1')
@@ -401,9 +420,22 @@ class PinTest(unittest.TestCase):
                 pin, errors = self.read(edited)
                 self.assertIsNone(pin)
                 self.assertEqual([error.split(':')[0] for error in errors], [key])
+        for edited, message in ((text.replace('1836123456', '"1836123456"'), 'tree_bytes: expected int'),
+                                (text.replace('387299468', 'true'), 'archive_bytes: expected int'),
+                                (text.replace('version = "26.1025.11240"\n', ''), 'version: missing')):
+            with self.subTest(edited):
+                self.assertEqual(self.read(edited), (None, [message]))
 
 
 class ReviewTest(unittest.TestCase):
+    def test_each_command_reads_the_setup_folders_it_is_given(self):
+        with mock.patch('codex_runtime.review', return_value=0) as review:
+            self.assertEqual(cr.main(['review', '--public', '/public', '--private', '/private', '--write']), 0)
+        review.assert_called_once_with(d.Roots(Path('/public'), Path('/private')), write=True)
+        with mock.patch('sys.stderr', io.StringIO()) as errors:
+            self.assertEqual(cr.main(['verify', '--public', '/absent-public']), 3)
+        self.assertIn(str(Path('/absent-public') / rp.PIN), errors.getvalue())
+
     def test_review_reports_whether_upstream_moved_without_writing(self):
         with Runtime() as runtime:
             runtime.publish('26.1.1')

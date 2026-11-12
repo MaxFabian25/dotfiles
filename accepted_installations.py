@@ -18,7 +18,7 @@ from description import (AlignedInstall, LocalSource, RepoSource, SkillRoot, Sna
                          plugin_id)
 from drift import Difference, EntryRef, Kind
 from host_state import FactKey, Host, InstallDetail, Surface, Unpinned, bytes_digest
-from portable import WINDOWS, process_running, staging_directory, replace as replace_path
+from portable import WINDOWS, process_running, staging_directory, replace as replace_path, while_held
 from sync_files import ConcurrentEdit, contents
 from sync_sources import BuildError
 
@@ -842,8 +842,8 @@ class AcceptedInstallations:
         if destination.exists():
             if displaced.exists():
                 raise ConcurrentEdit(f'Displaced tree already exists: {displaced}')
-            destination.rename(displaced)
-        staged.rename(destination)
+            while_held(lambda: destination.rename(displaced))
+        while_held(lambda: staged.rename(destination))
         if text:
             _carry_leases(displaced, destination)
 

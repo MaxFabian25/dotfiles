@@ -72,6 +72,18 @@ class PortableTest(unittest.TestCase):
             self.assertEqual(path.read_bytes(), text.encode('utf-8'))
             self.assertEqual(portable.read_utf8(path), text)
 
+    def test_a_replace_a_windows_lock_refuses_is_retried_and_elsewhere_fails_at_once(self):
+        refused = PermissionError(13, 'Access is denied')
+        with patch.object(portable, 'WINDOWS', False), patch.object(portable.os, 'replace', side_effect=refused), \
+                patch.object(portable.time, 'sleep') as sleep:
+            with self.assertRaises(PermissionError):
+                portable.replace('a', 'b')
+        sleep.assert_not_called()
+        with patch.object(portable, 'WINDOWS', True), patch.object(portable.os, 'replace', side_effect=[refused, None]) as move, \
+                patch.object(portable.time, 'sleep') as sleep:
+            portable.replace('a', 'b')
+        self.assertEqual((move.call_count, sleep.call_count), (2, 1))
+
     def test_posix_keys_use_forward_slashes(self):
         self.assertEqual(portable.posix(Path('skills') / 'a' / 'SKILL.md'), 'skills/a/SKILL.md')
         self.assertEqual(portable.posix(portable.PurePath('skills/a')), 'skills/a')

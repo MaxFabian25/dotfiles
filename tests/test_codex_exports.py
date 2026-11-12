@@ -7,10 +7,10 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from homes import Home
+from homes import Home, hold_built_trees_once
 from description import (AlignedInstall, ClaudePlacement, CodexPlacement, EngineInstall, LocalSource, MarketplaceInstall,
                          Package, Roots, Setup, ToolNotes, Visibility)
-from host_state import Host, SkillMode
+from host_state import SkillMode
 from sync_sources import Builder, BuildError
 
 
@@ -31,7 +31,9 @@ class PolicyExportTest(unittest.TestCase):
     def test_fresh_catalog_copy_contains_policy_and_preserves_pristine_source(self):
         with Home() as home:
             source, original, package, builder = self.fixture(home)
+            held = hold_built_trees_once(self)
             built = builder.codex(package, verify=False)
+            self.assertEqual(held, [built.root])
             self.assertIn('+explicit.', built.version)
             self.assertEqual(json.loads((built.root / '.codex-plugin/plugin.json').read_bytes())['version'], built.version)
             fresh = home.roots.home / 'fresh-profile/cache'
@@ -133,6 +135,17 @@ class PolicyExportTest(unittest.TestCase):
             effective = builder.effective(native, pristine)
             self.assertIn('disable-model-invocation: false', (effective / 'skills/publish/SKILL.md').read_text())
             self.assertIn('allow_implicit_invocation: true', (effective / 'skills/publish/agents/openai.yaml').read_text())
+
+    def test_a_skill_upstream_already_ships_explicit_only_keeps_its_upstream_text(self):
+        with Home() as home:
+            source, _, package, builder = self.fixture(home)
+            sidecar = source / 'skills/publish/agents/openai.yaml'
+            sidecar.write_text('interface:\n  display_name: Publish\npolicy:\n  allow_implicit_invocation: false\n')
+            native = replace(package, source=LocalSource('source', home.roots.tree_digest(source)),
+                             codex=CodexPlacement((MarketplaceInstall('publisher', True),)))
+            effective = builder.effective(native, builder.codex(native, verify=False))
+            self.assertEqual((effective / 'skills/publish/SKILL.md').read_bytes(), (source / 'skills/publish/SKILL.md').read_bytes())
+            self.assertEqual((effective / 'skills/publish/agents/openai.yaml').read_bytes(), sidecar.read_bytes())
 
 
 if __name__ == '__main__':

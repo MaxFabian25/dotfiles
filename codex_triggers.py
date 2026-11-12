@@ -63,6 +63,7 @@ def run_one(entry):
             timer.cancel()
             process.kill()
             process.wait()
+            process.stdout.close()
 
 
 def main():
