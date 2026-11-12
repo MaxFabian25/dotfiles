@@ -73,7 +73,3 @@ class Home:
         self.write(Path(root) / 'skills' / name / 'SKILL.md', f'---\nname: {name}\ndescription: {name}\n{extra}---\n{body}')
         if explicit_sidecar:
             self.write(Path(root) / 'skills' / name / 'agents/openai.yaml', 'policy:\n  allow_implicit_invocation: false\n')
-
-    def receipt(self, files):
-        self.write(self.roots.codex_home / 'skill-updates/invocation-overrides/state.json',
-                   json.dumps({'schemaVersion': 1, 'files': {str(path): record for path, record in files.items()}}))

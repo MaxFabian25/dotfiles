@@ -1,8 +1,7 @@
-"""Plan and apply invocation preferences (implicit or explicit-only) and harness adaptations without modifying upstream releases.
-
-Original bytes remain recoverable.
-Harness adaptations replay each plugin's adaptation repository onto the installed
-cache with a three-way merge, so upstream edits merge or stop for review.
+"""Plan the file writes that give a plugin tree its invocation preferences (implicit or explicit-only), harness
+adaptations, tool notes and Windows-only hook and launcher edits. Sync applies them to its build of a release.
+Harness adaptations replay each plugin's adaptation repository onto the tree with a three-way merge, so
+upstream edits merge or stop for review.
 Tool notes name the other host's equivalent after a host-specific tool name.
 """
 import json
@@ -309,10 +308,8 @@ def exported_policies(root):
     return policies
 
 
-def plan(registry, installs, overlay=None, adaptations=None):
+def plan(registry, installs, adaptations=None):
     adaptations = adaptations or {'plugins': {}}
-    pristine = overlay.pristine if overlay else (lambda path, text: text)
-    records = overlay.state['files'] if overlay else {}
     writes = []
     counts = {'Codex': 0, 'Claude': 0}
     for host, identity, root in installs:
@@ -320,13 +317,12 @@ def plan(registry, installs, overlay=None, adaptations=None):
         staged = {}
 
         def stage(path, transform):
-            # Transforms always start from the recorded original bytes, so replays are deterministic.
             path = path.resolve()
             if not path.is_relative_to(root.resolve()):
                 raise ValueError(f'Overlay path escapes the plugin: {path}')
             if path not in staged:
                 old = read_text(path)
-                staged[path] = [old, pristine(path, old)]
+                staged[path] = [old, old]
             staged[path][1] = transform(staged[path][1])
 
         adaptation = adapted_here(adaptations, identity, host)
@@ -367,33 +363,6 @@ def plan(registry, installs, overlay=None, adaptations=None):
                 policy = path.parent / 'agents/openai.yaml'
                 if host == 'Codex' or policy.exists():
                     stage(policy, lambda text, allow=name in selected: transform_policy(text, allow))
-        # A recorded file that no current transform claims returns to its original bytes.
-        for filename in records:
-            path = Path(filename)
-            if path.resolve().is_relative_to(root.resolve()) and path.resolve() not in staged:
-                stage(path, lambda text: text)
         writes.extend((path, old, new, host, identity) for path, (old, new) in staged.items())
     return writes, counts
 
-
-class Overlay:
-    def __init__(self, state_dir):
-        self.state = read_json(state_dir / 'state.json', {'schemaVersion': 1, 'files': {}})
-
-    def known(self, path):
-        # Bytes this overlay wrote or may have left behind: the original, the target, and the prior target.
-        record = self.state['files'].get(str(path))
-        return (record['base'], record['effective'], record.get('previous')) if record else ()
-
-    def pristine(self, path, current):
-        record = self.state['files'].get(str(path))
-        overlaid = record and current is not None and current in self.known(path)[1:]
-        return record['base'] if overlaid else current
-
-    def pending(self, writes):
-        """How many planned writes would change a file. A recorded file holding bytes its record does not know is a
-        local edit, which stops the check."""
-        for path, old, _, _, _ in writes:
-            if self.state['files'].get(str(path)) and old not in self.known(path):
-                raise ValueError(f'Unrecognized local edit; preserve and review: {path}')
-        return sum(old != new for _, old, new, _, _ in writes)

@@ -106,11 +106,9 @@ def _classify(key: FactKey, expected: FactValue | None, observed: FactValue | No
             return NoteKind.DORMANT if not (expected.enabled or expected.kept_current) else Kind.CHANGED
         if expected == observed:
             return None
-        if surface == Surface.TREE:
-            return Kind.LOCAL_EDIT if key in observation.edits else Kind.TREE
         if isinstance(observed, OverlayBlocked):
             return Kind.OVERLAY_CONFLICT
-        return {Surface.OVERLAY: Kind.OVERLAY, Surface.HOOK: Kind.APPROVAL}.get(surface, Kind.CHANGED)
+        return {Surface.TREE: Kind.TREE, Surface.OVERLAY: Kind.OVERLAY, Surface.HOOK: Kind.APPROVAL}.get(surface, Kind.CHANGED)
     if expected is not None:
         if surface == Surface.PLUGIN and not (expected.enabled or expected.kept_current):
             return NoteKind.DORMANT

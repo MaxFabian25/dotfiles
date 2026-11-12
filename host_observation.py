@@ -1,12 +1,11 @@
 """Read-only access to one host on this device."""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 import subprocess
 from typing import Callable, Mapping
 
-from invocation_overrides import Overlay, plan, windows_overlay
+from invocation_overrides import plan, windows_overlay
 import portable
 from host_state import (Commit, Detail, DeviceRoots, Fact, FactKey, FactValue, FileValue, FolderDetail, Host, Note, NoteKind,
                         Observation, OverlayBlocked, OverlayPending, OverlaySpec, Surface, TreeValue, Unknown, WorkingCopy,
@@ -49,7 +48,6 @@ class Observer:
         self.facts: dict[FactKey, Fact] = {}
         self.notes: list[Note] = []
         self.unknown: list[Unknown] = []
-        self.edits: set[FactKey] = set()
         self.details: dict[FactKey, Detail] = {}
 
     def key(self, surface: Surface, subject: str) -> FactKey:
@@ -74,47 +72,14 @@ class Observer:
                                     None if subjects is None else frozenset(subjects), missing_tree))
 
     def finish(self, version: str, offered: set[str]) -> Observation:
-        return Observation(self.host, version, self.facts, frozenset(offered), frozenset(self.edits),
-                           tuple(self.notes), tuple(self.unknown), self.details)
-
-
-class Receipt:
-    """The overlay's record of the bytes it replaced, read without taking its lock or writing."""
-
-    def __init__(self, roots: DeviceRoots) -> None:
-        path = roots.codex_home / 'skill-updates/invocation-overrides/state.json'
-        self.path = path
-        self.present = path.is_file()
-        self.files: Mapping[str, Mapping] = json.loads(portable.read_utf8(path))['files'] if self.present else {}
-
-    def pristine(self, root: Path) -> tuple[dict[Path, bytes | None], list[Path]]:
-        """The swap that reads an overlaid tree as its release, and the files no record explains. Bytes are
-        compared as bytes, and a file the overlay wrote that is now gone is an edit."""
-        swap, edited = {}, []
-        for filename, record in self.files.items():
-            path = Path(filename)
-            if not path.is_relative_to(root):
-                continue
-            current = path.read_bytes() if path.is_file() else None
-            base = _encoded(record['base'])
-            if current == base:
-                continue
-            written = [record['effective'], *([record['previous']] if 'previous' in record else [])]
-            if current in [_encoded(text) for text in written]:
-                swap[path] = base
-            else:
-                edited.append(path)
-        return swap, edited
-
-
-def _encoded(text: str | None) -> bytes | None:
-    return None if text is None else text.encode('utf-8')
+        return Observation(self.host, version, self.facts, frozenset(offered), tuple(self.notes),
+                           tuple(self.unknown), self.details)
 
 
 def overlay_state(roots: DeviceRoots, host: Host, identity: str, root: Path,
                   spec: OverlaySpec) -> OverlaySpec | OverlayPending | OverlayBlocked:
-    """The spec itself when the overlay tool, run in check mode with a registry derived from the spec for
-    this one install, would change nothing; else the files it would change, or why it cannot run."""
+    """The spec itself when the overlay planned for this one install, from a registry derived from the spec,
+    would change no file; else how many files it would change, or why it cannot be planned."""
     label, name = host.value.capitalize(), identity.split('@')[0]
     registry = {'targets': {label: {}}, 'explicitTargets': {label: {identity: list(spec.explicit)}}}
     adaptations: dict = {'plugins': {}}
@@ -129,14 +94,13 @@ def overlay_state(roots: DeviceRoots, host: Host, identity: str, root: Path,
         adaptations['toolNotes'] = {'plugins': [name], 'rules': [{'match': r.match, 'note': r.note} for r in spec.rules]}
     if portable.WINDOWS and (windows := windows_overlay(spec.windows_hook_command, spec.windows_replace)):
         adaptations['windows'] = {name: windows}
-    overlay = Overlay(roots.codex_home / 'skill-updates/invocation-overrides')
     try:
-        writes, _ = plan(registry, [(label, identity, root)], overlay, adaptations)
-        pending = overlay.pending(writes)
+        writes, _ = plan(registry, [(label, identity, root)], adaptations=adaptations)
     except (OSError, subprocess.SubprocessError) as error:
         raise Unread(f'overlay check failed: {error}') from error
     except ValueError as error:
         return OverlayBlocked(str(error))
+    pending = sum(old != new for _, old, new, _, _ in writes)
     return OverlayPending(pending) if pending else spec
 
 
@@ -191,20 +155,10 @@ def observe_trees(observer: Observer, trees: Mapping[str, Path], overlays: Mappi
                          observer.key(Surface.PLUGIN, plugin))
         except Unread as error:
             observer.unread(root, error, {Surface.OVERLAY}, {plugin})
-    if not trees:
-        return
-    try:
-        receipt = Receipt(roots)
-    except (OSError, ValueError, KeyError) as error:
-        observer.unread(roots.codex_home / 'skill-updates/invocation-overrides/state.json', error, {Surface.TREE})
-        return
     for plugin, root in trees.items():
         try:
-            swap, edited = receipt.pristine(root)
-            digest = roots.tree_digest(root, swap=swap)
+            digest = roots.tree_digest(root)
         except OSError as error:
             observer.unread(root, error, {Surface.TREE}, {plugin})
             continue
-        key = observer.add(Surface.TREE, plugin, TreeValue(digest), observer.key(Surface.PLUGIN, plugin))
-        if edited or not receipt.present:
-            observer.edits.add(key)
+        observer.add(Surface.TREE, plugin, TreeValue(digest), observer.key(Surface.PLUGIN, plugin))

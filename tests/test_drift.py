@@ -36,10 +36,6 @@ class Device(homes.Home):
             self.skill(codex_cache, name)
         self.skill(codex_cache, 'deslop', explicit_sidecar=True)
         self.codex_release = r.tree_digest(codex_cache)
-        skill = codex_cache / 'skills/weekly-review/SKILL.md'
-        original = skill.read_text()
-        skill.write_text(original + 'Use TodoWrite (Codex: `update_plan`).\n')
-        self.receipt({skill: {'base': original, 'effective': skill.read_text()}})
         self.write(r.agents_home / 'plugins/marketplace.json', '{"name": "personal", "plugins": [{"name": "kit"}]}')
 
         claude_cache = r.claude_home / 'plugins/cache'
@@ -168,12 +164,13 @@ class DiffTest(unittest.TestCase):
         self.assertEqual(result.differences, ())
         self.assertEqual(result.exit_code, 0)
 
-    def test_removing_the_receipt_yields_a_local_edit(self):
+    def test_installed_bytes_that_differ_from_the_locked_tree_are_tree_drift(self):
         with Device() as device:
-            (device.roots.codex_home / 'skill-updates/invocation-overrides/state.json').unlink()
+            skill = device.roots.codex_home / 'plugins/cache/personal/kit/1.0/skills/weekly-review/SKILL.md'
+            skill.write_text(skill.read_text() + 'A hand edit.\n')
             result = device.diff()
-        self.assertEqual(kinds(result), [(K.LOCAL_EDIT, 'codex', 'kit@personal')])
-        self.assertEqual(result.exit_code, 2)
+        self.assertEqual(kinds(result), [(K.TREE, 'codex', 'kit@personal')])
+        self.assertEqual(result.exit_code, 1)
 
     def test_an_undeclared_enabled_plugin_is_extra_and_a_disabled_one_is_residue(self):
         with Device() as device:
@@ -241,7 +238,7 @@ class DiffTest(unittest.TestCase):
         self.assertIn((hs.NoteKind.UNAVAILABLE, 'gmail@openai-curated-remote'), [(n.kind, n.subject) for n in lacking.notes])
 
     def test_a_catalog_the_description_pins_is_drift_not_a_note(self):
-        observation = hs.Observation(hs.Host.CODEX, 'test', {}, frozenset(), frozenset(), ())
+        observation = hs.Observation(hs.Host.CODEX, 'test', {}, frozenset(), ())
         key = hs.FactKey(hs.Host.CODEX, S.PLUGIN, 'pdf@openai-primary-runtime')
         self.assertEqual(drift._classify(key, hs.PluginValue(True, hs.Released('26.1025.11240')), None, observation),
                          K.MISSING, 'sync installs the catalog it pins, so the plugin is missing, not unavailable')

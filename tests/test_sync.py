@@ -126,7 +126,7 @@ class PlanTest(unittest.TestCase):
     def test_disabled_missing_plugin_is_not_an_install_request(self):
         from drift import _classify
         from host_state import FactKey, Host, NoteKind, Observation, PluginValue, Surface, Unpinned
-        observation = Observation(Host.CLAUDE, 'test', {}, frozenset(), frozenset(), ())
+        observation = Observation(Host.CLAUDE, 'test', {}, frozenset(), ())
         key = FactKey(Host.CLAUDE, Surface.PLUGIN, 'swift-lsp@claude-plugins-official')
         self.assertEqual(_classify(key, PluginValue(False, Unpinned()), None, observation), NoteKind.DORMANT)
 
@@ -140,7 +140,7 @@ class PlanTest(unittest.TestCase):
             roots = DeviceRoots.current(root)
             key = FactKey(Host.CODEX, Surface.PLUGIN, 'local-tool@personal')
             observation = Observation(Host.CODEX, 'test', {key: Fact(key, PluginValue(True, Unpinned()))},
-                                      frozenset({key.subject}), frozenset(), ())
+                                      frozenset({key.subject}), ())
             state = SimpleNamespace(host=Host.CODEX, project=lambda setup: {}, observe=lambda request: observation)
             setup = Setup(Roots(root / 'public', None), {}, {}, {}, {}, None, (), frozenset(), {})
             result = plan(setup, Device(Platform.LINUX, roots, (state,), ()))
@@ -160,7 +160,7 @@ class PlanTest(unittest.TestCase):
             gone = FactKey(Host.CODEX, Surface.LOOSE_SKILL, '{agents_home}/skills/gone')
             absent_host = FactKey(Host.CLAUDE, Surface.LOOSE_SKILL, '{claude_home}/skills/elsewhere')
             observation = Observation(Host.CODEX, 'test', {key: Fact(key, PluginValue(True, Unpinned()))},
-                                      frozenset({key.subject}), frozenset(), ())
+                                      frozenset({key.subject}), ())
             state = SimpleNamespace(host=Host.CODEX, project=lambda setup: {}, observe=lambda request: observation)
             setup = Setup(Roots(root / 'public', None), {}, {}, {}, {}, None, (), frozenset(), {},
                           {Platform.LINUX: frozenset({key, gone, absent_host})})

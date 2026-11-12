@@ -62,14 +62,14 @@ class ToolNotesTest(unittest.TestCase):
             (skill / 'references/process.md').write_text(original)
             registry = {'targets': {'Codex': {}, 'Claude': {}}, 'explicitTargets': {'Codex': {}, 'Claude': {}}}
             installs = [('Codex', 'example-tools@personal', root)]
-            overlay = module.Overlay(home / 'recovery')
-            writes, _ = module.plan(registry, installs, overlay, ADAPTATIONS)
-            self.assertEqual(overlay.pending(writes), 2)
-            noted = {path.name: new for path, _, new, _, _ in writes}
-            self.assertIn("WebFetch (Codex: the web tool's `open`)", noted['process.md'])
+            writes, _ = module.plan(registry, installs, ADAPTATIONS)
+            noted = {path.name: new for path, old, new, _, _ in writes if old != new}
+            self.assertEqual(noted, {'SKILL.md': '---\nname: example\ndescription: Research.\n---\n'
+                                                 'Track with TodoWrite (Codex: `update_plan`).\n',
+                                     'process.md': "Use WebFetch (Codex: the web tool's `open`) to read it.\n"})
             for path, _, new, _, _ in writes:
                 path.write_text(new)
-            self.assertEqual(overlay.pending(module.plan(registry, installs, overlay, ADAPTATIONS)[0]), 0)
+            self.assertEqual([path for path, old, new, _, _ in module.plan(registry, installs, ADAPTATIONS)[0] if old != new], [])
 
 
 if __name__ == '__main__':

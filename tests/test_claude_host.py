@@ -396,18 +396,6 @@ class ObserveTest(unittest.TestCase):
                 self.assertTrue(any(u.subjects == frozenset({'kit@codex-aligned'}) and reason in u.reason
                                     for u in observation.unknown))
 
-    def test_an_overlaid_claude_cache_reads_as_its_release(self):
-        with Device() as device:
-            root = device.roots.claude_home / 'plugins/cache/codex-aligned/kit/1.0-codex-aligned.x'
-            release = device.roots.tree_digest(root)
-            path = root / 'skills/poteto-mode/SKILL.md'
-            original = path.read_text()
-            path.write_text(original + 'Use TodoWrite (Codex: `update_plan`).\n')
-            device.receipt({path: {'base': original, 'effective': path.read_text()}})
-            tree = key(S.TREE, 'kit@codex-aligned')
-            observation = device.state().observe(hs.Request(trees=frozenset({'kit@codex-aligned'})))
-        self.assertEqual(observation.facts[tree].value, hs.TreeValue(release))
-
 
 if __name__ == '__main__':
     unittest.main()

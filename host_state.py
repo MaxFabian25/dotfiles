@@ -173,28 +173,20 @@ class DeviceRoots:
         data = Path(path).read_bytes()
         return bytes_digest(self._neutral_file(Path(path).name, data) if self.generated(Path(path)) else data)
 
-    def tree_digest(self, root: Path, *, swap: Mapping[Path, bytes | None] = {}) -> Digest:
+    def tree_digest(self, root: Path) -> Digest:
         """sha256 over the sorted JSON map of relative POSIX path to sha256 of each file's bytes.
 
         Skips .in_use, .orphaned_at, node_modules, .git and __pycache__, which Python writes beside any
-        module it imports, even under -I. `swap` substitutes bytes for listed files, None meaning absent,
-        which is how an overlaid cache is read as its pristine release.
+        module it imports, even under -I.
         """
         root = Path(root)
         portable.require_readable(root)
         hashes = {}
-        present = set()
         for path in sorted(root.rglob('*')):
             relative = path.relative_to(root)
             if not path.is_file() or path.name == '.orphaned_at' or _SKIPPED_PARTS & set(relative.parts):
                 continue
-            present.add(path)
-            data = swap[path] if path in swap else path.read_bytes()
-            if data is not None:
-                hashes[portable.posix(relative)] = data
-        for path, data in swap.items():
-            if path not in present and data is not None and path.is_relative_to(root):
-                hashes[portable.posix(path.relative_to(root))] = data
+            hashes[portable.posix(relative)] = path.read_bytes()
         digests = {}
         for relative, data in hashes.items():
             if any(anchor == 'tree' and _matches(relative, pattern) for anchor, pattern in GENERATED):
@@ -207,7 +199,7 @@ class Surface(enum.IntEnum):
     """What a fact is about. The numeric order is the order step 3 applies changes in."""
     MARKETPLACE = 1
     PLUGIN = 2
-    TREE = 3          # pristine bytes of an enabled or kept-current install
+    TREE = 3          # installed bytes of an enabled or kept-current install
     OVERLAY = 4       # tool notes and harness adaptation applied over the tree
     SKILL = 5         # off, explicit, or on (catalogs); absent means auto
     AGENT = 6         # a Codex custom agent role file
@@ -397,7 +389,6 @@ class Observation:
     version: str                     # the host CLI's version, for the header
     facts: FactSet
     offered: frozenset[str]          # plugin ids the host lists here, installed or available to install
-    edits: frozenset[FactKey]        # TREE keys with bytes no overlay receipt explains
     notes: tuple[Note, ...]
     unknown: tuple[Unknown, ...] = ()
     details: Mapping[FactKey, Detail] = field(default_factory=dict)   # never compared
@@ -407,7 +398,7 @@ class Observation:
 class Request:
     """What an observation reads beyond the host's inventory and configuration, which it always reads whole.
     Subjects are spelled as that host's fact keys spell them."""
-    trees: frozenset[str] = frozenset()                                 # plugin ids whose pristine tree to digest
+    trees: frozenset[str] = frozenset()                                 # plugin ids whose installed tree to digest
     overlays: Mapping[str, OverlaySpec] = field(default_factory=dict)   # plugin id -> the overlay it should carry
     skills: frozenset[str] = frozenset()     # SKILL subjects whose flags to read on catalog and disabled installs
     everything: bool = False                 # also every enabled non-catalog tree, and every non-catalog flag

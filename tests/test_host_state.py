@@ -108,17 +108,6 @@ class TreeDigestTest(unittest.TestCase):
                 write(root / marker, 'noise\n')
             self.assertEqual(roots.tree_digest(root), before)
 
-    def test_swap_reads_overlaid_bytes_as_the_release(self):
-        with tempfile.TemporaryDirectory() as directory:
-            roots = roots_for(directory)
-            root = Path(directory) / 'tree'
-            write(root / 'SKILL.md', 'original\n')
-            pristine = roots.tree_digest(root)
-            write(root / 'SKILL.md', 'overlaid\n')
-            write(root / 'agents/openai.yaml', 'policy: {}\n')
-            self.assertEqual(roots.tree_digest(root, swap={root / 'SKILL.md': b'original\n',
-                                                           root / 'agents/openai.yaml': None}), pristine)
-
 
 class RootsTest(unittest.TestCase):
     def test_neutral_replaces_the_longest_root_first(self):
@@ -155,47 +144,6 @@ class RootsTest(unittest.TestCase):
         self.assertEqual(roots.tokens('/Users/example/.codex/skills/example/SKILL.md'), '{codex_home}/skills/example/SKILL.md')
         self.assertEqual(roots.tokens('/Users/example/Documents/x'), '{home}/Documents/x')
         self.assertEqual(roots.tokens('/opt/x'), '/opt/x')
-
-
-class ReceiptTest(unittest.TestCase):
-    def test_overlaid_files_swap_to_base_and_unknown_bytes_are_edits(self):
-        with tempfile.TemporaryDirectory() as directory:
-            roots = roots_for(directory)
-            root = roots.codex_home / 'plugins/cache/personal/kit/1.0'
-            write(root / 'a/SKILL.md', 'noted\n')
-            write(root / 'b/SKILL.md', 'hand edit\n')
-            write(root / 'c/agents/openai.yaml', 'created\n')
-            write(roots.codex_home / 'skill-updates/invocation-overrides/state.json', json.dumps({'files': {
-                str(root / 'a/SKILL.md'): {'base': 'plain\n', 'effective': 'noted\n'},
-                str(root / 'b/SKILL.md'): {'base': 'plain\n', 'effective': 'noted\n'},
-                str(root / 'c/agents/openai.yaml'): {'base': None, 'effective': 'created\n'},
-                str(roots.codex_home / 'elsewhere/SKILL.md'): {'base': 'x', 'effective': 'y'},
-            }}))
-            swap, edited = host_observation.Receipt(roots).pristine(root)
-            self.assertEqual(swap, {root / 'a/SKILL.md': b'plain\n', root / 'c/agents/openai.yaml': None})
-            self.assertEqual(edited, [root / 'b/SKILL.md'])
-
-
-    def test_a_deleted_overlaid_file_is_an_edit(self):
-        with tempfile.TemporaryDirectory() as directory:
-            roots = roots_for(directory)
-            root = roots.codex_home / 'plugins/cache/personal/kit/1.0'
-            write(root / 'keep/SKILL.md', 'x\n')
-            write(roots.codex_home / 'skill-updates/invocation-overrides/state.json', json.dumps({'files': {
-                str(root / 'a/SKILL.md'): {'base': 'plain\n', 'effective': 'noted\n'},
-                str(root / 'b/agents/openai.yaml'): {'base': 'upstream\n', 'effective': None}}}))
-            self.assertEqual(host_observation.Receipt(roots).pristine(root),
-                             ({root / 'b/agents/openai.yaml': b'upstream\n'}, [root / 'a/SKILL.md']))
-
-    def test_bytes_that_are_not_utf8_read_as_an_edit_not_a_crash(self):
-        with tempfile.TemporaryDirectory() as directory:
-            roots = roots_for(directory)
-            root = roots.codex_home / 'plugins/cache/personal/kit/1.0'
-            write(root / 'a/SKILL.md', 'noted\n')
-            (root / 'a/SKILL.md').write_bytes(b'\xff\xfe binary\n')
-            write(roots.codex_home / 'skill-updates/invocation-overrides/state.json', json.dumps({'files': {
-                str(root / 'a/SKILL.md'): {'base': 'plain\n', 'effective': 'noted\n'}}}))
-            self.assertEqual(host_observation.Receipt(roots).pristine(root), ({}, [root / 'a/SKILL.md']))
 
 
 class CheckoutTest(unittest.TestCase):

@@ -31,7 +31,7 @@ class WindowsHookCommandTest(unittest.TestCase):
             root = Path(folder)
             (root / 'hooks').mkdir()
             (root / 'hooks/hooks.json').write_text(render(manifest), encoding='utf-8')
-            writes, _ = module.plan(REGISTRY, [('Codex', IDENTITY, root)], None, adaptations)
+            writes, _ = module.plan(REGISTRY, [('Codex', IDENTITY, root)], adaptations)
         return [(Path(path).name, old, new) for path, old, new, _, _ in writes]
 
     def test_each_command_hook_gains_commandWindows_and_nothing_else_changes(self):
@@ -53,13 +53,13 @@ class WindowsHookCommandTest(unittest.TestCase):
             launcher.write_text('rem head\n"%~1" engine-probe >"%tmp%" 2>nul\nrem tail\n', encoding='utf-8')
             replace = {'plugins': {}, 'windows': {'impeccable': {'replace': [
                 ('skills/x/impeccable.cmd', '"%~1" engine-probe >"%tmp%" 2>nul', 'call "%~1" engine-probe >"%tmp%" 2>nul')]}}}
-            writes, _ = module.plan(REGISTRY, [('Codex', IDENTITY, root)], None, replace)
+            writes, _ = module.plan(REGISTRY, [('Codex', IDENTITY, root)], replace)
             self.assertEqual(writes[0][2], 'rem head\ncall "%~1" engine-probe >"%tmp%" 2>nul\nrem tail\n')
             launcher.write_text('rem an upstream rewrite with no such line\n', encoding='utf-8')
             with self.assertRaisesRegex(ValueError, 'Review upstream change to an adapted file'):
-                module.plan(REGISTRY, [('Codex', IDENTITY, root)], None, replace)
+                module.plan(REGISTRY, [('Codex', IDENTITY, root)], replace)
             launcher.write_text('call "%~1" engine-probe >"%tmp%" 2>nul\n', encoding='utf-8')
-            writes, _ = module.plan(REGISTRY, [('Codex', IDENTITY, root)], None, replace)
+            writes, _ = module.plan(REGISTRY, [('Codex', IDENTITY, root)], replace)
             self.assertEqual(writes[0][1], writes[0][2])
 
     def test_two_windows_replaces_on_one_file_both_apply(self):
@@ -71,7 +71,7 @@ class WindowsHookCommandTest(unittest.TestCase):
             replace = {'plugins': {}, 'windows': {'impeccable': {'replace': [
                 ('skills/x/impeccable.cmd', '"%~1" engine-probe', 'call "%~1" engine-probe'),
                 ('skills/x/impeccable.cmd', 'where curl.exe', 'exit /b 1')]}}}
-            writes, _ = module.plan(REGISTRY, [('Codex', IDENTITY, root)], None, replace)
+            writes, _ = module.plan(REGISTRY, [('Codex', IDENTITY, root)], replace)
             self.assertEqual(writes[0][2], 'call "%~1" engine-probe\nexit /b 1\ncurl.exe url\n')
 
     def test_no_declaration_leaves_the_hook_file_alone(self):
@@ -87,11 +87,11 @@ class WindowsHookCommandTest(unittest.TestCase):
             replacement = {'plugins': {}, 'windows': {'impeccable': {'replace': [
                 ('skills/x/impeccable.cmd', 'where impeccable\ncall :probe impeccable',
                  'set "path_bin="\ncall :probe "%path_bin%"')]}}}
-            writes, _ = module.plan(REGISTRY, [('Codex', IDENTITY, root)], None, replacement)
+            writes, _ = module.plan(REGISTRY, [('Codex', IDENTITY, root)], replacement)
             expected = 'rem keep\r\nset "path_bin="\r\ncall :probe "%path_bin%"\r\nrem tail\r\n'
             self.assertEqual(writes[0][1:3], (original, expected))
             launcher.write_bytes(expected.encode())
-            replay, _ = module.plan(REGISTRY, [('Codex', IDENTITY, root)], None, replacement)
+            replay, _ = module.plan(REGISTRY, [('Codex', IDENTITY, root)], replacement)
             self.assertEqual(replay[0][1:3], (expected, expected))
 
     def test_a_manifest_that_already_sets_commandWindows_keeps_it(self):

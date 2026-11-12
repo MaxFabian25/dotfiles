@@ -829,27 +829,12 @@ class NativeHookReadTest(unittest.TestCase):
 
 
 class TreeTest(unittest.TestCase):
-    def test_an_overlaid_cache_with_a_receipt_reads_as_its_release(self):
-        with Device() as device:
-            r = device.roots
-            root = r.codex_home / 'plugins/cache/personal/kit/1.0'
-            release = r.tree_digest(root)
-            skill = root / 'skills/deslop/SKILL.md'
-            sidecar = root / 'skills/fix-ci/agents/openai.yaml'
-            original = skill.read_text()
-            skill.write_text(original.replace('---\nUse', 'disable-model-invocation: true\n---\nUse'))
-            device.write(sidecar, 'policy:\n  allow_implicit_invocation: false\n')
-            device.receipt({skill: {'base': original, 'effective': skill.read_text()},
-                            sidecar: {'base': None, 'effective': sidecar.read_text()}})
-            tree = key(S.TREE, 'kit@personal')
-            request = hs.Request(trees=frozenset({'kit@personal'}))
-            observation = device.state().observe(request)
-            self.assertEqual(observation.facts[tree].value, hs.TreeValue(release))
-            self.assertEqual(observation.edits, frozenset())
-            skill.write_text('a hand edit\n')
-            observation = device.state().observe(request)
-            self.assertNotEqual(observation.facts[tree].value, hs.TreeValue(release))
-            self.assertEqual(observation.edits, frozenset({tree}))
+    def test_a_tree_that_cannot_be_read_is_unknown_not_missing(self):
+        with Device() as device, patch.object(hs.DeviceRoots, 'tree_digest', side_effect=PermissionError('denied')):
+            observation = device.state().observe(hs.Request(trees=frozenset({'impeccable@personal'})))
+        self.assertNotIn(key(S.TREE, 'impeccable@personal'), observation.facts)
+        self.assertEqual([(u.surfaces, u.subjects, u.reason) for u in observation.unknown if S.TREE in u.surfaces],
+                         [(frozenset({S.TREE}), frozenset({'impeccable@personal'}), 'denied')])
 
     def test_overlay_reads_as_its_spec_only_when_every_note_is_applied(self):
         with Device() as device:

@@ -346,11 +346,8 @@ class InstallationTest(unittest.TestCase):
         self.assertIsNone(backup)
         self.assertEqual(self.snapshot(), snapshot)
 
-    def test_preplan_ordinary_edit_is_blocked_despite_global_overlay_receipt(self):
+    def test_preplan_ordinary_edit_is_blocked(self):
         self.run_apply()
-        global_receipt = self.roots.codex_home / 'skill-updates/invocation-overrides/state.json'
-        global_receipt.parent.mkdir(parents=True)
-        global_receipt.write_text('{"schemaVersion":1,"files":{}}')
         ordinary = self.installed() / 'ordinary.txt'
         ordinary.write_text('uncommitted user work\n')
         before = self.snapshot()
