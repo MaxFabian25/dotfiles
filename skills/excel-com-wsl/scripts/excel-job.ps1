@@ -60,10 +60,16 @@ function Convert-Cell($v) {
 }
 
 function Get-Target($wb, [string] $ref) {
-  if ($ref -match '^(?:''(?<q>[^'']+)''|(?<s>[A-Za-z0-9_]+))!(?<a>.+)$') {
-    $sheet = if ($Matches['q']) { $Matches['q'] } else { $Matches['s'] }
+  # A sheet name in quotes has each apostrophe in it doubled, as Excel writes it and as errors and a read's address
+  # give it. A reference that opens with a quote and is not such a name and a range is refused: no workbook name
+  # starts with a quote, and taking 'It's' for the sheet It's would leave 'It''s' meaning two sheets. No range holds
+  # an apostrophe before a !, so a quoted name that an undoubled apostrophe before a ! ended early is refused too. A
+  # table column can hold an apostrophe elsewhere, as in T['#Items].
+  if ($ref -match '^(?:''(?<q>(?:[^'']|'''')+)''|(?<s>[A-Za-z0-9_]+))!(?<a>(?:[^'']|''(?!!))+)$') {
+    $sheet = if ($Matches['q']) { $Matches['q'].Replace("''", "'") } else { $Matches['s'] }
     return , $wb.Worksheets.Item($sheet).Range($Matches['a'])
   }
+  if ($ref.StartsWith("'")) { throw "$ref is no sheet name in single quotes with a range after it: double each apostrophe inside the quotes, as in 'It''s'!B2" }
   # The comma keeps PowerShell from unrolling a multi-cell range into its cells.
   return , $wb.Names.Item($ref).RefersToRange
 }
@@ -84,7 +90,7 @@ function Read-Refs($wb, $refs) {
       if ($count -gt 2000) { throw "range has $count cells; the limit is 2000" }
       $sheet = $r.Worksheet.Name; Confirm-Answer $sheet 'the sheet name'
       $address = $r.Address(); Confirm-Answer $address 'the address'
-      $entry = [ordered]@{ address = "'" + $sheet + "'!" + $address }
+      $entry = [ordered]@{ address = "'" + $sheet.Replace("'", "''") + "'!" + $address }
       if ($count -eq 1) {
         # An empty cell has no value, but its formula is an empty string, so that tells it from a refused read.
         $formula = $r.Formula2

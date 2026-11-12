@@ -43,6 +43,8 @@ METADATA = (
     '<xda:dynamicArrayProperties fDynamic="1" fCollapsed="0"/></ext></extLst></bk></futureMetadata>'
     '<cellMetadata count="1"><bk><rc t="1" v="0"/></bk></cellMetadata></metadata>'
 )
+# What a read or a set says of a reference that opens with a quote and is no sheet name in quotes and a range.
+UNDOUBLED = "double each apostrophe inside the quotes, as in 'It''s'!B2"
 failures = 0
 
 
@@ -150,7 +152,8 @@ def build(out: pathlib.Path) -> None:
     for row, column in MANY:
         sheet.cell(row, column, "=NA()")
     sheet = book.create_sheet("It's")
-    sheet["B2"] = "=1/0"
+    sheet["A1"], sheet["B2"], sheet["C3"] = 2, "=1/0", "=A1*3"
+    book.defined_names["Tripled"] = DefinedName("Tripled", attr_text="'It''s'!$C$3")
     sheet = book.create_sheet("Far")
     sheet["A1"], sheet["ZZ900000"], sheet["XFD1048576"] = "=NA()", "=1/0", 5
     sheet.protection.sheet = True
@@ -326,6 +329,36 @@ def excel_cases(evidence: pathlib.Path, temp: pathlib.Path, temp_win: str) -> No
     check("a scan that listed every such sheet leaves the job passing", code == 0 and len(listed) == 7 and result.get("errors_unscanned") == [],
           {key: result.get(key) for key in ("ok", "error", "errors", "errors_unscanned")})
 
+    # errors and a read's address name a sheet as Excel does, in quotes with an apostrophe in its name doubled, so
+    # what the scan job listed for the sheet It's goes back in as a REF here, and this job's address into the next.
+    entry = next((item for item in listed if item.startswith("'It")), "")
+    result, code = job("quoted", "scan.xlsx", "--read", entry, "--read", "'It''s'!C3", "--read", "Tripled", "--set", "'It''s'!A1=5")
+    base, after = result.get("base") or {}, result.get("after") or {}
+    check("an entry copied from errors reads back, on a sheet whose name holds an apostrophe",
+          entry == "'It''s'!B2" and entry in listed and base.get(entry, {}).get("value") == {"error": "#DIV/0!"}, {"entry": entry, "base": base})
+    check("a read's address doubles an apostrophe in the sheet name, for a name that points at the sheet too",
+          base.get(entry, {}).get("address") == "'It''s'!$B$2" and base.get("'It''s'!C3", {}).get("address") == "'It''s'!$C$3"
+          and base.get("Tripled", {}).get("address") == "'It''s'!$C$3" and near(base.get("Tripled"), 6), base)
+    check("--set reaches a cell on a sheet whose name holds an apostrophe", code == 0 and near(base.get("'It''s'!C3"), 6)
+          and near(after.get("'It''s'!C3"), 15) and near(((result.get("reopened") or {}).get("values") or {}).get("'It''s'!C3"), 15),
+          {key: result.get(key) for key in ("ok", "error", "base", "after")})
+    address = base.get(entry, {}).get("address") or ""
+    result, code = job("quoted-again", "scan.xlsx", "--read", address, "--read", "'It's'!B2")
+    base = result.get("base") or {}
+    check("an address copied from a read reads back, on a sheet whose name holds an apostrophe",
+          address == "'It''s'!$B$2" and base.get(address, {}).get("value") == {"error": "#DIV/0!"} and base.get(address, {}).get("address") == address,
+          {"address": address, "base": base})
+    check("an undoubled apostrophe in a quoted sheet name fails the read, with an error that says to double it",
+          code == 1 and UNDOUBLED in base.get("'It's'!B2", {}).get("read_error", "")
+          and (result.get("error") or "").startswith("2 of 4 reads failed; the first is 'It's'!B2 at open: "),
+          {key: result.get(key) for key in ("ok", "error", "base")} | {"exit": code})
+    kept = evidence / "quoted-set-saved.xlsx"
+    result, code = job("quoted-set", "scan.xlsx", "--read", "'It''s'!C3", "--set", "'It's'!A1=5", "--save", str(kept))
+    check("an undoubled apostrophe in a set's quoted sheet name ends the job without a save, with an error that says to double it",
+          code == 1 and result.get("ok") is False and UNDOUBLED in (result.get("error") or "") and near((result.get("base") or {}).get("'It''s'!C3"), 6)
+          and result.get("after") is None and result.get("reopened") is None and "saved" not in result and not kept.exists(),
+          {key: result.get(key) for key in ("ok", "error", "base", "after", "reopened", "saved")} | {"exit": code})
+
     kept = evidence / "r1c1-saved.xlsx"
     result, code = job("r1c1", "r1c1.xlsx", "--read", "Clean!B2", "--save", str(kept))
     check("the error scan lists the cells of a workbook in R1C1 reference style, and the saved copy keeps that style",
@@ -491,6 +524,20 @@ def stand_in_cases(evidence: pathlib.Path, temp: pathlib.Path, temp_win: str) ->
           scan("long_list")["found"] == ["'Many'!" + ",".join(f"{get_column_letter(column)}{row}" for row, column in MANY)]
           and scan("reading_order")["found"] == ["'Block'!B2:D4,F2:F4,B6"] and scan("apostrophe")["found"] == ["'It''s'!B2"],
           {name: scans.get(name) for name in ("long_list", "reading_order", "apostrophe")})
+    quoted, again = guard.get("quoted") or {}, guard.get("quoted_again") or {}
+    addresses = {"'It''s'!B2": "'It''s'!$B$2", "'O''Neil''s'!C7": "'O''Neil''s'!$C$7", "'My sheet'!A1": "'My sheet'!$A$1", "S!A1": "'S'!$A$1",
+                 "'\u00d8konomi'!A1": "'\u00d8konomi'!$A$1", "'My sheet'!T[Owner''s share]": "'My sheet'!T[Owner''s share]", "S!T['#Items]": "'S'!T['#Items]"}
+    check("a stand-in sheet named in quotes reads, with each doubled apostrophe in its name as one, and so do one with a letter outside A to Z "
+          "and a table column with an apostrophe in its name",
+          bool(quoted) and all(quoted.get(ref, {}).get("value") == 5 for ref in addresses), quoted)
+    check("a stand-in read's address doubles an apostrophe in the sheet name, and reads back",
+          all(quoted.get(ref, {}).get("address") == address and again.get(address, {}).get("address") == address for ref, address in addresses.items())
+          and len(again) == len(addresses), {"quoted": quoted, "quoted_again": again})
+    check("an undoubled apostrophe in a quoted stand-in sheet name is an error that says to double it",
+          bool(quoted) and all(UNDOUBLED in quoted.get(ref, {}).get("read_error", "") for ref in ("'It's'!B2", "'O'Neil''s'!C7", "'It''s!B2", "'A'!B'C'!D1")),
+          {ref: quoted.get(ref) for ref in ("'It's'!B2", "'O'Neil''s'!C7", "'It''s!B2", "'A'!B'C'!D1")})
+    check("an unquoted stand-in sheet name with a letter outside A to Z is taken for a workbook name",
+          "has no name" in quoted.get("\u00d8konomi!A1", {}).get("read_error", ""), quoted.get("\u00d8konomi!A1"))
     # What a question costs is part of the answer: a scan that read every piece would pass the limit on such sheets.
     check("the error scan of stand-in sheets finds cells far apart, a column and a row of errors within a few questions",
           scan("far_apart") == {"found": ["'Far'!A1,ZZ900000"], "unscanned": []} and scan("column_of_errors") == {"found": ["'Column'!C1:C40000"], "unscanned": []}

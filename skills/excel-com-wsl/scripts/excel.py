@@ -4,11 +4,12 @@
     python3 -I excel.py WORKBOOK.xlsx [--read REF]... [--set REF=VALUE]... [--save OUT.xlsx] [--json OUT.json]
                         [--job-timeout 300] [--calc-timeout 120]
 
-REF is a workbook-scoped name or a Sheet!A1 / Sheet!A1:B9 range. Excel opens a copy in a hidden instance of its own,
-rebuilds the calculation and reads each REF. With --set it changes those cells, recalculates and reads again. It then
-saves the copy, reopens it and reads once more. Prints the result as JSON, or writes it to --json and prints one line.
-Exits 0 when Excel finished the job, every read gave an answer and the error scan could tell for every sheet, and 1
-otherwise.
+REF is a workbook-scoped name or a Sheet!A1 / Sheet!A1:B9 range. A sheet name in single quotes has each apostrophe in
+it doubled, as in 'It''s'!B2, which is how errors and a read's address give it. Excel opens a copy in a hidden
+instance of its own, rebuilds the calculation and reads each REF. With --set it changes those cells, recalculates and
+reads again. It then saves the copy, reopens it and reads once more. Prints the result as JSON, or writes it to --json
+and prints one line. Exits 0 when Excel finished the job, every read gave an answer and the error scan could tell for
+every sheet, and 1 otherwise.
 """
 
 import argparse

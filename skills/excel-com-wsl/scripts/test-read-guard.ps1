@@ -2,7 +2,8 @@
 Test helper for test_fixtures.py. Runs Read-Refs and Find-Errors from excel-job.ps1 on stand-in workbooks, with no
 Excel: some answer as a healthy Excel does, some hand back $null for one property or throw a rejected call, as
 PowerShell does when a busy Excel refused it and the wait ran out, and some sheets answer the error scan's questions
-with something that is no answer. It writes what each made of them to -Log as JSON.
+with something that is no answer. A stand-in workbook with sheets takes the references that name a sheet in quotes.
+It writes what each made of them to -Log as JSON.
 #>
 param([Parameter(Mandatory = $true)] [string] $JobScript, [Parameter(Mandatory = $true)] [string] $Log)
 $ErrorActionPreference = 'Stop'
@@ -172,4 +173,24 @@ foreach ($case in $sheets.Keys) {
     $scans[$case] = [ordered]@{ found = $scan.found; unscanned = $scan.unscanned; asked = @($sheets[$case] | ForEach-Object { $_.Asked.Count }) }
   } catch { $scans[$case] = [ordered]@{ scan_error = $_.Exception.Message } }
 }
-[ordered]@{ reads = (Read-Refs $workbook @($ranges.Keys)); scans = $scans } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Log -Encoding UTF8
+
+# A stand-in workbook with sheets, for a reference that names its sheet in quotes. Worksheets.Item knows a sheet by
+# its exact name and nothing else, a range gives its address as Excel does, such as $B$2 or $B$2:$C$3, and what
+# is no cell or rectangle, such as a table column, as it was asked, and the workbook has no names. Okonomi is spelt with the letter O with a stroke, built from its code because Windows
+# PowerShell reads a script without a byte-order mark in the ANSI code page. The second round reads the addresses
+# that the first round gave.
+function New-Cell($sheet, [string] $address) {
+  $cell = [pscustomobject]@{ Count = 1; Value2 = 5.0; Formula2 = '5'; Text = '5'; HasSpill = $false; Worksheet = $sheet; Asked = $address }
+  return $cell | Add-Member -MemberType ScriptMethod -Name Address -Value { $this.Asked.Replace('$', '') -replace '([A-Z]+)(\d+)', '$$$1$$$2' } -PassThru
+}
+$noNames = [pscustomobject]@{} | Add-Member -MemberType ScriptMethod -Name Item -Value { param($name) throw "the stand-in workbook has no name $name" } -PassThru
+$stroked = [string][char]0xD8 + 'konomi'
+$titled = [pscustomobject]@{ Titles = @("It's", "O'Neil's", 'My sheet', 'S', 'A', $stroked) } | Add-Member -MemberType ScriptMethod -Name Item -Value {
+  param($name)
+  if ($this.Titles -cnotcontains $name) { throw "the stand-in workbook has no sheet $name" }
+  return [pscustomobject]@{ Name = $name } | Add-Member -MemberType ScriptMethod -Name Range -Value { param($address) New-Cell $this $address } -PassThru
+} -PassThru
+$quotedBook = [pscustomobject]@{ Names = $noNames; Worksheets = $titled }
+$quoted = Read-Refs $quotedBook @("'It''s'!B2", "'O''Neil''s'!C7", "'My sheet'!A1", 'S!A1', "'$stroked'!A1", "'My sheet'!T[Owner''s share]", "S!T['#Items]", "$stroked!A1", "'It's'!B2", "'O'Neil''s'!C7", "'It''s!B2", "'A'!B'C'!D1")
+$quotedAgain = Read-Refs $quotedBook @($quoted.Values | Where-Object { $_.Contains('address') } | ForEach-Object { $_.address })
+[ordered]@{ reads = (Read-Refs $workbook @($ranges.Keys)); scans = $scans; quoted = $quoted; quoted_again = $quotedAgain } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Log -Encoding UTF8
