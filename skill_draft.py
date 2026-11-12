@@ -60,7 +60,7 @@ def add_empty_file(libc, path):
     (folder / 'upper').mkdir()
     (folder / 'work').mkdir()
     options = f'lowerdir=/proc/self/fd/{lower},upperdir={folder}/upper,workdir={folder}/work'
-    mount(libc, f'to mount an overlay on {folder}', folder, b'overlay', b'overlay', data=options.encode())
+    mount(libc, f'to mount an overlay on {folder}', folder, b'overlay', b'overlay', data=os.fsencode(options))
     path.parent.mkdir()
     path.touch()
 
@@ -71,7 +71,7 @@ def copies_and_searched(args, draft):
             sys.exit(f'--installed names no file at {", ".join(missing)}')
         return args.installed, []
     name = skill_name(draft.decode('utf-8', 'replace'))
-    if not name or '/' in name or name in ('.', '..'):
+    if not name or '/' in name or '\0' in name or name in ('.', '..'):
         sys.exit(f'The draft {args.draft} needs a name: line in its frontmatter that names a skill folder.')
     searched = default_copies(name)
     copies = [path for path in searched if path.is_file()]
@@ -133,16 +133,23 @@ def main():
         sys.exit(f'The kernel refused a private user and mount namespace: {error}')
     libc = ctypes.CDLL(None, use_errno=True)
     try:
+        overlaid = set()
         for path in copies:
-            # The two skills folders can be one folder through a link, and then the first pass added the file.
-            if args.new and not path.exists():
+            folder = path.parent.parent.resolve()
+            # The two skills folders can be one folder through a link, and then the first pass added the file. A file
+            # that exists for any other reason was installed since the checks, and must not run without the overlay.
+            if args.new and folder not in overlaid:
                 add_empty_file(libc, path)
+                overlaid.add(folder)
             bind_read_only(libc, args.draft, path)
         if args.new:
             # A working folder inside a skills folder is still the folder under the overlay until it is entered again.
             os.chdir(os.getcwd())
     except OSError as error:
         sys.exit(str(error))
+    if lost := [f'{path} {problem}' for path in copies if (problem := difference(path, draft))]:
+        sys.exit(f'{", ".join(lost)} once the draft was placed there, so the command was not started. One cause is a '
+                 'skills folder that lies inside the other.')
     for path in copies:
         where = f'as {path}, a skill added for the command only' if args.new else f'in place of {path}'
         print(f"The command's sessions read {args.draft} {where}", file=sys.stderr)

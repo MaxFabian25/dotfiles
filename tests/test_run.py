@@ -11,6 +11,12 @@ FAILING = ONE_TEST.replace('        pass', '        self.fail("the broken detail
 INSTALLS_A_NAME = ONE_TEST.replace('import unittest\n', 'import sys\nimport unittest\n\nsys.modules["only_from_a"] = sys\n', 1)
 NEEDS_THE_NAME = ONE_TEST.replace('import unittest\n', 'import unittest\n\nimport only_from_a\n', 1)
 SLEEPS = ONE_TEST.replace('        pass', '        __import__("time").sleep(30)')
+ONE_SKIP = ONE_TEST + '\n    @unittest.skip("not here")\n    def test_skipped(self):\n        pass\n'
+CLASS_SKIP = ONE_TEST + ('\n\nclass Two(unittest.TestCase):\n    @classmethod\n    def setUpClass(cls):\n'
+                         '        raise unittest.SkipTest("not on this machine")\n\n'
+                         '    def test_first(self):\n        pass\n\n    def test_second(self):\n        pass\n')
+FAILS_AND_SKIPS = ONE_SKIP.replace('        pass', '        self.fail("the broken detail")', 1)
+PRINTS_A_RESULT = ONE_TEST.replace('        pass', '        __import__("sys").stderr.write("OK (skipped=9)\\n")')
 
 
 def full_run(modules, runner=RUNNER):
@@ -32,6 +38,19 @@ class FullRun(unittest.TestCase):
                 result = full_run(modules)
                 self.assertEqual(result.returncode, 0, result.stdout)
                 self.assertRegex(result.stdout, rf'(?m)^{count}\d+\.\d{{3}}s\nOK\n\Z')
+                self.assertNotIn('Skipped', result.stdout)
+
+    def test_a_run_names_each_module_with_skips_and_its_count(self):
+        result = full_run({'test_a.py': ONE_TEST, 'test_b.py': ONE_SKIP, 'test_c.py': CLASS_SKIP,
+                           'test_d.py': PRINTS_A_RESULT})
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertRegex(result.stdout, r'\ASkipped tests: test_b\.py 1, test_c\.py 1\nRan 5 tests in \S+\nOK\n\Z')
+
+    def test_a_failing_module_still_has_its_skips_counted(self):
+        result = full_run({'test_a.py': FAILS_AND_SKIPS})
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertRegex(result.stdout,
+                         r'(?m)^Skipped tests: test_a\.py 1\nRan 2 tests in \S+\nFAILED \(test_a\.py\)\n\Z')
 
     def test_a_failing_module_fails_the_run_and_shows_its_output(self):
         result = full_run({'test_a.py': ONE_TEST, 'test_b.py': FAILING})

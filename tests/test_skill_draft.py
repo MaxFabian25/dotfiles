@@ -76,6 +76,15 @@ folder = tempfile.mkdtemp()
 os.chdir(folder)
 os.rmdir(folder)
 '''
+INSTALLED_AFTER_THE_CHECKS = '''
+import os, pathlib
+enter = os.unshare
+def late(flags):
+    pathlib.Path(COPY).parent.mkdir()
+    pathlib.Path(COPY).write_text('installed late', encoding='utf-8')
+    enter(flags)
+os.unshare = late
+'''
 STOP_BEFORE_THE_COMMAND_STARTS = '''
 import os, signal, subprocess
 start = subprocess.Popen
@@ -164,9 +173,9 @@ class NamespaceTest(unittest.TestCase):
             time.sleep(0.05)
         return int((self.signals / 'ready').read_text())
 
-    def refused(self, *arguments):
+    def refused(self, *arguments, **roots):
         marker = self.root / 'ran'
-        run = self.run_tool(*arguments, '--', sys.executable, '-c', f'open({str(marker)!r}, "w")')
+        run = self.run_tool(*arguments, '--', sys.executable, '-c', f'open({str(marker)!r}, "w")', **roots)
         self.assertEqual(run.returncode, 1, run.stderr)
         self.assertNotIn('Traceback', run.stderr)
         self.assertFalse(marker.exists(), 'the command ran')
@@ -381,6 +390,38 @@ class NamespaceTest(unittest.TestCase):
         self.assertEqual(seen, {**{path: DRAFT for path in added}, folder: ['bar', 'foo']})
         self.assertEqual(os.listdir(folder), ['bar'])
 
+    def test_new_for_a_skill_installed_after_the_checks_stops_before_the_command(self):
+        copy = self.copy('.agents')
+        copy.parent.parent.mkdir(parents=True)
+        marker = self.root / 'ran'
+        run = self.run_main(f'COPY = {str(copy)!r}\n{INSTALLED_AFTER_THE_CHECKS}', self.draft, '--new', '--',
+                            sys.executable, '-c', f'open({str(marker)!r}, "w")')
+        self.assertEqual(run.returncode, 1, run.stderr)
+        self.assertNotIn('Traceback', run.stderr)
+        self.assertIn(os.strerror(errno.EEXIST), run.stderr)
+        self.assertIn(str(copy.parent), run.stderr)
+        self.assertNotIn('sessions read', run.stderr)
+        self.assertFalse(marker.exists(), 'the command ran')
+        self.assertEqual(copy.read_text(encoding='utf-8'), 'installed late')
+
+    def test_new_with_one_skills_folder_inside_the_other_stops_before_the_command(self):
+        outer = self.copy('.agents').parent.parent
+        claude = outer / 'nested'
+        (claude / 'skills').mkdir(parents=True)
+        lost = claude / 'skills/foo/SKILL.md'
+        stderr = self.refused(self.draft, '--new', claude=claude)
+        self.assertIn(f'{lost} could not be read', stderr)
+        self.assertNotIn('sessions read', stderr)
+        self.assertEqual((os.listdir(outer), os.listdir(claude / 'skills')), (['nested'], []))
+
+    def test_new_adds_the_skill_under_a_home_whose_name_is_not_utf_8(self):
+        self.home = Path(os.fsdecode(os.fsencode(self.root) + b'/h\xffme'))
+        copy = self.copy('.agents')
+        copy.parent.parent.mkdir(parents=True)
+        _, seen = self.reads(copy, new=True)
+        self.assertEqual(seen, {copy: DRAFT})
+        self.assertEqual(os.listdir(copy.parent.parent), [])
+
     def test_new_keeps_a_command_started_inside_a_skills_folder_off_the_disk(self):
         folder = self.copy('.agents').parent.parent
         folder.mkdir(parents=True)
@@ -442,7 +483,8 @@ class NamespaceTest(unittest.TestCase):
         self.install(self.copy('.agents'))
         for text in (None, '# foo\n', '---\ndescription: x\n---\n', '---\ndescription: x\n---\nname: foo\n',
                      '---\nname: other\nname: foo\n---\n',
-                     skill('x', name='../foo'), skill('x', name='.'), skill('x', name='..'), b'\xff\xfe'):
+                     skill('x', name='../foo'), skill('x', name='.'), skill('x', name='..'),
+                     skill('x', name='fo\0o'), b'\xff\xfe'):
             with self.subTest(text=text):
                 self.draft.unlink(missing_ok=True)
                 if isinstance(text, str):
