@@ -27,8 +27,8 @@ It prints JSON, or writes it to `--json OUT.json` and prints one line:
 | `settings` | calculation mode as opened, iteration, force full calculation |
 | `base`, `after`, `reopened.values` | each `REF` at open, after the sets, and after the save and reopen: `value`, `text`, `formula`, or `values` for a range |
 | `ok` | true when Excel finished the job, every read gave an answer and the error scan could tell for every sheet |
-| `errors` | the formula cells holding error values, by sheet |
-| `errors_unscanned` | the sheets where Excel holds error values it could not list, or could not count them, each with its `sheet` and the `reason` |
+| `errors` | the cells holding an error value that a formula made, by sheet |
+| `errors_unscanned` | the sheets whose error cells the scan could not list, each with its `sheet` and the `reason` |
 | `error`, `error_line` | why the job failed, and the line of `excel-job.ps1` that stopped it, if one did |
 | `busy_retries` | how many times a call waited for a busy Excel |
 | `runner` | `timed_out`, and `stopped`, the processes the script tried to stop, each with its outcome |
@@ -38,9 +38,40 @@ An error value reads as `{"error": "#DIV/0!"}`. The exit status is 0, with `ok` 
 
 A read that failed, such as a `REF` the workbook lacks, fails the job. `error` says how many reads failed and names the first, as in `2 of 4 reads failed; the first is NoSuchName at open: …`, where a `REF` that fails at open and after the reopen counts twice. The reads that worked keep their values in `base`, `after` and `reopened.values`, and `--save` still keeps the copy, because Excel finished it. Before 12 November 2026 such a job exited 0 with `ok: true` and showed the failure only in that range's `read_error` and the summary's `read_errors`, so a caller that tolerates a bad reference now has to read the ranges of a failed job. On that day the `unread` case of `test_fixtures.py`, which reads a name the workbook lacks beside one it has, ended `ok: true` on the script as it was, and with status 1, that `error`, the other name's value and the saved copy on the changed one.
 
-`errors` lists the formula cells holding errors that Excel's `SpecialCells` gives for each sheet. `SpecialCells` raises the same error when a sheet has no such cell and when it cannot look, as on a protected sheet, so when it raises, the scan has Excel count the sheet's cells holding error values. A count of 0 is a clean sheet. So is a count made up of typed-in error values, which `errors` has never listed, on a sheet where Excel can list those. Any other sheet goes into `errors_unscanned` with the reason, and fails the job as a failed read does, because `errors` is then not the whole answer. So any error value on a protected sheet now fails every job on that workbook, such as a lookup's `#N/A`, where such a job exited 0 before 12 November 2026. `error` names the first such sheet and the summary counts `unscanned_sheets`. The count takes every cell that holds something other than a number, a text or a boolean for an error value. No test covers a picture in a cell or a linked data type such as Stocks, which need a web request, so such a sheet may be named although it holds no error.
+`errors` lists, by sheet, the cells that hold an error value a formula made: the formula cells, and the cells into which a dynamic array formula in another cell spilled an error. An entry holds one sheet's cells in reading order, as in `'Model'!C1,A2:A4`, with a merged cell given as its first cell and an apostrophe in the sheet's name doubled. Typed-in error values are left out, as they always were, and a sheet whose only error values are typed in is clean.
 
-On 12 November 2026 the `protected` case of `test_fixtures.py`, a workbook with a formula error on a protected sheet, ended `ok: true` with that sheet unmentioned on the script as it was. On the changed one it ended with status 1 and that sheet named, and named neither the protected sheet without errors nor the unprotected sheet whose only error value is typed in. The same day `scripts/test-read-guard.ps1`, on stand-in sheets with no Excel, showed that the scan names a sheet whose count Excel's lists don't account for (`spilled_only`, `spilled_untyped`), a protected sheet whose only error value is typed in (`locked_typed_only`), and a sheet Excel cannot count (`count_is_an_error`, `count_throws`, `negative_count`).
+The scan asks Excel in formulas, which Excel answers on a protected sheet as on any other. `ISERROR(SUM(range))` says in milliseconds whether a range holds an error value, so a sheet with none costs one question. A range that holds one is halved until a piece is small enough for Excel to say of each cell whether it holds an error value and whether it is a formula cell, and `HasSpill` then tells a spilled error from a typed-in one. The questions are in A1 addresses, so the scan puts an Excel that a workbook opened in R1C1 reference style into A1 style and back, and the saved copy keeps R1C1. A sheet goes into `errors_unscanned` with the reason, and fails the job as a failed read does, because `errors` is then not the whole answer, in two cases:
+
+- Excel gave something that is no answer to one of those questions, such as an error value.
+- Listing the sheet's cells would take more than the scan's limit of 2,000,000 cells read, where a question counts as 1,000 cells and `HasSpill` as 4,000. The limit keeps one sheet from using up the job's time limit: a sheet that reaches it has taken 3 to 32 s. The reason then begins `its error values are spread over too many cells to list`.
+
+`error` names the first such sheet and the summary counts `unscanned_sheets`. `timings_ms.scan` less `timings_ms.read` is the time the scan took. No test covers a picture in a cell or a linked data type such as Stocks, which need a web request, nor a what-if data table, so whether the scan lists such a cell is not known: it lists a cell where Excel's `ISERROR` is true. No test covers an Excel from before dynamic arrays either. It has no `HasSpill`, so there a typed-in error value probably ends the job with `Excel gave no answer for whether … is spilled`.
+
+Until the last release of 12 November 2026, which brought this scan, it listed what Excel's `SpecialCells` gave. `SpecialCells` cannot look at a protected sheet, gives only the first cell of a spilled range, and gives an address that Excel cuts at 256 characters. A caller sees these changes:
+
+- A workbook with a formula error on a protected sheet, such as a lookup's `#N/A`, passes with those cells in `errors`. Such a job failed with the sheet named since the release before it, the same evening, and before that exited 0 with the sheet unmentioned. A protected sheet whose only error values are typed in is clean, where that release named it.
+- `errors` holds spilled errors, which it left out, so it can list more cells for the same workbook. A sheet whose only errors are spilled lists them, where it failed the job.
+- A list of many separate cells is whole, where it ended at 256 characters with no sign.
+- A merged formula cell is `A1` where it was `A1:B2`, an apostrophe in a sheet name is doubled, and the cells of a sheet can be split into other rectangles than Excel's.
+- A workbook in R1C1 reference style passes, where a job on one with a sheet free of formula errors failed since that same release.
+- One change fails a job that passed. A sheet whose error cells take more than the limit to list is named in `errors_unscanned`, where the job passed with its list, whole or cut. The `scattered` case's 120 error cells, scattered singly over a whole sheet, reach it, and so can a few hundred separate groups of spilled errors, each of which costs a `HasSpill` question.
+
+On 12 November 2026 `test_fixtures.py` ran these cases through real Excel on the script as released before this change and on the changed one. The `r1c1` row's released result is from one `excel.py` job on that case's workbook:
+
+| Case | Sheet | Released script | Changed script |
+|---|---|---|---|
+| `protected` | formula errors on a protected sheet, one with a hidden formula, beside a typed-in one | sheet named, status 1 | `'Locked'!A1,C5`, status 0 |
+| `protected` | a protected sheet whose only error value is typed in | sheet named | clean |
+| `scan` | an error spilled below a clean first cell, beside a formula error | `'Spill'!C1` | `'Spill'!C1,A2` |
+| `scan` | the same with no other error on the sheet | sheet named, status 1 | `'SpillOnly'!B4:B5` |
+| `scan` | a spilled error beside a typed-in error in a merged cell | clean, with no sign | `'Merged'!D3` |
+| `scan` | 150 separate error cells | the first 62, in 256 characters | all 150 |
+| `scan` | a sheet named `It's` | `'It's'!B2` | `'It''s'!B2` |
+| `scan` | two error cells on a protected sheet used to its last row and column | sheet named | `'Far'!A1,ZZ900000` |
+| `r1c1` | a workbook in R1C1 style with a clean sheet and errors in `C10:C12` | clean sheet named, status 1 | `'Column'!C10:C12`, status 0 |
+| `scattered` | 120 error cells scattered over a whole sheet | the first 27, status 0 | sheet named for the limit, status 1, the other sheet's cell listed |
+
+The `r1c1` case also showed why the scan changes the reference style: before it did, the changed script named the clean sheet and passed the sheet with the three error cells as clean. The same day `scripts/test-read-guard.ps1`, on stand-in sheets with no Excel, showed that the scan asks one question of a sheet with no error value (`no_error_cells`), names a sheet whose answer is no answer (`any_is_an_error` to `spill_is_odd`) or whose listing passes the limit (`over_the_limit`), and ends the job when Excel refused a call or handed back `$null` (`no_sheets` to `no_spill`). Probes in real Excel that day showed what the scan rests on: `SpecialCells` gave an address of 256 characters for 150 cells and counted a merged typed-in error four times, `ISFORMULA` is false for a spilled cell, and `HasSpill` is true or false for a range whose cells agree and `DBNull` where they differ.
 
 `--save` keeps the copy Excel wrote. A workbook from openpyxl has no cached values until Excel or another engine saves it, so check and deliver that copy when readers need numbers without recalculating.
 
@@ -52,7 +83,7 @@ Excel runs in the user's interactive Windows session, which Microsoft doesn't su
 python3 -I scripts/test_fixtures.py EVIDENCE_DIR
 ```
 
-It needs `openpyxl`, builds workbooks that have each tripped this COM layer, runs them through real Excel and prints PASS or FAIL per check. Run it after any change to a script, because "a formula calculated" passes while the cases below still fail. Its busy case runs `scripts/test-busy.ps1` beside the job, which finds the job's Excel through the job's open workbook and its process ID and starts no Excel of its own. Whether that helper's rebuilds land is a matter of timing, so the case runs the job up to three times, and prints a `NOTE` line when none landed on the reopened copy. The reads that Excel refuses are tested without Excel, by `scripts/test-read-guard.ps1`. An agent in a sandbox reaches Excel through a file queue that a runner outside the sandbox serves. Run these same cases through that queue from inside the sandbox, because a run from outside doesn't exercise the agent's route.
+It needs `openpyxl`, builds workbooks that have each tripped this COM layer, runs them through real Excel and prints PASS or FAIL per check. With `--no-excel` after `EVIDENCE_DIR` it runs only the cases that start no Excel, which takes under a minute and is enough while you change the error scan's handling of an answer; the full run is still the proof. Run it after any change to a script, because "a formula calculated" passes while the cases below still fail. Its busy case runs `scripts/test-busy.ps1` beside the job, which finds the job's Excel through the job's open workbook and its process ID and starts no Excel of its own. Whether that helper's rebuilds land is a matter of timing, so the case runs the job up to three times, and prints a `NOTE` line when none landed on the reopened copy. The reads that Excel refuses are tested without Excel, by `scripts/test-read-guard.ps1`. An agent in a sandbox reaches Excel through a file queue that a runner outside the sandbox serves. Run these same cases through that queue from inside the sandbox, because a run from outside doesn't exercise the agent's route.
 
 ## Rules for your own scripts
 

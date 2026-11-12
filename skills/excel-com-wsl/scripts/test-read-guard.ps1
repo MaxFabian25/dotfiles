@@ -1,8 +1,8 @@
 <#
 Test helper for test_fixtures.py. Runs Read-Refs and Find-Errors from excel-job.ps1 on stand-in workbooks, with no
 Excel: some answer as a healthy Excel does, some hand back $null for one property or throw a rejected call, as
-PowerShell does when a busy Excel refused it and the wait ran out, and some sheets cannot list their error cells, as a
-protected sheet cannot, or hold error values that Excel does not list, as a spilled range does. It writes what each made of them to -Log as JSON.
+PowerShell does when a busy Excel refused it and the wait ran out, and some sheets answer the error scan's questions
+with something that is no answer. It writes what each made of them to -Log as JSON.
 #>
 param([Parameter(Mandatory = $true)] [string] $JobScript, [Parameter(Mandatory = $true)] [string] $Log)
 $ErrorActionPreference = 'Stop'
@@ -36,50 +36,140 @@ $ranges = [ordered]@{
 $names = [pscustomobject]@{ Ranges = $ranges } | Add-Member -MemberType ScriptMethod -Name Item -Value { param($name) [pscustomobject]@{ RefersToRange = $this.Ranges[$name] } } -PassThru
 $workbook = [pscustomobject]@{ Names = $names }
 
-# A stand-in sheet lists its formula cells holding errors and its typed-in error values through SpecialCells of its
-# used range, and counts its cells holding error values through Evaluate, as Excel does. $none, $protected and
-# $refused are what those calls throw.
-function New-Sheet([string] $name, $formulas, $total, $typed) {
-  $used = [pscustomobject]@{ Formulas = $formulas; Typed = $typed } | Add-Member -MemberType ScriptMethod -Name Address -Value { 'A1:B2' } -PassThru
-  $used | Add-Member -MemberType ScriptMethod -Name SpecialCells -Value {
-    param($type, $value)
-    $answer = if ($type -eq -4123) { $this.Formulas } else { $this.Typed }
-    if ($answer -is [scriptblock]) { return & $answer }
-    return $answer
+# A stand-in sheet knows which of its cells hold an error value and of which kind: 'formula', 'typed' or 'spilled'.
+# It answers the scan's two formulas through Evaluate and HasSpill through Range, in the shapes Excel gave on
+# 12 November 2026: a number for one cell, a list for one row, a grid from 1 otherwise, and DBNull from HasSpill where
+# the cells of a range differ. An entry in $answers replaces one of those answers, with a value or a script block
+# that may throw. It reads addresses with its own code, not the job script's.
+function ConvertFrom-Address([string] $address) {
+  $ends = @($address -split ':'); if ($ends.Count -eq 1) { $ends = $ends[0], $ends[0] }
+  $corners = foreach ($end in $ends) {
+    if ($end -notmatch '^([A-Z]+)(\d+)$') { throw "the stand-in cannot read the address $address" }
+    $column = 0; foreach ($letter in $Matches[1].ToCharArray()) { $column = $column * 26 + [int]$letter - 64 }
+    , @([int]$Matches[2], $column)
   }
-  $sheet = [pscustomobject]@{ Name = $name; UsedRange = $(if ($formulas -ne 'no used range') { $used }); Total = $total }
-  return $sheet | Add-Member -MemberType ScriptMethod -Name Evaluate -Value { if ($this.Total -is [scriptblock]) { & $this.Total } else { $this.Total } } -PassThru
+  return @{ row = $corners[0][0]; column = $corners[0][1]; rows = $corners[1][0] - $corners[0][0] + 1; columns = $corners[1][1] - $corners[0][1] + 1 }
 }
-$errorCells = [pscustomobject]@{ Count = 2 } | Add-Member -MemberType ScriptMethod -Name Address -Value { 'A1:A2' } -PassThru
-$oneTyped = [pscustomobject]@{ Count = 1 }
-$none = { throw [Runtime.InteropServices.COMException]::new('No cells were found.', -2146827284) }
+
+function Get-Overlap($one, $other) {
+  $rows = [Math]::Min($one.row + $one.rows, $other.row + $other.rows) - [Math]::Max($one.row, $other.row)
+  $columns = [Math]::Min($one.column + $one.columns, $other.column + $other.columns) - [Math]::Max($one.column, $other.column)
+  if ($rows -le 0 -or $columns -le 0) { return $null }
+  return @{ row = [Math]::Max($one.row, $other.row); column = [Math]::Max($one.column, $other.column); rows = $rows; columns = $columns }
+}
+
+function Get-StandIn($sheet, [string] $question, [scriptblock] $otherwise) {
+  [void]$sheet.Asked.Add($question)
+  if (-not $sheet.Answers.ContainsKey($question)) { return & $otherwise }
+  $answer = $sheet.Answers[$question]
+  if ($answer -is [scriptblock]) { return & $answer }
+  return $answer
+}
+
+function New-Sheet([string] $name, [string] $usedAddress, $cells, $answers = @{}) {
+  $areas = @(foreach ($address in $cells.Keys) { $area = ConvertFrom-Address $address; $area.kind = $cells[$address]; $area })
+  $box = ConvertFrom-Address $usedAddress
+  $used = [pscustomobject]@{ Row = $box.row; Column = $box.column; Rows = [pscustomobject]@{ Count = $box.rows }; Columns = [pscustomobject]@{ Count = $box.columns } }
+  if ($answers.ContainsKey('used')) { $used = $answers.used }
+  $sheet = [pscustomobject]@{ Name = $(if ($answers.ContainsKey('name')) { $answers.name } else { $name }); UsedRange = $used; Areas = $areas; Answers = $answers; Asked = (New-Object Collections.ArrayList) }
+  $sheet | Add-Member -MemberType ScriptMethod -Name Evaluate -Value {
+    param($formula)
+    $sheet = $this
+    if ($formula -match '^ISERROR\(SUM\(([A-Z0-9:]+)\)\)$') {
+      $box = ConvertFrom-Address $Matches[1]
+      return Get-StandIn $sheet 'any' { [bool]@($sheet.Areas | Where-Object { Get-Overlap $_ $box }).Count }
+    }
+    if ($formula -match '^ISERROR\(([A-Z0-9:]+)\)\*\(1\+ISFORMULA\(\1\)\)$') {
+      $box = ConvertFrom-Address $Matches[1]
+      return Get-StandIn $sheet 'cells' {
+        $kinds = New-Object 'double[]' ($box.rows * $box.columns)
+        foreach ($area in $sheet.Areas) {
+          $shared = Get-Overlap $area $box
+          if (-not $shared) { continue }
+          $kind = if ($area.kind -eq 'formula') { 2.0 } else { 1.0 }
+          for ($row = $shared.row; $row -lt $shared.row + $shared.rows; $row++) { for ($column = $shared.column; $column -lt $shared.column + $shared.columns; $column++) { $kinds[($row - $box.row) * $box.columns + $column - $box.column] = $kind } }
+        }
+        if ($kinds.Length -eq 1) { return $kinds[0] }
+        if ($box.rows -eq 1) { return , [object[]]$kinds }
+        $grid = [Array]::CreateInstance([object], [int[]]($box.rows, $box.columns), [int[]](1, 1))
+        for ($at = 0; $at -lt $kinds.Length; $at++) { $grid[(1 + ($at - $at % $box.columns) / $box.columns), (1 + $at % $box.columns)] = $kinds[$at] }
+        return , $grid
+      }
+    }
+    throw "the stand-in does not know the formula $formula"
+  }
+  $sheet | Add-Member -MemberType ScriptMethod -Name Range -Value {
+    param($address)
+    $sheet = $this; $box = ConvertFrom-Address $address
+    return Get-StandIn $sheet 'range' {
+      $range = [pscustomobject]@{ Sheet = $sheet; Box = $box }
+      $range | Add-Member -MemberType ScriptProperty -Name HasSpill -Value {
+        $range = $this
+        Get-StandIn $range.Sheet 'spilled' {
+          $spilled = 0; foreach ($area in $range.Sheet.Areas) { $shared = Get-Overlap $area $range.Box; if ($shared -and $area.kind -eq 'spilled') { $spilled += $shared.rows * $shared.columns } }
+          if ($spilled -eq 0) { return $false }
+          if ($spilled -eq $range.Box.rows * $range.Box.columns) { return $true }
+          return [DBNull]::Value
+        }
+      } -PassThru
+    }
+  }
+  return $sheet
+}
+
+$many = [ordered]@{}; for ($i = 1; $i -le 150; $i++) { $many[[string][char](65 + ($i % 7) * 2) + (2 * $i)] = 'formula' }
 $protected = { throw [Runtime.InteropServices.COMException]::new('You cannot use this command on a protected sheet.', -2146827284) }
 $refused = { throw [Runtime.InteropServices.COMException]::new('refused', -2147418111) }
-$uncounted = { throw 'the scan counted the cells of a sheet whose error cells Excel listed' }
+$nameError = [int]-2146826259  # The error value #NAME?, as Evaluate hands it back.
+$typed = @{ A1 = 'typed' }; $both = @{ A1 = 'formula'; B2 = 'typed' }; $spilled = @{ A2 = 'spilled' }
 $sheets = [ordered]@{
-  finds_cells       = @((New-Sheet 'S' $errorCells $uncounted $none))
-  no_error_cells    = @((New-Sheet 'S' $none 0.0 $none))
-  typed_only        = @((New-Sheet 'S' $none 1.0 $oneTyped))
-  cannot_list       = @((New-Sheet 'Open' $errorCells $uncounted $none), (New-Sheet 'Locked' $protected 1.0 $protected), (New-Sheet 'Clean' $protected 0.0 $protected))
-  spilled_only      = @((New-Sheet 'Spill' $none 3.0 $oneTyped))
-  spilled_untyped   = @((New-Sheet 'Spill' $none 2.0 $none))
-  locked_typed_only = @((New-Sheet 'Locked' $protected 1.0 $protected))
-  negative_count    = @((New-Sheet 'Odd' $none ([double]-1) $none))
-  count_is_an_error = @((New-Sheet 'Old' $none ([int]-2146826259) $none))
-  count_throws      = @((New-Sheet 'Odd' $none $protected $none))
-  no_sheets         = $null
-  no_used_range     = @((New-Sheet 'S' 'no used range' 1.0 $none))
-  no_cells          = @((New-Sheet 'S' $null 1.0 $none))
-  refused_call      = @((New-Sheet 'S' $refused 1.0 $none))
-  no_count          = @((New-Sheet 'S' $none $null $none))
-  refused_count     = @((New-Sheet 'S' $none $refused $none))
-  no_typed_count    = @((New-Sheet 'S' $none 1.0 ([pscustomobject]@{ Count = $null })))
-  refused_typed     = @((New-Sheet 'S' $none 1.0 $refused))
-  no_typed_cells    = @((New-Sheet 'S' $none 1.0 { $null }))
+  finds_cells          = @((New-Sheet 'S' 'A1:B3' @{ 'A1:A2' = 'formula' }))
+  no_error_cells       = @((New-Sheet 'S' 'A1:B3' @{}))
+  typed_only           = @((New-Sheet 'S' 'A1:B3' $typed))
+  several_sheets       = @((New-Sheet 'Open' 'A1:B3' @{ 'A1:A2' = 'formula' }), (New-Sheet 'Clean' 'A1:B3' @{}), (New-Sheet 'Other' 'A1' @{ A1 = 'formula' }))
+  spilled              = @((New-Sheet 'Spill' 'A1:E8' @{ 'A2:A3' = 'spilled'; C1 = 'formula'; A8 = 'typed' }))
+  spilled_only         = @((New-Sheet 'Spill' 'B2:B5' @{ 'B4:B5' = 'spilled' }))
+  typed_beside_spilled = @((New-Sheet 'Mix' 'A1:C40' @{ A2 = 'spilled'; B2 = 'typed'; A4 = 'spilled'; B4 = 'typed'; 'C7:C9' = 'spilled'; C10 = 'typed' }))
+  long_list            = @((New-Sheet 'Many' 'A2:M300' $many))
+  reading_order        = @((New-Sheet 'Block' 'B2:F6' @{ B6 = 'formula'; 'F2:F4' = 'formula'; 'B2:D4' = 'formula' }))
+  apostrophe           = @((New-Sheet "It's" 'B2' @{ B2 = 'formula' }))
+  far_apart            = @((New-Sheet 'Far' 'A1:XFD1048576' @{ A1 = 'formula'; ZZ900000 = 'formula'; XFD1048576 = 'typed' }))
+  column_of_errors     = @((New-Sheet 'Column' 'A1:AD40000' @{ 'C1:C40000' = 'formula' }))
+  row_of_errors        = @((New-Sheet 'Row' 'A1:KN20001' @{ 'A20001:KN20001' = 'formula' }))
+  over_the_limit       = @((New-Sheet 'Wide' 'A1:AD40000' @{ 'C1:C40000' = 'formula' }), (New-Sheet 'Small' 'A1:B3' @{ A1 = 'formula' }))
+  any_is_an_error      = @((New-Sheet 'Old' 'A1:B3' $both @{ any = $nameError }))
+  any_is_no_boolean    = @((New-Sheet 'Odd' 'A1:B3' $both @{ any = 1.0 }))
+  any_throws           = @((New-Sheet 'Odd' 'A1:B3' $both @{ any = $protected }))
+  cells_are_an_error   = @((New-Sheet 'Old' 'A1:B3' $both @{ cells = $nameError }))
+  cells_throw          = @((New-Sheet 'Odd' 'A1:B3' $both @{ cells = $protected }))
+  too_few_cells        = @((New-Sheet 'Odd' 'A1:B3' $both @{ cells = { , [object[]](2.0, 0.0, 0.0) } }))
+  one_cell_is_odd      = @((New-Sheet 'Odd' 'A1:B3' $both @{ cells = { , [object[]](2.0, 0.0, 3.0, 0.0, 0.0, 0.0) } }))
+  one_cell_is_an_error = @((New-Sheet 'Odd' 'A1:B3' $both @{ cells = { , [object[]](2.0, 0.0, $nameError, 0.0, 0.0, 0.0) } }))
+  one_cell_is_missing  = @((New-Sheet 'Odd' 'A1:B3' $both @{ cells = { , [object[]](2.0, 0.0, $null, 0.0, 0.0, 0.0) } }))
+  spill_is_odd         = @((New-Sheet 'Odd' 'A1:B3' $spilled @{ spilled = [DBNull]::Value }))
+  no_sheets            = $null
+  no_name              = @((New-Sheet 'S' 'A1:B3' $both @{ name = $null }))
+  no_used_range        = @((New-Sheet 'S' 'A1:B3' $both @{ used = $null }))
+  no_first_row         = @((New-Sheet 'S' 'A1:B3' $both @{ used = [pscustomobject]@{ Row = $null; Column = 1; Rows = [pscustomobject]@{ Count = 3 }; Columns = [pscustomobject]@{ Count = 2 } } }))
+  no_rows              = @((New-Sheet 'S' 'A1:B3' $both @{ used = [pscustomobject]@{ Row = 1; Column = 1; Rows = $null; Columns = [pscustomobject]@{ Count = 2 } } }))
+  no_columns           = @((New-Sheet 'S' 'A1:B3' $both @{ used = [pscustomobject]@{ Row = 1; Column = 1; Rows = [pscustomobject]@{ Count = 3 }; Columns = $null } }))
+  no_row_count         = @((New-Sheet 'S' 'A1:B3' $both @{ used = [pscustomobject]@{ Row = 1; Column = 1; Rows = [pscustomobject]@{ Count = $null }; Columns = [pscustomobject]@{ Count = 2 } } }))
+  no_column_count      = @((New-Sheet 'S' 'A1:B3' $both @{ used = [pscustomobject]@{ Row = 1; Column = 1; Rows = [pscustomobject]@{ Count = 3 }; Columns = [pscustomobject]@{ Count = $null } } }))
+  no_any               = @((New-Sheet 'S' 'A1:B3' $both @{ any = $null }))
+  refused_any          = @((New-Sheet 'S' 'A1:B3' $both @{ any = $refused }))
+  no_cells             = @((New-Sheet 'S' 'A1:B3' $both @{ cells = $null }))
+  refused_cells        = @((New-Sheet 'S' 'A1:B3' $both @{ cells = $refused }))
+  no_range             = @((New-Sheet 'S' 'A1:B3' $spilled @{ range = $null }))
+  refused_range        = @((New-Sheet 'S' 'A1:B3' $spilled @{ range = $refused }))
+  no_spill             = @((New-Sheet 'S' 'A1:B3' $spilled @{ spilled = $null }))
 }
+$limits = @{ over_the_limit = 30000 }
 $scans = [ordered]@{}
 foreach ($case in $sheets.Keys) {
-  try { $scan = Find-Errors ([pscustomobject]@{ Worksheets = $sheets[$case] }); $scans[$case] = [ordered]@{ found = $scan.found; unscanned = $scan.unscanned } }
-  catch { $scans[$case] = [ordered]@{ scan_error = $_.Exception.Message } }
+  try {
+    $book = [pscustomobject]@{ Worksheets = $sheets[$case] }
+    $scan = if ($limits.ContainsKey($case)) { Find-Errors $book $limits[$case] } else { Find-Errors $book }
+    $scans[$case] = [ordered]@{ found = $scan.found; unscanned = $scan.unscanned; asked = @($sheets[$case] | ForEach-Object { $_.Asked.Count }) }
+  } catch { $scans[$case] = [ordered]@{ scan_error = $_.Exception.Message } }
 }
 [ordered]@{ reads = (Read-Refs $workbook @($ranges.Keys)); scans = $scans } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Log -Encoding UTF8

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Prove excel.py in desktop Excel with workbooks that have each tripped its COM layer. Needs openpyxl.
 
-    python3 -I test_fixtures.py EVIDENCE_DIR
+    python3 -I test_fixtures.py EVIDENCE_DIR [--no-excel]
 
 Prints PASS or FAIL per check and exits 1 on any FAIL. EVIDENCE_DIR must not exist yet, and keeps each job's JSON.
+--no-excel runs only the cases that start no Excel: the stand-in workbooks and the stop of a sleeping process.
 """
 
 import importlib.util
@@ -11,6 +12,7 @@ import json
 import math
 import os
 import pathlib
+import re
 import secrets
 import shutil
 import subprocess
@@ -19,12 +21,28 @@ import time
 import zipfile
 
 import openpyxl
+from openpyxl.styles import Protection
 from openpyxl.utils import get_column_letter
 from openpyxl.workbook.defined_name import DefinedName
+from openpyxl.worksheet.formula import ArrayFormula
 
 HERE = pathlib.Path(__file__).resolve().parent
 EXCEL = HERE / "excel.py"
 POWERSHELL = ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command"]
+# The cells of the Many sheet: 150 separate error cells, whose list is longer than the 256 characters of an address
+# that Range.Address gives.
+MANY = [(2 * number, 1 + (number % 7) * 2) for number in range(1, 151)]
+# What marks a formula as a dynamic array formula, as Excel itself writes it.
+METADATA = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+    '<metadata xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+    'xmlns:xda="http://schemas.microsoft.com/office/spreadsheetml/2017/dynamicarray">'
+    '<metadataTypes count="1"><metadataType name="XLDAPR" minSupportedVersion="120000" copy="1" pasteAll="1" pasteValues="1" '
+    'merge="1" splitFirst="1" rowColShift="1" clearFormats="1" clearComments="1" assign="1" coerce="1" cellMeta="1"/></metadataTypes>'
+    '<futureMetadata name="XLDAPR" count="1"><bk><extLst><ext uri="{bdbb8cdc-fa1e-496e-a857-3c3f30c029c3}">'
+    '<xda:dynamicArrayProperties fDynamic="1" fCollapsed="0"/></ext></extLst></bk></futureMetadata>'
+    '<cellMetadata count="1"><bk><rc t="1" v="0"/></bk></cellMetadata></metadata>'
+)
 failures = 0
 
 
@@ -37,6 +55,34 @@ def check(name: str, passed: bool, detail: object = "") -> None:
 def near(entry: dict | None, expected: float) -> bool:
     value = (entry or {}).get("value")
     return isinstance(value, (int, float)) and math.isclose(value, expected, rel_tol=1e-9)
+
+
+def make_dynamic(path: pathlib.Path) -> None:
+    """Turn the array formulas of a workbook that openpyxl wrote into dynamic array formulas, which spill.
+
+    openpyxl writes an array formula the way Excel stored one before dynamic arrays, and Excel opens that as one
+    formula across its whole range, where every cell is a formula cell. A formula cell that points at this metadata
+    is a dynamic array formula: its first cell holds the formula and the others are spilled.
+    """
+    with zipfile.ZipFile(path) as source:
+        parts = {item.filename: source.read(item.filename) for item in source.infolist()}
+    marked = 0
+    for name in parts:
+        if name.startswith("xl/worksheets/sheet"):
+            parts[name], count = re.subn(rb'<c r="([A-Z]+[0-9]+)"([^>]*)><f t="array"', rb'<c r="\1"\2 cm="1"><f t="array"', parts[name])
+            marked += count
+    if not marked:
+        sys.exit(f"test_fixtures.py: {path.name} holds no array formula to mark as dynamic")
+    parts["xl/metadata.xml"] = METADATA.encode()
+    for name, end, entry in (
+            ("[Content_Types].xml", b"</Types>", b'<Override PartName="/xl/metadata.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml"/>'),
+            ("xl/_rels/workbook.xml.rels", b"</Relationships>", b'<Relationship Id="rIdMetadata" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sheetMetadata" Target="metadata.xml"/>')):
+        if parts[name].count(end) != 1:
+            sys.exit(f"test_fixtures.py: {name} of {path.name} is not as expected")
+        parts[name] = parts[name].replace(end, entry + end)
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as target:
+        for name, data in parts.items():
+            target.writestr(name, data)
 
 
 def build(out: pathlib.Path) -> None:
@@ -59,8 +105,9 @@ def build(out: pathlib.Path) -> None:
     sheet["A1"], sheet["A2"], sheet["A3"] = "=1/0", "=NA()", 5
     book.save(out / "errors.xlsx")
 
-    # Excel cannot list the error cells of a protected sheet, so the scan has to say which sheet it could not tell
-    # for. A sheet whose only error value is typed in has no formula cell holding an error, and stays clean.
+    # Excel's SpecialCells cannot look at a protected sheet, so the scan asks in formulas, and lists the formula cells
+    # holding errors there too, one of them with a hidden formula. A typed-in error value is no formula cell, and a
+    # sheet whose only error value is typed in stays clean, protected or not.
     book = openpyxl.Workbook()
     sheet = book.active
     sheet.title = "Open"
@@ -74,7 +121,63 @@ def build(out: pathlib.Path) -> None:
         sheet["A1"], sheet["B2"] = formula, "=2+2"
         sheet.protection.sheet = True
         sheet.protection.password = "synthetic"
+    sheet = book["Locked"]
+    sheet["A3"], sheet["C5"] = "#N/A", "=NA()"
+    sheet["C5"].protection = Protection(hidden=True)
+    sheet = book.create_sheet("LockedTyped")
+    sheet["A1"], sheet["A2"] = "#N/A", 5
+    sheet.protection.sheet = True
+    sheet.protection.password = "synthetic"
     book.save(out / "protected.xlsx")
+
+    # What SpecialCells left out or got wrong on a sheet it can look at: an error spilled below a clean first cell,
+    # beside a formula error (Spill), alone (SpillOnly) and beside a typed-in error in a merged cell, which it counted
+    # four times (Merged); a list of cells longer than an address may be (Many); and a sheet name with an apostrophe.
+    # Far is protected, and its used range is the whole sheet.
+    book = openpyxl.Workbook()
+    sheet = book.active
+    sheet.title = "Spill"
+    sheet["A1"], sheet["C1"], sheet["A8"] = ArrayFormula("A1:A3", "=IF(_xlfn.SEQUENCE(3)=2,NA(),1)"), "=1/0", "#N/A"
+    sheet = book.create_sheet("SpillOnly")
+    sheet["B2"] = ArrayFormula("B2:B5", "=IF(_xlfn.SEQUENCE(4)>2,NA(),1)")
+    sheet = book.create_sheet("Merged")
+    sheet["A1"], sheet["D2"] = "#N/A", ArrayFormula("D2:D3", "=IF(_xlfn.SEQUENCE(2)=2,NA(),1)")
+    sheet.merge_cells("A1:B2")
+    sheet = book.create_sheet("Joined")
+    sheet["A1"] = "=1/0"
+    sheet.merge_cells("A1:B2")
+    sheet = book.create_sheet("Many")
+    for row, column in MANY:
+        sheet.cell(row, column, "=NA()")
+    sheet = book.create_sheet("It's")
+    sheet["B2"] = "=1/0"
+    sheet = book.create_sheet("Far")
+    sheet["A1"], sheet["ZZ900000"], sheet["XFD1048576"] = "=NA()", "=1/0", 5
+    sheet.protection.sheet = True
+    sheet.protection.password = "synthetic"
+    book.save(out / "scan.xlsx")
+    make_dynamic(out / "scan.xlsx")
+
+    # A workbook in R1C1 reference style puts the Excel that opens it first in that style, in which the A1 address
+    # C10:C12 means columns 10 to 12.
+    book = openpyxl.Workbook()
+    sheet = book.active
+    sheet.title = "Clean"
+    sheet["A1"], sheet["B2"] = 5, "=A1*2"
+    sheet = book.create_sheet("Column")
+    sheet["C10"], sheet["C11"], sheet["C12"] = "=NA()", "=1/0", "=NA()"
+    book.calculation.refMode = "R1C1"
+    book.save(out / "r1c1.xlsx")
+
+    # Error cells so far apart that finding them takes more questions than the scan asks about one sheet.
+    book = openpyxl.Workbook()
+    sheet = book.active
+    sheet.title = "Scattered"
+    for number in range(1, 121):
+        sheet.cell(13001 * number % 1048576 + 1, 211 * number % 16384 + 1, "=NA()")
+    sheet = book.create_sheet("Small")
+    sheet["A1"] = "=NA()"
+    book.save(out / "scattered.xlsx")
 
     with zipfile.ZipFile(out / "tiny.xlsx") as source, zipfile.ZipFile(out / "damaged.xlsx", "w", zipfile.ZIP_DEFLATED) as target:
         for item in source.infolist():
@@ -153,14 +256,9 @@ def stop_process(pid: int, program: str) -> None:
                    capture_output=True, text=True, timeout=90)
 
 
-def main() -> int:
-    if len(sys.argv) != 2:
-        sys.exit(__doc__)
-    evidence = pathlib.Path(sys.argv[1]).resolve()
-    evidence.mkdir(parents=True)
+def excel_cases(evidence: pathlib.Path, temp: pathlib.Path, temp_win: str) -> None:
+    """The cases that run a job through real Excel."""
     build(evidence)
-
-    temp, temp_win = windows_temp()
 
     def start(name: str, book: str, *args: str) -> subprocess.Popen:
         with (evidence / f"{name}.out").open("wb") as said:
@@ -173,8 +271,6 @@ def main() -> int:
 
     def job(name: str, book: str, *args: str) -> tuple[dict, int]:
         return finish(name, start(name, book, *args))
-
-    before, folders_before = excel_count(), job_folders(temp)
 
     saved = evidence / "tiny-saved.xlsx"
     result, code = job("tiny", "tiny.xlsx", "--read", "Growth", "--read", "Result", "--read", "Model!B2:B4",
@@ -190,7 +286,7 @@ def main() -> int:
 
     result, code = job("errors", "errors.xlsx", "--read", "S!A1", "--read", "S!A2", "--read", "S!A1:A3")
     check("error values come back by name", result["base"]["S!A1"].get("value") == {"error": "#DIV/0!"} and result["base"]["S!A2"].get("value") == {"error": "#N/A"}, result.get("base"))
-    check("the error scan lists the cells", bool(result.get("errors")), result.get("errors"))
+    check("the error scan lists the cells", result.get("errors") == ["'S'!A1:A2"], result.get("errors"))
     check("a scan that ran on every sheet leaves the job passing", code == 0 and result.get("errors_unscanned") == [],
           {key: result.get(key) for key in ("ok", "error", "errors_unscanned")})
 
@@ -207,15 +303,46 @@ def main() -> int:
     check("--save keeps the copy of a job that Excel finished with a failed read", kept.is_file() and result.get("saved") == str(kept), result.get("saved"))
 
     result, code = job("protected", "protected.xlsx", "--read", "Open!A1")
-    skipped = result.get("errors_unscanned") or []
-    check("the error scan names a sheet whose error cells it could not list, and no clean sheet", result.get("errors") == ["'Open'!A1"]
-          and [entry.get("sheet") for entry in skipped] == ["Locked"]
-          and (skipped[0].get("reason") or "").startswith("cells holding error values: 1, of which typed in: unknown ("),
-          {key: result.get(key) for key in ("errors", "errors_unscanned")})
     said = (evidence / "protected.out").read_text(encoding="utf-8")
+    check("the error scan lists the formula cells holding errors on a protected sheet, and no typed-in error value",
+          result.get("errors") == ["'Open'!A1", "'Locked'!A1,C5"] and result.get("errors_unscanned") == [],
+          {key: result.get(key) for key in ("errors", "errors_unscanned")})
+    check("a workbook with error cells on a protected sheet leaves the job passing", code == 0 and result.get("ok") is True
+          and " errors=2 " in said and " unscanned_sheets=0 " in said, {key: result.get(key) for key in ("ok", "error")} | {"exit": code, "printed": said})
+
+    result, code = job("scan", "scan.xlsx", "--read", "Spill!A1", "--read", "Spill!A2", "--read", "SpillOnly!B5", "--read", "Merged!D3")
+    base, listed = result.get("base") or {}, result.get("errors") or []
+    check("the fixture's dynamic array formulas spill in Excel", (result.get("open") or {}).get("load") == "normal"
+          and all(base.get(ref, {}).get("has_spill") is True for ref in ("Spill!A1", "Spill!A2", "SpillOnly!B5", "Merged!D3"))
+          and near(base.get("Spill!A1"), 1) and all(base.get(ref, {}).get("value") == {"error": "#N/A"} for ref in ("Spill!A2", "SpillOnly!B5", "Merged!D3")),
+          {"open": result.get("open"), "base": base})
+    check("the error scan lists an error spilled below a clean first cell", "'Spill'!C1,A2" in listed and "'SpillOnly'!B4:B5" in listed, listed)
+    check("the error scan lists a spilled error beside a typed-in error in a merged cell, and a merged formula cell once",
+          "'Merged'!D3" in listed and "'Joined'!A1" in listed, listed)
+    check("the error scan lists every cell of a list longer than an address",
+          "'Many'!" + ",".join(f"{get_column_letter(column)}{row}" for row, column in MANY) in listed, listed)
+    check("the error scan doubles an apostrophe in a sheet name", "'It''s'!B2" in listed, listed)
+    check("the error scan lists cells far apart on a protected sheet whose used range is the whole sheet", "'Far'!A1,ZZ900000" in listed, listed)
+    check("a scan that listed every such sheet leaves the job passing", code == 0 and len(listed) == 7 and result.get("errors_unscanned") == [],
+          {key: result.get(key) for key in ("ok", "error", "errors", "errors_unscanned")})
+
+    kept = evidence / "r1c1-saved.xlsx"
+    result, code = job("r1c1", "r1c1.xlsx", "--read", "Clean!B2", "--save", str(kept))
+    check("the error scan lists the cells of a workbook in R1C1 reference style, and the saved copy keeps that style",
+          code == 0 and result.get("errors") == ["'Column'!C10:C12"] and result.get("errors_unscanned") == [] and near((result.get("base") or {}).get("Clean!B2"), 10)
+          and kept.is_file() and openpyxl.load_workbook(kept).calculation.refMode == "R1C1",
+          {key: result.get(key) for key in ("ok", "error", "errors", "errors_unscanned", "base")})
+
+    result, code = job("scattered", "scattered.xlsx", "--read", "Small!A1")
+    skipped = result.get("errors_unscanned") or []
+    check("the error scan names a sheet whose error cells it could not list, and lists the other sheet's", result.get("errors") == ["'Small'!A1"]
+          and [entry.get("sheet") for entry in skipped] == ["Scattered"]
+          and (skipped[0].get("reason") or "") == "its error values are spread over too many cells to list: the scan reads at most 2000000 cells of one sheet",
+          {key: result.get(key) for key in ("errors", "errors_unscanned")})
+    said = (evidence / "scattered.out").read_text(encoding="utf-8")
     check("an error scan that could not tell for a sheet fails the job", code == 1 and result.get("ok") is False
-          and "the error scan could not list the error cells of 1 sheet; the first is Locked: " in (result.get("error") or "")
-          and (result.get("base") or {}).get("Open!A1", {}).get("value") == {"error": "#N/A"} and " unscanned_sheets=1 " in said,
+          and "the error scan could not list the error cells of 1 sheet; the first is Scattered: " in (result.get("error") or "")
+          and (result.get("base") or {}).get("Small!A1", {}).get("value") == {"error": "#N/A"} and " unscanned_sheets=1 " in said,
           {key: result.get(key) for key in ("ok", "error", "base")} | {"exit": code, "printed": said})
 
     result, code = job("damaged", "damaged.xlsx", "--read", "Result")
@@ -294,7 +421,10 @@ def main() -> int:
     check("an Excel whose job died is stopped", code == 1 and stopped and not left, result.get("runner"))
     check("a job that died says why", "ended without a result: " in (result.get("error") or ""), result.get("error"))
 
-    # No Excel in the next two: stand-in workbooks for the reads, and a sleeping PowerShell for the stop.
+
+def stand_in_cases(evidence: pathlib.Path, temp: pathlib.Path, temp_win: str) -> None:
+    """The cases that start no Excel: stand-in workbooks for the reads and the error scan, and a sleeping PowerShell
+    for the stop."""
     helper = temp / f"xlbusy-{secrets.token_hex(4)}"
     helper.mkdir()
     sleeper = None
@@ -341,23 +471,51 @@ def main() -> int:
     silent = [name for name in ("no_range", "no_count", "no_formula", "no_value", "no_values") if "read_error" not in reads.get(name, {})]
     check("a range whose row and column counts Excel refused still reads whole", reads.get("no_rows", {}).get("values") == [[1], [2]], reads.get("no_rows"))
     check("a read that Excel refused is an error, not an empty value", bool(reads) and not silent, {name: reads.get(name) for name in silent} or reads)
-    found = (scans.get("finds_cells") == {"found": ["'S'!A1:A2"], "unscanned": []}
-             and scans.get("no_error_cells") == {"found": [], "unscanned": []} and scans.get("typed_only") == {"found": [], "unscanned": []})
-    check("the error scan of stand-in sheets lists cells, or none", found, scans)
-    skipped = {name: [entry.get("sheet") for entry in scans.get(name, {}).get("unscanned") or []]
-               for name in ("cannot_list", "spilled_only", "spilled_untyped", "locked_typed_only", "count_is_an_error", "count_throws", "negative_count")}
-    check("an error scan that could not tell for a sheet names it, and no clean sheet",
-          skipped == {"cannot_list": ["Locked"], "spilled_only": ["Spill"], "spilled_untyped": ["Spill"], "locked_typed_only": ["Locked"],
-                      "count_is_an_error": ["Old"], "count_throws": ["Odd"], "negative_count": ["Odd"]}
-          and scans.get("cannot_list", {}).get("found") == ["'Open'!A1:A2"]
-          and scans["spilled_only"]["unscanned"][0]["reason"].startswith("cells holding error values: 3, of which typed in: 1; ")
-          and "of which typed in: unknown (" in scans["locked_typed_only"]["unscanned"][0]["reason"]
-          and "protected sheet" in scans["locked_typed_only"]["unscanned"][0]["reason"].split("; Excel could not list")[0]
-          and scans["negative_count"]["unscanned"][0]["reason"].endswith("the count came back as -1")
-          and scans["count_is_an_error"]["unscanned"][0]["reason"].endswith("the count came back as code 2029")
-          and scans["count_throws"]["unscanned"][0]["reason"].endswith("protected sheet.\""), scans)
-    silent = [name for name in ("no_sheets", "no_used_range", "no_cells", "refused_call", "no_count", "refused_count", "no_typed_count", "refused_typed", "no_typed_cells")
-              if "scan_error" not in scans.get(name, {})]
+    def scan(name: str) -> dict:
+        return {key: scans.get(name, {}).get(key) for key in ("found", "unscanned")}
+
+    def named(name: str) -> tuple[list, str]:
+        """The sheets a stand-in scan could not tell for, and the first one's reason."""
+        entries = scans.get(name, {}).get("unscanned") or []
+        return [entry.get("sheet") for entry in entries], (entries[0].get("reason") or "") if entries else ""
+
+    clean = {"found": [], "unscanned": []}
+    check("the error scan of stand-in sheets lists cells, or none", scan("finds_cells") == {"found": ["'S'!A1:A2"], "unscanned": []}
+          and scan("no_error_cells") == clean and scan("typed_only") == clean
+          and scan("several_sheets") == {"found": ["'Open'!A1:A2", "'Other'!A1"], "unscanned": []}, scans)
+    check("the error scan asks one question of a sheet with no error value", scans.get("no_error_cells", {}).get("asked") == [1], scans.get("no_error_cells"))
+    check("the error scan of stand-in sheets lists spilled errors, and no typed-in one beside them",
+          scan("spilled") == {"found": ["'Spill'!C1,A2:A3"], "unscanned": []} and scan("spilled_only") == {"found": ["'Spill'!B4:B5"], "unscanned": []}
+          and scan("typed_beside_spilled") == {"found": ["'Mix'!A2,A4,C7:C9"], "unscanned": []}, {name: scans.get(name) for name in ("spilled", "spilled_only", "typed_beside_spilled")})
+    check("the error scan of stand-in sheets lists a long list whole, in reading order, under a sheet name with a doubled apostrophe",
+          scan("long_list")["found"] == ["'Many'!" + ",".join(f"{get_column_letter(column)}{row}" for row, column in MANY)]
+          and scan("reading_order")["found"] == ["'Block'!B2:D4,F2:F4,B6"] and scan("apostrophe")["found"] == ["'It''s'!B2"],
+          {name: scans.get(name) for name in ("long_list", "reading_order", "apostrophe")})
+    # What a question costs is part of the answer: a scan that read every piece would pass the limit on such sheets.
+    check("the error scan of stand-in sheets finds cells far apart, a column and a row of errors within a few questions",
+          scan("far_apart") == {"found": ["'Far'!A1,ZZ900000"], "unscanned": []} and scan("column_of_errors") == {"found": ["'Column'!C1:C40000"], "unscanned": []}
+          and scan("row_of_errors") == {"found": ["'Row'!A20001:KN20001"], "unscanned": []}
+          and all(0 < (scans.get(name, {}).get("asked") or [0])[0] <= 150 for name in ("far_apart", "column_of_errors", "row_of_errors")),
+          {name: scans.get(name) for name in ("far_apart", "column_of_errors", "row_of_errors")})
+    reasons = {
+        "over_the_limit": (["Wide"], "its error values are spread over too many cells to list: the scan reads at most 30000 cells of one sheet"),
+        "any_is_an_error": (["Old"], "Excel could not say whether A1:B3 holds an error value: ISERROR(SUM(A1:B3)) came back as code 2029"),
+        "any_is_no_boolean": (["Odd"], "Excel could not say whether A1:B3 holds an error value: ISERROR(SUM(A1:B3)) came back as 1"),
+        "any_throws": (["Odd"], 'protected sheet."'),
+        "cells_are_an_error": (["Old"], "Excel could not say which cells of A1:B3 hold error values: ISERROR(A1:B3)*(1+ISFORMULA(A1:B3)) came back as code 2029"),
+        "cells_throw": (["Odd"], 'protected sheet."'),
+        "too_few_cells": (["Odd"], "Excel could not say which cells of A1:B3 hold error values: 3 answers for 6 cells"),
+        "one_cell_is_odd": (["Odd"], "Excel could not say which cells of A1:B3 hold error values: one answer is '3'"),
+        "one_cell_is_an_error": (["Odd"], "Excel could not say which cells of A1:B3 hold error values: one answer is '-2146826259'"),
+        "one_cell_is_missing": (["Odd"], "Excel could not say which cells of A1:B3 hold error values: one answer is ''"),
+        "spill_is_odd": (["Odd"], "Excel could not say whether A2 is spilled"),
+    }
+    wrong = {name: scans.get(name) for name, (sheets, reason) in reasons.items()
+             if named(name)[0] != sheets or not named(name)[1].endswith(reason) or scans.get(name, {}).get("found") != ([] if name != "over_the_limit" else ["'Small'!A1"])}
+    check("an error scan that could not tell for a sheet names it with the reason, and lists no cell of it", bool(scans) and not wrong, wrong or scans)
+    refusals = ("no_sheets", "no_name", "no_used_range", "no_first_row", "no_rows", "no_columns", "no_row_count", "no_column_count",
+                "no_any", "refused_any", "no_cells", "refused_cells", "no_range", "refused_range", "no_spill")
+    silent = [name for name in refusals if "scan_error" not in scans.get(name, {})]
     check("an error scan that Excel refused is an error, not an empty list", bool(scans) and not silent, {name: scans.get(name) for name in silent} or scans)
     failed = {"ok": False, "error": "Excel stopped", "base": {"A": {"read_error": "no such name"}, "B": {"value": 1}}}
     excel.settle(failed)
@@ -369,6 +527,17 @@ def main() -> int:
     check("a process that started after its ID was written is not stopped", (spared or {}).get("outcome", "").startswith("gone; the ID now belongs to a process started") and spared_alive, spared)
     check("a process that wrote its own ID is stopped", (stopped or {}).get("outcome") == "stopped", stopped)
 
+
+def main() -> int:
+    if len(sys.argv) not in (2, 3) or sys.argv[2:] not in ([], ["--no-excel"]):
+        sys.exit(__doc__)
+    evidence = pathlib.Path(sys.argv[1]).resolve()
+    evidence.mkdir(parents=True)
+    temp, temp_win = windows_temp()
+    before, folders_before = excel_count(), job_folders(temp)
+    if len(sys.argv) == 2:
+        excel_cases(evidence, temp, temp_win)
+    stand_in_cases(evidence, temp, temp_win)
     after, folders_after = excel_count(), job_folders(temp)
     check("no Excel process left behind", before == after, f"before {before}, after {after}")
     check("no job folder left behind", folders_before == folders_after, folders_after)

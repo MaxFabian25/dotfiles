@@ -116,45 +116,168 @@ function Test-Refused($caught) {
   return $false
 }
 
-function Find-Errors($wb) {
-  # The formula cells holding errors on each sheet, and the sheets where this could not tell. SpecialCells throws the
-  # same 0x800A03EC, with a message in Excel's display language, when no cell matches and when it cannot look, as on
-  # a protected sheet. So when it throws, Excel counts the cells holding error values, which works on a protected
-  # sheet and takes milliseconds on a used range of the whole sheet: every cell with content, less the numbers, the
-  # texts and the booleans. A count of 0 is a clean sheet. So is a count that the typed-in error values make up, which
-  # this scan has never listed, where Excel can list those. A call that a busy Excel refused ends the job.
+function ConvertTo-ColumnName([int] $number) {
+  $name = ''
+  while ($number -gt 0) { $number--; $name = [string][char](65 + $number % 26) + $name; $number = [int][Math]::Floor($number / 26) }
+  return $name
+}
+
+function Get-Address($piece) {
+  # A piece is a rectangle of a sheet: its first row and column, and how many rows and columns it has.
+  $first = (ConvertTo-ColumnName $piece.column) + $piece.row
+  if ($piece.rows -eq 1 -and $piece.columns -eq 1) { return $first }
+  return $first + ':' + (ConvertTo-ColumnName ($piece.column + $piece.columns - 1)) + ($piece.row + $piece.rows - 1)
+}
+
+function Get-Answer($sheet, [string] $formula) {
+  # What Excel makes of a formula on a sheet: its value, or why it gave none. Evaluate hands back an error value, not
+  # an exception, for a formula Excel cannot work out. A call that a busy Excel refused ends the job.
+  try { $value = $sheet.Evaluate($formula) } catch { if (Test-Refused $_) { throw }; return @{ failed = $_.Exception.Message } }
+  Confirm-Answer $value "the formula $formula"
+  if ($value -is [int]) { return @{ failed = "$formula came back as " + (Convert-Cell $value).error } }
+  return @{ value = $value }
+}
+
+function Add-Work($scan, [long] $amount) {
+  $scan.work += $amount
+  if ($scan.work -gt $scan.limit -and -not $scan.why) { $scan.why = "its error values are spread over too many cells to list: the scan reads at most $($scan.limit) cells of one sheet" }
+}
+
+function Test-ErrorValue($sheet, $piece, $scan) {
+  # Whether a piece holds an error value. SUM passes over texts and booleans and is an error when a cell it adds
+  # holds one, on a protected sheet too, and answers in milliseconds for a whole sheet.
+  Add-Work $scan $scan.question
+  if ($scan.why) { return $false }
+  $area = Get-Address $piece
+  $asked = Get-Answer $sheet "ISERROR(SUM($area))"
+  if (-not $asked.failed -and $asked.value -isnot [bool]) { $asked.failed = "ISERROR(SUM($area)) came back as $($asked.value)" }
+  if ($asked.failed) { $scan.why = "Excel could not say whether $area holds an error value: $($asked.failed)"; return $false }
+  return $asked.value
+}
+
+function Select-Halves($sheet, $first, $second, $scan) {
+  # The halves that hold an error value, of a piece that holds one: where the first has none, the second does.
+  if (-not (Test-ErrorValue $sheet $first $scan)) { return , @($second) }
+  if (Test-ErrorValue $sheet $second $scan) { return , @($first, $second) }
+  return , @($first)
+}
+
+function Read-Piece($sheet, $piece, $scan) {
+  # Excel answers for every cell of the piece: 0 for no error value, 2 for a formula cell holding one, and 1 for an
+  # error value in a cell with no formula of its own, which is typed in or spilled from another cell's formula.
+  $cells = $piece.rows * $piece.columns
+  Add-Work $scan $cells
+  if ($scan.why) { return }
+  $area = Get-Address $piece
+  $asked = Get-Answer $sheet "ISERROR($area)*(1+ISFORMULA($area))"
+  if (-not $asked.failed) {
+    $answers = if ($asked.value -is [array]) { $asked.value.Length } else { 1 }
+    if ($answers -ne $cells) { $asked.failed = "$answers answers for $cells cells" }
+  }
+  if ($asked.failed) { $scan.why = "Excel could not say which cells of $area hold error values: $($asked.failed)"; return }
+  $at = 0; $width = $piece.columns; $formulas = $scan.formulas; $others = $scan.others
+  foreach ($kind in $asked.value) {
+    if ($kind -ne 0) {
+      $across = $at % $width
+      $key = ([long]($piece.column + $across) -shl 21) + $piece.row + ($at - $across) / $width
+      if ($kind -is [double] -and $kind -eq 2) { $formulas.Add($key) }
+      elseif ($kind -is [double] -and $kind -eq 1) { $others.Add($key) }
+      else { $scan.why = "Excel could not say which cells of $area hold error values: one answer is '$kind'"; return }
+    }
+    $at++
+  }
+}
+
+function Join-Cells($keys) {
+  # The cells as addresses of rectangles, in reading order: runs down each column, joined across neighbouring columns
+  # where the runs match. A key is a cell's column times 2^21 plus its row, so sorted keys run down each column in
+  # turn, and the cell below a cell has the next key.
+  $keys.Sort()
+  $runs = New-Object Collections.ArrayList; $run = $null; $last = -2
+  foreach ($key in $keys) {
+    if ($key -eq $last + 1) { $run.rows++ }
+    else { $run = @{ row = [int]($key -band 2097151); column = [int]($key -shr 21); rows = 1; columns = 1 }; [void]$runs.Add($run) }
+    $last = $key
+  }
+  $open = @{}; $blocks = @{}; $order = New-Object 'Collections.Generic.List[long]'
+  foreach ($run in $runs) {
+    $span = "$($run.row) $($run.rows)"; $block = $open[$span]
+    if ($block -and $block.column + $block.columns -eq $run.column) { $block.columns++; continue }
+    $open[$span] = $run; $place = ([long]$run.row -shl 21) + $run.column; $blocks[$place] = $run; $order.Add($place)
+  }
+  $order.Sort()
+  return @(foreach ($place in $order) { Get-Address $blocks[$place] }) -join ','
+}
+
+function Add-Spilled($sheet, $scan) {
+  # Moves the spilled cells among scan.others to scan.formulas; the rest are typed in. HasSpill of a range is true
+  # or false when all its cells agree and DBNull when they differ. So Excel is asked about the smallest range that
+  # holds a run of the sorted cells, and where its cells differ, about each half of the run.
+  $keys = $scan.others; $keys.Sort()
+  $runs = New-Object Collections.Stack; $runs.Push(@(0, $keys.Count))
+  while ($runs.Count -gt 0) {
+    $from, $to = $runs.Pop()
+    Add-Work $scan (4 * $scan.question)
+    if ($scan.why) { return }
+    $box = @{ column = [int]($keys[$from] -shr 21); row = 2097151; rows = 0; columns = 0 }
+    $box.columns = [int]($keys[$to - 1] -shr 21) - $box.column + 1
+    for ($at = $from; $at -lt $to; $at++) { $row = [int]($keys[$at] -band 2097151); if ($row -lt $box.row) { $box.row = $row }; if ($row -gt $box.rows) { $box.rows = $row } }
+    $box.rows = $box.rows - $box.row + 1
+    $area = Get-Address $box
+    $range = $sheet.Range($area); Confirm-Answer $range "the range $area"
+    $spilled = $range.HasSpill; Confirm-Answer $spilled "whether $area is spilled"
+    if ($spilled -is [bool]) { if ($spilled) { $scan.formulas.AddRange($keys.GetRange($from, $to - $from)) } }
+    elseif ($to - $from -gt 1) { $half = $from + [int][Math]::Floor(($to - $from) / 2); $runs.Push(@($from, $half)); $runs.Push(@($half, $to)) }
+    else { $scan.why = "Excel could not say whether $area is spilled"; return }
+  }
+}
+
+function Find-Errors($wb, [long] $limit = 2000000) {
+  # The cells holding an error value that a formula made, on each sheet, and the sheets where this could not tell.
+  # Typed-in error values are left out, as they always were. Excel is asked in formulas, which it answers on a
+  # protected sheet too, where SpecialCells cannot look; SpecialCells also lists only the first cell of a spilled
+  # range and its Address is cut at 256 characters. A piece of the used range that holds an error value is halved
+  # until it is small enough to read cell by cell. Halving the columns first keeps a column of errors in a long sheet
+  # to its own cells, and where both of those halves hold one, halving the rows does the same for a row of errors.
+  #
+  # limit protects the job's time limit from one sheet. It counts cells read, with a question about a piece as 1000
+  # and one about spilling as 4000. On 12 November 2026 a cell read cost about 3 microseconds, or 20 where it holds
+  # an error, and a question 2 to 5 ms on an idle PC and 15 ms on a busy one, so a sheet of scattered error cells
+  # reached the limit after 9 s in one job and 32 s in another. A sheet where every cell read holds an error takes
+  # up to a minute. A piece is read at 8192 cells, about 25 ms, because halving it again would cost up to four
+  # questions.
   $found = @(); $unscanned = @()
   $sheets = $wb.Worksheets; Confirm-Answer $sheets 'the sheets'
   foreach ($ws in $sheets) {
     $name = $ws.Name; Confirm-Answer $name 'the sheet name'
     $used = $ws.UsedRange; Confirm-Answer $used 'the used range of a sheet'
-    $cells = $null; $why = $null
-    try { $cells = $used.SpecialCells(-4123, 16) } catch { if (Test-Refused $_) { throw }; $why = $_.Exception.Message }
-    if (-not $why) {
-      Confirm-Answer $cells 'the error cells of a sheet'
-      $address = $cells.Address($false, $false); Confirm-Answer $address 'the address of the error cells'
-      $found += "'$name'!" + $address
-      continue
+    # The counts are asked of Rows and Columns themselves: PowerShell counts a refused Rows as 0, with no error.
+    $rows = $used.Rows; Confirm-Answer $rows 'the rows of the used range'
+    $columns = $used.Columns; Confirm-Answer $columns 'the columns of the used range'
+    $whole = @{ row = $used.Row; column = $used.Column; rows = $rows.Count; columns = $columns.Count }
+    foreach ($side in 'row', 'column', 'rows', 'columns') { Confirm-Answer $whole[$side] "the $side of the used range" }
+    $scan = @{ work = 0; limit = $limit; question = 1000; why = $null; formulas = (New-Object 'Collections.Generic.List[long]'); others = (New-Object 'Collections.Generic.List[long]') }
+    $pieces = New-Object Collections.Stack
+    if (Test-ErrorValue $ws $whole $scan) { $pieces.Push($whole) }
+    while ($pieces.Count -gt 0 -and -not $scan.why) {
+      $piece = $pieces.Pop()
+      if ([long]$piece.rows * $piece.columns -le 8192) { Read-Piece $ws $piece $scan; continue }
+      $next = $null
+      if ($piece.columns -gt 1) {
+        $half = [int][Math]::Floor($piece.columns / 2)
+        $next = Select-Halves $ws @{ row = $piece.row; column = $piece.column; rows = $piece.rows; columns = $half } @{ row = $piece.row; column = $piece.column + $half; rows = $piece.rows; columns = $piece.columns - $half } $scan
+      }
+      if ($piece.rows -gt 1 -and ($null -eq $next -or $next.Count -eq 2)) {
+        $half = [int][Math]::Floor($piece.rows / 2)
+        $across = Select-Halves $ws @{ row = $piece.row; column = $piece.column; rows = $half; columns = $piece.columns } @{ row = $piece.row + $half; column = $piece.column; rows = $piece.rows - $half; columns = $piece.columns } $scan
+        if ($null -eq $next -or $across.Count -eq 1 -or $piece.rows -gt $piece.columns) { $next = $across }
+      }
+      foreach ($part in $next) { $pieces.Push($part) }
     }
-    $area = $used.Address($false, $false); Confirm-Answer $area 'the address of the used range'
-    $total = $null; $failed = $null
-    try { $total = $ws.Evaluate("COUNTA($area)-COUNT($area)-COUNTIF($area,`"*`")-COUNTIF($area,TRUE)-COUNTIF($area,FALSE)") } catch { if (Test-Refused $_) { throw }; $failed = $_.Exception.Message }
-    if (-not $failed) {
-      Confirm-Answer $total 'the count of cells holding error values'
-      # Evaluate hands back an error value, not an exception, for a formula Excel cannot work out.
-      if ($total -isnot [double]) { $failed = 'the count came back as ' + $(if ($total -is [int]) { (Convert-Cell $total).error } else { "$total" }) }
-      elseif ($total -lt 0) { $failed = "the count came back as $total" }
-    }
-    if ($failed) { $unscanned += [ordered]@{ sheet = $name; reason = "Excel could not list the formula cells holding errors ($why) and could not count the cells holding error values: $failed" }; continue }
-    if ($total -eq 0) { continue }
-    $constants = $null; $typed = 'unknown'
-    try { $constants = $used.SpecialCells(2, 16) } catch { if (Test-Refused $_) { throw }; $typed = "unknown ($($_.Exception.Message))" }
-    if ($typed -eq 'unknown') {
-      Confirm-Answer $constants 'the typed-in error values'
-      $typed = $constants.Count; Confirm-Answer $typed 'the count of typed-in error values'
-      if ($typed -ge $total) { continue }
-    }
-    $unscanned += [ordered]@{ sheet = $name; reason = "cells holding error values: $total, of which typed in: $typed; Excel could not list the others: $why" }
+    if (-not $scan.why -and $scan.others.Count -gt 0) { Add-Spilled $ws $scan }
+    if ($scan.why) { $unscanned += [ordered]@{ sheet = $name; reason = $scan.why }; continue }
+    if ($scan.formulas.Count -eq 0) { continue }
+    $found += "'" + $name.Replace("'", "''") + "'!" + (Join-Cells $scan.formulas)
   }
   return @{ found = $found; unscanned = $unscanned }
 }
@@ -225,7 +348,13 @@ try {
   $xl.CalculateFullRebuild(); $result.settings.calculation_state = Wait-Calculation $xl $wb $spec.calc_timeout_s
   $result.timings_ms.rebuild = $sw.ElapsedMilliseconds
   $result.base = Read-Refs $wb $spec.read
-  $scan = Find-Errors $wb; $result.errors = $scan.found; $result.errors_unscanned = $scan.unscanned
+  $result.timings_ms.read = $sw.ElapsedMilliseconds
+  # The scan asks in A1 addresses. A workbook saved in R1C1 reference style puts this Excel in that style, where
+  # C10:C12 means columns 10 to 12, so the scan runs in A1 style and the style is set back for the save.
+  $style = $xl.ReferenceStyle; Confirm-Answer $style 'the reference style'
+  try { if ($style -ne 1) { $xl.ReferenceStyle = 1 }; $scan = Find-Errors $wb } finally { if ($style -ne 1) { $xl.ReferenceStyle = $style } }
+  $result.errors = $scan.found; $result.errors_unscanned = $scan.unscanned
+  $result.timings_ms.scan = $sw.ElapsedMilliseconds
 
   if ($spec.set.Count -gt 0) {
     foreach ($s in $spec.set) { $t = Get-Target $wb $s.ref; if ($t.Count -ne 1) { throw "set target $($s.ref) is not one cell" }; Set-Cell $t $s.value }
