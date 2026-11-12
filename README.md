@@ -164,8 +164,9 @@ lists skills without their descriptions. `clean NAME` removes the worktrees once
 `status` names what runs on the machine and lists every open release worktree with its commits, uncommitted
 files and the files it changes; `start` lists the other open releases.
 For a skill description change, `skill_triggers.py` counts how often the installed skills load in Claude Code for a
-set of prompts, and `codex_triggers.py` does the same in Codex; run them with the same prompts before the release and
-after the pull.
+set of prompts, and `codex_triggers.py` does the same in Codex. Measure the draft first, then release, then run the
+same prompts again after the pull. On Linux, `skill_draft.py DRAFT_SKILL.md -- COMMAND` runs either tool with the
+draft in place of the installed copy and changes no file.
 
 ```sh
 uv run --locked python release.py finish NAME --message msg.txt --entry prose --refresh-owned --push --pull
@@ -229,7 +230,7 @@ uv run --locked python tests/native_policy_smoke.py
 The smoke test uses temporary application homes and real native plugin loaders. It does not use a
 live installation as its test fixture. It retains its isolated evidence on failure.
 
-Only `build_setup.py`, `codex_runtime.py`, `codex_triggers.py`, `lock_setup.py`, `sync.py`, `pull.py`, `release.py`, `schedule.py`, `skill_listing.py`, and `skill_triggers.py` are supported public
+Only `build_setup.py`, `codex_runtime.py`, `codex_triggers.py`, `lock_setup.py`, `sync.py`, `pull.py`, `release.py`, `schedule.py`, `skill_draft.py`, `skill_listing.py`, and `skill_triggers.py` are supported public
 command entry points. Lower-level packaging modules contain compatibility helpers, not a second
 configuration authority. Do not recreate historical JSON registries to drive them.
 
