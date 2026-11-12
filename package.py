@@ -8,8 +8,6 @@ import subprocess
 
 from portable import GIT, extract_tar, posix, read_utf8, require_readable, staging_directory, write_utf8
 
-ROOT = Path(__file__).resolve().parent
-
 
 def files(root):
     # Dependencies a packaged script installs beside itself at run time are not package content,
@@ -51,11 +49,7 @@ def export_root(stage, selected):
     return ['./skills/'], omitted
 
 
-def package(name, revision='HEAD', *, config=None, output_root=None):
-    config = config if config is not None else json.loads(read_utf8(ROOT / 'sources.json'))[name]
-    if config.get('kind') == 'standalone':
-        from standalone_package import build
-        return build(name, config, revision, output_root=output_root)
+def package(name, revision='HEAD', *, config, output_root):
     if config.get('kind') == 'public-emil':
         from public_emil_package import build
         return build(name, config, revision, output_root=output_root)
@@ -69,7 +63,7 @@ def package(name, revision='HEAD', *, config=None, output_root=None):
     require_clean(repository)
     commit = git(repository, 'rev-parse', revision).decode().strip()
     tree = f"{commit}:{config['subdirectory']}" if config['subdirectory'] else commit
-    release_root = (output_root or ROOT) / name
+    release_root = output_root / name
     release_root.mkdir(parents=True, exist_ok=True)
     with staging_directory(prefix='.build-', dir=release_root) as temporary:
         stage = Path(temporary) / 'package'

@@ -51,7 +51,7 @@ class ToolNotesTest(unittest.TestCase):
         self.assertIsNone(module.noted_here(ADAPTATIONS, 'example-tools@codex-aligned'))
         self.assertIsNone(module.noted_here(ADAPTATIONS, 'unlisted@personal'))
 
-    def test_plan_notes_reference_files_and_restores_from_original_bytes(self):
+    def test_plan_notes_reference_files_and_replays_to_nothing(self):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory).resolve()
             root = home / '.codex/plugins/cache/personal/example-tools/1.0.0'
@@ -64,12 +64,12 @@ class ToolNotesTest(unittest.TestCase):
             installs = [('Codex', 'example-tools@personal', root)]
             overlay = module.Overlay(home / 'recovery')
             writes, _ = module.plan(registry, installs, overlay, ADAPTATIONS)
-            self.assertEqual(overlay.apply(writes), 2)
-            self.assertIn("WebFetch (Codex: the web tool's `open`)", (skill / 'references/process.md').read_text())
-            writes, _ = module.plan(registry, installs, overlay, ADAPTATIONS)
-            self.assertEqual(overlay.apply(writes, check=True), 0)
-            self.assertEqual(overlay.restore(installs), 2)
-            self.assertEqual((skill / 'references/process.md').read_text(), original)
+            self.assertEqual(overlay.pending(writes), 2)
+            noted = {path.name: new for path, _, new, _, _ in writes}
+            self.assertIn("WebFetch (Codex: the web tool's `open`)", noted['process.md'])
+            for path, _, new, _, _ in writes:
+                path.write_text(new)
+            self.assertEqual(overlay.pending(module.plan(registry, installs, overlay, ADAPTATIONS)[0]), 0)
 
 
 if __name__ == '__main__':

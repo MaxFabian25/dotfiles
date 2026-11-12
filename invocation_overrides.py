@@ -5,10 +5,7 @@ Harness adaptations replay each plugin's adaptation repository onto the installe
 cache with a three-way merge, so upstream edits merge or stop for review.
 Tool notes name the other host's equivalent after a host-specific tool name.
 """
-from datetime import datetime, timezone
-import hashlib
 import json
-import os
 from pathlib import Path
 import posixpath
 import re
@@ -17,10 +14,7 @@ import tempfile
 
 import yaml
 
-from portable import GIT, codex_home, read_utf8, replace, write_utf8
-
-HOME = Path.home()
-STATE_DIR = codex_home(HOME) / 'skill-updates/invocation-overrides'
+from portable import GIT, read_utf8, write_utf8
 
 
 def read_json(path, default=None):
@@ -29,25 +23,6 @@ def read_json(path, default=None):
 
 def read_text(path):
     return path.read_bytes().decode('utf-8') if path.is_file() else None
-
-
-def digest(value):
-    return hashlib.sha256(value.encode()).hexdigest() if value is not None else None
-
-
-def atomic_write(path, value):
-    if value is None:
-        path.unlink(missing_ok=True)
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + f'.override-{os.getpid()}')
-    try:
-        write_utf8(temporary, value)
-        if path.exists():
-            temporary.chmod(path.stat().st_mode & 0o777)
-        replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
 
 
 def frontmatter(text):
@@ -402,20 +377,8 @@ def plan(registry, installs, overlay=None, adaptations=None):
 
 
 class Overlay:
-    def __init__(self, state_dir=STATE_DIR):
-        self.directory = state_dir
-        self.path = state_dir / 'state.json'
-        self.state = read_json(self.path, {'schemaVersion': 1, 'files': {}})
-
-    def save(self):
-        self.directory.mkdir(parents=True, exist_ok=True)
-        self.directory.chmod(0o700)
-        if self.path.exists():
-            stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
-            archive = self.directory / 'history' / (stamp + '.json')
-            atomic_write(archive, read_utf8(self.path))
-        atomic_write(self.path, json.dumps(self.state, indent=2, ensure_ascii=False) + '\n')
-        self.path.chmod(0o600)
+    def __init__(self, state_dir):
+        self.state = read_json(state_dir / 'state.json', {'schemaVersion': 1, 'files': {}})
 
     def known(self, path):
         # Bytes this overlay wrote or may have left behind: the original, the target, and the prior target.
@@ -427,50 +390,10 @@ class Overlay:
         overlaid = record and current is not None and current in self.known(path)[1:]
         return record['base'] if overlaid else current
 
-    def apply(self, writes, *, check=False, refreshed=False):
-        changed = []
-        for path, old, new, host, identity in writes:
-            record = self.state['files'].get(str(path))
-            if record and old not in self.known(path) and not refreshed:
+    def pending(self, writes):
+        """How many planned writes would change a file. A recorded file holding bytes its record does not know is a
+        local edit, which stops the check."""
+        for path, old, _, _, _ in writes:
+            if self.state['files'].get(str(path)) and old not in self.known(path):
                 raise ValueError(f'Unrecognized local edit; preserve and review: {path}')
-            if old == new:
-                continue
-            changed.append((path, old, new))
-            if not check:
-                # Replaying an existing overlay retains its original recovery bytes. Until every
-                # file is rewritten, the prior target stays recognised so a retry or restore works.
-                base = self.pristine(path, old)
-                entry = {'host': host, 'pluginId': identity,
-                    'base': base, 'effective': new, 'baseSha256': digest(base), 'effectiveSha256': digest(new)}
-                if record and record['effective'] != new:
-                    entry['previous'] = record['effective']
-                self.state['files'][str(path)] = entry
-        if check:
-            return len(changed)
-        if changed:
-            # Write recovery state before touching live files; interrupted runs can replay.
-            self.save()
-        for path, old, new in changed:
-            if read_text(path) != old:
-                raise ValueError(f'Concurrent file change: {path}')
-            atomic_write(path, new)
-        return len(changed)
-
-    def restore(self, installs):
-        roots = [root.resolve() for _, _, root in installs]
-        changes = []
-        for filename, record in self.state['files'].items():
-            path = Path(filename)
-            if not any(path.resolve().is_relative_to(root) for root in roots):
-                continue
-            current = read_text(path)
-            if current == record['base']:
-                continue
-            if current not in self.known(path)[1:]:
-                raise ValueError(f'Unrecognized local edit; refusing to restore: {path}')
-            changes.append((path, current, record['base']))
-        for path, current, original in changes:
-            if read_text(path) != current:
-                raise ValueError(f'Concurrent file change: {path}')
-            atomic_write(path, original)
-        return len(changes)
+        return sum(old != new for _, old, new, _, _ in writes)

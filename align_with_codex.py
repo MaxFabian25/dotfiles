@@ -88,7 +88,7 @@ def claude_host_names(text, plugin, agents):
 
 
 def build_from(name, source, disabled, catalog_root, *, kept_skills=frozenset(), agents=None, invocable=frozenset(),
-               validate=None, version=None, roots=None, source_label=None, development_manifests=()):
+               version=None, roots=None, source_label=None, development_manifests=()):
     relocations = []
     if development_manifests:
         if sorted(development_manifests) != ['package-lock.json', 'package.json']:
@@ -114,6 +114,9 @@ def build_from(name, source, disabled, catalog_root, *, kept_skills=frozenset(),
         digest.update(json.dumps(relocations, sort_keys=True).encode())
     if invocable:
         digest.update(json.dumps(sorted(invocable)).encode())
+    # Only when set, so a copy that keeps every agent keeps the version it had before agents counted.
+    if agents is not None:
+        digest.update(json.dumps({'agents': sorted(agents)}).encode())
     for path in sorted(source.rglob('*'), key=lambda path: path.parts):
         if path.is_file() and not any(part in ('.git', 'node_modules', '__pycache__') for part in path.relative_to(source).parts):
             digest.update(posix(path.relative_to(source)).encode())
@@ -192,8 +195,6 @@ def build_from(name, source, disabled, catalog_root, *, kept_skills=frozenset(),
             if relocations:
                 receipt['developmentManifests'] = relocations
             write_json(stage / '.claude-plugin/codex-alignment.json', receipt)
-            if validate is not None:
-                validate(stage)
             stage.rename(target)
     return {'name': name, 'source': './' + posix(target.relative_to(catalog_root)),
             'version': version, 'description': data.get('description', name)}

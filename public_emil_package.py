@@ -3,16 +3,16 @@ import json
 from pathlib import Path
 import re
 
-from package import ROOT, files, git, require_clean
+from package import files, git, require_clean
 from portable import extract_tar, read_utf8, staging_directory, write_utf8
 
 
-def build(name, config, revision='HEAD', *, output_root=None):
+def build(name, config, revision='HEAD', *, output_root):
     repository = Path(config['checkout'])
     require_clean(repository)
     commit = git(repository, 'rev-parse', revision).decode().strip()
     version = f"0.1.0+upstream.{commit[:12]}.codex{config['packagingRevision']}"
-    release_root = (output_root or ROOT) / name
+    release_root = output_root / name
     release_root.mkdir(parents=True, exist_ok=True)
     with staging_directory(prefix='.build-', dir=release_root) as temporary:
         source = Path(temporary) / 'source'

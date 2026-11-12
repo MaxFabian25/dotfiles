@@ -132,7 +132,7 @@ def overlay_state(roots: DeviceRoots, host: Host, identity: str, root: Path,
     overlay = Overlay(roots.codex_home / 'skill-updates/invocation-overrides')
     try:
         writes, _ = plan(registry, [(label, identity, root)], overlay, adaptations)
-        pending = overlay.apply(writes, check=True)
+        pending = overlay.pending(writes)
     except (OSError, subprocess.SubprocessError) as error:
         raise Unread(f'overlay check failed: {error}') from error
     except ValueError as error:

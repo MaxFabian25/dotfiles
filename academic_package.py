@@ -8,7 +8,7 @@ import sys
 
 import yaml
 
-from package import ROOT, files, git
+from package import files, git
 from portable import extract_tar, posix, read_utf8, staging_directory, write_utf8
 
 
@@ -44,13 +44,13 @@ def preserve_policy(folder, policy):
     write_utf8(sidecar, policy['openaiYaml'])
 
 
-def build(name, config, revision='HEAD', *, output_root=None):
+def build(name, config, revision='HEAD', *, output_root):
     repository = Path(config['checkout'])
     if git(repository, 'status', '--porcelain').strip():
         raise RuntimeError(f'Upstream checkout has local changes: {repository}')
     commit = git(repository, 'rev-parse', revision).decode().strip()
     version = '0.1.0+upstream.' + commit[:12] + '.codex' + str(config['packagingRevision'])
-    release_root = (output_root or ROOT) / name
+    release_root = output_root / name
     release_root.mkdir(parents=True, exist_ok=True)
     archive = git(repository, 'archive', commit)
     with staging_directory(prefix='.build-', dir=release_root) as temporary:

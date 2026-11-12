@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import shutil
 
-from package import ROOT, files
+from package import files
 from portable import read_utf8, staging_directory, write_utf8
 
 
@@ -34,7 +34,7 @@ def snapshot(skills, source_record, destination):
     return target
 
 
-def build_snapshot(name, definition, source_snapshot, *, output_root=None):
+def build_snapshot(name, definition, source_snapshot, *, output_root):
     record = read(source_snapshot / 'source.json')
     if content_hashes(source_snapshot / 'skills') != record['fileHashes']:
         raise RuntimeError(f'Source snapshot differs from its receipt: {name}')
@@ -42,7 +42,7 @@ def build_snapshot(name, definition, source_snapshot, *, output_root=None):
     if sorted(p.parent.name for p in (source_snapshot / 'skills').glob('*/SKILL.md')) != selected:
         raise RuntimeError(f'Selected skills changed: {name}')
     version = '0.1.0+snapshot.' + record['snapshotSha256'][:12] + '.personal' + str(definition['packagingRevision'])
-    parent = (output_root or ROOT) / name
+    parent = output_root / name
     parent.mkdir(parents=True, exist_ok=True)
     with staging_directory(prefix='.build-', dir=parent) as tmp:
         stage = Path(tmp) / 'package'
@@ -76,15 +76,3 @@ def build_snapshot(name, definition, source_snapshot, *, output_root=None):
         else:
             stage.rename(release)
     return release, receipt
-
-
-def build(name, config, revision=None, *, output_root=None):
-    definition = read(ROOT / 'standalone-packages.json')['collections'][name]
-    if revision and revision != 'HEAD':
-        candidate = ROOT / 'standalone-candidates' / name / revision / 'candidate.json'
-        if not candidate.is_file():
-            raise RuntimeError(f'No reviewed source candidate for {name} at {revision}')
-        source = Path(read(candidate)['sourceSnapshot'])
-    else:
-        source = Path(definition['initialSnapshot'])
-    return build_snapshot(name, definition, source, output_root=output_root)

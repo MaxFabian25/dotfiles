@@ -324,6 +324,34 @@ class PinnedBuildTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'Existing release differs'):
                 builder.codex(package)
 
+    def test_a_snapshot_package_builds_its_codex_and_claude_releases_in_the_sync_folder(self):
+        from dataclasses import replace
+        from description import (BuildSource, ClaudePlacement, CodexPlacement, EngineInstall, Package, Roots, Setup,
+                                 SnapshotRecipe, ToolNotes, Visibility)
+        from host_state import DeviceRoots
+        from standalone_package import snapshot
+        from sync_sources import Builder, Sources
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'input/one').mkdir(parents=True)
+            (root / 'input/one/SKILL.md').write_text('---\nname: one\ndescription: Test\n---\nSnapshot content.\n')
+            stored = snapshot(root / 'input', {'commit': None, 'selectedSources': {}}, root / 'private/setup/snapshots')
+            source = BuildSource(SnapshotRecipe('sha256:' + stored.name, {'one': None}), 1, 'Kit',
+                                 metadata={'description': 'Kit skills.', 'sourceKind': 'personal',
+                                           'claudeDescriptions': {'kit': 'Kit skills.'}})
+            package = Package('kit', Visibility.PRIVATE, '', source, {}, ToolNotes.AUDIT,
+                              CodexPlacement((EngineInstall(True),)), ClaudePlacement((EngineInstall(True),)))
+            setup = Setup(Roots(root / 'public/setup', root / 'private/setup'), {'kit': package}, {}, {}, {}, None, (),
+                          frozenset(), {})
+            roots = replace(DeviceRoots.current(root), engine=root / 'engine')
+            builder = Builder(setup, roots, roots.engine, sources=Sources(root / 'sources'))
+            codex = builder.codex(package, verify=False)
+            [claude] = builder.claude(package, codex, verify=False).values()
+            for built in (codex, claude):
+                self.assertTrue(built.root.is_relative_to(roots.engine), built.root)
+                self.assertIn('Snapshot content.', (built.root / 'skills/one/SKILL.md').read_text())
+            self.assertTrue(claude.root.is_relative_to(roots.engine / 'claude'), claude.root)
+
     def test_relative_paths_cannot_escape_the_source(self):
         from sync_sources import BuildError, child
         with tempfile.TemporaryDirectory() as temp:

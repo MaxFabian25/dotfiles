@@ -8,11 +8,10 @@ import shutil
 import yaml
 
 from invocation_overrides import transform_policy
-from package import ROOT, files
+from package import files
 from portable import read_utf8, staging_directory, write_utf8
 
 MARKETPLACE = 'personal-collections'
-CATALOG_ROOT = ROOT / 'claude'
 
 
 def read(path):
@@ -28,10 +27,9 @@ def contract(release):
     return result
 
 
-def build(collection, codex_release, config=None, catalog_root=CATALOG_ROOT, explicit=frozenset()):
+def build(collection, codex_release, config, catalog_root, explicit=frozenset()):
     """Claude Code runs a directory marketplace's plugins from the catalog, never from its install cache, so a
     skill the setup makes explicit-only is explicit in the release itself, and the version names those skills."""
-    config = config or read(ROOT / 'claude-packages.json')
     definitions = config['collections'].get(collection, [])
     if not definitions:
         return []

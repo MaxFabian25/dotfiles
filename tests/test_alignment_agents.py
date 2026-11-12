@@ -13,37 +13,47 @@ alignment = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(alignment)
 
 
-class AgentSelectionTests(unittest.TestCase):
-    def write_agents(self, root, *names):
-        (root / 'agents').mkdir()
-        for name in names:
-            (root / 'agents' / f'{name}.md').write_text(f'---\nname: {name}\ndescription: Test agent.\n---\nBody\n')
+def write_agents(root, *names):
+    (root / 'agents').mkdir()
+    for name in names:
+        (root / 'agents' / f'{name}.md').write_text(f'---\nname: {name}\ndescription: Test agent.\n---\nBody\n')
 
+
+def write_skills(root, *names):
+    for name in names:
+        (root / 'skills' / name).mkdir(parents=True)
+        (root / 'skills' / name / 'SKILL.md').write_text(f'---\nname: {name}\ndescription: Test skill.\n---\nBody\n')
+
+
+def plugin_source(root, *skills):
+    source = root / 'source'
+    (source / '.codex-plugin').mkdir(parents=True)
+    (source / '.codex-plugin/plugin.json').write_text(json.dumps({'name': 'example', 'version': '1.0.0'}))
+    write_skills(source, *skills)
+    return source
+
+
+class AgentSelectionTests(unittest.TestCase):
     def test_selected_plugin_keeps_only_listed_agents(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            self.write_agents(root, 'ci-watcher', 'reviewer')
+            write_agents(root, 'ci-watcher', 'reviewer')
             self.assertEqual(alignment.drop_unselected_agents(root, set()), ['ci-watcher.md', 'reviewer.md'])
             self.assertEqual(alignment.package_agents(root), {})
 
     def test_no_selection_keeps_every_agent(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            self.write_agents(root, 'poteto-agent')
+            write_agents(root, 'poteto-agent')
             self.assertEqual(alignment.drop_unselected_agents(root, None), [])
             self.assertEqual(list(alignment.package_agents(root)), ['poteto-agent'])
 
 
 class ClaudeSkillTests(unittest.TestCase):
-    def write_skills(self, root, *names):
-        for name in names:
-            (root / 'skills' / name).mkdir(parents=True)
-            (root / 'skills' / name / 'SKILL.md').write_text(f'---\nname: {name}\ndescription: Test skill.\n---\nBody\n')
-
     def test_a_claude_skill_stays_in_the_copy_when_codex_has_it_off(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
-            self.write_skills(root, 'claude-handoff', 'handoff', 'tdd')
+            write_skills(root, 'claude-handoff', 'handoff', 'tdd')
             disabled = {'mattpocock-skills:claude-handoff', 'mattpocock-skills:handoff'}
             self.assertEqual([str(path) for path in alignment.selected_skills(root, {}, disabled, 'mattpocock-skills', {'claude-handoff'})],
                              ['skills/claude-handoff/SKILL.md', 'skills/tdd/SKILL.md'])
@@ -56,10 +66,7 @@ class ClaudeSkillTests(unittest.TestCase):
     def test_a_built_copy_keeps_the_claude_skill_that_codex_has_off(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            source = root / 'source'
-            (source / '.codex-plugin').mkdir(parents=True)
-            (source / '.codex-plugin/plugin.json').write_text(json.dumps({'name': 'example', 'version': '1.0.0'}))
-            self.write_skills(source, 'claude-handoff', 'handoff', 'tdd')
+            source = plugin_source(root, 'claude-handoff', 'handoff', 'tdd')
             disabled = {'example:claude-handoff', 'example:handoff'}
             entry = alignment.build_from('example', source, disabled, root / 'catalog', kept_skills={'claude-handoff'})
             built = root / 'catalog' / entry['source']
@@ -67,17 +74,30 @@ class ClaudeSkillTests(unittest.TestCase):
             receipt = json.loads((built / '.claude-plugin/codex-alignment.json').read_text())
             self.assertEqual(receipt['excludedSkillNames'], ['example:handoff'])
 
-    def test_a_built_copy_keeps_only_the_agents_it_is_given(self):
+    def test_each_agent_selection_is_its_own_copy_in_one_catalog(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            source = root / 'source'
-            (source / '.codex-plugin').mkdir(parents=True)
-            (source / '.codex-plugin/plugin.json').write_text(json.dumps({'name': 'example', 'version': '1.0.0'}))
-            self.write_skills(source, 'tdd')
-            AgentSelectionTests().write_agents(source, 'ci-watcher', 'reviewer')
-            for catalog, agents, kept in (('every', None, ['ci-watcher.md', 'reviewer.md']), ('one', {'reviewer'}, ['reviewer.md'])):
-                entry = alignment.build_from('example', source, set(), root / catalog, agents=agents)
-                self.assertEqual(sorted(path.name for path in (root / catalog / entry['source'] / 'agents').iterdir()), kept)
+            source = plugin_source(root, 'tdd')
+            write_agents(source, 'ci-watcher', 'reviewer')
+            versions = set()
+            for agents, kept in ((None, ['ci-watcher.md', 'reviewer.md']), ({'reviewer'}, ['reviewer.md']), (set(), [])):
+                entry = alignment.build_from('example', source, set(), root / 'catalog', agents=agents)
+                versions.add(entry['version'])
+                self.assertEqual(sorted(path.name for path in (root / 'catalog' / entry['source'] / 'agents').iterdir()), kept)
+            self.assertEqual(len(versions), 3)
+            invocable = alignment.build_from('example', source, set(), root / 'catalog', invocable={'reviewer'})
+            self.assertNotIn(invocable['version'], versions)
+
+    def test_a_copy_that_keeps_every_agent_keeps_the_version_it_had_without_a_selection(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = plugin_source(root, 'tdd')
+            write_agents(source, 'reviewer')
+            unselected = alignment.build_from('example', source, set(), root / 'unselected')
+            every = alignment.build_from('example', source, set(), root / 'every', agents=None)
+            self.assertEqual(every['version'], unselected['version'])
+            # What build_from gave this source at f17b0ab, before the selection counted; existing locks name such versions.
+            self.assertEqual(every['version'], '1.0.0+codex-aligned.6f5a2679a652')
 
 
 class InvocableSkillTests(unittest.TestCase):
@@ -104,10 +124,7 @@ class InvocableSkillTests(unittest.TestCase):
 
 class DevelopmentManifestTests(unittest.TestCase):
     def source(self, root):
-        source = root / 'source'
-        (source / '.codex-plugin').mkdir(parents=True)
-        (source / '.codex-plugin/plugin.json').write_text(json.dumps({'name': 'example', 'version': '1.0.0'}))
-        ClaudeSkillTests().write_skills(source, 'example')
+        source = plugin_source(root, 'example')
         (source / 'package.json').write_bytes(b'{"devDependencies":{"release-tool":"1"}}\r\n')
         (source / 'package-lock.json').write_bytes(b'{"lockfileVersion":3}\n')
         return source

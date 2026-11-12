@@ -7,7 +7,7 @@ whose parsed content is unchanged.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import re
 import tomllib
 from typing import Any, Mapping
@@ -729,13 +729,6 @@ def _render_setup_toml(setup: Setup) -> str:
 def _render_lock(locks: Mapping[EntryName, Lock]) -> str:
     header = '# Generated from the setup description and verified package builds. Do not edit.\n'
     return header + ''.join('\n' + _emit({name: _dump_lock(lock)}) for name, lock in sorted(locks.items()))
-
-
-def managed(relative: str) -> bool:
-    """Whether a path in a root, relative to it, is a file the description owns; anything else is left alone."""
-    parts = PurePosixPath(relative).parts
-    return (relative in ('setup.toml', 'lock.toml', 'rules/AGENTS.md')
-            or (len(parts) == 2 and parts[0] in ('packages', 'repos', 'skills', 'hosts') and parts[1].endswith('.toml')))
 
 
 def render_root(setup: Setup, visibility: Visibility, current: Path | None) -> dict[str, bytes]:

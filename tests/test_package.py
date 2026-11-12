@@ -5,7 +5,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import package
@@ -35,22 +34,20 @@ class PublisherRootManifest(unittest.TestCase):
             profile = {'checkout': str(source), 'subdirectory': '',
                        'manifest': '.cursor-plugin/plugin.json', 'displayName': 'Example',
                        'url': 'https://example.invalid/source'}
-            (packages / 'sources.json').write_text(json.dumps({'local-name': profile}))
-            with patch.object(package, 'ROOT', packages):
-                release, receipt = package.package('local-name')
-                manifest = json.loads((release / 'plugin.json').read_text())
-                self.assertEqual(manifest['name'], 'local-name')
-                self.assertEqual(manifest, json.loads((release / '.codex-plugin/plugin.json').read_text()))
-                preserved = receipt['preservedUpstreamFiles']['plugin.json']
-                self.assertEqual((release / preserved).read_bytes(), original)
-                for path, digest in receipt['upstreamFileHashes'].items():
-                    actual = release / receipt['preservedUpstreamFiles'].get(path, path)
-                    self.assertEqual(hashlib.sha256(actual.read_bytes()).hexdigest(), digest)
-                self.assertEqual((release / 'skills/example/SKILL.md').read_bytes(), (skill / 'SKILL.md').read_bytes())
-                self.assertIn('allow_implicit_invocation: false', (release / 'skills/example/agents/openai.yaml').read_text())
-                repeated, repeated_receipt = package.package('local-name')
-                self.assertEqual(repeated, release)
-                self.assertEqual(repeated_receipt, receipt)
+            release, receipt = package.package('local-name', config=profile, output_root=packages)
+            manifest = json.loads((release / 'plugin.json').read_text())
+            self.assertEqual(manifest['name'], 'local-name')
+            self.assertEqual(manifest, json.loads((release / '.codex-plugin/plugin.json').read_text()))
+            preserved = receipt['preservedUpstreamFiles']['plugin.json']
+            self.assertEqual((release / preserved).read_bytes(), original)
+            for path, digest in receipt['upstreamFileHashes'].items():
+                actual = release / receipt['preservedUpstreamFiles'].get(path, path)
+                self.assertEqual(hashlib.sha256(actual.read_bytes()).hexdigest(), digest)
+            self.assertEqual((release / 'skills/example/SKILL.md').read_bytes(), (skill / 'SKILL.md').read_bytes())
+            self.assertIn('allow_implicit_invocation: false', (release / 'skills/example/agents/openai.yaml').read_text())
+            repeated, repeated_receipt = package.package('local-name', config=profile, output_root=packages)
+            self.assertEqual(repeated, release)
+            self.assertEqual(repeated_receipt, receipt)
 
 
 class SharedSkillRoot(unittest.TestCase):
@@ -70,9 +67,7 @@ class SharedSkillRoot(unittest.TestCase):
         subprocess.run(['git', '-c', 'user.name=T', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'F'], cwd=source, check=True)
         profile = {'checkout': str(source), 'subdirectory': '', 'manifest': '.cursor-plugin/plugin.json', 'displayName': 'E',
                    'url': 'https://example.invalid/s', 'skills': skills}
-        (packages / 'sources.json').write_text(json.dumps({'kit': profile}))
-        with patch.object(package, 'ROOT', packages):
-            release, receipt = package.package('kit')
+        release, receipt = package.package('kit', config=profile, output_root=packages)
         return release, receipt, json.loads((release / '.codex-plugin/plugin.json').read_text())
 
     def test_a_selection_exports_one_root_and_only_the_selected_skills(self):

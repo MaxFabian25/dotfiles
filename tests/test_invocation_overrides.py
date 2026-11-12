@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -9,6 +10,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 spec = importlib.util.spec_from_file_location('invocation_overrides', Path(__file__).resolve().parents[1] / 'invocation_overrides.py')
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
+
+
+def recorded(state, files):
+    """An overlay whose recovery record, as the retired overlay commands wrote it, holds these files."""
+    state.mkdir(parents=True, exist_ok=True)
+    (state / 'state.json').write_text(json.dumps({'schemaVersion': 1, 'files': {str(path): record for path, record in files.items()}}))
+    return module.Overlay(state)
+
+
+def planned(writes):
+    return {path.name: new for path, _, new, _, _ in writes}
 
 
 class InvocationOverridesTest(unittest.TestCase):
@@ -38,12 +50,9 @@ class InvocationOverridesTest(unittest.TestCase):
             installs = [('Codex', 'review-agent@system', root)]
             writes, counts = module.plan(registry, installs)
             self.assertEqual(counts, {'Codex': 1, 'Claude': 0})
-            overlay = module.Overlay(home / 'recovery')
-            self.assertEqual(overlay.apply(writes), 1)
-            self.assertEqual((root / 'SKILL.md').read_text(), original)
-            self.assertIn('true', (root / 'agents/openai.yaml').read_text())
-            overlay.restore(installs)
-            self.assertIn('false', (root / 'agents/openai.yaml').read_text())
+            self.assertEqual(module.Overlay(home / 'recovery').pending(writes), 1)
+            self.assertEqual(planned(writes)['SKILL.md'], original)
+            self.assertIn('true', planned(writes)['openai.yaml'])
 
     def test_only_requested_frontmatter_changes(self):
         original = '---\nname: sample\ndescription: >-\n  A task.\ndisable-model-invocation: true\nallowed-tools: [Read, Write]\nuser-invocable: true\n---\n\nAsk for approval before publishing.\n'
@@ -73,45 +82,22 @@ class InvocationOverridesTest(unittest.TestCase):
         self.assertEqual(module.transform_policy(changed), changed)
         self.assertEqual(module.transform_policy(None), 'policy:\n  allow_implicit_invocation: true\n')
 
-    def test_receipt_restores_original_bytes_and_replays(self):
+    def test_a_recorded_file_replays_from_its_original_bytes(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / 'plugin'
-            root.mkdir()
-            path = root / 'SKILL.md'
-            path.write_text('before\n')
-            overlay = module.Overlay(Path(directory) / 'state')
-            writes = [(path, 'before\n', 'after\n', 'Codex', 'p@m')]
-            self.assertEqual(overlay.apply(writes), 1)
-            self.assertEqual(overlay.restore([('Codex', 'p@m', root)]), 1)
-            self.assertEqual(path.read_text(), 'before\n')
-            self.assertEqual(overlay.apply(writes), 1)
-            self.assertEqual(overlay.apply([(path, 'after\n', 'after\n', 'Codex', 'p@m')]), 0)
-            self.assertEqual(overlay.state['files'][str(path)]['base'], 'before\n')
+            path = Path(directory) / 'plugin/SKILL.md'
+            overlay = recorded(Path(directory) / 'state', {path: {'base': 'before\n', 'effective': 'after\n'}})
+            self.assertEqual(overlay.pristine(path, 'after\n'), 'before\n')
+            self.assertEqual(overlay.pristine(path, 'other\n'), 'other\n')
+            self.assertEqual(overlay.pending([(path, 'after\n', 'after\n', 'Codex', 'p@m')]), 0)
+            self.assertEqual(overlay.pending([(path, 'after\n', 'newer\n', 'Codex', 'p@m')]), 1)
 
-    def test_refuses_unrecognized_local_changes_and_preserves_them(self):
+    def test_refuses_unrecognized_local_changes(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / 'plugin'
-            root.mkdir()
-            path = root / 'SKILL.md'
-            path.write_text('base')
-            overlay = module.Overlay(Path(directory) / 'state')
-            overlay.apply([(path, 'base', 'effective', 'Claude', 'p@m')])
-            path.write_text('manual edit')
-            with self.assertRaises(ValueError):
-                overlay.restore([('Claude', 'p@m', root)])
-            with self.assertRaises(ValueError):
-                overlay.apply([(path, 'manual edit', 'effective', 'Claude', 'p@m')])
-            self.assertEqual(path.read_text(), 'manual edit')
-
-    def test_restore_removes_a_sidecar_created_by_the_override(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / 'plugin'
-            root.mkdir()
-            path = root / 'agents/openai.yaml'
-            overlay = module.Overlay(Path(directory) / 'state')
-            overlay.apply([(path, None, 'policy:\n  allow_implicit_invocation: true\n', 'Codex', 'p@m')])
-            overlay.restore([('Codex', 'p@m', root)])
-            self.assertFalse(path.exists())
+            path = Path(directory) / 'plugin/SKILL.md'
+            overlay = recorded(Path(directory) / 'state', {path: {'base': 'base', 'effective': 'effective'}})
+            with self.assertRaisesRegex(ValueError, 'Unrecognized local edit'):
+                overlay.pending([(path, 'manual edit', 'manual edit', 'Claude', 'p@m')])
+            self.assertEqual(overlay.pending([(Path(directory) / 'unrecorded', 'manual edit', 'x', 'Claude', 'p@m')]), 1)
 
     def test_adaptation_merges_upstream_edits_and_stops_on_conflicts(self):
         base = 'one\ntwo\nthree\nfour\nfive\n'
@@ -143,7 +129,7 @@ class InvocationOverridesTest(unittest.TestCase):
             (root / 'skills/deep/references/notes.md').write_text('Ask with AskQuestion.\n')
             self.assertEqual(module.harness_gaps(root, 'skills/mode/references/harnesses.md'), ['deep', 'router', 'spawner'])
 
-    def test_adaptation_and_invocation_overlays_compose_and_restore(self):
+    def test_adaptation_and_invocation_overlays_compose_and_replay_to_nothing(self):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory).resolve()
             repository = directory / 'adaptation'
@@ -172,63 +158,24 @@ class InvocationOverridesTest(unittest.TestCase):
             installs = [('Codex', 'plugin@m', root)]
             overlay = module.Overlay(directory / 'state')
             writes, _ = module.plan(registry, installs, overlay, adaptations)
-            self.assertEqual(overlay.apply(writes), 3)
-            effective = (root / 'skills/sample/SKILL.md').read_text()
-            self.assertIn('disable-model-invocation: false', effective)
-            self.assertTrue(effective.endswith(adapted_body))
-            self.assertEqual((root / 'skills/sample/references/harnesses.md').read_text(), 'map\n')
+            self.assertEqual(overlay.pending(writes), 3)
+            effective = planned(writes)
+            self.assertIn('disable-model-invocation: false', effective['SKILL.md'])
+            self.assertTrue(effective['SKILL.md'].endswith(adapted_body))
+            self.assertEqual(effective['harnesses.md'], 'map\n')
 
-            writes, _ = module.plan(registry, installs, overlay, adaptations)
-            self.assertEqual(overlay.apply(writes), 0)
+            for path, _, new, _, _ in writes:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(new)
+            self.assertEqual(overlay.pending(module.plan(registry, installs, overlay, adaptations)[0]), 0)
 
-            self.assertEqual(overlay.restore(installs), 3)
-            self.assertEqual((root / 'skills/sample/SKILL.md').read_text(), original)
-            self.assertFalse((root / 'skills/sample/references/harnesses.md').exists())
-            self.assertFalse((root / 'skills/sample/agents/openai.yaml').exists())
-
-    def test_interrupted_transition_between_effective_versions_recovers(self):
+    def test_a_file_left_at_the_prior_target_is_recognised(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / 'plugin'
-            root.mkdir()
-            first, second = root / 'a.md', root / 'b.md'
-            first.write_text('base a\n')
-            second.write_text('base b\n')
-            overlay = module.Overlay(Path(directory) / 'state')
-            overlay.apply([(first, 'base a\n', 'v1 a\n', 'Codex', 'p@m'), (second, 'base b\n', 'v1 b\n', 'Codex', 'p@m')])
-            real_write = module.atomic_write
-            calls = []
-
-            def crash_after_first(path, value):
-                if calls and path in (first, second):
-                    raise KeyboardInterrupt
-                if path in (first, second):
-                    calls.append(path)
-                real_write(path, value)
-
-            with patch.object(module, 'atomic_write', crash_after_first):
-                with self.assertRaises(KeyboardInterrupt):
-                    overlay.apply([(first, 'v1 a\n', 'v2 a\n', 'Codex', 'p@m'), (second, 'v1 b\n', 'v2 b\n', 'Codex', 'p@m')])
-            self.assertEqual((first.read_text(), second.read_text()), ('v2 a\n', 'v1 b\n'))
-
-            reloaded = module.Overlay(Path(directory) / 'state')
-            self.assertEqual(reloaded.pristine(second, 'v1 b\n'), 'base b\n')
-            self.assertEqual(reloaded.apply([(second, 'v1 b\n', 'v2 b\n', 'Codex', 'p@m')]), 1)
-            self.assertEqual(second.read_text(), 'v2 b\n')
-            self.assertEqual(reloaded.restore([('Codex', 'p@m', root)]), 2)
-            self.assertEqual((first.read_text(), second.read_text()), ('base a\n', 'base b\n'))
-
-    def test_interrupted_transition_can_still_restore(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / 'plugin'
-            root.mkdir()
-            path = root / 'a.md'
-            path.write_text('base\n')
-            overlay = module.Overlay(Path(directory) / 'state')
-            overlay.apply([(path, 'base\n', 'v1\n', 'Codex', 'p@m')])
-            record = overlay.state['files'][str(path)]
-            record['previous'], record['effective'] = record['effective'], 'v2\n'
-            self.assertEqual(overlay.restore([('Codex', 'p@m', root)]), 1)
-            self.assertEqual(path.read_text(), 'base\n')
+            path = Path(directory) / 'plugin/b.md'
+            overlay = recorded(Path(directory) / 'state',
+                               {path: {'base': 'base b\n', 'effective': 'v2 b\n', 'previous': 'v1 b\n'}})
+            self.assertEqual(overlay.pristine(path, 'v1 b\n'), 'base b\n')
+            self.assertEqual(overlay.pending([(path, 'v1 b\n', 'v2 b\n', 'Codex', 'p@m')]), 1)
 
     def _adaptation_repository(self, directory):
         repository = directory / 'adaptation'
@@ -260,11 +207,8 @@ class InvocationOverridesTest(unittest.TestCase):
             adaptations = {'plugins': {'plugin': {'repository': str(repository), 'baseRef': 'upstream',
                                                    'adaptedRef': 'main', 'hosts': ['Codex']}}}
             registry = {'targets': {'Codex': {'plugin@m': []}, 'Claude': {}}}
-            overlay = module.Overlay(directory / 'state')
-            writes, _ = module.plan(registry, [('Codex', 'plugin@m', root)], overlay, adaptations)
-            overlay.apply(writes)
-            self.assertEqual((root / 'docs/a.md').read_text(), 'one\nTWO\nthree\nfour\nFIVE\n')
-            self.assertEqual((root / 'docs/new.md').read_text(), 'added upstream\n')
+            writes, _ = module.plan(registry, [('Codex', 'plugin@m', root)], module.Overlay(directory / 'state'), adaptations)
+            self.assertEqual(planned(writes), {'a.md': 'one\nTWO\nthree\nfour\nFIVE\n'})
 
     def test_adaptation_merges_beside_a_flag_the_policy_export_flipped(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -306,13 +250,13 @@ class InvocationOverridesTest(unittest.TestCase):
                                                    'adaptedRef': 'main', 'hosts': ['Codex']}}}
             registry = {'targets': {'Codex': {'plugin@m': []}, 'Claude': {}}}
             installs = [('Codex', 'plugin@m', root)]
-            overlay = module.Overlay(directory / 'state')
-            overlay.apply(module.plan(registry, installs, overlay, adaptations)[0])
-            self.assertIn('TWO', (root / 'docs/a.md').read_text())
+            (root / 'docs/a.md').write_text('one\nTWO\nthree\nfour\nfive\n')
+            overlay = recorded(directory / 'state', {(root / 'docs/a.md').resolve(): {
+                'base': 'one\ntwo\nthree\nfour\nfive\n', 'effective': 'one\nTWO\nthree\nfour\nfive\n'}})
             module.subprocess.run([*git, 'revert', '--no-edit', 'HEAD'], check=True)
-            self.assertEqual(overlay.apply(module.plan(registry, installs, overlay, adaptations)[0]), 1)
-            self.assertEqual((root / 'docs/a.md').read_text(), 'one\ntwo\nthree\nfour\nfive\n')
-            self.assertEqual(overlay.apply(module.plan(registry, installs, overlay, adaptations)[0]), 0)
+            writes, _ = module.plan(registry, installs, overlay, adaptations)
+            self.assertEqual(overlay.pending(writes), 1)
+            self.assertEqual(planned(writes), {'a.md': 'one\ntwo\nthree\nfour\nfive\n'})
 
     def test_adaptation_may_not_add_or_rename_a_skill(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -366,7 +310,7 @@ class InvocationOverridesTest(unittest.TestCase):
                 module.plan(registry, [('Codex', 'plugin@m', root)], module.Overlay(directory / 'state'), adaptations)
             self.assertEqual((outside / 'a.md').read_text(), 'one\ntwo\nthree\nfour\nfive\n')
 
-    def test_explicit_target_sets_both_host_flags_and_restores(self):
+    def test_explicit_target_sets_both_host_flags(self):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory).resolve()
             root = directory / 'cache/plugin/1.0'
@@ -379,16 +323,13 @@ class InvocationOverridesTest(unittest.TestCase):
             overlay = module.Overlay(directory / 'state')
             writes, counts = module.plan(registry, installs, overlay)
             self.assertEqual(counts, {'Codex': 1, 'Claude': 0})
-            self.assertEqual(overlay.apply(writes), 2)
-            _, front = module.frontmatter(skill.read_text())
+            self.assertEqual(overlay.pending(writes), 2)
+            effective = planned(writes)
+            _, front = module.frontmatter(effective['SKILL.md'])
             self.assertIs(front['disable-model-invocation'], True)
             self.assertEqual(front['description'], 'Only use when the user explicitly invokes this skill by name.')
-            self.assertTrue(skill.read_text().endswith('---\nPublish only with approval.\n'))
-            self.assertEqual((skill.parent / 'agents/openai.yaml').read_text(), 'policy:\n  allow_implicit_invocation: false\n')
-            self.assertEqual(overlay.apply(module.plan(registry, installs, overlay)[0]), 0)
-            self.assertEqual(overlay.restore(installs), 2)
-            self.assertEqual(skill.read_text(), original)
-            self.assertFalse((skill.parent / 'agents/openai.yaml').exists())
+            self.assertTrue(effective['SKILL.md'].endswith('---\nPublish only with approval.\n'))
+            self.assertEqual(effective['openai.yaml'], 'policy:\n  allow_implicit_invocation: false\n')
 
     def test_explicit_flag_replaces_a_false_value_only(self):
         original = '---\nname: sample\ndescription: A task.\ndisable-model-invocation: false\nallowed-tools: [Read]\n---\nBody\n'

@@ -9,8 +9,6 @@ import yaml
 
 from portable import GIT, extract_tar, read_utf8, require_readable, staging_directory, write_utf8
 
-ROOT = Path(__file__).resolve().parent
-
 
 def sha(data):
     return hashlib.sha256(data).hexdigest()
@@ -26,13 +24,13 @@ def git(repository, *args):
     return subprocess.check_output([*GIT, '-C', str(repository), *args])
 
 
-def build(name, config, revision='HEAD', *, output_root=None):
+def build(name, config, revision='HEAD', *, output_root):
     repository = Path(config['checkout'])
     from package import require_clean
     require_clean(repository)
     commit = git(repository, 'rev-parse', revision).decode().strip()
     version = f"0.1.0+upstream.{commit[:12]}.codex{config['packagingRevision']}"
-    release_root = (output_root or ROOT) / name
+    release_root = output_root / name
     release_root.mkdir(parents=True, exist_ok=True)
     with staging_directory(prefix='.build-', dir=release_root) as temporary:
         temporary = Path(temporary)

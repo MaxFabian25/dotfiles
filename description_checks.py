@@ -30,24 +30,6 @@ def check_placement(roots: Roots) -> list[str]:
     return []
 
 
-def validate(setup: Setup) -> list[str]:
-    """The checks load() runs across entries, on a setup held in memory: the public root alone first, then
-    both roots together."""
-    public = Visibility.PUBLIC
-    alone = Setup(Roots(setup.roots.public, None),
-                  {n: e for n, e in setup.packages.items() if e.visibility == public},
-                  {n: e for n, e in setup.repos.items() if e.visibility == public},
-                  {n: e for n, e in setup.loose.items() if e.visibility == public},
-                  {}, None, setup.note_rules, setup.public_repositories,
-                  {n: lock for n, lock in setup.lock.items() if setup.visibility(n) == public})
-    errors: list[str] = []
-    check_privacy(alone, errors)
-    check_references(alone, Visibility.PUBLIC, errors)
-    check_references(setup, Visibility.PRIVATE, errors)
-    check_invariants(setup, errors)
-    return errors
-
-
 def check_privacy(found: Setup, errors: list[str]) -> None:
     """Kinds that are private wherever they sit (amendment A2), checked on the public root read alone."""
     root = found.roots.public

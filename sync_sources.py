@@ -240,7 +240,7 @@ class Builder:
                           runtimeRequirementsSha256=str(recipe.requirements).removeprefix('sha256:'))
         return build_package(package.name, recipe.commit, config=config, output_root=self.directory)[0]
 
-    def overlay(self, package: Package, host: Host, identity: str, root: Path, *, overlay=None):
+    def overlay(self, package: Package, host: Host, identity: str, root: Path):
         from invocation_overrides import plan, read_text, skill_paths, windows_overlay
         import yaml
 
@@ -258,8 +258,6 @@ class Builder:
                     continue
                 sidecar = paths[name].parent / 'agents/openai.yaml'
                 text = read_text(sidecar)
-                if overlay is not None:
-                    text = overlay.pristine(sidecar.resolve(), text)
                 policy = yaml.safe_load(text) if text else {}
                 if name not in exported and (policy or {}).get('policy', {}).get('allow_implicit_invocation') is False:
                     explicit.remove(name)
@@ -294,7 +292,7 @@ class Builder:
             command = placement.windows_hook_command if host == Host.CODEX else None
             if windows := windows_overlay(command, placement.windows_replace):
                 adaptations['windows'] = {package.name: windows}
-        return plan(registry, [(label, identity, root)], overlay=overlay, adaptations=adaptations)[0]
+        return plan(registry, [(label, identity, root)], adaptations=adaptations)[0]
 
     def effective(self, package: Package, built: Built) -> Path:
         placement = next((i for i in package.codex.installs if i.managed), None) if package.codex else None
