@@ -30,8 +30,6 @@ def contract(release):
 def build(collection, codex_release, definitions, packaging, catalog_root, explicit=frozenset()):
     """Claude Code runs a directory marketplace's plugins from the catalog, never from its install cache, so a
     skill the setup makes explicit-only is explicit in the release itself, and the version names those skills."""
-    if not definitions:
-        return []
     source = read(codex_release / '.codex-plugin/upstream.json')
     actual = {p.parent.name for p in (codex_release / 'skills').glob('*/SKILL.md')}
     selected = [n for entry in definitions for n in entry['skills']]

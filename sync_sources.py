@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import tempfile
 
-from description import (AcademicRecipe, AlignedInstall, BuildSource, CourseRecipe, EngineInstall,
+from description import (AlignedInstall, BuildSource, CourseRecipe, EngineInstall,
                          GeneratedRoles, GenericRecipe, LocalSource, Package, PluginRoles, PublicEmilRecipe,
                          RepoRoles, RepoSource, Setup, SnapshotRecipe, ToolNotes, plugin_id, via)
 from host_state import DeviceRoots, Digest, Host, SkillMode, bytes_digest, clone_url, parse_commit
@@ -193,35 +193,38 @@ class Builder:
 
     def _build(self, package: Package, source: BuildSource) -> Path:
         recipe = source.recipe
-        if isinstance(recipe, SnapshotRecipe):
-            private = self.setup.roots.private
-            if private is None:
-                raise BuildError(f'{package.name}: its source snapshot needs the private repository')
-            snapshot_source = private / 'snapshots' / str(recipe.snapshot).removeprefix('sha256:')
-            if not snapshot_source.is_dir():
-                raise BuildError(f'{package.name}: missing source snapshot {recipe.snapshot}')
-            snapshot = self.directory / 'standalone-snapshots' / package.name / str(recipe.snapshot).removeprefix('sha256:')
-            if not snapshot.exists():
-                snapshot.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(snapshot_source, snapshot)
-            if 'description' not in source.metadata or 'sourceKind' not in source.metadata:
-                raise BuildError(f'{package.name}: missing snapshot build metadata; migrate its recipe first')
-            from standalone_package import build_snapshot
-            return build_snapshot(package.name, recipe, source, snapshot, output_root=self.directory)[0]
-
-        checkout = self.sources.repository(recipe.repository, recipe.commit)
-        if 'url' not in source.metadata:
-            raise BuildError(f'{package.name}: missing build metadata; migrate its recipe first')
         match recipe:
+            case SnapshotRecipe():
+                return self._build_snapshot(package, recipe, source)
             case GenericRecipe():
                 from package import package as build
             case CourseRecipe():
                 from course_package import build
             case PublicEmilRecipe():
                 from public_emil_package import build
-            case AcademicRecipe():
-                from academic_package import build
+            case _:
+                raise BuildError(f'{package.name}: no builder for {type(recipe).__name__}')
+        checkout = self.sources.repository(recipe.repository, recipe.commit)
+        if 'url' not in source.metadata:
+            raise BuildError(f'{package.name}: missing build metadata; migrate its recipe first')
         return build(package.name, recipe, source, checkout, output_root=self.directory)[0]
+
+    def _build_snapshot(self, package: Package, recipe: SnapshotRecipe, source: BuildSource) -> Path:
+        from standalone_package import build_snapshot
+
+        private = self.setup.roots.private
+        if private is None:
+            raise BuildError(f'{package.name}: its source snapshot needs the private repository')
+        snapshot_source = private / 'snapshots' / str(recipe.snapshot).removeprefix('sha256:')
+        if not snapshot_source.is_dir():
+            raise BuildError(f'{package.name}: missing source snapshot {recipe.snapshot}')
+        snapshot = self.directory / 'standalone-snapshots' / package.name / str(recipe.snapshot).removeprefix('sha256:')
+        if not snapshot.exists():
+            snapshot.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(snapshot_source, snapshot)
+        if 'description' not in source.metadata or 'sourceKind' not in source.metadata:
+            raise BuildError(f'{package.name}: missing snapshot build metadata; migrate its recipe first')
+        return build_snapshot(package.name, recipe, source, snapshot, output_root=self.directory)[0]
 
     def overlay(self, package: Package, host: Host, identity: str, root: Path):
         from invocation_overrides import plan, read_text, skill_paths, windows_overlay

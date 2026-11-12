@@ -15,7 +15,6 @@ public_repositories = [
   "https://github.com/shadcn/improve.git",
   "https://github.com/vercel/next.js.git",
   "https://github.com/warpdotdev/claude-code-warp.git",
-  "https://github.com/yha9806/academic-writing-toolkit.git",
 ]
 
 [[tool_note]]

@@ -12,7 +12,6 @@ sys.path.insert(0, str(ENGINE))
 
 import host_state
 import description
-import description_checks
 import description_toml
 import runtime_pin
 H, M = host_state.Host, host_state.SkillMode
@@ -117,6 +116,13 @@ class LoadTest(unittest.TestCase):
             setup = description_toml.load(roots.roots())
         self.assertEqual(setup.packages['cursor-team-kit'].claude.modes, {'fix-ci': M.ON})
         self.assertEqual(setup.stale(), frozenset({'cursor-team-kit'}))
+
+    def test_a_retired_build_kind_fails_as_unknown(self):
+        with Roots() as roots:
+            path = roots.private / 'packages/example-course.toml'
+            path.write_text(path.read_text().replace('build = "course"', 'build = "academic"'))
+            self.assertIn(f"{path}:source.build: unknown build 'academic'; expected one of "
+                          "['course', 'generic', 'public-emil', 'snapshot']", roots.problems())
 
 
 def write(root, files):

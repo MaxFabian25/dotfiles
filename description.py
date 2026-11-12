@@ -85,18 +85,6 @@ class PublicEmilRecipe:              # public_emil_package.py
 
 
 @dataclass(frozen=True)
-class AcademicRecipe:                # academic_package.py
-    repository: str
-    commit: Commit
-    select: tuple[str, ...]
-    installer: Digest                # the reviewed upstream installer script
-    requirements: Digest             # the runtime requirements the prepared skills need
-
-    def skills(self) -> tuple[str, ...]:
-        return self.select
-
-
-@dataclass(frozen=True)
 class Origin:
     repository: str
     path: str
@@ -112,9 +100,8 @@ class SnapshotRecipe:                # standalone_package.py
         return tuple(self.origins)
 
 
-Recipe = GenericRecipe | CourseRecipe | PublicEmilRecipe | AcademicRecipe | SnapshotRecipe
-BUILDS = {'generic': GenericRecipe, 'course': CourseRecipe, 'public-emil': PublicEmilRecipe,
-           'academic': AcademicRecipe, 'snapshot': SnapshotRecipe}
+Recipe = GenericRecipe | CourseRecipe | PublicEmilRecipe | SnapshotRecipe
+BUILDS = {'generic': GenericRecipe, 'course': CourseRecipe, 'public-emil': PublicEmilRecipe, 'snapshot': SnapshotRecipe}
 
 
 @dataclass(frozen=True)
@@ -157,7 +144,7 @@ Source = BuildSource | RepoSource | LocalSource | None   # None: every install n
 class EngineInstall:
     """via 'personal' in Codex, 'personal-collections' in Claude."""
     enabled: bool
-    name: str | None = None                  # a Claude split, e.g. academic-writing-toolkit-extra
+    name: str | None = None                  # a Claude split's own plugin name
     skills: tuple[str, ...] | None = None    # that split's share of the selected skills
     keep_current: bool = field(default=False, metadata={'intent': 'when-set'})
 

@@ -94,6 +94,12 @@ Never use that flag to accept unexplained installed drift. The daily maintainer 
 checkout owns source review, freezes, holds, discovery choices, and compatibility monitoring.
 Device pulls do not select upstream updates or new defaults.
 
+`build_setup.py` builds only packages with a managed install. Add `--unmanaged` to also build each package that no
+install manages and that Codex installs through the engine, with its engine and codex-aligned installs switched
+on. A package that only a host marketplace installs stays out. The option prints each built version and digest,
+so two runs, one before and one after a change to a builder, show whether the change altered what those
+packages build.
+
 ## Deliver a paired release
 
 The private checkout's `release.toml` identifies the exact reviewed public commit.

@@ -1,8 +1,5 @@
 # Generated from the setup description and verified package builds. Do not edit.
 
-[academic-writing-toolkit]
-intent = "sha256:aad5072e49324cb0bdb7316bdf12084cb4e6ed47ae9e07e7e7058d64cdaf4a67"
-
 [agent-tool-study]
 intent = "sha256:9bad33f91cfc69ae924c484d616fb53c4da7273f882e4692e0b7c2b280f0cb51"
 placements = { agents = "sha256:de671a8a7baaeea782c97dfc10cce75cbe73498efd6e9484d493e4791f123b98", claude = "sha256:de671a8a7baaeea782c97dfc10cce75cbe73498efd6e9484d493e4791f123b98" }

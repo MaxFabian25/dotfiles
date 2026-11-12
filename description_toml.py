@@ -12,7 +12,7 @@ import re
 import tomllib
 from typing import Any, Mapping
 
-from description import (AcademicRecipe, Adaptation, AlignedInstall, BUILDS, BuildSource, ClaudePlacement, CodexPlacement,
+from description import (Adaptation, AlignedInstall, BUILDS, BuildSource, ClaudePlacement, CodexPlacement,
                          CodexRoles, CourseRecipe, DescriptionError, EngineInstall, Frozen, GeneratedRoles, GenericRecipe,
                          Hooks, HostMarketplace, Install, Lock, LockedTree, LocalSource, LooseSkill, MarketplaceInstall, MarketplaceMode,
                          NoteRule, Origin, Package, PluginRoles, PublicEmilRecipe, Recipe, Repo, RepoName, RepoRoles,
@@ -109,10 +109,6 @@ def _parse_recipe(table: _Table, build: str) -> Recipe | None:
             table.error('rename', 'expected folder = "installed name" pairs')
             rename = {}
         return PublicEmilRecipe(**common, select=table.strings('select', _REQUIRED), rename=rename)
-    if build == 'academic':
-        return AcademicRecipe(**common, select=table.strings('select', _REQUIRED),
-                              installer=table.parse('installer', parse_digest, table.get('installer', str)),
-                              requirements=table.parse('requirements', parse_digest, table.get('requirements', str)))
     table.error('build', f'unknown build {build!r}; expected one of {sorted(BUILDS)}')
     return None
 
@@ -564,8 +560,6 @@ def _dump_recipe(recipe: Recipe) -> dict:
         out['prefix'] = recipe.prefix
         if recipe.trim_descriptions:
             out['trim_descriptions'] = list(recipe.trim_descriptions)
-    if isinstance(recipe, AcademicRecipe):
-        out.update(installer=recipe.installer, requirements=recipe.requirements)
     if isinstance(recipe, PublicEmilRecipe) and recipe.rename:
         out['rename'] = _Inline(dict(sorted(recipe.rename.items())))
     if recipe.select or not isinstance(recipe, GenericRecipe):
@@ -574,7 +568,7 @@ def _dump_recipe(recipe: Recipe) -> dict:
 
 
 _SOURCE_ORDER = ('build', 'snapshot', 'repository', 'commit', 'subdirectory', 'manifest', 'packaging', 'display_name',
-                 'prefix', 'trim_descriptions', 'installer', 'requirements', 'select', 'rename', 'frozen', 'origins', 'metadata')
+                 'prefix', 'trim_descriptions', 'select', 'rename', 'frozen', 'origins', 'metadata')
 
 
 def _dump_install(install: Install, host: Host) -> _Inline:

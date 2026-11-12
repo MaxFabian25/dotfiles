@@ -40,6 +40,7 @@ class PublisherRootManifest(unittest.TestCase):
             recipe = GenericRecipe('https://example.invalid/source.git', head(source), None, '.cursor-plugin/plugin.json', ())
             profile = BuildSource(recipe, 0, 'Example', metadata={'url': 'https://example.invalid/source'})
             release, receipt = package.package('local-name', recipe, profile, source, output_root=packages)
+            self.assertEqual((release.name, receipt['version']), ('1.0.0+upstream.' + recipe.commit[:12],) * 2)
             manifest = json.loads((release / 'plugin.json').read_text())
             self.assertEqual(manifest['name'], 'local-name')
             self.assertEqual(manifest, json.loads((release / '.codex-plugin/plugin.json').read_text()))
