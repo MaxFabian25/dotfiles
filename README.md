@@ -181,7 +181,8 @@ files and the files it changes; `start` lists the other open releases.
 For a skill description change, `skill_triggers.py` counts how often the installed skills load in Claude Code for a
 set of prompts, and `codex_triggers.py` does the same in Codex. Measure the draft first, then release, then run the
 same prompts again after the pull. On Linux, `skill_draft.py DRAFT_SKILL.md -- COMMAND` runs either tool with the
-draft in place of the installed copy and changes no file.
+draft in place of the installed copy and changes no file; with `--new` it adds a skill that is not installed
+yet.
 
 ```sh
 uv run --locked python release.py finish NAME --message msg.txt --entry prose --refresh-owned --push --pull

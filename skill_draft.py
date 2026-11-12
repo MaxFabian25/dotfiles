@@ -7,10 +7,12 @@ skills/NAME/SKILL.md under $CLAUDE_CONFIG_DIR (or ~/.claude), ~/.agents and $COD
 the name in the draft's frontmatter. The run fails when a copy no longer reads as the draft at the end, such as after
 a pull during the run. Needs Linux, WSL included, and Python 3.12 or newer. Usage:
 
-    python3 -I skill_draft.py DRAFT_SKILL.md [--installed PATH ...] -- COMMAND [ARG ...]
+    python3 -I skill_draft.py DRAFT_SKILL.md [--installed PATH ... | --new] -- COMMAND [ARG ...]
     python3 -I skill_draft.py DRAFT_SKILL.md -- python3 -I codex_triggers.py QUERIES.json OUT.json
 
---installed, which may repeat, names the copies to replace instead, such as a plugin's.
+--installed, which may repeat, names the copies to replace instead, such as a plugin's. --new measures a skill that
+is not installed yet: the command sees it added as skills/NAME/SKILL.md under $CLAUDE_CONFIG_DIR (or ~/.claude) and
+~/.agents, in each of the two skills folders that exists, through an overlay whose changes live only in memory.
 """
 
 import argparse
@@ -38,14 +40,56 @@ def default_copies(name):
     return [Path(root, 'skills', name, 'SKILL.md') for root in (claude, Path.home() / '.agents', codex)]
 
 
+def mount(libc, step, target, source=None, kind=None, flags=0, data=None):
+    if libc.mount(source, os.fsencode(target), kind, flags, data):
+        raise OSError(f'The kernel refused {step}: {os.strerror(ctypes.get_errno())}')
+
+
 def bind_read_only(libc, draft, path):
-    target = os.fsencode(path)
-    if libc.mount(os.fsencode(draft), target, None, MS_BIND, None):
-        return False
+    mount(libc, f'to bind {draft} over {path}', path, os.fsencode(draft), flags=MS_BIND)
     # A bind turns read-only only on a remount, which may not drop these flags of the draft's own mount. statvfs
     # reports them with the mount call's values. Without the remount, a session's write to the copy lands in the draft.
     kept = os.statvfs(path).f_flag & (MS_NOSUID | MS_NODEV | MS_NOEXEC)
-    return not libc.mount(None, target, None, MS_REMOUNT | MS_BIND | MS_RDONLY | kept, None)
+    mount(libc, f'to make the bind over {path} read-only', path, flags=MS_REMOUNT | MS_BIND | MS_RDONLY | kept)
+
+
+def add_empty_file(libc, path):
+    folder = path.parent.parent
+    lower = os.open(folder, os.O_PATH)
+    mount(libc, f'to mount a tmpfs on {folder}', folder, b'tmpfs', b'tmpfs')
+    (folder / 'upper').mkdir()
+    (folder / 'work').mkdir()
+    options = f'lowerdir=/proc/self/fd/{lower},upperdir={folder}/upper,workdir={folder}/work'
+    mount(libc, f'to mount an overlay on {folder}', folder, b'overlay', b'overlay', data=options.encode())
+    path.parent.mkdir()
+    path.touch()
+
+
+def copies_and_searched(args, draft):
+    if args.installed:
+        if missing := [str(path) for path in args.installed if not path.is_file()]:
+            sys.exit(f'--installed names no file at {", ".join(missing)}')
+        return args.installed, []
+    name = skill_name(draft.decode('utf-8', 'replace'))
+    if not name or '/' in name or name in ('.', '..'):
+        sys.exit(f'The draft {args.draft} needs a name: line in its frontmatter that names a skill folder.')
+    searched = default_copies(name)
+    copies = [path for path in searched if path.is_file()]
+    if args.new:
+        if copies:
+            sys.exit(f'The skill {name} is installed at {", ".join(map(str, copies))}. Drop --new to measure the '
+                     'draft in place of the installed copies.')
+        # Not <codex home>/skills, because Codex reads ~/.agents/skills too and would list the skill twice.
+        copies = [path for path in searched[:2] if path.parent.parent.is_dir()]
+        if not copies:
+            sys.exit(f'--new adds the skill to {" and ".join(str(path.parent.parent) for path in searched[:2])}, '
+                     'and neither folder exists.')
+        if taken := [str(path.parent) for path in copies if os.path.lexists(path.parent)]:
+            sys.exit(f'{", ".join(taken)} exists without a SKILL.md, so --new cannot add the skill {name} there.')
+    elif not copies:
+        sys.exit(f'The skill {name} is installed at none of {", ".join(map(str, searched))}. A plugin\'s copy '
+                 'needs --installed PATH, and a skill that is not installed yet needs --new.')
+    return copies, searched
 
 
 def difference(path, draft):
@@ -58,10 +102,13 @@ def difference(path, draft):
 def main():
     argv = sys.argv[1:]
     split = argv.index('--') if '--' in argv else len(argv)
-    parser = argparse.ArgumentParser(usage='%(prog)s DRAFT_SKILL.md [--installed PATH ...] -- COMMAND [ARG ...]',
-                                     description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        usage='%(prog)s DRAFT_SKILL.md [--installed PATH ... | --new] -- COMMAND [ARG ...]',
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('draft', type=Path)
-    parser.add_argument('--installed', type=Path, action='append', help='an installed SKILL.md to replace')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--installed', type=Path, action='append', help='an installed SKILL.md to replace')
+    mode.add_argument('--new', action='store_true', help='add the skill, which is not installed yet')
     args = parser.parse_args(argv[:split])
     command = argv[split + 1:]
     if not command:
@@ -70,20 +117,8 @@ def main():
         draft = args.draft.read_bytes()
     except OSError as error:
         sys.exit(f'Cannot read the draft {args.draft}: {error}')
-    if args.installed:
-        searched, copies = [], args.installed
-        if missing := [str(path) for path in copies if not path.is_file()]:
-            sys.exit(f'--installed names no file at {", ".join(missing)}')
-    else:
-        name = skill_name(draft.decode('utf-8', 'replace'))
-        if not name or '/' in name:
-            sys.exit(f'The draft {args.draft} needs a name: line in its frontmatter that names a skill folder.')
-        searched = default_copies(name)
-        copies = [path for path in searched if path.is_file()]
-        if not copies:
-            sys.exit(f'The skill {name} is installed at none of {", ".join(map(str, searched))}. A plugin\'s copy '
-                     'needs --installed PATH, and a skill that is not installed yet cannot be measured.')
-    if any(path.samefile(args.draft) for path in copies):
+    copies, searched = copies_and_searched(args, draft)
+    if not args.new and any(path.samefile(args.draft) for path in copies):
         sys.exit(f'The draft {args.draft} is an installed copy itself, so the run would measure the installed '
                  'description. Edit a copy of it and pass that as the draft.')
     if not hasattr(os, 'unshare'):
@@ -97,22 +132,33 @@ def main():
     except OSError as error:
         sys.exit(f'The kernel refused a private user and mount namespace: {error}')
     libc = ctypes.CDLL(None, use_errno=True)
+    try:
+        for path in copies:
+            # The two skills folders can be one folder through a link, and then the first pass added the file.
+            if args.new and not path.exists():
+                add_empty_file(libc, path)
+            bind_read_only(libc, args.draft, path)
+        if args.new:
+            # A working folder inside a skills folder is still the folder under the overlay until it is entered again.
+            os.chdir(os.getcwd())
+    except OSError as error:
+        sys.exit(str(error))
     for path in copies:
-        if not bind_read_only(libc, args.draft, path):
-            error = OSError(ctypes.get_errno(), os.strerror(ctypes.get_errno()))
-            sys.exit(f'The kernel refused to bind {args.draft} read-only over {path}: {error}')
-        print(f"The command's sessions read {args.draft} in place of {path}", file=sys.stderr)
+        where = f'as {path}, a skill added for the command only' if args.new else f'in place of {path}'
+        print(f"The command's sessions read {args.draft} {where}", file=sys.stderr)
     early = []
-    signal.signal(signal.SIGTERM, lambda number, frame: early.append(number))
+    for stop in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(stop, lambda number, frame: early.append(number))
     # A terminal's Ctrl-C reaches the command too, so the tool waits for the command's own exit status.
     signal.signal(signal.SIGINT, lambda number, frame: None)
     try:
         process = subprocess.Popen(command)
     except OSError as error:
         sys.exit(f'Cannot run {command[0]}: {error}')
-    signal.signal(signal.SIGTERM, lambda number, frame: process.send_signal(number))
-    if early:
-        process.terminate()
+    for stop in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(stop, lambda number, frame: process.send_signal(number))
+    for number in early:
+        process.send_signal(number)
     status = process.wait()
     status = 128 - status if status < 0 else status
     problems = {path: difference(path, draft) for path in (args.draft, *copies)}

@@ -24,7 +24,8 @@ def skill(description, name='foo'):
 
 
 INSTALLED, DRAFT = skill('Installed wording.'), skill('Draft wording.')
-READER = 'import json, sys; print(json.dumps({p: open(p, encoding="utf-8").read() for p in sys.argv[1:]}))'
+READER = ('import json, os, sys; print(json.dumps({p: sorted(os.listdir(p)) if os.path.isdir(p) else '
+          'open(p, encoding="utf-8").read() for p in sys.argv[1:]}))')
 WAITER = '''
 import os, pathlib, sys, time
 folder = pathlib.Path(sys.argv[1])
@@ -57,24 +58,36 @@ import ctypes, errno
 libc = ctypes.CDLL(None, use_errno=True)
 class Refusing:
     def mount(self, source, target, kind, flags, data):
-        if REFUSED(flags):
+        if REFUSED(kind, flags):
             ctypes.set_errno(errno.EPERM)
             return -1
         return libc.mount(source, target, kind, flags, data)
 ctypes.CDLL = lambda *arguments, **options: Refusing()
 '''
-SIGTERM_BEFORE_THE_COMMAND_STARTS = '''
+REFUSED_CALL = '''
+import errno, os
+def refusing(path, *arguments, **options):
+    raise PermissionError(errno.EACCES, os.strerror(errno.EACCES), str(path))
+setattr(os, CALL, refusing)
+'''
+DELETED_WORKING_FOLDER = '''
+import os, tempfile
+folder = tempfile.mkdtemp()
+os.chdir(folder)
+os.rmdir(folder)
+'''
+STOP_BEFORE_THE_COMMAND_STARTS = '''
 import os, signal, subprocess
 start = subprocess.Popen
 def late(*arguments, **options):
-    os.kill(os.getpid(), signal.SIGTERM)
+    os.kill(os.getpid(), STOP)
     return start(*arguments, **options)
 subprocess.Popen = late
 '''
 CODEX_STAND_IN = '''
 import json, os
 path = os.path.join(os.environ['HOME'], '.agents', 'skills', 'foo', 'SKILL.md')
-if 'zebracorn' in open(path, encoding='utf-8').read():
+if os.path.isfile(path) and 'zebracorn' in open(path, encoding='utf-8').read():
     print(json.dumps({'type': 'item.completed', 'item': {'type': 'command_execution', 'command': f'cat {path}'}}))
 '''
 
@@ -131,17 +144,17 @@ class NamespaceTest(unittest.TestCase):
         return subprocess.run([sys.executable, '-c', code, *map(str, arguments)], capture_output=True, text=True,
                               env=self.environment(), timeout=TIMEOUT)
 
-    def reads(self, *paths, installed=(), claude=None, codex=None):
-        options = [item for path in installed for item in ('--installed', path)]
+    def reads(self, *paths, installed=(), new=False, claude=None, codex=None):
+        options = [item for path in installed for item in ('--installed', path)] + ['--new'] * new
         run = self.run_tool(self.draft, *options, '--', sys.executable, '-c', READER, *paths,
                             claude=claude, codex=codex)
         self.assertEqual(run.returncode, 0, run.stderr)
         return run, {Path(path): text for path, text in json.loads(run.stdout).items()}
 
-    def start_waiter(self, **options):
-        return subprocess.Popen([sys.executable, '-I', TOOL, str(self.draft), '--', sys.executable, '-c', WAITER,
-                                 str(self.signals)], stderr=subprocess.PIPE, text=True, env=self.environment(),
-                                **options)
+    def start_waiter(self, *arguments, **options):
+        return subprocess.Popen([sys.executable, '-I', TOOL, str(self.draft), *arguments, '--', sys.executable, '-c',
+                                 WAITER, str(self.signals)], stderr=subprocess.PIPE, text=True,
+                                env=self.environment(), **options)
 
     def wait_until_ready(self, tool):
         deadline = time.monotonic() + TIMEOUT
@@ -252,26 +265,41 @@ class NamespaceTest(unittest.TestCase):
         self.assertIn(os.strerror(errno.ENOENT), run.stderr)
 
     def test_a_refused_mount_stops_before_the_command_with_the_systems_error(self):
-        copy = self.install(self.copy('.agents'))
+        copy = self.copy('.agents')
+        folder = copy.parent.parent
+        self.install(folder / 'bar/SKILL.md', skill('Another skill.', 'bar'))
         marker = self.root / 'ran'
-        for step, refused in (('the bind', 'flags == 4096'), ('the read-only remount', 'flags & 32')):
+        for step, refused, target, options in (
+                ('refused to bind', 'flags == 4096', copy, ()),
+                ('read-only', 'flags & 32', copy, ()),
+                ('a tmpfs', 'kind == b"tmpfs"', folder, ('--new',)),
+                ('an overlay', 'kind == b"overlay"', folder, ('--new',))):
             with self.subTest(step=step):
-                run = self.run_main(f'REFUSED = lambda flags: {refused}\n{REFUSED_MOUNT}', self.draft, '--',
-                                    sys.executable, '-c', f'open({str(marker)!r}, "w")')
+                if not options:
+                    self.install(copy)
+                run = self.run_main(f'REFUSED = lambda kind, flags: {refused}\n{REFUSED_MOUNT}', self.draft,
+                                    *options, '--', sys.executable, '-c', f'open({str(marker)!r}, "w")')
+                if not options:
+                    copy.unlink()
+                    copy.parent.rmdir()
                 self.assertEqual(run.returncode, 1, run.stderr)
                 self.assertNotIn('Traceback', run.stderr)
-                self.assertIn(str(copy), run.stderr)
+                self.assertIn(step, run.stderr)
+                self.assertIn(str(target), run.stderr)
                 self.assertIn(os.strerror(errno.EPERM), run.stderr)
-                self.assertNotIn('in place of', run.stderr)
+                self.assertNotIn('sessions read', run.stderr)
                 self.assertFalse(marker.exists(), 'the command ran')
+                self.assertEqual(sorted(os.listdir(folder)), ['bar'])
 
-    def test_sigterm_before_the_command_starts_still_stops_it(self):
+    def test_a_stop_signal_before_the_command_starts_still_stops_it(self):
         self.install(self.copy('.agents'))
-        began = time.monotonic()
-        run = self.run_main(SIGTERM_BEFORE_THE_COMMAND_STARTS, self.draft, '--', sys.executable, '-c',
-                            'import time; time.sleep(60)')
-        self.assertEqual(run.returncode, 128 + signal.SIGTERM, run.stderr)
-        self.assertLess(time.monotonic() - began, 30)
+        for stop in (signal.SIGTERM, signal.SIGHUP):
+            with self.subTest(stop=stop.name):
+                began = time.monotonic()
+                run = self.run_main(f'STOP = {int(stop)}\n{STOP_BEFORE_THE_COMMAND_STARTS}', self.draft, '--',
+                                    sys.executable, '-c', 'import time; time.sleep(60)')
+                self.assertEqual(run.returncode, 128 + stop, run.stderr)
+                self.assertLess(time.monotonic() - began, 30)
 
     def test_a_skill_installed_nowhere_stops_before_the_command(self):
         self.install(self.copy('.agents', 'bar'), skill('Another skill.', 'bar'))
@@ -280,6 +308,130 @@ class NamespaceTest(unittest.TestCase):
             self.assertIn(str(self.copy(root)), message)
         self.assertIn('The skill foo', message)
         self.assertIn('--installed', message)
+        self.assertIn('--new', message)
+
+    def test_new_adds_the_draft_to_both_skills_folders_for_the_command_only(self):
+        other = self.install(self.copy('.claude', 'bar'), skill('Another skill.', 'bar'))
+        notes = self.install(self.home / '.agents/skills/notes.txt', 'notes')
+        codex = self.install(self.copy('.codex', 'baz'), skill('A Codex skill.', 'baz')).parent.parent
+        claude, agents = other.parent.parent, notes.parent
+        added = [self.copy('.claude'), self.copy('.agents')]
+        run, seen = self.reads(*added, other, claude, agents, codex, new=True)
+        self.assertEqual(seen, {**{path: DRAFT for path in added}, other: skill('Another skill.', 'bar'),
+                                claude: ['bar', 'foo'], agents: ['foo', 'notes.txt'], codex: ['baz']})
+        self.assertEqual(run.stderr.count('a skill added for the command only'), 2, run.stderr)
+        for path in added:
+            self.assertIn(str(path), run.stderr)
+        self.assertEqual((sorted(os.listdir(claude)), sorted(os.listdir(agents))), (['bar'], ['notes.txt']))
+        self.assertEqual(other.read_text(encoding='utf-8'), skill('Another skill.', 'bar'))
+
+    def test_new_adds_the_skill_to_the_one_skills_folder_that_exists(self):
+        self.install(self.copy('.agents', 'bar'), skill('Another skill.', 'bar'))
+        run, seen = self.reads(self.copy('.agents'), new=True)
+        self.assertEqual(seen, {self.copy('.agents'): DRAFT})
+        self.assertEqual(run.stderr.count('a skill added for the command only'), 1, run.stderr)
+        self.assertFalse((self.home / '.claude').exists())
+
+    def test_a_write_in_a_folder_that_new_adds_to_stays_off_the_disk(self):
+        other = self.install(self.copy('.agents', 'bar'), skill('Another skill.', 'bar'))
+        folder = other.parent.parent
+        code = ('import sys\nfolder, other, added = sys.argv[1:]\nopen(folder + "/written", "w").write("written")\n'
+                'open(other, "a").write("appended")\ntry:\n    open(added, "a").write("written")\n'
+                'except OSError as error:\n    print(error.errno)')
+        run = self.run_tool(self.draft, '--new', '--', sys.executable, '-c', code, folder, other, self.copy('.agents'))
+        self.assertEqual((run.returncode, run.stdout.strip()), (0, str(errno.EROFS)), run.stderr)
+        self.assertEqual(sorted(os.listdir(folder)), ['bar'])
+        self.assertEqual(other.read_text(encoding='utf-8'), skill('Another skill.', 'bar'))
+        self.assertEqual(self.draft.read_text(encoding='utf-8'), DRAFT)
+
+    def test_new_for_an_installed_skill_stops_before_the_command(self):
+        for root in ('.claude', '.agents', '.codex'):
+            (self.home / root / 'skills').mkdir(parents=True, exist_ok=True)
+        for root in ('.claude', '.agents', '.codex'):
+            with self.subTest(root=root):
+                copy = self.install(self.copy(root))
+                message = self.refused(self.draft, '--new')
+                copy.unlink()
+                copy.parent.rmdir()
+                self.assertIn(str(copy), message)
+                self.assertIn('The skill foo', message)
+                self.assertIn('--new', message)
+
+    def test_new_where_the_skill_name_is_taken_stops_before_the_command(self):
+        elsewhere = self.root / 'elsewhere'
+        elsewhere.mkdir()
+        self.copy('.agents').parent.parent.mkdir(parents=True)
+        self.copy('.agents').parent.symlink_to(elsewhere)
+        taken = self.copy('.agents').parent
+        self.assertIn(f'{taken} exists without a SKILL.md', self.refused(self.draft, '--new'))
+        self.assertEqual(os.listdir(elsewhere), [])
+        elsewhere.rmdir()
+        self.assertIn(f'{taken} exists without a SKILL.md', self.refused(self.draft, '--new'))
+        taken.unlink()
+        taken.mkdir()
+        self.assertIn(f'{taken} exists without a SKILL.md', self.refused(self.draft, '--new'))
+
+    def test_new_adds_the_skill_once_where_the_two_skills_folders_are_one_folder(self):
+        other = self.install(self.copy('.agents', 'bar'), skill('Another skill.', 'bar'))
+        folder = other.parent.parent
+        (self.home / '.claude').mkdir()
+        (self.home / '.claude/skills').symlink_to(folder)
+        added = [self.copy('.claude'), self.copy('.agents')]
+        _, seen = self.reads(*added, folder, new=True)
+        self.assertEqual(seen, {**{path: DRAFT for path in added}, folder: ['bar', 'foo']})
+        self.assertEqual(os.listdir(folder), ['bar'])
+
+    def test_new_keeps_a_command_started_inside_a_skills_folder_off_the_disk(self):
+        folder = self.copy('.agents').parent.parent
+        folder.mkdir(parents=True)
+        code = 'import os; open("written", "w").close(); print(sorted(os.listdir(".")))'
+        run = subprocess.run([sys.executable, '-I', TOOL, str(self.draft), '--new', '--', sys.executable, '-c', code],
+                             capture_output=True, text=True, env=self.environment(), cwd=folder, timeout=TIMEOUT)
+        self.assertEqual((run.returncode, run.stdout.strip()), (0, "['foo', 'written']"), run.stderr)
+        self.assertEqual(os.listdir(folder), [])
+
+    def test_a_failed_system_call_while_placing_the_draft_stops_before_the_command(self):
+        copy = self.copy('.agents')
+        folder = copy.parent.parent
+        folder.mkdir(parents=True)
+        marker = self.root / 'ran'
+        command = ('--', sys.executable, '-c', f'open({str(marker)!r}, "w")')
+        for call, options in (('open', ('--new',)), ('mkdir', ('--new',)), ('statvfs', ())):
+            with self.subTest(call=call):
+                if not options:
+                    self.install(copy)
+                run = self.run_main(f'CALL = {call!r}\n{REFUSED_CALL}', self.draft, *options, *command)
+                self.assertEqual(run.returncode, 1, run.stderr)
+                self.assertNotIn('Traceback', run.stderr)
+                self.assertIn(os.strerror(errno.EACCES), run.stderr)
+                self.assertIn(str(folder), run.stderr)
+                self.assertNotIn('sessions read', run.stderr)
+                self.assertFalse(marker.exists(), 'the command ran')
+
+    def test_new_from_a_deleted_working_folder_stops_before_the_command(self):
+        self.copy('.agents').parent.parent.mkdir(parents=True)
+        marker = self.root / 'ran'
+        run = self.run_main(DELETED_WORKING_FOLDER, self.draft, '--new', '--', sys.executable, '-c',
+                            f'open({str(marker)!r}, "w")')
+        self.assertEqual(run.returncode, 1, run.stderr)
+        self.assertNotIn('Traceback', run.stderr)
+        self.assertIn(os.strerror(errno.ENOENT), run.stderr)
+        self.assertFalse(marker.exists(), 'the command ran')
+
+    def test_new_with_no_skills_folder_stops_before_the_command(self):
+        self.install(self.copy('.codex', 'baz'), skill('A Codex skill.', 'baz'))
+        message = self.refused(self.draft, '--new')
+        for root in ('.claude', '.agents'):
+            self.assertIn(str(self.home / root / 'skills'), message)
+
+    def test_new_with_installed_is_a_usage_error(self):
+        copy = self.install(self.copy('.agents'))
+        marker = self.root / 'ran'
+        run = self.run_tool(self.draft, '--new', '--installed', copy, '--', sys.executable, '-c',
+                            f'open({str(marker)!r}, "w")')
+        self.assertEqual(run.returncode, 2, run.stderr)
+        self.assertIn('usage', run.stderr)
+        self.assertFalse(marker.exists(), 'the command ran')
 
     def test_an_installed_path_that_is_no_file_stops_before_the_command(self):
         self.install(self.copy('.agents'))
@@ -290,7 +442,7 @@ class NamespaceTest(unittest.TestCase):
         self.install(self.copy('.agents'))
         for text in (None, '# foo\n', '---\ndescription: x\n---\n', '---\ndescription: x\n---\nname: foo\n',
                      '---\nname: other\nname: foo\n---\n',
-                     skill('x', name='../foo'), b'\xff\xfe'):
+                     skill('x', name='../foo'), skill('x', name='.'), skill('x', name='..'), b'\xff\xfe'):
             with self.subTest(text=text):
                 self.draft.unlink(missing_ok=True)
                 if isinstance(text, str):
@@ -306,8 +458,8 @@ class NamespaceTest(unittest.TestCase):
                 run = self.run_tool(self.draft, '--', sys.executable, '-c', f'import os, signal\n{code}')
                 self.assertEqual(run.returncode, status, run.stderr)
 
-    def changed_during_the_run(self, change):
-        tool = self.start_waiter()
+    def changed_during_the_run(self, change, *arguments):
+        tool = self.start_waiter(*arguments)
         self.wait_until_ready(tool)
         change()
         (self.signals / 'release').write_text('')
@@ -362,15 +514,47 @@ class NamespaceTest(unittest.TestCase):
         self.assertEqual(len(warnings), 1, warnings)
         self.assertTrue(warnings[0].startswith(str(self.copy('.claude'))), warnings)
 
-    def test_sigterm_to_the_tool_stops_the_command(self):
+    def test_with_new_a_draft_replaced_by_a_new_file_during_the_run_fails_the_measurement(self):
+        (self.home / '.agents/skills').mkdir(parents=True)
+
+        def atomic_save():
+            self.install(self.root / 'draft/new', skill('Edited.')).replace(self.draft)
+        status, warnings = self.changed_during_the_run(atomic_save, '--new')
+        self.assertNotEqual(status, 0)
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertTrue(warnings[0].startswith(str(self.draft)), warnings)
+
+    def test_with_new_a_skills_folder_replaced_during_the_run_fails_the_measurement(self):
+        folder = self.home / '.agents/skills'
+        folder.mkdir(parents=True)
+
+        def pull():
+            folder.rename(folder.with_name('skills.old'))
+            folder.mkdir()
+        status, warnings = self.changed_during_the_run(pull, '--new')
+        self.assertNotEqual(status, 0)
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertTrue(warnings[0].startswith(str(self.copy('.agents'))), warnings)
+
+    def test_with_new_a_copy_installed_for_codex_during_the_run_fails_the_measurement(self):
+        (self.home / '.agents/skills').mkdir(parents=True)
+        status, warnings = self.changed_during_the_run(lambda: self.install(self.copy('.codex')), '--new')
+        self.assertNotEqual(status, 0)
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertTrue(warnings[0].startswith(str(self.copy('.codex'))), warnings)
+
+    def test_a_stop_signal_to_the_tool_stops_the_command(self):
         self.install(self.copy('.agents'))
-        tool = self.start_waiter()
-        command = self.wait_until_ready(tool)
-        tool.send_signal(signal.SIGTERM)
-        tool.communicate(timeout=TIMEOUT)
-        self.assertEqual(tool.returncode, 128 + signal.SIGTERM)
-        with self.assertRaises(ProcessLookupError, msg='the command still runs'):
-            os.kill(command, 0)
+        for stop in (signal.SIGTERM, signal.SIGHUP):
+            with self.subTest(stop=stop.name):
+                tool = self.start_waiter()
+                command = self.wait_until_ready(tool)
+                tool.send_signal(stop)
+                tool.communicate(timeout=TIMEOUT)
+                (self.signals / 'ready').unlink()
+                self.assertEqual(tool.returncode, 128 + stop)
+                with self.assertRaises(ProcessLookupError, msg='the command still runs'):
+                    os.kill(command, 0)
 
     def test_ctrl_c_lets_the_command_finish_and_gives_its_status(self):
         self.install(self.copy('.agents'))
@@ -388,13 +572,14 @@ class NamespaceTest(unittest.TestCase):
         queries = self.install(self.root / 'queries.json',
                                json.dumps([{'target': 'foo', 'query': 'Do the work', 'should_trigger': True}]))
 
-        def hits(installed, draft, behind_the_tool=True):
-            self.install(self.copy('.agents'), installed)
+        def hits(installed, draft, *options, behind_the_tool=True):
+            if installed is not None:
+                self.install(self.copy('.agents'), installed)
             self.install(self.draft, draft)
             out = self.root / 'out.json'
             out.unlink(missing_ok=True)
             command = [sys.executable, '-I', str(ROOT / 'codex_triggers.py'), str(queries), str(out), '--runs', '2']
-            prefix = [sys.executable, '-I', TOOL, str(self.draft), '--'] if behind_the_tool else []
+            prefix = [sys.executable, '-I', TOOL, str(self.draft), *options, '--'] if behind_the_tool else []
             run = subprocess.run(prefix + command, capture_output=True, text=True, timeout=TIMEOUT,
                                  env=self.environment(path=stand_in.parent))
             self.assertEqual(run.returncode, 0, run.stderr)
@@ -402,6 +587,11 @@ class NamespaceTest(unittest.TestCase):
         self.assertEqual(hits(marked, plain, behind_the_tool=False), 2, 'the stand-in sees the installed description')
         self.assertEqual(hits(marked, plain), 0)
         self.assertEqual(hits(plain, marked), 2)
+        self.copy('.agents').unlink()
+        self.copy('.agents').parent.rmdir()
+        self.assertEqual(hits(None, marked, behind_the_tool=False), 0, 'the stand-in finds no skill to read')
+        self.assertEqual(hits(None, marked, '--new'), 2)
+        self.assertEqual(hits(None, plain, '--new'), 0)
 
 
 class WithoutNamespacesTest(unittest.TestCase):
