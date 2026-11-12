@@ -12,8 +12,10 @@ The steps run in one process, in this order, and each waits for the one before: 
 user's clipboard, put the text there, read it back and compare, click the pixel, paste, wait, put the user's
 clipboard back. The wait comes before the clipboard goes back even when the paste failed, because a paste
 that lands late takes whatever the clipboard holds then, and it is at least 10 seconds when the driver did
-not answer or this command was interrupted, because the steps may still be running. A signal that arrives
-during the wait or while the clipboard goes back is held until both are done. On 11 November 2026 a
+not answer, refused the steps or this command was interrupted, because the steps may still be running. A
+signal that arrives during the wait or while the clipboard goes back is held until both are done. The
+clipboard goes back only while it still holds the pasted text: a copy the user made meanwhile is left alone,
+and the command then exits 1, because the window may have received that copy. On 11 November 2026 a
 paste sent before the clipboard held the text put the user's own clipboard into a message box. The
 clipboard's text is held in memory only and never printed, and a message quotes no driver output beyond an
 error code. Give the command a time limit of 4 minutes: a driver call may take 20 seconds.
@@ -138,7 +140,7 @@ def main():
             raise Ended(f"ended by signal {number}")
         held.append(number)
 
-    for number in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+    for number in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT, signal.SIGQUIT):
         signal.signal(number, ended)
 
     try:
@@ -152,7 +154,9 @@ def main():
     except BaseException as error:
         stop(f"nothing was changed: {why(error)}")
     if refuse:
-        kinds = ", ".join(sorted(types - PLAIN_TEXT)[:6]) or "text the driver did not return"
+        # A program chooses a format's name, so each is cut and kept on the message's one line.
+        kinds = ", ".join(" ".join(kind.split())[:40] for kind in sorted(types - PLAIN_TEXT)[:6])
+        kinds = kinds or "text the driver did not return"
         stop(f"nothing was changed: the clipboard holds more than plain text ({kinds}), which this cannot put "
              "back. Ask the user to copy something else first.", 3)
 
@@ -180,18 +184,28 @@ def main():
                 raise Refused("run_steps: a step failed or is missing from the driver's report")
             say(f"sent the click and {' then '.join('+'.join(c) for c in keys)}")
         except BaseException as error:
+            held = []  # first, so a signal that arrives here does not skip the wait and the restore
             failure = why(error)
-        held = []
+        held = held or []
         # The app reads the clipboard after the keystroke, so the text stays until the paste has had its time.
         time.sleep(wait)
-        if saved is None:
-            say("the clipboard was empty before, so it holds the pasted text now unless the write failed")
-        else:
+        now = clipboard_text()  # after the wait, so a copy the user made during it is seen
+        if saved is None and same(now, text):
+            say("the clipboard was empty before, so it holds the pasted text now")
+        elif saved is None and not now:
+            say("the clipboard is empty, as it was before")  # the first write failed
+        elif saved is not None and same(now, text):
             call("clipboard_write", text=saved)
             if not same(clipboard_text(), saved):
                 raise Refused("it does not hold the user's text after writing it")
             say("the user's clipboard is back")
+        elif saved is not None and same(now, saved):
+            say("the user's clipboard is back")  # it never left: the first write failed
+        else:
+            changed = "the clipboard changed during the paste and was left as it is; the window may hold other text"
+            failure = f"{failure + '; ' if failure else ''}{changed}"
     except BaseException as error:
+        held = held or []  # first, so a signal that arrives here is not reported as nothing changed
         failure = f"{failure + '; ' if failure else ''}the user's clipboard was NOT put back: {why(error)}"
     if held and not failure:
         failure = f"ended by signal {held[0]}"  # the same words as a signal just before the wait
@@ -200,5 +214,12 @@ def main():
     say("pasted; look at the window before you send")
 
 
+def run():
+    try:
+        main()
+    except Ended as error:  # it leaves main only from outside the two blocks, before the first write
+        stop(f"nothing was changed: {error}")
+
+
 if __name__ == "__main__":
-    main()
+    run()

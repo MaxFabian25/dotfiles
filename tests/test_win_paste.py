@@ -11,7 +11,9 @@ The other modes in state.json's `modes` make it misbehave:
       sign alone, and with the clipboard's text
   null-types   clipboard_read's `types` is null
   slow-restore   the second clipboard_write takes 2 seconds
+  user-copies   the user copies "NEWER" while run_steps runs
   slow-read   get_window_state takes 2 seconds
+  hang-read   get_window_state takes 60 seconds
   fail-step, fail-step-only, fail-report, short-report   a failed last step, in the ways a report can show it
   slow-steps   run_steps takes 5 seconds
   noise, exit-1   clipboard_read prints a line before its JSON, or exits 1, both with the clipboard's text
@@ -24,6 +26,7 @@ The other modes in state.json's `modes` make it misbehave:
 
 import contextlib
 import importlib.util
+import runpy
 import io
 import json
 import os
@@ -39,7 +42,7 @@ from pathlib import Path
 TOOL = Path(__file__).resolve().parent.parent / "skills/browser-and-computer-use/scripts/win_paste.py"
 MINE = "PRIVATE-COPY-OF-THE-USER"
 STAND_IN = r'''#!/usr/bin/env python3
-import json, sys, time
+import json, os, sys, time
 from pathlib import Path
 box = Path(__file__).parent
 state = json.loads((box / "state.json").read_text())
@@ -47,6 +50,7 @@ tool, args = sys.argv[2], json.loads(sys.stdin.read())
 with open(box / "calls.jsonl", "a") as log:
     log.write(json.dumps([tool, args]) + "\n")
 modes, reply, code = state.get("modes", []), {"supported": True}, 0
+state["cwd"] = os.getcwd()
 refused = {"error_code": "clipboard_unavailable", "status": "unavailable", "supported": False}
 
 def save():
@@ -99,6 +103,8 @@ elif tool == "run_steps":
         elif ok and keys == ["ctrl", "v"]:
             state["field"] += state["text"] or ""
         steps.append({"index": index, "ok": ok, "tool": step["tool"]})
+    if "user-copies" in modes:
+        state.update(types=["CF_UNICODETEXT"], text="NEWER")
     if "short-report" in modes:
         steps.pop()
     reply.update(ok="fail-report" not in modes and ("fail-step-only" in modes or all(s["ok"] for s in steps)),
@@ -110,6 +116,8 @@ elif tool == "run_steps":
         time.sleep(5)
 elif tool == "get_window_state" and "slow-read" in modes:
     time.sleep(2)
+elif tool == "get_window_state" and "hang-read" in modes:
+    time.sleep(60)
 elif tool == "get_window_state" and "refuse-read" in modes:
     reply = {"error_code": "window_gone", "supported": False}
 save()
@@ -139,6 +147,14 @@ class WinPaste(unittest.TestCase):
                                      "WIN_PASTE_HOME": str(self.box), "WIN_PASTE_TIMEOUT": timeout,
                                      "WIN_PASTE_UNSURE_WAIT": unsure})
 
+    def wait_for_call(self, tool):
+        """Return once the stand-in has logged a call of the tool, which it does as the call starts."""
+        log, limit = self.box / "calls.jsonl", time.monotonic() + 30
+        while not (log.exists() and f'["{tool}"' in log.read_text()):
+            self.assertLess(time.monotonic(), limit, f"no {tool} call within 30 seconds")
+            time.sleep(0.05)
+        time.sleep(0.3)  # the stand-in saves the late paste's due time just after it logs the call
+
     def end(self, child, note):
         out, err = child.communicate(note, timeout=60)
         log = self.box / "calls.jsonl"
@@ -154,9 +170,10 @@ class WinPaste(unittest.TestCase):
     def test_the_text_arrives_and_the_users_clipboard_comes_back_unprinted(self):
         result, calls, state = self.paste("a note\nline two")
         self.assertEqual((result.returncode, state["field"], state["text"]), (0, "old a note\nline two", MINE))
+        self.assertEqual(state["cwd"], str(self.box.resolve()))  # the real driver needs a Windows folder to start in
         self.assertEqual([tool for tool, _ in calls], ["get_window_state", "clipboard_read", "clipboard_write",
-                                                       "clipboard_read", "run_steps", "clipboard_write",
-                                                       "clipboard_read"])
+                                                       "clipboard_read", "run_steps", "clipboard_read",
+                                                       "clipboard_write", "clipboard_read"])
         self.assertNotIn(MINE, result.stdout + result.stderr)
         self.assertIn("the user's clipboard is back", result.stdout)
 
@@ -188,6 +205,13 @@ class WinPaste(unittest.TestCase):
         result, _, state = self.paste("x", types=[], text=None)
         self.assertEqual((result.returncode, state["field"], state["text"]), (0, "old x", "x"))
         self.assertIn("was empty before, so it holds the pasted text now", result.stdout)
+        result, _, state = self.paste("x", types=[], text=None, modes=["refuse-write"])
+        self.assertEqual((result.returncode, state["text"]), (1, None))
+        self.assertIn("the clipboard is empty, as it was before", result.stdout)
+        result, _, state = self.paste("x", types=[], text=None, modes=["user-copies"])
+        self.assertEqual((result.returncode, state["text"]), (1, "NEWER"))
+        self.assertIn("the clipboard changed during the paste and was left as it is", result.stderr)
+        self.assertNotIn("holds the pasted text", result.stdout)
 
     def test_windows_line_endings_in_the_read_back_are_the_same_text(self):
         result, _, state = self.paste("one\ntwo", modes=["crlf"])
@@ -217,19 +241,13 @@ class WinPaste(unittest.TestCase):
         child = self.start(modes=["slow-read"])
         child.stdin.write("x")
         child.stdin.close()
-        time.sleep(1)
+        self.wait_for_call("get_window_state")  # by then the tool has set its signal handlers
         child.send_signal(signal.SIGTERM)
         self.assertEqual(child.wait(timeout=30), 1)
         err = child.stderr.read()
         child.stdout.close()
         child.stderr.close()
         self.assertEqual(err, "win_paste: nothing was changed: ended by signal 15\n")
-
-    def test_a_driver_that_answered_gets_the_settle_time_and_not_the_long_wait(self):
-        started = time.monotonic()
-        result, _, _ = self.end(self.start("--settle", "0", unsure="8"), "x")
-        self.assertEqual(result.returncode, 0)
-        self.assertLess(time.monotonic() - started, 6)
 
     def test_a_failed_or_missing_step_is_a_failure_and_the_clipboard_still_comes_back(self):
         for mode in ("fail-step", "fail-step-only", "fail-report", "short-report"):
@@ -244,20 +262,98 @@ class WinPaste(unittest.TestCase):
             self.assertEqual((state["field"], state["text"]), ("old x", MINE), modes)
             self.assertEqual(result.returncode, 1 if "fail-step" in modes else 0, modes)
 
-    def test_a_driver_that_does_not_answer_keeps_the_text_until_the_steps_must_be_over(self):
-        # The paste lands a second after its step, which is after the driver call was given up on.
-        result, _, state = self.paste("x", timeout="0.4", unsure="1.6", modes=["late", "slow-steps"])
-        self.assertEqual((result.returncode, state["field"], state["text"]), (1, "old x", MINE))
-        self.assertIn("no reply within 0.4 seconds", result.stderr)
+    def waits_and_writes(self, run_steps, copied_during_the_wait=None):
+        """Run the tool in this process with no real waiting, and return its exit status and, in order, each
+        wait and each clipboard write. The tests that measured these on the clock failed on a busy machine on
+        12 November 2026, when starting the stand-in alone took longer than their limits."""
+        spec = importlib.util.spec_from_file_location("win_paste", TOOL)
+        tool = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(tool)
+        for number in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT, signal.SIGQUIT):
+            self.addCleanup(signal.signal, number, signal.getsignal(number))
+        held, events = {"text": MINE}, []
+
+        def call(name, **arguments):
+            if name == "clipboard_write":
+                held["text"] = arguments["text"]
+                events.append(("write", arguments["text"]))
+            if name == "run_steps":
+                return run_steps(tool)
+            return {"types": ["CF_UNICODETEXT"], "text": held["text"]}
+
+        tool.call, tool.UNSURE_WAIT = call, 7.0
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+            stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
+            def wait(seconds):
+                events.append(("wait", seconds))
+                if copied_during_the_wait:
+                    held["text"] = copied_during_the_wait
+
+            stack.enter_context(unittest.mock.patch.object(tool.time, "sleep", wait))
+            stack.enter_context(unittest.mock.patch.object(sys, "stdin", io.StringIO("x")))
+            stack.enter_context(unittest.mock.patch.object(
+                sys, "argv", ["win_paste.py", "--pid", "7", "--window-id", "9", "--x", "1", "--y", "2",
+                              "--settle", "0.5"]))
+            try:
+                tool.main()
+                code = 0
+            except SystemExit as stopped:
+                code = stopped.code
+        return code, events
+
+    def test_a_driver_that_does_not_answer_or_refuses_keeps_the_text_for_the_long_wait(self):
+        def no_reply(tool):
+            raise tool.Refused("run_steps: no reply within 20 seconds")
+
+        self.assertEqual(self.waits_and_writes(no_reply), (1, [("write", "x"), ("wait", 7.0), ("write", MINE)]))
+
+    def test_a_driver_that_answered_gets_the_settle_time_and_not_the_long_wait(self):
+        for ok, code in ((True, 0), (False, 1)):
+            self.assertEqual(self.waits_and_writes(lambda tool: {"ok": ok, "steps": [{"ok": True}, {"ok": ok}]}),
+                             (code, [("write", "x"), ("wait", 0.5), ("write", MINE)]), ok)
+
+    def test_an_error_nobody_expected_in_the_first_reads_says_that_nothing_was_changed(self):
+        def call(name, **arguments):
+            raise RuntimeError(MINE)
+
+        spec = importlib.util.spec_from_file_location("win_paste", TOOL)
+        tool = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(tool)
+        for number in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT, signal.SIGQUIT):
+            self.addCleanup(signal.signal, number, signal.getsignal(number))
+        tool.call, err = call, io.StringIO()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(contextlib.redirect_stderr(err))
+            stack.enter_context(unittest.mock.patch.object(sys, "stdin", io.StringIO("x")))
+            stack.enter_context(unittest.mock.patch.object(
+                sys, "argv", ["win_paste.py", "--pid", "7", "--window-id", "9", "--x", "1", "--y", "2"]))
+            with self.assertRaises(SystemExit) as stopped:
+                tool.run()
+        self.assertEqual((stopped.exception.code, err.getvalue()),
+                         (1, "win_paste: nothing was changed: unexpected RuntimeError\n"))
+
+    def test_a_copy_the_user_made_during_the_wait_is_left_alone(self):
+        self.assertEqual(self.waits_and_writes(lambda tool: {"ok": True, "steps": [{"ok": True}, {"ok": True}]},
+                                               copied_during_the_wait="NEWER"),
+                         (1, [("write", "x"), ("wait", 0.5)]))
+
+    def test_a_driver_call_that_does_not_end_is_given_up_on(self):
+        # Nothing here needs the stand-in to start within the limit: a slow start also ends as no reply.
+        result, calls, state = self.paste("x", timeout="0.5", modes=["hang-read"])
+        self.assertEqual((result.returncode, state["text"]), (1, MINE))
+        self.assertNotIn("clipboard_write", dict(calls))
+        self.assertEqual(result.stderr,
+                         "win_paste: nothing was changed: get_window_state: no reply within 0.5 seconds\n")
 
     def test_being_ended_during_the_paste_still_puts_the_clipboard_back_after_the_wait(self):
         for number, reason in ((signal.SIGTERM, "ended by signal 15"), (signal.SIGHUP, "ended by signal 1"),
-                               (signal.SIGINT, "ended by signal 2")):
+                               (signal.SIGINT, "ended by signal 2"), (signal.SIGQUIT, "ended by signal 3")):
             child = self.start("--settle", "0", unsure="1.6", modes=["late", "slow-steps"])
             child.stdin.write("x")
             child.stdin.close()
             self.assertEqual(child.stdout.readline(), "clipboard holds the text\n")
-            time.sleep(0.5)
+            self.wait_for_call("run_steps")  # a fixed pause was too short on a busy machine on 12 November 2026
             child.send_signal(number)
             self.assertEqual(child.wait(timeout=30), 1, reason)
             out, err = child.stdout.read(), child.stderr.read()
@@ -270,7 +366,7 @@ class WinPaste(unittest.TestCase):
             self.assertNotIn("Traceback", err, reason)
 
     def test_being_ended_during_the_wait_still_puts_the_clipboard_back(self):
-        for number in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+        for number in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT, signal.SIGQUIT):
             child = self.start("--settle", "1.5")
             child.stdin.write("x")
             child.stdin.close()
@@ -302,6 +398,21 @@ class WinPaste(unittest.TestCase):
         self.assertEqual((state["text"], out, err), (MINE, "the user's clipboard is back\n",
                                                      "win_paste: ended by signal 2\n"))
 
+    def test_a_copy_the_user_made_during_the_paste_is_left_alone_and_said(self):
+        for modes in (["user-copies"], ["user-copies", "fail-step"]):
+            result, calls, state = self.paste("x", modes=modes)
+            self.assertEqual((result.returncode, state["text"]), (1, "NEWER"), modes)
+            self.assertEqual([tool for tool, _ in calls].count("clipboard_write"), 1, modes)
+            self.assertIn("the clipboard changed during the paste and was left as it is", result.stderr, modes)
+            self.assertEqual("run_steps: a step failed" in result.stderr, "fail-step" in modes, modes)
+            self.assertNotIn("is back", result.stdout, modes)
+            self.assertNotIn("NEWER", result.stdout + result.stderr, modes)
+
+    def test_a_first_write_that_was_lost_needs_no_second_write(self):
+        result, calls, state = self.paste("x", modes=["lose-write"])
+        self.assertEqual((state["text"], [tool for tool, _ in calls].count("clipboard_write")), (MINE, 1))
+        self.assertIn("the user's clipboard is back", result.stdout)
+
     def test_a_failed_paste_and_a_failed_restore_are_both_said(self):
         result, _, _ = self.paste("x", modes=["fail-step", "lose-restore"])
         self.assertEqual(result.returncode, 1)
@@ -319,9 +430,16 @@ class WinPaste(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("win_paste", TOOL)
         tool = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(tool)
-        for number in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+        for number in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT, signal.SIGQUIT):
             self.addCleanup(signal.signal, number, signal.getsignal(number))
+        why = tool.why
+
+        def why_while_a_signal_arrives(error):
+            os.kill(os.getpid(), signal.SIGTERM)
+            return why(error)
+
         for breaks, clipboard, message in (("run_steps", MINE, "win_paste: unexpected RuntimeError\n"),
+                                           ("run_steps and a signal", MINE, "win_paste: unexpected RuntimeError\n"),
                                            ("restore", "x", "win_paste: the user's clipboard was NOT put back: "
                                                             "unexpected RuntimeError\n")):
             held, writes = {"text": MINE}, []
@@ -329,7 +447,7 @@ class WinPaste(unittest.TestCase):
             def call(name, **arguments):
                 if name == "clipboard_write":
                     writes.append(arguments["text"])
-                if name == "run_steps" and breaks == "run_steps" or len(writes) == 2 and breaks == "restore":
+                if name == "run_steps" and breaks != "restore" or len(writes) == 2 and breaks == "restore":
                     raise RuntimeError(held["text"])
                 if name == "clipboard_write":
                     held["text"] = arguments["text"]
@@ -337,6 +455,7 @@ class WinPaste(unittest.TestCase):
                         "ok": True, "steps": [{"ok": True}, {"ok": True}]}
 
             tool.call = call
+            tool.why = why_while_a_signal_arrives if breaks == "run_steps and a signal" else why
             out, err = io.StringIO(), io.StringIO()
             with contextlib.ExitStack() as stack:
                 stack.enter_context(contextlib.redirect_stdout(out))
@@ -349,6 +468,37 @@ class WinPaste(unittest.TestCase):
                     tool.main()
             self.assertEqual((stopped.exception.code, held["text"], err.getvalue()), (1, clipboard, message), breaks)
             self.assertNotIn(MINE, out.getvalue() + err.getvalue(), breaks)
+
+    def test_a_signal_between_the_first_reads_and_the_first_write_says_that_nothing_was_changed(self):
+        # The file is run as a command, so this also fails when its last line calls main() and not run().
+        for number in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT, signal.SIGQUIT):
+            self.addCleanup(signal.signal, number, signal.getsignal(number))
+        leave, left = sys.exit, []
+
+        def leave_while_a_signal_arrives(code=0):
+            if not left:  # the refusal of a clipboard that holds an image, which runs between the two blocks
+                left.append(code)
+                os.kill(os.getpid(), signal.SIGTERM)
+            leave(code)
+
+        reply = subprocess.CompletedProcess([], 0, json.dumps({"types": ["PNG"], "text": None}).encode(), b"")
+        err = io.StringIO()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(contextlib.redirect_stderr(err))
+            stack.enter_context(unittest.mock.patch.object(sys, "exit", leave_while_a_signal_arrives))
+            stack.enter_context(unittest.mock.patch.object(subprocess, "run", lambda *a, **k: reply))
+            stack.enter_context(unittest.mock.patch.object(sys, "stdin", io.StringIO("x")))
+            stack.enter_context(unittest.mock.patch.object(
+                sys, "argv", ["win_paste.py", "--pid", "7", "--window-id", "9", "--x", "1", "--y", "2"]))
+            with self.assertRaises(SystemExit) as stopped:
+                runpy.run_path(str(TOOL), run_name="__main__")
+        self.assertEqual((left, stopped.exception.code), ([3], 1))
+        self.assertEqual(err.getvalue().splitlines()[-1], "win_paste: nothing was changed: ended by signal 15")
+
+    def test_a_long_format_name_stays_short_and_on_one_line(self):
+        result, _, _ = self.paste("x", types=["CF_UNICODETEXT", "odd\nname " + "z" * 300], text=MINE)
+        self.assertEqual((result.returncode, result.stderr.count("\n")), (3, 1))
+        self.assertLess(len(result.stderr), 250)
 
     def test_a_reader_that_closed_its_end_does_not_stop_the_clipboard_going_back(self):
         child = self.start("--settle", "0")
