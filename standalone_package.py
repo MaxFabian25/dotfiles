@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import shutil
 
+from description import BuildSource, SnapshotRecipe
 from package import files
 from portable import read_utf8, staging_directory, write_utf8
 
@@ -34,14 +35,14 @@ def snapshot(skills, source_record, destination):
     return target
 
 
-def build_snapshot(name, definition, source_snapshot, *, output_root):
+def build_snapshot(name: str, recipe: SnapshotRecipe, source: BuildSource, source_snapshot: Path, *, output_root: Path):
     record = read(source_snapshot / 'source.json')
     if content_hashes(source_snapshot / 'skills') != record['fileHashes']:
         raise RuntimeError(f'Source snapshot differs from its receipt: {name}')
-    selected = sorted(definition['skills'])
+    selected = sorted(recipe.origins)
     if sorted(p.parent.name for p in (source_snapshot / 'skills').glob('*/SKILL.md')) != selected:
         raise RuntimeError(f'Selected skills changed: {name}')
-    version = '0.1.0+snapshot.' + record['snapshotSha256'][:12] + '.personal' + str(definition['packagingRevision'])
+    version = '0.1.0+snapshot.' + record['snapshotSha256'][:12] + '.personal' + str(source.packaging)
     parent = output_root / name
     parent.mkdir(parents=True, exist_ok=True)
     with staging_directory(prefix='.build-', dir=parent) as tmp:
@@ -50,19 +51,19 @@ def build_snapshot(name, definition, source_snapshot, *, output_root):
         metadata = stage / '.codex-plugin'
         metadata.mkdir()
         manifest = {
-            'name': name, 'version': version, 'description': definition['description'],
+            'name': name, 'version': version, 'description': source.metadata['description'],
             'author': {'name': 'Personal packaging'}, 'skills': './skills/',
-            'interface': {'displayName': definition['displayName'], 'shortDescription': definition['description'],
-                          'developerName': definition.get('repository') or 'Personal workflows',
+            'interface': {'displayName': source.display_name, 'shortDescription': source.metadata['description'],
+                          'developerName': source.metadata.get('repository') or 'Personal workflows',
                           'category': 'Developer Tools'},
         }
-        if definition.get('repository'):
-            manifest['repository'] = 'https://github.com/' + definition['repository']
+        if source.metadata.get('repository'):
+            manifest['repository'] = 'https://github.com/' + source.metadata['repository']
             manifest['interface']['websiteURL'] = manifest['repository']
         write_utf8(metadata / 'plugin.json', json.dumps(manifest, indent=2) + '\n')
         receipt = {
             'repository': manifest.get('repository', 'Personal local files'),
-            'commit': record.get('commit'), 'sourceKind': definition['sourceKind'], 'version': version,
+            'commit': record.get('commit'), 'sourceKind': source.metadata['sourceKind'], 'version': version,
             'selectedSkills': selected, 'selectedSources': record.get('selectedSources', {}),
             'sourceSnapshot': str(source_snapshot), 'snapshotSha256': record['snapshotSha256'],
             'sourceFileHashes': record['fileHashes'], 'portabilityChanges': record.get('portabilityChanges', []),

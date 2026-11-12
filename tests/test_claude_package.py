@@ -20,8 +20,7 @@ class ClaudePublicationTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.catalog = self.root / 'catalog'
-        self.config = {'packagingRevision': 1, 'collections': {'sample': [
-            {'name': 'sample', 'skills': ['workflow'], 'description': 'Test workflow'}]}}
+        self.definitions = [{'name': 'sample', 'skills': ['workflow'], 'description': 'Test workflow'}]
 
     def build(self, version='1.0.0', body='Original instructions.\n',
               sidecar='policy:\n  allow_implicit_invocation: false\n', explicit=frozenset()):
@@ -35,7 +34,7 @@ class ClaudePublicationTests(unittest.TestCase):
         (skill / 'agents/openai.yaml').write_text(sidecar)
         write_json(source / '.codex-plugin/upstream.json', {'repository': 'https://github.com/example/skills',
                    'commit': version, 'version': version})
-        return cp.build('sample', source, self.config, self.catalog, explicit)
+        return cp.build('sample', source, self.definitions, 1, self.catalog, explicit)
 
     def test_preserves_body_resources_and_explicit_invocation(self):
         packages = self.build()

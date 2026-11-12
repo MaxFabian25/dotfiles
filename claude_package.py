@@ -27,10 +27,9 @@ def contract(release):
     return result
 
 
-def build(collection, codex_release, config, catalog_root, explicit=frozenset()):
+def build(collection, codex_release, definitions, packaging, catalog_root, explicit=frozenset()):
     """Claude Code runs a directory marketplace's plugins from the catalog, never from its install cache, so a
     skill the setup makes explicit-only is explicit in the release itself, and the version names those skills."""
-    definitions = config['collections'].get(collection, [])
     if not definitions:
         return []
     source = read(codex_release / '.codex-plugin/upstream.json')
@@ -85,7 +84,7 @@ def build(collection, codex_release, config, catalog_root, explicit=frozenset())
             for license_file in codex_release.glob('LICENSE*'):
                 if license_file.is_file():
                     shutil.copy2(license_file, stage / license_file.name)
-            version = source['version'] + '.claude' + str(config['packagingRevision'])
+            version = source['version'] + '.claude' + str(packaging)
             if chosen:
                 version += '.explicit.' + hashlib.sha256('\n'.join(sorted(chosen)).encode()).hexdigest()[:12]
             metadata = stage / '.claude-plugin'

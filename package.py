@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 
+from description import BuildSource, GenericRecipe
 from portable import GIT, extract_tar, posix, read_utf8, require_readable, staging_directory, write_utf8
 
 
@@ -49,35 +50,26 @@ def export_root(stage, selected):
     return ['./skills/'], omitted
 
 
-def package(name, revision='HEAD', *, config, output_root):
-    if config.get('kind') == 'public-emil':
-        from public_emil_package import build
-        return build(name, config, revision, output_root=output_root)
-    if config.get('kind') == 'course':
-        from course_package import build
-        return build(name, config, revision, output_root=output_root)
-    if config.get('kind') == 'academic':
-        from academic_package import build
-        return build(name, config, revision, output_root=output_root)
-    repository = Path(config['checkout'])
-    require_clean(repository)
-    commit = git(repository, 'rev-parse', revision).decode().strip()
-    tree = f"{commit}:{config['subdirectory']}" if config['subdirectory'] else commit
+def package(name: str, recipe: GenericRecipe, source: BuildSource, checkout: Path, *, output_root: Path):
+    require_clean(checkout)
+    commit = git(checkout, 'rev-parse', recipe.commit).decode().strip()
+    subdirectory = recipe.subdirectory or ''
+    tree = f"{commit}:{subdirectory}" if subdirectory else commit
     release_root = output_root / name
     release_root.mkdir(parents=True, exist_ok=True)
     with staging_directory(prefix='.build-', dir=release_root) as temporary:
         stage = Path(temporary) / 'package'
         stage.mkdir()
-        archive = git(repository, 'archive', tree)
+        archive = git(checkout, 'archive', tree)
         # Codex's package copier skips symlinks, so they become copies of their targets:
         # upstream's AGENTS.md -> CLAUDE.md is included without text changes.
         extract_tar(archive, stage)
         original = files(stage)
-        upstream = json.loads(read_utf8(stage / config['manifest']))
+        upstream = json.loads(read_utf8(stage / recipe.manifest))
         version = upstream['version'] + '+upstream.' + commit[:12]
-        if config.get('packagingRevision'):
-            version += '.codex' + str(config['packagingRevision'])
-        skills = config.get('skills') or ['./skills/']
+        if source.packaging:
+            version += '.codex' + str(source.packaging)
+        skills = list(recipe.select) or ['./skills/']
         for skill in skills:
             if not (stage / skill).is_dir():
                 raise RuntimeError(f'Missing selected skill directory: {skill}')
@@ -101,11 +93,11 @@ def package(name, revision='HEAD', *, config, output_root):
             'version': version,
             'skills': exported,
             'interface': {
-                'displayName': config['displayName'],
+                'displayName': source.display_name,
                 'shortDescription': 'Original upstream skills',
                 'developerName': upstream['author']['name'],
                 'category': 'Developer Tools',
-                'websiteURL': config['url'],
+                'websiteURL': source.metadata['url'],
             },
         })
         metadata = stage / '.codex-plugin'
@@ -123,8 +115,8 @@ def package(name, revision='HEAD', *, config, output_root):
         actual = files(stage)
         assert all(actual.get(preserved.get(path, path)) == digest for path, digest in original.items() if path not in omitted), 'Upstream file changed'
         receipt = {
-            'repository': config['url'], 'commit': commit,
-            'subdirectory': config['subdirectory'], 'version': version,
+            'repository': source.metadata['url'], 'commit': commit,
+            'subdirectory': subdirectory, 'version': version,
             'selectedSkillRoots': skills,
             'upstreamFileHashes': original,
             'packagingOnlyFiles': sorted(set(actual) - set(original)),

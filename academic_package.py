@@ -8,6 +8,7 @@ import sys
 
 import yaml
 
+from description import AcademicRecipe, BuildSource
 from package import files, git
 from portable import extract_tar, posix, read_utf8, staging_directory, write_utf8
 
@@ -44,33 +45,34 @@ def preserve_policy(folder, policy):
     write_utf8(sidecar, policy['openaiYaml'])
 
 
-def build(name, config, revision='HEAD', *, output_root):
-    repository = Path(config['checkout'])
-    if git(repository, 'status', '--porcelain').strip():
-        raise RuntimeError(f'Upstream checkout has local changes: {repository}')
-    commit = git(repository, 'rev-parse', revision).decode().strip()
-    version = '0.1.0+upstream.' + commit[:12] + '.codex' + str(config['packagingRevision'])
+def build(name: str, recipe: AcademicRecipe, source: BuildSource, checkout: Path, *, output_root: Path):
+    if git(checkout, 'status', '--porcelain').strip():
+        raise RuntimeError(f'Upstream checkout has local changes: {checkout}')
+    installer_sha256 = str(recipe.installer).removeprefix('sha256:')
+    requirements_sha256 = str(recipe.requirements).removeprefix('sha256:')
+    commit = git(checkout, 'rev-parse', recipe.commit).decode().strip()
+    version = '0.1.0+upstream.' + commit[:12] + '.codex' + str(source.packaging)
     release_root = output_root / name
     release_root.mkdir(parents=True, exist_ok=True)
-    archive = git(repository, 'archive', commit)
+    archive = git(checkout, 'archive', commit)
     with staging_directory(prefix='.build-', dir=release_root) as temporary:
         temporary = Path(temporary)
-        source = temporary / 'source'
-        source.mkdir()
-        extract_tar(archive, source)
-        installer = load_installer(source, config['reviewedInstallerSha256'])
-        requirements = source / 'scripts/codex-skills-requirements.txt'
-        if hashlib.sha256(requirements.read_bytes()).hexdigest() != config['runtimeRequirementsSha256']:
+        upstream = temporary / 'source'
+        upstream.mkdir()
+        extract_tar(archive, upstream)
+        installer = load_installer(upstream, installer_sha256)
+        requirements = upstream / 'scripts/codex-skills-requirements.txt'
+        if hashlib.sha256(requirements.read_bytes()).hexdigest() != requirements_sha256:
             raise RuntimeError('Upstream runtime requirements changed; prepare and verify a new private runtime')
-        selected = config['selectedSkills']
+        selected = recipe.select
         if len(set(selected)) != len(selected) or not set(selected).issubset(installer.NAMES):
             raise RuntimeError('A selected academic skill is missing or duplicated')
-        if set(config['invocationPolicies']) != set(selected):
+        if set(source.metadata['invocationPolicies']) != set(selected):
             raise RuntimeError('Invocation policies must cover exactly the selected academic skills')
         prepared = temporary / 'prepared'
         prepared.mkdir()
         # Prepare only; the upstream installer never writes to live roots.
-        installer.prepare(source, prepared, temporary / 'empty-destination', Path(config['python']))
+        installer.prepare(upstream, prepared, temporary / 'empty-destination', Path(source.metadata['python']))
         stage = temporary / 'package'
         (stage / 'skills').mkdir(parents=True)
         prepared_hashes = {}
@@ -85,31 +87,31 @@ def build(name, config, revision='HEAD', *, output_root):
                 if portable != original:
                     write_utf8(reference, portable)
                     portable_references.append(posix(reference.relative_to(stage)))
-            preserve_policy(stage / 'skills' / skill, config['invocationPolicies'][skill])
-        shutil.copy2(source / 'LICENSE', stage / 'LICENSE')
+            preserve_policy(stage / 'skills' / skill, source.metadata['invocationPolicies'][skill])
+        shutil.copy2(upstream / 'LICENSE', stage / 'LICENSE')
         metadata = stage / '.codex-plugin'
         metadata.mkdir()
         (metadata / 'upstream-source.tar').write_bytes(archive)
         manifest = {
             'name': name, 'version': version,
             'description': 'Eight academic writing skills prepared by the upstream Codex installer.',
-            'author': {'name': 'yha9806'}, 'repository': config['url'],
+            'author': {'name': 'yha9806'}, 'repository': source.metadata['url'],
             'skills': './skills/',
-            'interface': {'displayName': config['displayName'],
+            'interface': {'displayName': source.display_name,
                           'shortDescription': 'Upstream academic writing skills',
                           'developerName': 'yha9806', 'category': 'Productivity',
-                          'websiteURL': config['url']},
+                          'websiteURL': source.metadata['url']},
         }
         write_utf8(metadata / 'plugin.json', json.dumps(manifest, indent=2) + '\n')
         receipt = {
-            'repository': config['url'], 'commit': commit, 'subdirectory': '', 'version': version,
+            'repository': source.metadata['url'], 'commit': commit, 'subdirectory': '', 'version': version,
             'selectedSkillRoots': ['./skills/' + s for s in selected],
             'preparation': 'upstream scripts/install-codex-skills.py:prepare',
-            'reviewedInstallerSha256': config['reviewedInstallerSha256'],
+            'reviewedInstallerSha256': installer_sha256,
             'sourceArchiveSha256': hashlib.sha256(archive).hexdigest(),
-            'runtimeRequirementsSha256': config['runtimeRequirementsSha256'], 'python': config['python'],
+            'runtimeRequirementsSha256': requirements_sha256, 'python': source.metadata['python'],
             'upstreamPreparedFileHashes': prepared_hashes,
-            'invocationPolicies': config['invocationPolicies'],
+            'invocationPolicies': source.metadata['invocationPolicies'],
             'portableReferencePaths': portable_references,
             'localChanges': 'Plugin metadata, recorded invocation/tool-policy overlays and skill-relative helper paths in references. No workflow rewrites.',
         }

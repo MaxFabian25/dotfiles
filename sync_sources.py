@@ -192,11 +192,7 @@ class Builder:
         return child(tree, source.variants[placement]) if source.variants and placement else tree
 
     def _build(self, package: Package, source: BuildSource) -> Path:
-        from package import package as build_package
-        from standalone_package import build_snapshot
-
         recipe = source.recipe
-        metadata = dict(source.metadata)
         if isinstance(recipe, SnapshotRecipe):
             private = self.setup.roots.private
             if private is None:
@@ -208,37 +204,24 @@ class Builder:
             if not snapshot.exists():
                 snapshot.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copytree(snapshot_source, snapshot)
-            definition = {**metadata, 'displayName': source.display_name, 'packagingRevision': source.packaging,
-                          'skills': {name: {} for name in recipe.origins}}
-            if 'description' not in definition or 'sourceKind' not in definition:
+            if 'description' not in source.metadata or 'sourceKind' not in source.metadata:
                 raise BuildError(f'{package.name}: missing snapshot build metadata; migrate its recipe first')
-            return build_snapshot(package.name, definition, snapshot, output_root=self.directory)[0]
+            from standalone_package import build_snapshot
+            return build_snapshot(package.name, recipe, source, snapshot, output_root=self.directory)[0]
 
         checkout = self.sources.repository(recipe.repository, recipe.commit)
-        config = {**metadata, 'checkout': str(checkout), 'packagingRevision': source.packaging,
-                  'displayName': source.display_name}
-        if 'url' not in config:
+        if 'url' not in source.metadata:
             raise BuildError(f'{package.name}: missing build metadata; migrate its recipe first')
-        if isinstance(recipe, GenericRecipe):
-            config.update(subdirectory=recipe.subdirectory or '', manifest=recipe.manifest,
-                          skills=list(recipe.select))
-        elif isinstance(recipe, (CourseRecipe, PublicEmilRecipe)):
-            extras = config.pop('skillMetadata', {})
-            selected = []
-            for path in recipe.select:
-                name = PurePosixPath(path).name
-                installed = recipe.prefix + name if isinstance(recipe, CourseRecipe) else recipe.rename.get(name, name)
-                selected.append({'sourcePath': path, 'sourceName': name, 'installedName': installed,
-                                 **extras.get(installed, {})})
-            config.update(kind='course' if isinstance(recipe, CourseRecipe) else 'public-emil',
-                          selectedSkills=selected)
-            if isinstance(recipe, CourseRecipe):
-                config['trimTriggerDescriptions'] = list(recipe.trim_descriptions)
-        elif isinstance(recipe, AcademicRecipe):
-            config.update(kind='academic', selectedSkills=list(recipe.select),
-                          reviewedInstallerSha256=str(recipe.installer).removeprefix('sha256:'),
-                          runtimeRequirementsSha256=str(recipe.requirements).removeprefix('sha256:'))
-        return build_package(package.name, recipe.commit, config=config, output_root=self.directory)[0]
+        match recipe:
+            case GenericRecipe():
+                from package import package as build
+            case CourseRecipe():
+                from course_package import build
+            case PublicEmilRecipe():
+                from public_emil_package import build
+            case AcademicRecipe():
+                from academic_package import build
+        return build(package.name, recipe, source, checkout, output_root=self.directory)[0]
 
     def overlay(self, package: Package, host: Host, identity: str, root: Path):
         from invocation_overrides import plan, read_text, skill_paths, windows_overlay
@@ -362,9 +345,9 @@ class Builder:
                         raise BuildError(f'{identity}: no Claude packaging description in its recipe')
                     skills = member.skills or tuple(sorted(p.parent.name for p in (collection_source / 'skills').glob('*/SKILL.md')))
                     definitions.append({'name': name, 'skills': list(skills), 'description': descriptions[name]})
-                config = {'packagingRevision': metadata.get('claudePackaging', 1), 'collections': {package.name: definitions}}
                 explicit = frozenset(name for name, mode in package.modes.items() if mode == SkillMode.EXPLICIT)
-                packages = build_collection(package.name, collection_source, config, self.directory / 'claude', explicit)
+                packages = build_collection(package.name, collection_source, definitions, metadata.get('claudePackaging', 1),
+                                            self.directory / 'claude', explicit)
                 root = Path(next(p['release'] for p in packages if p['name'] == (install.name or package.name)))
             else:
                 root = codex.root

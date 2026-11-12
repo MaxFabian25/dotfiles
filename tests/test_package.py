@@ -7,7 +7,13 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from description import BuildSource, GenericRecipe
 import package
+
+
+def head(repository):
+    return subprocess.run(['git', '-C', str(repository), 'rev-parse', 'HEAD'], check=True, capture_output=True,
+                          text=True).stdout.strip()
 
 
 class PublisherRootManifest(unittest.TestCase):
@@ -31,10 +37,9 @@ class PublisherRootManifest(unittest.TestCase):
             subprocess.run(['git', '-c', 'user.name=Package Test', '-c',
                             'user.email=package-test@example.invalid', 'commit', '-qm', 'Fixture'],
                            cwd=source, check=True)
-            profile = {'checkout': str(source), 'subdirectory': '',
-                       'manifest': '.cursor-plugin/plugin.json', 'displayName': 'Example',
-                       'url': 'https://example.invalid/source'}
-            release, receipt = package.package('local-name', config=profile, output_root=packages)
+            recipe = GenericRecipe('https://example.invalid/source.git', head(source), None, '.cursor-plugin/plugin.json', ())
+            profile = BuildSource(recipe, 0, 'Example', metadata={'url': 'https://example.invalid/source'})
+            release, receipt = package.package('local-name', recipe, profile, source, output_root=packages)
             manifest = json.loads((release / 'plugin.json').read_text())
             self.assertEqual(manifest['name'], 'local-name')
             self.assertEqual(manifest, json.loads((release / '.codex-plugin/plugin.json').read_text()))
@@ -45,7 +50,7 @@ class PublisherRootManifest(unittest.TestCase):
                 self.assertEqual(hashlib.sha256(actual.read_bytes()).hexdigest(), digest)
             self.assertEqual((release / 'skills/example/SKILL.md').read_bytes(), (skill / 'SKILL.md').read_bytes())
             self.assertIn('allow_implicit_invocation: false', (release / 'skills/example/agents/openai.yaml').read_text())
-            repeated, repeated_receipt = package.package('local-name', config=profile, output_root=packages)
+            repeated, repeated_receipt = package.package('local-name', recipe, profile, source, output_root=packages)
             self.assertEqual(repeated, release)
             self.assertEqual(repeated_receipt, receipt)
 
@@ -65,9 +70,9 @@ class SharedSkillRoot(unittest.TestCase):
         subprocess.run(['git', 'init', '-q', str(source)], check=True)
         subprocess.run(['git', 'add', '.'], cwd=source, check=True)
         subprocess.run(['git', '-c', 'user.name=T', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'F'], cwd=source, check=True)
-        profile = {'checkout': str(source), 'subdirectory': '', 'manifest': '.cursor-plugin/plugin.json', 'displayName': 'E',
-                   'url': 'https://example.invalid/s', 'skills': skills}
-        release, receipt = package.package('kit', config=profile, output_root=packages)
+        recipe = GenericRecipe('https://example.invalid/s.git', head(source), None, '.cursor-plugin/plugin.json', tuple(skills))
+        profile = BuildSource(recipe, 0, 'E', metadata={'url': 'https://example.invalid/s'})
+        release, receipt = package.package('kit', recipe, profile, source, output_root=packages)
         return release, receipt, json.loads((release / '.codex-plugin/plugin.json').read_text())
 
     def test_a_selection_exports_one_root_and_only_the_selected_skills(self):

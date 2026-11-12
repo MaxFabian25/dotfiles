@@ -1,32 +1,35 @@
 """Package Emil's public skills with the recorded Codex compatibility metadata."""
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 
+from description import BuildSource, PublicEmilRecipe
 from package import files, git, require_clean
 from portable import extract_tar, read_utf8, staging_directory, write_utf8
 
 
-def build(name, config, revision='HEAD', *, output_root):
-    repository = Path(config['checkout'])
-    require_clean(repository)
-    commit = git(repository, 'rev-parse', revision).decode().strip()
-    version = f"0.1.0+upstream.{commit[:12]}.codex{config['packagingRevision']}"
+def build(name: str, recipe: PublicEmilRecipe, source: BuildSource, checkout: Path, *, output_root: Path):
+    require_clean(checkout)
+    extras = source.metadata.get('skillMetadata', {})
+    selected = [{'sourcePath': path, 'sourceName': PurePosixPath(path).name, 'installedName': installed,
+                 **extras.get(installed, {})} for path, installed in zip(recipe.select, recipe.skills())]
+    commit = git(checkout, 'rev-parse', recipe.commit).decode().strip()
+    version = f"0.1.0+upstream.{commit[:12]}.codex{source.packaging}"
     release_root = output_root / name
     release_root.mkdir(parents=True, exist_ok=True)
     with staging_directory(prefix='.build-', dir=release_root) as temporary:
-        source = Path(temporary) / 'source'
+        upstream = Path(temporary) / 'source'
         stage = Path(temporary) / 'package'
-        source.mkdir()
+        upstream.mkdir()
         stage.mkdir()
-        paths = [s['sourcePath'] for s in config['selectedSkills']]
-        archive = git(repository, 'archive', commit, 'LICENSE', *paths)
-        extract_tar(archive, source)
-        license_bytes = (source / 'LICENSE').read_bytes()
+        paths = [s['sourcePath'] for s in selected]
+        archive = git(checkout, 'archive', commit, 'LICENSE', *paths)
+        extract_tar(archive, upstream)
+        license_bytes = (upstream / 'LICENSE').read_bytes()
         (stage / 'LICENSE').write_bytes(license_bytes)
         upstream_hashes, compatibility_changes = {}, {}
-        for selection in config['selectedSkills']:
-            original = source / selection['sourcePath']
+        for selection in selected:
+            original = upstream / selection['sourcePath']
             installed_name = selection['installedName']
             target = stage / 'skills' / installed_name
             if not (original / 'SKILL.md').is_file():
@@ -57,7 +60,7 @@ def build(name, config, revision='HEAD', *, output_root):
                 write_utf8(sidecar, selection['openaiYaml'])
             if selection.get('legacyProvenance'):
                 legacy = {
-                    'source': config['url'] + '.git', 'ref': config['branch'], 'commit': commit,
+                    'source': source.metadata['url'] + '.git', 'ref': source.metadata['branch'], 'commit': commit,
                     'sourceDirectory': selection['sourcePath'], 'licenseSource': 'LICENSE',
                     'sourceName': source_name, 'localName': installed_name,
                     'normalizations': {
@@ -74,14 +77,14 @@ def build(name, config, revision='HEAD', *, output_root):
             assert read_utf8(skill).split('---', 2)[2] == body, 'Instruction body changed'
 
         interface = {
-            'displayName': config['displayName'], 'shortDescription': config['description'],
+            'displayName': source.display_name, 'shortDescription': source.metadata['description'],
             'developerName': 'Emil Kowalski (upstream); personal Codex packaging',
-            'category': 'Developer Tools', 'websiteURL': config['url'],
+            'category': 'Developer Tools', 'websiteURL': source.metadata['url'],
         }
         portable = {
             '$schema': 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json',
-            'name': name, 'version': version, 'description': config['description'],
-            'repository': config['url'], 'license': 'MIT',
+            'name': name, 'version': version, 'description': source.metadata['description'],
+            'repository': source.metadata['url'], 'license': 'MIT',
             'extensions': {'com.openai': {'interface': interface}},
         }
         write_utf8(stage / 'plugin.json', json.dumps(portable, indent=2) + '\n')
@@ -91,8 +94,8 @@ def build(name, config, revision='HEAD', *, output_root):
         compatibility.update(skills='./skills/', interface=interface)
         write_utf8(metadata / 'plugin.json', json.dumps(compatibility, indent=2) + '\n')
         receipt = {
-            'repository': config['url'], 'branch': config['branch'], 'commit': commit,
-            'version': version, 'selectedSkills': config['selectedSkills'],
+            'repository': source.metadata['url'], 'branch': source.metadata['branch'], 'commit': commit,
+            'version': version, 'selectedSkills': selected,
             'upstreamFileHashes': upstream_hashes,
             'compatibilityChangedFiles': compatibility_changes,
             'packagedFileHashes': files(stage),

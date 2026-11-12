@@ -11,8 +11,14 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import align_with_codex
 import course_package
+from description import BuildSource, CourseRecipe, GenericRecipe
 import package
 from portable import GIT
+
+
+def head(repository):
+    return subprocess.run([*GIT, '-C', str(repository), 'rev-parse', 'HEAD'], check=True, capture_output=True,
+                          text=True).stdout.strip()
 
 
 class BuildBytesTests(unittest.TestCase):
@@ -29,15 +35,13 @@ class BuildBytesTests(unittest.TestCase):
                               ('-c', 'user.name=Build Test', '-c', 'user.email=build@example.invalid',
                                'commit', '-qm', 'Fixture')):
                 subprocess.run([*GIT, '-C', str(source), *arguments], check=True, capture_output=True)
-            config = {'checkout': str(source), 'packagingRevision': 1, 'repository': 'example/course',
-                      'collection': 'example', 'branch': 'main', 'displayName': 'Example',
-                      'description': 'Example workflows.', 'url': 'https://example.invalid/course',
-                      'selectedSkills': [
-                          {'sourcePath': 'skills/selected', 'sourceName': 'selected', 'installedName': 'selected',
-                           'normalizations': [], 'allowImplicitInvocation': True},
-                          {'sourcePath': 'skills/other', 'sourceName': 'other', 'installedName': 'other',
-                           'normalizations': []}]}
-            release, _ = course_package.build('example', config, output_root=root / 'output')
+            recipe = CourseRecipe('https://example.invalid/course.git', head(source), ('skills/selected', 'skills/other'), '')
+            course = BuildSource(recipe, 1, 'Example', metadata={
+                'repository': 'example/course', 'collection': 'example', 'branch': 'main',
+                'description': 'Example workflows.', 'url': 'https://example.invalid/course',
+                'skillMetadata': {'selected': {'normalizations': [], 'allowImplicitInvocation': True},
+                                  'other': {'normalizations': []}}})
+            release, _ = course_package.build('example', recipe, course, source, output_root=root / 'output')
             for name, allowed in (('selected', True), ('other', False)):
                 policy = yaml.safe_load((release / 'skills' / name / 'agents/openai.yaml').read_text())
                 self.assertIs(policy['policy']['allow_implicit_invocation'], allowed)
@@ -61,13 +65,14 @@ class BuildBytesTests(unittest.TestCase):
                               ('-c', 'user.name=Build Test', '-c', 'user.email=build@example.invalid',
                                'commit', '-qm', 'Fixture')):
                 subprocess.run([*GIT, '-C', str(source), *arguments], check=True, capture_output=True)
-            generic = {'checkout': str(source), 'subdirectory': '', 'manifest': '.cursor-plugin/plugin.json',
-                       'displayName': 'Example', 'url': 'https://example.invalid/example'}
-            course = {'checkout': str(source), 'packagingRevision': 1, 'repository': 'example/course',
-                      'collection': 'example', 'branch': 'main', 'displayName': 'Example',
-                      'description': 'Example workflows.', 'url': 'https://example.invalid/course',
-                      'selectedSkills': [{'sourcePath': 'skills/example', 'sourceName': 'example',
-                                          'installedName': 'example', 'normalizations': []}]}
+            commit = head(source)
+            generic_recipe = GenericRecipe('https://example.invalid/example.git', commit, None, '.cursor-plugin/plugin.json', ())
+            generic = BuildSource(generic_recipe, 0, 'Example', metadata={'url': 'https://example.invalid/example'})
+            course_recipe = CourseRecipe('https://example.invalid/course.git', commit, ('skills/example',), '')
+            course = BuildSource(course_recipe, 1, 'Example', metadata={
+                'repository': 'example/course', 'collection': 'example', 'branch': 'main',
+                'description': 'Example workflows.', 'url': 'https://example.invalid/course',
+                'skillMetadata': {'example': {'normalizations': []}}})
             for kind in ('generic', 'course'):
                 artifacts = []
                 for flavor in (PurePosixPath, PureWindowsPath):
@@ -77,12 +82,12 @@ class BuildBytesTests(unittest.TestCase):
                     output = root / kind / flavor.__name__
                     with patch.object(type(root), '__lt__', compare):
                         if kind == 'generic':
-                            release, receipt = package.package('example', config=generic, output_root=output)
+                            release, receipt = package.package('example', generic_recipe, generic, source, output_root=output)
                             self.assertEqual(list(receipt['upstreamFileHashes']), [
                                 '.cursor-plugin/plugin.json', 'LICENSE', 'skills/example/SKILL.md',
                                 'skills/example/agents/openai.yaml', 'skills/example/guide.md'])
                         else:
-                            release, receipt = course_package.build('example', course, output_root=output)
+                            release, receipt = course_package.build('example', course_recipe, course, source, output_root=output)
                             self.assertEqual(list(receipt['upstreamFileHashes']['example']), [
                                 'SKILL.md', 'agents/openai.yaml', 'guide.md'])
                             provenance = json.loads((release / 'skills/example/.course-source.json').read_bytes())
