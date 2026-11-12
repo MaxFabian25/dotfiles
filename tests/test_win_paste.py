@@ -12,6 +12,9 @@ The other modes in state.json's `modes` make it misbehave:
   null-types   clipboard_read's `types` is null
   slow-restore   the second clipboard_write takes 2 seconds
   user-copies   the user copies "NEWER" while run_steps runs
+  user-copies-image   the user copies an image while run_steps runs, which has no text
+  user-copies-formatted   the user copies their earlier text again while run_steps runs, now with formatting
+  refuse-last-read   the third clipboard_read, the one after the wait, refuses
   slow-read   get_window_state takes 2 seconds
   hang-read   get_window_state takes 60 seconds
   fail-step, fail-step-only, fail-report, short-report   a failed last step, in the ways a report can show it
@@ -62,7 +65,8 @@ if state.get("due") and time.time() >= state["due"]:  # a late paste that has la
 if tool == "clipboard_read":
     text = state["text"].replace("\n", "\r\n") if "crlf" in modes and state["text"] else state["text"]
     reply.update(types=state["types"], text=text if args.get("include_text") else None)
-    if "refuse-clipboard-read" in modes:
+    state["reads"] = state.get("reads", 0) + 1
+    if "refuse-clipboard-read" in modes or "refuse-last-read" in modes and state["reads"] == 3:
         reply = refused
     if "refuse-flag-only" in modes:
         reply = {"supported": False, "types": state["types"], "text": state["text"]}
@@ -105,6 +109,10 @@ elif tool == "run_steps":
         steps.append({"index": index, "ok": ok, "tool": step["tool"]})
     if "user-copies" in modes:
         state.update(types=["CF_UNICODETEXT"], text="NEWER")
+    if "user-copies-image" in modes:
+        state.update(types=["PNG"], text=None)
+    if "user-copies-formatted" in modes:
+        state.update(types=["CF_UNICODETEXT", "HTML Format"], text=state["again"])
     if "short-report" in modes:
         steps.pop()
     reply.update(ok="fail-report" not in modes and ("fail-step-only" in modes or all(s["ok"] for s in steps)),
@@ -407,6 +415,76 @@ class WinPaste(unittest.TestCase):
             self.assertEqual("run_steps: a step failed" in result.stderr, "fail-step" in modes, modes)
             self.assertNotIn("is back", result.stdout, modes)
             self.assertNotIn("NEWER", result.stdout + result.stderr, modes)
+
+    def test_an_image_the_user_copied_during_the_paste_is_left_alone_and_said(self):
+        # An image has no text, so it read as an empty clipboard, or as an empty text still there, and exit 0.
+        for before in (dict(types=[], text=None), dict(types=["CF_UNICODETEXT"], text=""), {}):
+            result, calls, state = self.paste("x", modes=["user-copies-image"], **before)
+            self.assertEqual((result.returncode, state["types"], state["text"]), (1, ["PNG"], None), before)
+            self.assertEqual([tool for tool, _ in calls].count("clipboard_write"), 1, before)
+            self.assertEqual(result.stdout, "clipboard holds the text\nsent the click and ctrl+v\n", before)
+            self.assertIn("the clipboard changed during the paste and was left as it is", result.stderr, before)
+        result, calls, state = self.paste("x", modes=["user-copies-formatted"], again=MINE)
+        self.assertEqual((result.returncode, state["types"], state["text"]),
+                         (1, ["CF_UNICODETEXT", "HTML Format"], MINE))
+        self.assertEqual([tool for tool, _ in calls].count("clipboard_write"), 1)
+        self.assertNotIn("is back", result.stdout)
+
+    def test_a_read_after_the_wait_that_fails_says_the_clipboard_was_not_put_back(self):
+        result, calls, state = self.paste("x", modes=["refuse-last-read"])
+        self.assertEqual((result.returncode, state["text"]), (1, "x"))
+        self.assertEqual([tool for tool, _ in calls].count("clipboard_write"), 1)
+        self.assertEqual(result.stderr, "win_paste: the user's clipboard was NOT put back: clipboard_read: refused, "
+                                        "error code clipboard_unavailable\n")
+        self.assertNotIn("pasted; look", result.stdout)
+
+    def test_a_signal_as_the_failed_paste_is_noted_is_not_said_to_have_changed_nothing(self):
+        # The signal has to arrive on one line, the first of the handler for a failed paste, so a line trace
+        # delivers it there. A second signal then finds out whether signals are held from then on.
+        spec = importlib.util.spec_from_file_location("win_paste", TOOL)
+        tool = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(tool)
+        for number in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT, signal.SIGQUIT):
+            self.addCleanup(signal.signal, number, signal.getsignal(number))
+        lines = TOOL.read_text(encoding="utf-8").splitlines()
+        target = [number for number, line in enumerate(lines, 1)
+                  if line.strip().startswith("held = []")]  # the first line of the handler for a failed paste
+        self.assertEqual(len(target), 1)
+        held, why, sent = {"text": MINE}, tool.why, []
+
+        def call(name, **arguments):
+            if name == "run_steps":
+                raise tool.Refused("run_steps: no reply")
+            if name == "clipboard_write":
+                held["text"] = arguments["text"]
+            return {"types": ["CF_UNICODETEXT"], "text": held["text"]}
+
+        def on_line(frame, event, _argument):
+            if event == "line" and frame.f_lineno == target[0] and not sent:
+                sent.append(signal.SIGTERM)
+                signal.getsignal(signal.SIGTERM)(signal.SIGTERM, frame)
+            return on_line
+
+        def why_while_a_second_signal_arrives(error):
+            sent.append(signal.SIGHUP)
+            signal.getsignal(signal.SIGHUP)(signal.SIGHUP, None)
+            return why(error)
+
+        tool.call, tool.why, err = call, why_while_a_second_signal_arrives, io.StringIO()
+        self.addCleanup(sys.settrace, sys.gettrace())
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+            stack.enter_context(contextlib.redirect_stderr(err))
+            stack.enter_context(unittest.mock.patch.object(sys, "stdin", io.StringIO("x")))
+            stack.enter_context(unittest.mock.patch.object(
+                sys, "argv", ["win_paste.py", "--pid", "7", "--window-id", "9", "--x", "1", "--y", "2"]))
+            sys.settrace(lambda frame, event, _argument: on_line if frame.f_code.co_name == "main" else None)
+            with self.assertRaises(SystemExit) as stopped:
+                tool.run()
+            sys.settrace(None)
+        self.assertEqual(sent, [signal.SIGTERM, signal.SIGHUP])
+        self.assertEqual((stopped.exception.code, held["text"], err.getvalue()),
+                         (1, "x", "win_paste: the user's clipboard was NOT put back: ended by signal 15\n"))
 
     def test_a_first_write_that_was_lost_needs_no_second_write(self):
         result, calls, state = self.paste("x", modes=["lose-write"])

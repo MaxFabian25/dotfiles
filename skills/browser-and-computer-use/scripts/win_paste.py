@@ -189,17 +189,21 @@ def main():
         held = held or []
         # The app reads the clipboard after the keystroke, so the text stays until the paste has had its time.
         time.sleep(wait)
-        now = clipboard_text()  # after the wait, so a copy the user made during it is seen
+        reply = call("clipboard_read", include_text=True)  # after the wait, so a copy made during it is seen
+        now = reply.get("text") if isinstance(reply.get("text"), str) else ""
+        # An image the user copied meanwhile has no text, so only the types tell it from an empty clipboard.
+        listed = reply.get("types")
+        plain = isinstance(listed, list) and {str(kind) for kind in listed} <= PLAIN_TEXT
         if saved is None and same(now, text):
             say("the clipboard was empty before, so it holds the pasted text now")
-        elif saved is None and not now:
+        elif saved is None and not now and listed == []:
             say("the clipboard is empty, as it was before")  # the first write failed
         elif saved is not None and same(now, text):
             call("clipboard_write", text=saved)
             if not same(clipboard_text(), saved):
                 raise Refused("it does not hold the user's text after writing it")
             say("the user's clipboard is back")
-        elif saved is not None and same(now, saved):
+        elif saved is not None and plain and same(now, saved):
             say("the user's clipboard is back")  # it never left: the first write failed
         else:
             changed = "the clipboard changed during the paste and was left as it is; the window may hold other text"
