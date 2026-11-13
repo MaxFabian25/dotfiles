@@ -14,6 +14,7 @@ import os
 from pathlib import Path, PurePath, PurePosixPath
 import secrets
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -215,6 +216,12 @@ def _kernel32():
     kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
     kernel32.GetProcessTimes.argtypes = (wintypes.HANDLE,) + (ctypes.POINTER(wintypes.FILETIME),) * 4
     kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+    kernel32.CreateJobObjectW.argtypes = (wintypes.LPVOID, wintypes.LPCWSTR)
+    kernel32.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
+    kernel32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
+    kernel32.QueryInformationJobObject.argtypes = (wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD,
+                                                   ctypes.POINTER(wintypes.DWORD))
     return kernel32
 
 
@@ -275,6 +282,68 @@ def process_running(pid, start=None):
     except (OSError, IndexError):
         return True  # no /proc, as on macOS, so a reused process ID cannot be told apart
     return start is None or not start.isdigit() or len(fields) < 20 or fields[19] == start
+
+
+def run_tree(command, *, timeout, stopped_by=subprocess.TimeoutExpired, **options):
+    """subprocess.run without check, input or capture_output, except that the time limit stops every process the
+    command started, and not only the command, as does an error of the kind stopped_by names, such as
+    KeyboardInterrupt, raised while it runs. After that stop it raises the error. On POSIX the command leads a session
+    of its own, so a Ctrl+C in its terminal reaches only the caller, and a command whose caller does not stop it on that
+    interrupt runs on to its end. The stop there reaches only the command's process group, and a process that moved to
+    a group or session of its own outlives it."""
+    # taskkill /T follows Windows parents, and Git's MSYS shell starts a program by fork and then exec, so that
+    # program's parent has exited and only a job still holds it.
+    job = _kernel32().CreateJobObjectW(None, None) if WINDOWS else None
+    try:
+        process = subprocess.Popen(command, start_new_session=not WINDOWS, **options)
+        # The command runs for a moment before it joins the job, and only taskkill /T reaches what it starts then.
+        if job and not _kernel32().AssignProcessToJobObject(job, process._handle):
+            _kernel32().CloseHandle(job)
+            job = None
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except (subprocess.TimeoutExpired, stopped_by):
+            _stop_tree(process, job)
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                process.communicate(timeout=5)
+            raise
+    finally:
+        if job:
+            _kernel32().CloseHandle(job)
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
+def _stop_tree(process, job):
+    if not WINDOWS:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        return
+    try:
+        subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], capture_output=True, timeout=30)
+    finally:
+        if job:
+            _kernel32().TerminateJobObject(job, 1)
+            # A process can take a moment to end after TerminateJobObject, and until then it holds its working
+            # folder, which its caller may be about to remove.
+            ending = time.monotonic() + 5
+            while _job_processes(job) and time.monotonic() < ending:
+                time.sleep(0.05)
+
+
+def _job_processes(job):
+    import ctypes
+    from ctypes import wintypes
+
+    class JOBOBJECT_BASIC_ACCOUNTING_INFORMATION(ctypes.Structure):
+        _fields_ = [('times', ctypes.c_int64 * 4), ('page_faults', wintypes.DWORD), ('total', wintypes.DWORD),
+                    ('active', wintypes.DWORD), ('terminated', wintypes.DWORD)]
+
+    JobObjectBasicAccountingInformation = 1
+    accounting = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION()
+    if not _kernel32().QueryInformationJobObject(job, JobObjectBasicAccountingInformation, ctypes.byref(accounting),
+                                                 ctypes.sizeof(accounting), None):
+        return 0
+    return accounting.active
 
 
 def _holder_note(path):

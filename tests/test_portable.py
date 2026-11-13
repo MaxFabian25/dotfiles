@@ -1,18 +1,58 @@
+import contextlib
 import ctypes
 from datetime import datetime, timezone
 import importlib.util
 import io
 import os
 from pathlib import Path
+import signal
+import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-spec = importlib.util.spec_from_file_location('portable', Path(__file__).resolve().parents[1] / 'portable.py')
+ENGINE = Path(__file__).resolve().parents[1]
+spec = importlib.util.spec_from_file_location('portable', ENGINE / 'portable.py')
 portable = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(portable)
+
+STARTS_A_CHILD = ('import os, pathlib, subprocess, sys, time\n'
+                  'child = subprocess.Popen([sys.executable, "-c", "import signal, time; '
+                  'signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"])\n'
+                  "pathlib.Path(sys.argv[1] + '.part').write_text(f'{os.getpid()} {child.pid}')\n"
+                  "pathlib.Path(sys.argv[1] + '.part').replace(sys.argv[1])\n"
+                  'time.sleep(60)\n')
+KILL = getattr(signal, 'SIGKILL', signal.SIGTERM)  # os.kill ends a process on Windows with any signal
+
+
+def started(test, path):
+    ending = time.monotonic() + 60
+    while not path.exists():
+        if time.monotonic() > ending:
+            raise AssertionError(f'{path} was never written')
+        time.sleep(0.05)
+    pids = [int(pid) for pid in path.read_text().split()]
+    test.addCleanup(end, pids)
+    return pids
+
+
+def end(pids):
+    for pid in pids:
+        if portable.process_running(pid):
+            with contextlib.suppress(OSError):
+                os.kill(pid, KILL)
+
+
+def gone(pid):
+    ending = time.monotonic() + 10
+    while portable.process_running(pid):
+        if time.monotonic() > ending:
+            return False
+        time.sleep(0.05)
+    return True
 
 
 def archive(entries):
@@ -174,6 +214,102 @@ class PortableTest(unittest.TestCase):
         with subprocess.Popen([sys.executable, '-c', '']) as child:
             child.wait()
             self.assertFalse(portable.process_running(child.pid))
+
+    @unittest.skipIf(os.name == 'nt', 'Windows sends no SIGINT to one process')
+    def test_an_interrupted_command_is_stopped_with_what_it_started_only_when_its_caller_asks(self):
+        for asks, stopped in ((', stopped_by=BaseException', True), ('', False)):
+            with self.subTest(asks=asks), tempfile.TemporaryDirectory() as directory:
+                marker = Path(directory) / 'started'
+                # A caller started with & from a script ignores SIGINT until it restores Python's own handler.
+                caller = ('import signal, sys\nsignal.signal(signal.SIGINT, signal.default_int_handler)\n'
+                          f'sys.path.insert(0, {str(ENGINE)!r})\nfrom portable import run_tree\n'
+                          f'run_tree([sys.executable, "-c", {STARTS_A_CHILD!r}, {str(marker)!r}], timeout=None{asks})\n')
+                with subprocess.Popen([sys.executable, '-c', caller], stderr=subprocess.DEVNULL) as process:
+                    command, child = started(self, marker)
+                    process.send_signal(signal.SIGINT)
+                    self.assertNotEqual(process.wait(timeout=30), 0)
+                if stopped:
+                    self.assertEqual((gone(command), gone(child)), (True, True))
+                else:
+                    self.assertEqual(list(map(portable.process_running, (command, child))), [True, True])
+
+    def test_a_command_past_its_time_limit_is_stopped_with_what_it_started(self):
+        for limit in (3, 10, 30):
+            with tempfile.TemporaryDirectory() as directory:
+                marker = Path(directory) / 'started'
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    portable.run_tree([sys.executable, '-c', STARTS_A_CHILD, str(marker)], timeout=limit)
+                if marker.exists():
+                    command, child = started(self, marker)
+                    self.assertEqual((gone(command), gone(child)), (True, True))
+                    return
+        self.fail('The command never started its child within the longest limit')
+
+    @unittest.skipIf(os.name == 'nt', 'a Windows job holds every process the command starts')
+    def test_a_child_that_left_the_commands_session_delays_the_stop_by_seconds_only(self):
+        leaves = ('import pathlib, subprocess, sys, time\n'
+                  "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'], "
+                  'start_new_session=True)\n'
+                  "pathlib.Path(sys.argv[1] + '.part').write_text(str(child.pid))\n"
+                  "pathlib.Path(sys.argv[1] + '.part').replace(sys.argv[1])\n"
+                  'time.sleep(120)\n')
+        for limit in (3, 10, 30):
+            with tempfile.TemporaryDirectory() as directory:
+                marker = Path(directory) / 'started'
+                began = time.monotonic()
+                with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                    portable.run_tree([sys.executable, '-c', leaves, str(marker)], timeout=limit,
+                                      stdout=subprocess.PIPE)
+                if marker.exists():
+                    started(self, marker)
+                    self.assertLess(time.monotonic() - began, limit + 20)
+                    self.assertEqual(raised.exception.timeout, limit, 'not the error of the command\'s own limit')
+                    return
+        self.fail('The command never started its child within the longest limit')
+
+    def test_a_command_that_ends_in_time_returns_as_from_subprocess_run(self):
+        result = portable.run_tree([sys.executable, '-c', 'import sys; print("out"); sys.exit(4)'], timeout=60,
+                                   stdout=subprocess.PIPE, text=True)
+        self.assertEqual((result.returncode, result.stdout), (4, 'out\n'))
+
+    @unittest.skipIf(os.name == 'nt', "subprocess's reader threads keep a decode error to themselves on Windows")
+    def test_output_the_caller_cannot_decode_raises_as_from_subprocess_run(self):
+        with self.assertRaises(UnicodeDecodeError):
+            portable.run_tree([sys.executable, '-c', 'import sys; sys.stdout.buffer.write(bytes([255]))'], timeout=60,
+                              stopped_by=BaseException, stdout=subprocess.PIPE, text=True, encoding='utf-8')
+
+    def test_the_job_is_ended_when_taskkill_runs_past_its_limit(self):
+        library = MagicMock()
+        library.QueryInformationJobObject.return_value = 0
+        with patch.object(portable, 'WINDOWS', True), patch.object(portable, '_kernel32', lambda: library), \
+                patch.object(portable.subprocess, 'run', side_effect=subprocess.TimeoutExpired('taskkill', 30)):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                portable._stop_tree(MagicMock(pid=4711), 99)
+        library.TerminateJobObject.assert_called_once_with(99, 1)
+
+    def test_the_stop_waits_until_the_job_holds_no_process(self):
+        with patch.object(portable, 'WINDOWS', True), patch.object(portable, '_kernel32', MagicMock), \
+                patch.object(portable, '_job_processes', side_effect=[2, 1, 0]) as counted, \
+                patch.object(portable.subprocess, 'run'):
+            portable._stop_tree(MagicMock(pid=4711), 99)
+        self.assertEqual(counted.call_count, 3)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows jobs')
+    def test_a_job_counts_its_processes_until_it_is_ended(self):
+        kernel32 = portable._kernel32()
+        job = kernel32.CreateJobObjectW(None, None)
+        self.addCleanup(kernel32.CloseHandle, job)
+        sleeper = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+        self.addCleanup(sleeper.wait)
+        self.addCleanup(sleeper.kill)
+        self.assertTrue(kernel32.AssignProcessToJobObject(job, sleeper._handle))
+        self.assertGreaterEqual(portable._job_processes(job), 1)
+        kernel32.TerminateJobObject(job, 1)
+        sleeper.wait(timeout=10)
+        ending = time.monotonic() + 5
+        while portable._job_processes(job) and time.monotonic() < ending:
+            time.sleep(0.05)
+        self.assertEqual(portable._job_processes(job), 0)
 
     @unittest.skipUnless(os.name == 'nt' and not ctypes.windll.shell32.IsUserAnAdmin(),
                          'Windows refuses to open its System process, PID 4, to a run that is not elevated')

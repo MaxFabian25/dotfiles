@@ -6,13 +6,14 @@ import json
 from pathlib import Path
 import os
 import shutil
+import signal
 import sys
 from types import SimpleNamespace
 import subprocess
 import tempfile
 import time
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -350,7 +351,13 @@ class PullLockTest(unittest.TestCase):
 
 class PullEnvironmentTest(unittest.TestCase):
     def test_git_helpers_receive_windows_executable_extensions_when_parent_has_none(self):
-        with tempfile.TemporaryDirectory() as temporary, patch('portable.WINDOWS', True), \
+        environment = portable.native_cli_environment
+
+        def as_on_windows():
+            with patch('portable.WINDOWS', True):
+                return environment()
+
+        with tempfile.TemporaryDirectory() as temporary, patch('pull.native_cli_environment', as_on_windows), \
                 patch.dict(os.environ, {'PATHEXT': ''}):
             extensions = pull_git(Path(temporary), '-c',
                 'alias.dotfiles-pathext=!printf "%s" "$PATHEXT"', 'dotfiles-pathext')
@@ -437,13 +444,74 @@ class PullEnvironmentTest(unittest.TestCase):
                 self.fail('The child process of git outlived the time limit')
         self.fail('Git never reached its alias within the longest limit')
 
-    def test_the_job_is_ended_when_taskkill_runs_past_its_limit(self):
-        library = MagicMock()
-        with patch.object(pull, 'WINDOWS', True), patch.object(pull, 'kernel32', lambda: library), \
-                patch.object(pull.subprocess, 'run', side_effect=subprocess.TimeoutExpired('taskkill', 30)):
-            with self.assertRaises(subprocess.TimeoutExpired):
-                pull.stop_process_tree(MagicMock(pid=4711), 99)
-        library.TerminateJobObject.assert_called_once_with(99, 1)
+    @unittest.skipIf(portable.WINDOWS, 'A Ctrl+C there reaches every process in the console')
+    def test_git_runs_on_to_its_own_end_when_its_caller_is_interrupted(self):
+        # Git stopped in the middle of a merge would leave its index.lock behind and block the next pull.
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        marker = Path(temporary.name) / 'child'
+        alias = f'alias.dotfiles-hang=!sleep 60 & echo $! > "{marker}.part" && mv "{marker}.part" "{marker}"; wait'
+        caller = ('import pathlib, signal, sys\nsignal.signal(signal.SIGINT, signal.default_int_handler)\n'
+                  f'sys.path.insert(0, {str(Path(pull.__file__).resolve().parent)!r})\nimport pull\n'
+                  "pull.git(pathlib.Path(sys.argv[1]), '-c', sys.argv[2], 'dotfiles-hang')\n")
+        with subprocess.Popen([sys.executable, '-c', caller, temporary.name, alias], stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL) as process:
+            ending = time.monotonic() + 60
+            while not marker.exists():
+                self.assertLess(time.monotonic(), ending, 'Git never reached its alias')
+                time.sleep(0.05)
+            child = int(marker.read_text())
+            self.addCleanup(ended, [child])
+            process.send_signal(signal.SIGINT)
+            self.assertEqual(process.wait(timeout=30), -signal.SIGINT)
+        ending = time.monotonic() + 1
+        while time.monotonic() < ending:
+            self.assertTrue(portable.process_running(child), 'Git was stopped with its interrupted caller')
+            time.sleep(0.05)
+
+    @unittest.skipIf(portable.WINDOWS, 'Windows has no SIGHUP')
+    def test_a_pull_that_is_interrupted_hung_up_or_killed_stops_its_sync_with_what_the_sync_started(self):
+        # An uncaught KeyboardInterrupt ends Python by SIGINT itself, and the other two end it through SystemExit.
+        for number, code in ((signal.SIGINT, -signal.SIGINT), (signal.SIGHUP, 128 + signal.SIGHUP),
+                             (signal.SIGTERM, 128 + signal.SIGTERM)):
+            with self.subTest(signal=number.name), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / 'repo').mkdir()
+                marker = root / 'started'
+                (root / 'repo/sync.py').write_text(
+                    'import os, pathlib, subprocess, sys, time\n'
+                    "command = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+                    f"pathlib.Path({str(marker)!r} + '.part').write_text(f'{{os.getpid()}} {{command.pid}}')\n"
+                    f"pathlib.Path({str(marker)!r} + '.part').replace({str(marker)!r})\n"
+                    'time.sleep(60)\n', encoding='utf-8')
+                # A suite started under nohup, or in the background by a shell, would pass on the signal ignored.
+                caller = ('import signal, sys\nsignal.signal(signal.SIGINT, signal.default_int_handler)\n'
+                          'signal.signal(signal.SIGHUP, signal.SIG_DFL)\nsignal.signal(signal.SIGTERM, signal.SIG_DFL)\n'
+                          f'sys.path.insert(0, {str(Path(pull.__file__).resolve().parent)!r})\n'
+                          'import pull\npull.paired = lambda root, private: None\n'
+                          f"sys.argv = ['pull.py', '--root', {str(root / 'repo')!r}, '--wait', '0']\n"
+                          'raise SystemExit(pull.main())\n')
+                with subprocess.Popen([sys.executable, '-c', caller], env={**os.environ, 'HOME': str(root)},
+                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as process:
+                    ending = time.monotonic() + 60
+                    while not marker.exists():
+                        self.assertLess(time.monotonic(), ending, 'The pull never started its sync')
+                        time.sleep(0.05)
+                    pids = [int(pid) for pid in marker.read_text().split()]
+                    self.addCleanup(ended, list(pids))
+                    process.send_signal(number)
+                    self.assertEqual(process.wait(timeout=30), code)
+                ending = time.monotonic() + 10
+                while any(map(portable.process_running, pids)):
+                    self.assertLess(time.monotonic(), ending, 'The sync or its command outlived the pull')
+                    time.sleep(0.05)
+
+
+def ended(pids):
+    for pid in pids:
+        if portable.process_running(pid):
+            with contextlib.suppress(OSError):
+                os.kill(pid, signal.SIGKILL)
 
 
 class WindowsVerifierTest(unittest.TestCase):

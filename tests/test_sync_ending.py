@@ -1,7 +1,9 @@
+import contextlib
 import json
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -12,9 +14,20 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from homes import ENGINE, child_stderr_dropped, keeping_arguments, recording_sync
+from portable import process_running
 from sync_ending import run_sync
 
 PUT_A_FOLDER_IN_THE_RECORDS_PLACE = 'ending.unlink()\nending.mkdir()\n'
+KILL = getattr(signal, 'SIGKILL', signal.SIGTERM)  # os.kill ends a process on Windows with any signal
+
+
+def ended(pids):
+    for pid in pids:
+        if process_running(pid):
+            with contextlib.suppress(OSError):
+                os.kill(pid, KILL)
+
+
 OF_ANOTHER_RELEASE = ('import pathlib, sys\n'
                       "pathlib.Path(sys.argv[sys.argv.index('--ending') + 1]).write_bytes(b'{\"status\": 2}')\n")
 
@@ -99,11 +112,73 @@ class RunSyncTest(unittest.TestCase):
         raised = Path((self.root / 'folder').read_text(encoding='utf-8'))
         self.assertEqual((returned.exists(), raised.exists()), (False, False))
 
-    def test_a_sync_past_its_time_limit_is_stopped_there(self):
-        started = time.monotonic()
+    def test_a_sync_past_its_time_limit_is_stopped_there_with_the_commands_it_started(self):
+        marker = self.root / 'started'
+        starts_a_command = ('import os, pathlib, subprocess, sys, time\n'
+                            'command = subprocess.Popen([sys.executable, "-c", "import signal, time; '
+                            'signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"])\n'
+                            f"pathlib.Path({str(marker)!r} + '.part').write_text(f'{{os.getpid()}} {{command.pid}}')\n"
+                            f'pathlib.Path({str(marker)!r} + ".part").replace({str(marker)!r})\n'
+                            'time.sleep(60)\n')
+        for limit in (3, 10, 30):
+            began = time.monotonic()
+            with self.assertRaises(subprocess.TimeoutExpired):
+                self.sync(starts_a_command, timeout=limit)
+            self.assertLess(time.monotonic() - began, limit + 20)
+            if marker.exists():
+                pids = [int(pid) for pid in marker.read_text().split()]
+                self.addCleanup(ended, pids)
+                ending = time.monotonic() + 10
+                while any(map(process_running, pids)):
+                    self.assertLess(time.monotonic(), ending, 'The sync or its command outlived its time limit')
+                    time.sleep(0.05)
+                return
+        self.fail('The sync never started its command within the longest limit')
+
+    @unittest.skipIf(os.name == 'nt', 'Windows has no SIGHUP')
+    def test_the_callers_own_handlers_for_a_hang_up_and_a_sigterm_are_back_once_the_sync_ends(self):
+        def own(number, frame):
+            pass
+
+        for number in (signal.SIGHUP, signal.SIGTERM):
+            self.addCleanup(signal.signal, number, signal.signal(number, own))
+        self.assertEqual(self.sync(recording_sync(0)), 0)
+        self.stop('raise SystemExit(1)\n')
         with self.assertRaises(subprocess.TimeoutExpired):
             self.sync('import time\ntime.sleep(60)\n', timeout=1)
-        self.assertLess(time.monotonic() - started, 30)
+        self.assertEqual([signal.getsignal(number) for number in (signal.SIGHUP, signal.SIGTERM)], [own, own])
+
+    @unittest.skipIf(os.name == 'nt', 'Windows has no SIGHUP')
+    def test_a_signal_the_caller_ignores_stays_ignored_and_the_other_one_still_ends_the_caller(self):
+        def own(number, frame):
+            pass
+
+        signals_its_caller = ('import os, signal\nos.kill(os.getppid(), signal.SIGHUP)\n'
+                              'os.kill(os.getppid(), signal.SIGTERM)\n')
+        # nohup has a pull ignore SIGHUP only, so a kill must still stop its sync.
+        for ignored, sent in ((signal.SIGHUP, signal.SIGTERM), (signal.SIGTERM, signal.SIGHUP)):
+            with self.subTest(ignored=ignored.name):
+                self.addCleanup(signal.signal, ignored, signal.signal(ignored, signal.SIG_IGN))
+                self.addCleanup(signal.signal, sent, signal.signal(sent, own))
+                with self.assertRaises(SystemExit) as raised:
+                    self.sync(recording_sync(2, then=signals_its_caller))
+                self.assertEqual(raised.exception.code, 128 + sent)
+                self.assertEqual([signal.getsignal(ignored), signal.getsignal(sent)], [signal.SIG_IGN, own])
+
+    @unittest.skipIf(os.name == 'nt', 'Windows has no SIGHUP')
+    def test_a_hang_up_handler_set_outside_python_is_left_to_it(self):
+        # Python reports such a handler as None, as in a Python that a program embeds, and cannot set None back.
+        # The test's own handler stands in for it.
+        got = []
+        for number in (signal.SIGHUP, signal.SIGTERM):
+            self.addCleanup(signal.signal, number, signal.getsignal(number))
+        signal.signal(signal.SIGHUP, lambda number, frame: got.append(number))
+        getsignal = signal.getsignal
+        hangs_up_its_caller = 'import os, signal\nos.kill(os.getppid(), signal.SIGHUP)\n'
+        with mock.patch.object(signal, 'getsignal', lambda number: None if number == signal.SIGHUP else
+                               getsignal(number)):
+            self.assertEqual(self.sync(recording_sync(2, then=hangs_up_its_caller)), 2)
+        self.assertEqual(got, [signal.SIGHUP])
 
     def test_the_sync_gets_the_callers_mode_checkouts_and_notes(self):
         (self.root / 'sync.py').write_text(recording_sync(0, then=keeping_arguments()), encoding='utf-8')

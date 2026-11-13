@@ -11,11 +11,14 @@ to. A release that renames the flag or the record's `status` key therefore makes
 pull after it, which runs the new code, works."""
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
-import subprocess
+import signal
 import sys
 import tempfile
+
+from portable import WINDOWS, run_tree
 
 FLAG = '--ending'
 _LOOK = 'its own output above, if any, says why'
@@ -29,7 +32,10 @@ def run_sync(root: Path, private: Path | None, *, apply: bool, notes: bool = Fal
              timeout: float | None = None) -> int:
     """Run root's sync.py with the caller's own stdout and stderr and return the status it recorded: 0 in step,
     1 managed changes remain, 2 blocked, 3 stopped or incomplete. RuntimeError when it did not end by recording one,
-    subprocess.TimeoutExpired when it ran past timeout."""
+    subprocess.TimeoutExpired when it ran past timeout. The time limit, a Ctrl+C, and on POSIX a hang-up or a SIGTERM
+    of the caller while the sync runs, stop the sync and the processes it started, as far as portable.run_tree reaches
+    them, and the last two then end the caller with SystemExit(128 plus the signal's number), unless the caller
+    ignores them."""
     command = [sys.executable, str(root / 'sync.py'), '--public', str(root / 'setup'),
                '--apply' if apply else '--check']
     if private:
@@ -39,7 +45,9 @@ def run_sync(root: Path, private: Path | None, *, apply: bool, notes: bool = Fal
     # A folder that Windows will not yet let go of must not turn a sync that ended well into a stop.
     with tempfile.TemporaryDirectory(prefix='dotfiles-sync-', ignore_cleanup_errors=True) as folder:
         ending = Path(folder) / 'ending.json'
-        code = subprocess.run([*command, FLAG, str(ending)], cwd=root, timeout=timeout).returncode
+        with _stopped_with_the_caller():
+            code = run_tree([*command, FLAG, str(ending)], cwd=root, timeout=timeout,
+                            stopped_by=BaseException).returncode
         try:
             status = _status(ending.read_text(encoding='utf-8'))
         except FileNotFoundError:
@@ -53,6 +61,27 @@ def run_sync(root: Path, private: Path | None, *, apply: bool, notes: bool = Fal
     if code:
         raise RuntimeError(f'sync.py recorded status {status} and then exited {code}; {_LOOK}')
     return status
+
+
+@contextlib.contextmanager
+def _stopped_with_the_caller():
+    if WINDOWS:
+        yield
+        return
+    previous = {number: signal.getsignal(number) for number in (signal.SIGHUP, signal.SIGTERM)}
+    # signal.getsignal gives None for a handler set outside Python, which signal.signal cannot put back.
+    ours = [number for number, handler in previous.items() if handler not in (signal.SIG_IGN, None)]
+    for number in ours:
+        signal.signal(number, _exit)
+    try:
+        yield
+    finally:
+        for number in ours:
+            signal.signal(number, previous[number])
+
+
+def _exit(number, frame):
+    raise SystemExit(128 + number)
 
 
 def _status(text):
