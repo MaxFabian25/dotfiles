@@ -81,7 +81,7 @@ class ReleaseCase(unittest.TestCase):
         os.environ.pop('T3CODE_THREAD_ID', None)
         # A finish that starts again replaces its process, which here is the test run itself. A test of that names
         # its own stand-in.
-        restart = patch.object(release.os, 'execv', side_effect=ProcessReplaced('a finish started again'))
+        restart = patch.object(release.os, 'execve', side_effect=ProcessReplaced('a finish started again'))
         restart.start()
         self.addCleanup(restart.stop)
         self.root = Path(self.temp.name).resolve()  # as finish names its paths; macOS's temp folder is a link
@@ -155,6 +155,25 @@ class ReleaseCase(unittest.TestCase):
 
     def origin_heads(self):
         return git(self.public_origin, 'rev-parse', 'main'), git(self.private_origin, 'rev-parse', 'main')
+
+
+class CandidateCase(ReleaseCase):
+    def prepare(self, name='candidate'):
+        self.assertEqual(release_main(['start', name, *self.options()], self.public), 0)
+        self.base = self.worktrees / name
+        self.mine, self.private_tree = self.base / 'public', self.base / 'private'
+        (self.mine / 'content').write_text('second\n', encoding='utf-8')
+        self.message = self.root / 'message'
+        self.message.write_text('Change the content\n', encoding='utf-8')
+        self.argv = ['finish', name, '--message', str(self.message), '--private-message', str(self.message),
+                     *self.options()]
+
+    def source(self):
+        return release.Heads(git(self.mine, 'rev-parse', 'HEAD'), git(self.private_tree, 'rev-parse', 'HEAD'))
+
+    def make_candidate(self, *, paired=True, message=None):
+        return release.candidate(self.mine, self.private_tree, self.base, source=self.source(),
+                                 paired=paired, message=message)
 
 
 PACKAGE = 'setup/packages/plugin.toml'

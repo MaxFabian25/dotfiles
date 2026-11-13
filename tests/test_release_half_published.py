@@ -123,7 +123,7 @@ class HalfPublishedTest(ReleaseCase):
         with patch.object(release, 'push_url', lambda root: 'file://' + git(root, 'remote', 'get-url', 'origin')):
             self.half_publish('behind')
         pushed = git(self.public_origin, 'rev-parse', 'main')
-        self.assertNotEqual(git(self.worktrees / 'behind/public', 'rev-parse', 'origin/main'), pushed)
+        self.assertEqual(git(self.worktrees / 'behind/public', 'rev-parse', 'origin/main'), pushed)
         self.assertEqual(release.public_pushed(self.worktrees / 'behind').read_text(encoding='utf-8'), pushed + '\n')
 
     def test_a_private_only_release_is_not_paired_with_another_sessions_unpaired_public_commit(self):
@@ -135,7 +135,9 @@ class HalfPublishedTest(ReleaseCase):
         message.write_text('Add notes\n', encoding='utf-8')
         finish = ['finish', 'private-only', '--private-message', str(message), '--push', *self.options()]
         hook = self.refuse_private_pushes()
-        self.assertIn('push failed and nothing was pushed', self.finish_stopped(finish))
+        told = self.finish_stopped(finish)
+        self.assertIn('push failed:', told)
+        self.assertIn('nothing was pushed', told)
         self.assertFalse((self.worktrees / 'private-only/build/public-pushed').exists())
         hook.unlink()
 
@@ -183,7 +185,8 @@ class HalfPublishedTest(ReleaseCase):
         hook.write_text('#!/bin/sh\nexit 1\n', encoding='utf-8')
         hook.chmod(0o755)
         told = self.finish_stopped(['finish', 'shut', '--message', str(message), '--push', *self.options()])
-        self.assertIn('push failed and nothing was pushed', told)
+        self.assertIn('push failed:', told)
+        self.assertIn('nothing was pushed', told)
         self.assertFalse(release.public_pushed(self.worktrees / 'shut').exists())
         self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'first')
 
@@ -194,14 +197,15 @@ class HalfPublishedTest(ReleaseCase):
         message.write_text('Add notes\n', encoding='utf-8')
         push, moves = release.push, []
 
-        def origin_moves_first(root):
+        def origin_moves_first(root, target):
             moves.append(self.another_session_pushes(self.private_origin, f'moved-{len(moves)}'))
-            push(root)
+            push(root, target)
 
         with patch.object(release, 'push', origin_moves_first):
             told = self.finish_stopped(['finish', 'outrun', '--private-message', str(message), '--push',
                                         *self.options()])
-        self.assertIn(f'push failed {release.ATTEMPTS} times because origin keeps moving, and nothing was pushed', told)
+        self.assertIn(f'changed through all {release.ATTEMPTS} rounds', told)
+        self.assertIn('nothing was pushed', told)
 
     def test_a_stop_after_the_public_push_says_that_the_public_commit_is_out(self):
         finish, hook, _ = self.half_publish('stopped')
@@ -209,8 +213,8 @@ class HalfPublishedTest(ReleaseCase):
         public = self.worktrees / 'stopped/public'
         with patch.object(release.subprocess, 'run', self.crashed_sync(release.subprocess.run)):
             told = self.finish_stopped(finish)
-        self.assertIn('the pull on this device would stop on this release (sync exited 3); the public commit is on '
-                      'origin without its pair; finish again', told)
+        self.assertIn('the pull on this device would stop on this release (sync exited 3)', told)
+        self.assertIn('the public commit is on origin without its pair; finish again', told)
         self.assertTrue(release.public_pushed(self.worktrees / 'stopped').is_file())
         self.assertTrue(public.is_dir())
 
@@ -241,7 +245,7 @@ class HalfPublishedTest(ReleaseCase):
         git(other, 'commit', '-qam', 'Pair another session')
         git(other, 'push', '-q', 'origin', 'HEAD:main')
 
-        self.assertIn('nothing to release', self.finish_stopped(finish))
+        self.assertEqual(release_main(finish, self.public), 0)
 
         self.assertFalse(note.exists())
 
@@ -270,28 +274,29 @@ class HalfPublishedTest(ReleaseCase):
         finish = ['finish', 'tried', '--message', str(message), '--push', *self.options()]
         push, moves = release.push, []
 
-        def origin_moves_first(root):
+        def origin_moves_first(root, target):
             if root.name == 'private':
                 moves.append(self.another_session_pushes(self.private_origin, f'moved-{len(moves)}'))
-            push(root)
+            push(root, target)
 
-        def origin_moves_once_then_refuses(root):
+        def origin_moves_once_then_refuses(root, target):
             if root.name == 'private' and not moves:
                 moves.append(self.another_session_pushes(self.private_origin, 'moved'))
             elif root.name == 'private':
                 self.refuse_private_pushes()
-            push(root)
+            push(root, target)
 
         with patch.object(release, 'push', origin_moves_once_then_refuses):
             told = self.finish_stopped(finish)
-        self.assertIn('push failed and the public commit is on origin without its pair; finish again', told)
+        self.assertIn('push failed:', told)
+        self.assertIn('the public commit is on origin without its pair; finish again', told)
         pushed = git(self.public_origin, 'rev-parse', 'main')
         (self.private_origin / 'hooks/pre-receive').unlink()
         with patch.object(release, 'push', origin_moves_first):
             told = self.finish_stopped(finish)
         self.assertEqual(len(moves), 1 + release.ATTEMPTS)
-        self.assertIn(f'push failed {release.ATTEMPTS} times because origin keeps moving, and the public commit is on '
-                      'origin without its pair; finish again', told)
+        self.assertIn(f'changed through all {release.ATTEMPTS} rounds', told)
+        self.assertIn('the public commit is on origin without its pair; finish again', told)
 
         self.assertEqual(release_main(finish, self.public), 0)
 

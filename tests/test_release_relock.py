@@ -1,16 +1,65 @@
 from contextlib import redirect_stderr, redirect_stdout
 import io
+import json
+import os
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from release_case import ALLOWLIST, KIT, RELOCK_STAND_IN, ReleaseCase, git, release_main  # noqa: E402
 from release_case import skip_on_windows as setUpModule  # noqa: E402, F401
+import release  # noqa: E402
 
 
 class RelockTest(ReleaseCase):
+    def test_relock_creates_signed_public_work_on_origin_only_side_and_tests_final_outputs(self):
+        messages = self.seed_relock()
+        script = RELOCK_STAND_IN.replace('    setup.mkdir(exist_ok=True)',
+                                        '    if option == "--public" and not runs:\n        continue\n'
+                                        '    setup.mkdir(exist_ok=True)')
+        self.another_session(self.public_origin, 'lock_setup.py', script)
+        git(self.public, 'pull', '-q', '--ff-only')
+        release_main(['start', 'origin-only', *self.options()], self.public)
+        public, private = self.worktrees / 'origin-only/public', self.worktrees / 'origin-only/private'
+        (private / 'notes').write_text('own private work\n', encoding='utf-8')
+        observed = self.root / 'generated-observation.json'
+        (private / 'test_generated.py').write_text(
+            'import json, os, subprocess, unittest\nfrom pathlib import Path\n'
+            'class Generated(unittest.TestCase):\n'
+            '    def test_final_outputs(self):\n'
+            '        root = Path(__file__).resolve().parent\n'
+            '        public = root.parent / "public"\n'
+            '        pointer = subprocess.check_output(["git", "-C", str(public), "rev-parse", "HEAD"]).decode().strip()\n'
+            '        self.assertIn(pointer, (root / "release.toml").read_text())\n'
+            '        files = {"public/" + name: (public / name).read_text() for name in ("setup/lock.toml",)}\n'
+            '        files.update({"private/" + name: (root / name).read_text()\n'
+            '                      for name in ("setup/lock.toml", "setup/skills/kit.toml", "release.toml")})\n'
+            '        self.assertTrue(all("origin-only" in text for name, text in files.items()\n'
+            '                            if not name.endswith("release.toml")))\n'
+            '        Path(os.environ["GENERATED_OBSERVATION"]).write_text(json.dumps(files))\n'
+            'if __name__ == "__main__":\n    unittest.main()\n', encoding='utf-8')
+        self.another_session(self.private_origin, 'other', 'other private work\n')
+        public_before = git(self.public_origin, 'rev-parse', 'main')
+        private_before = git(self.private_origin, 'rev-parse', 'main')
+        argv = ['finish', 'origin-only', '--entry', 'kit', '--refresh-owned', '--push', *self.options()]
+        with redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main([*argv, *messages[2:]], self.public), 3)
+        self.assertIn('pass --message with the public commit message', error.getvalue())
+        self.assertIn('Local commits remain', error.getvalue())
+        self.assertEqual(self.origin_heads(), (public_before, private_before))
+        self.assertEqual(git(public, 'rev-parse', 'HEAD'), public_before)
+        with patch.dict(os.environ, {'GENERATED_OBSERVATION': str(observed)}):
+            self.assertEqual(release_main([*argv, *messages], self.public), 0)
+        self.assertEqual(git(self.public_origin, 'rev-parse', 'main^'), public_before)
+        self.assertIn('gpgsig -----BEGIN SSH SIGNATURE-----', git(self.public_origin, 'cat-file', 'commit', 'main'))
+        for path, text in json.loads(observed.read_text()).items():
+            side, name = path.split('/', 1)
+            origin = self.public_origin if side == 'public' else self.private_origin
+            self.assertEqual(release.git_bytes(origin, 'show', f'main:{name}'), text.encode())
+
     def seed_relock(self):
         """The relock stand-in on the public origin, a private lock and kit entry the relock changes, and the
         message options."""
@@ -137,8 +186,9 @@ class RelockTest(ReleaseCase):
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as error:
             self.assertEqual(release_main(['finish', 'stray', '--entry', 'kit', '--push', *self.options()],
                                           self.public), 3)
-        self.assertIn(f'{public}: setup/stray.toml changed after the commit, and an amend takes only what the relock '
-                      'writes; commit or remove them, then finish again; nothing was pushed', error.getvalue())
+        self.assertIn(f'{public}: setup/stray.toml changed after the commit; only relock outputs may be committed here',
+                      error.getvalue())
+        self.assertIn('nothing was pushed', error.getvalue())
         self.assertEqual(self.origin_heads(), before)
 
     def test_finish_commits_what_the_worktree_holds_where_the_index_holds_something_else(self):
@@ -205,6 +255,13 @@ class RelockTest(ReleaseCase):
         self.another_session(self.private_origin, 'other', 'theirs\n')
         git(private, 'fetch', '-q', 'origin')
         git(private, 'merge', '-q', '--no-edit', 'origin/main')
+        merged = git(private, 'rev-parse', 'HEAD')
+        with patch.object(release, 'rebase', side_effect=RuntimeError('stop before rebase')), \
+                redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(['finish', 'merged', '--entry', 'kit', *messages,
+                                          *self.options()], self.public), 3)
+        self.assertIn('stop before rebase', error.getvalue())
+        self.assertEqual(git(private, 'rev-parse', 'HEAD^'), merged)
         self.another_session(self.private_origin, 'more', 'theirs\n')  # so the rebase drops the merge
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as error:
             self.assertEqual(release_main(['finish', 'merged', '--entry', 'kit', *messages, '--push',
@@ -216,9 +273,10 @@ class RelockTest(ReleaseCase):
             (self.worktrees / 'paired' / tree / path).write_text('paired\n', encoding='utf-8')
         before = self.origin_heads()
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as error:
-            # Without --push first, which leaves the pair as the private branch's newest commit.
             self.assertEqual(release_main(['finish', 'paired', *messages, *self.options()], self.public), 0,
                              error.getvalue())
+            saved = json.loads((self.worktrees / 'paired/build/tests-passed').read_text())
+            git(self.worktrees / 'paired/private', 'merge', '--ff-only', saved['commits']['private'])
             self.assertEqual(release_main(['finish', 'paired', '--entry', 'kit', *messages, '--push',
                                            *self.options()], self.public), 0, error.getvalue())
         self.assertEqual(git(self.private_origin, 'show', 'main:setup/lock.toml'), '[kit]\ntree = "paired"')

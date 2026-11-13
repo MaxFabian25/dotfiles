@@ -90,14 +90,14 @@ class DetachTest(ReleaseCase):
         argv = ['finish', 'late', '--report', str(status), *self.options()]
         busy = iter([['pull PID 1 since 23:54: pull.py --update --apply'], []])
 
-        def restart(program, arguments):
+        def restart(program, arguments, environment):
             raise ProcessReplaced(arguments)
         with patch.object(release, 'running', lambda names=None: next(busy, [])), \
-                patch.object(release.os, 'execv', restart), redirect_stderr(io.StringIO()), \
+                patch.object(release.os, 'execve', restart), redirect_stderr(io.StringIO()), \
                 redirect_stdout(io.StringIO()), self.assertRaises(ProcessReplaced) as restarted:
             release_main(argv, self.public)
         self.assertEqual(restarted.exception.args[0][1:], ['-B', str(self.public / 'release.py'), *argv])
-        with patch.object(release.os, 'execv', restart), redirect_stderr(io.StringIO()):  # nothing to wait for
+        with patch.object(release.os, 'execve', restart), redirect_stderr(io.StringIO()):
             self.assertEqual(release_main(argv, self.public), 3)
 
     def test_a_finish_starts_again_before_the_lock_when_a_pull_changed_the_engine_meanwhile(self):
@@ -108,7 +108,7 @@ class DetachTest(ReleaseCase):
         argv = ['finish', 'tested', '--message', str(message), '--push', *self.options()]
         suite, runs = release.test_suite, []
 
-        def restart(program, arguments):
+        def restart(program, arguments, environment):
             raise ProcessReplaced(arguments)
 
         def pull_during_the_suite(*arguments):
@@ -118,20 +118,20 @@ class DetachTest(ReleaseCase):
                 self.push_from_another_session(self.public_origin, 'other', {'doc': 'theirs\n'})
                 git(self.public, 'pull', '-q', '--ff-only', 'origin', 'main')
 
-        with patch.object(release, 'test_suite', pull_during_the_suite), patch.object(release.os, 'execv', restart), \
+        with patch.object(release, 'test_suite', pull_during_the_suite), patch.object(release.os, 'execve', restart), \
                 redirect_stdout(io.StringIO()) as output:
             with self.assertRaises(ProcessReplaced) as restarted:
                 release_main(argv, self.public)
             self.assertEqual(restarted.exception.args[0][3:5], ['finish', 'tested'])
-            self.assertIn('Starting again because a pull changed the engine while this finish ran its checks or '
+            self.assertIn('Starting again because a pull changed the engine while this finish ran or '
                           'waited, to run the engine as it is now', output.getvalue())
             self.assertRegex(output.getvalue(), r'Waited \d+ seconds for the release lock before the engine changed\n')
-            self.assertNotIn('Held the release lock', output.getvalue())
-            self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'first')  # it took no lock and no commit
-            self.assertEqual(git(self.worktrees / 'tested/public', 'log', '-1', '--format=%s'), 'seed')
+            self.assertIn('Held the release lock', output.getvalue())
+            self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'first')
+            self.assertEqual(git(self.worktrees / 'tested/public', 'log', '-1', '--format=%s'), 'Change the content')
             self.assertFalse((self.root / 'state/release.lock.holder').exists())
             self.assertEqual(release_main(argv, self.public), 0)  # as the engine starts it again
-        self.assertEqual(len(runs), 1)  # and the tests that passed did not run a second time
+        self.assertEqual(len(runs), 2)
         self.assertEqual(git(self.public_origin, 'show', 'main:content'), 'tested')
 
     def test_a_detached_finish_keeps_the_log_of_the_attempt_before_and_starts_no_second_unit(self):

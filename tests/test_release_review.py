@@ -279,7 +279,6 @@ class ReviewTest(ReleaseCase):
         check = release.reused_release_names
 
         def edit_after_the_first_review_check(*arguments):
-            # Before the tests, so they run on the edited file and pass, and the commit holds what was tested.
             module.write_text(PASSING_TEST + '\n# slipped in\n', encoding='utf-8')
             return check(*arguments)
 
@@ -287,7 +286,8 @@ class ReviewTest(ReleaseCase):
         with redirect_stderr(errors), patch.object(release, 'reused_release_names', edit_after_the_first_review_check):
             self.assertEqual(release_main(['finish', 'late', '--message', str(message), '--push', *self.options()],
                                           self.public), 3)
-        self.assertIn('the code changed after its review, and nothing was pushed', errors.getvalue())
+        self.assertIn('reviews other code', errors.getvalue())
+        self.assertIn('nothing was pushed', errors.getvalue())
         self.assertEqual(git(self.public_origin, 'ls-tree', '--name-only', 'main', 'tests/'), SEEDED_TESTS)
 
 

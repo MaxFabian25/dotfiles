@@ -26,6 +26,7 @@ class ChecksTest(ReleaseCase):
         with redirect_stderr(io.StringIO()) as error:
             self.assertEqual(release_main(finish, self.public), 3)
         self.assertIn('content:2 in ', error.getvalue())
+        self.assertNotIn('secret-host', error.getvalue().lower())
         self.assertNotIn('notes.md', error.getvalue())
         self.assertEqual(git(tree, 'rev-parse', 'HEAD'), git(self.public_origin, 'rev-parse', 'main'))
         (tree / 'notes.md').unlink()
@@ -136,7 +137,7 @@ class ChecksTest(ReleaseCase):
         message = self.root / 'message'
         message.write_text('Change the tree\n', encoding='utf-8')
         for name, changed, text, expected in (
-                ('data', 'content', 'second\n', 'The public test suite did not run'),
+                ('data', 'content', 'second\n', 'Ran 1 test in'),
                 ('code', 'tests/test_other.py', PASSING_TEST, 'Ran 2 tests in')):
             with self.subTest(name):
                 release_main(['start', name, *self.options()], self.public)
@@ -145,9 +146,9 @@ class ChecksTest(ReleaseCase):
                     self.assertEqual(release_main(['finish', name, '--message', str(message), *self.options()],
                                                   self.public), 0)
                 self.assertIn(expected, output.getvalue())
-                self.assertEqual(str(self.worktrees / name / 'build/tests.log') in output.getvalue(), name == 'code')
+                self.assertIn(str(self.worktrees / name / 'build/tests.log'), output.getvalue())
 
-    def test_the_public_suite_runs_only_for_a_release_that_changes_code(self):
+    def test_the_public_suite_runs_for_data_and_code_changes(self):
         seed = self.clone(self.public_origin, 'code-seed')
         for relative, text in {'tests/test_broken.py': FAILING_TEST,
                                'code/old.py': 'value = 1\n', 'uv.lock': 'old\n', 'pyproject.toml': 'old\n',
@@ -168,10 +169,9 @@ class ChecksTest(ReleaseCase):
 
         write(public, 'content')
         log = self.root / 'logs/data.log'
-        with redirect_stdout(io.StringIO()) as output:
+        with self.assertRaisesRegex(RuntimeError, 'test suite failed'):
             release.test_suite(public, private, log)
-        self.assertFalse(log.exists())
-        self.assertIn('The public test suite did not run', output.getvalue())
+        self.assertIn('broken', log.read_text(encoding='utf-8'))
 
         for name, change in {
                 'new python file': lambda: write(public, 'code/new.py'),
@@ -216,9 +216,9 @@ class ChecksTest(ReleaseCase):
         # A file made while the finish waits for the lock stops it too, before the commit that would leave it out.
         hold = release.hold
 
-        def make_a_file_during_the_wait(*arguments):
+        def make_a_file_during_the_wait(*arguments, **keywords):
             (tree / 'late.md').write_text('left out\n', encoding='utf-8')
-            return hold(*arguments)
+            return hold(*arguments, **keywords)
 
         (tree / 'content').write_text('third\n', encoding='utf-8')
         with patch.object(release, 'hold', make_a_file_during_the_wait), redirect_stderr(io.StringIO()) as error:
@@ -230,7 +230,7 @@ class ChecksTest(ReleaseCase):
         with portable.exclusive_lock(self.root / 'state/release.lock', record=True), \
                 redirect_stderr(io.StringIO()) as error, redirect_stdout(io.StringIO()) as output:
             self.assertEqual(release_main(finish, self.public), 3)
-        self.assertIn('The tests did not run again', output.getvalue())
+        self.assertNotIn('Both complete suites run', output.getvalue())
         self.assertIn('.gitignore leaves out late.md;', error.getvalue())
 
     def test_finish_stops_on_a_suite_that_writes_into_the_engine_cache(self):
@@ -386,7 +386,7 @@ class ChecksTest(ReleaseCase):
 
                 said = self.stopped_finish(name)
                 self.assertIn(f'Release stopped: {package} is not TOML (', said)
-                self.assertTrue(said.rstrip().endswith('); this run committed nothing'), said)
+                self.assertIn('); this run committed nothing', said)
 
     def test_finish_stops_on_a_package_file_that_origin_holds_as_no_toml(self):
         seed = self.clone(self.public_origin, 'package-seed')

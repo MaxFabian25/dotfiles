@@ -1,44 +1,32 @@
-"""Release reviewed changes as a signed public/private pair, push both, and pull them on this device.
+"""Release the exact signed public/private candidates whose complete trees passed the tests.
 
-Run it with the engine's own Python from the canonical public checkout. `start NAME` makes a worktree of
-each repository at origin/main on branch NAME. Edit there. `finish NAME` locks and builds the named
-entries, stops on a changed plugin whose Codex hooks are trusted until --hooks-reapproved, stops on a private
-test file link that points at nothing, runs the public test suite unless the release changes no code, runs each
-private test file by itself, up to eight at a time, and names each that skipped tests, takes this machine's release
-lock once no other release, pull or sync runs here, stops on new files the .gitignore allowlist would leave out,
-commits both worktrees, stops if the commits hold other files than the tests ran on, stops if origin/main changed
-the same files meanwhile, rebases them onto it, pairs the private release.toml with the public commit, checks
-that this device's pull could apply the pair, naming each Claude plugin cache that running sessions hold, checks
-both pushes with --dry-run, pushes, and pulls, after any other pull here ends.
-Before all of that it stops on changed code that `--reviewed FILE` does not show another agent reviewed, for which
-`review NAME` prints the files, the command that shows their changes and the lines the reviewer writes, and checks
-that again before the push.
-It also stops first on a package whose selection changed without a new packaging number, and on an owned
-source edited without `--entry NAME --refresh-owned`, which every pull would refuse as a stale lock.
-Several finishes run their checks and tests at once on a machine. Only one at a time holds its release lock, from
-the commit to the pull, and another waits for it up to --timeout seconds, then stops and names it. One finish
-runs per release; a second stops and names the first. A finish notes
-the worktrees whose tests passed in build/tests-passed, and a later finish of the same files does not run the
-tests again. Each run of the tests moves the test logs of the run before aside, named for the time they were
-written, and `finish --detach` does the same with the log of the attempt before.
-`clean NAME` removes the worktrees and branches once origin/main has them. `status` lists what runs here and each open
-release worktree with the files it changes and the T3 Code thread whose `start` made it, and `start` lists the others. `wait --timeout SECONDS` returns
-once no release holds that lock and no pull or sync runs on this machine, so it does not wait for a finish that
-is in its checks or tests; `status` names each such finish under its release. `finish NAME --detach` runs the finish as a systemd user unit,
-which a restart of the agent's host leaves running. A finish that starts while a pull or sync runs here waits
-for it and starts again, and so does one that finds, before it takes the lock, that a pull changed the engine
-while it ran its checks and tests or waited, so it runs the engine as it is now.
-`result NAME --timeout SECONDS` waits for that unit, prints the end of its log and exits with its status, or with
-70 when its unit is gone without a status. Any run that ends on an uncaught error prints it and exits 70, so a
-finish that crashes after its push does not read as the pull's status.
-On Windows itself every action but status and wait stops at once and changes nothing, because releases are made
-on WSL or Omarchy.
+Run with the canonical engine's Python. `start NAME` makes two editable release worktrees. `finish NAME`
+checks review, owned pins, packaging, hook approvals, leaks and overlap before committing and rebasing onto
+captured origin tips. It derives a signed private pairing object without changing the editable branch.
+Both complete suites run in sibling detached candidate worktrees outside the machine lock. Private test
+files run separately, up to eight at a time. No generated file or documentation is excluded from evidence.
+
+The machine lock covers preparation and publication, never tests. A per-release lock covers the entire
+finish and cleanup. Before pushing explicit candidate commit IDs, finish rechecks source and candidate
+files, device applicability and origin. Origin movement and engine reloads share three bounded rounds.
+Tests can fail after local commits. Fix the files and finish again; unchanged exact trees reuse the atomic
+build/tests-passed receipt. That receipt also recovers interrupted publication, including a public push
+whose acknowledgement or half-publication note was lost. Unresolved candidate worktrees retain its objects.
+
+`review NAME` prints the code and fingerprints an independent reviewer signs off in --reviewed FILE.
+`finish --push --pull` publishes and then applies the pair using the canonical checkouts under the lock.
+Without --push it retains the tested candidates and applies nothing. Logs record tested and pushed trees.
+`clean NAME` removes published source branches and owned candidate registrations. `status` lists releases,
+their owning threads and running finishes. `wait` waits for machine locks, not concurrent candidate tests.
+`finish --detach` uses a systemd user unit; `result NAME --timeout SECONDS` waits for it and returns its status.
+Uncaught errors and a disappeared unit without a status return 70. Windows allows only status and wait.
 """
 from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import contextlib
+from dataclasses import asdict, dataclass
 import hashlib
 import itertools
 import json
@@ -56,13 +44,13 @@ import traceback
 
 import candidate_result
 import claims
-from portable import GIT, codex_home, exclusive_lock, lock_holder, native_cli_environment
+from portable import GIT, codex_home, exclusive_lock, lock_holder, native_cli_environment, staging_folder
 from pull import fetch, git
 
 ENGINE = Path(__file__).resolve().parent
 STATE = Path.home() / '.local/state/dotfiles'
 WAIT_FOR_PULL = 1200  # seconds a finish waits for another pull on this machine before its own
-PUBLIC_COMMIT = re.compile(r'^public_commit = ".*"$', re.MULTILINE)
+PUBLIC_COMMIT = re.compile(rb'(?m)^([ \t]*public_commit[ \t]*=[ \t]*[\"\x27])([0-9a-f]{40}(?:[0-9a-f]{24})?)([\"\x27])')
 COMMIT_ID = re.compile(r'[0-9a-f]{40}(?:[0-9a-f]{24})?')
 # Push over HTTPS with the GitHub CLI's login, which the Mac and WSL hold, whatever helper or SSH origin the
 # checkout configures. The private checkout's SSH origin uses a read-only deploy key.
@@ -70,14 +58,11 @@ GITHUB_SSH = re.compile(r'^(?:git@github\.com:|ssh://git@github\.com/)')
 CREDENTIALS = ('-c', 'credential.https://github.com.helper=',
                '-c', 'credential.https://github.com.helper=!gh auth git-credential')
 ATTEMPTS = 3
+ROUND_BUDGET = '_DOTFILES_FINISH_ROUNDS'
 RESULT_LINES = 25  # lines of a detached finish's log that result prints
 CRASHED = 70
 MOVED = re.compile(r'\((?:fetch first|non-fast-forward)\)')
-# Files every release rewrites, so both sides changing them says nothing about clashing work.
-PAIRING_FILES = frozenset({'release.toml', 'setup/lock.toml'})
 LOCK = 'setup/lock.toml'
-# What tested_state gives for a worktree without work of its own.
-BASE = 'origin/main'
 # The value of a tree key in a setup entry, which pins its source's tree. The rest of its line is the entry's own.
 TREE_VALUE = re.compile(rb'^([ \t]*tree[ \t]*=[ \t]*)"[^"\r\n]*"', re.MULTILINE)
 SETUP = 'setup/setup.toml'
@@ -104,6 +89,33 @@ UNITTEST_FAILURE = re.compile(r'^(?:FAIL|ERROR): (\S+)', re.MULTILINE)
 UNITTEST_SKIPPED = re.compile(r'\bskipped=(\d+)')
 PRIVATE_TESTS_AT_ONCE = 8
 PRIVATE_TEST_TIMEOUT_SECONDS = 1800
+
+
+@dataclass(frozen=True)
+class Heads:
+    public: str
+    private: str
+
+
+@dataclass(frozen=True)
+class Trees:
+    public: str
+    private: str
+
+
+@dataclass(frozen=True)
+class Candidate:
+    public: Path
+    private: Path
+    source: Heads
+    commits: Heads
+    trees: Trees
+    paired: bool
+
+
+@dataclass(frozen=True)
+class TestedCandidate:
+    candidate: Candidate
 
 
 def machine_locks():
@@ -137,7 +149,9 @@ def wait(names, timeout):
 
 
 class Restart(Exception):
-    """A finish asks to be started again from the engine's files as they are now. Its text says why."""
+    def __init__(self, reason, remaining):
+        super().__init__(reason)
+        self.remaining = remaining
 
 
 def head(repo):
@@ -147,12 +161,7 @@ def head(repo):
     return git(repo, 'rev-parse', 'HEAD')
 
 
-def hold(path, timeout, stale):
-    """This finish's hold on the machine's release lock, taken once no release, pull or sync runs here, or None
-    when stale() then says that the engine is no longer the one this process loaded. A finish holds the lock only
-    from its commit to its pull, so another one waits for it, up to timeout seconds, where it used to stop.
-    running() reads the note a holder writes after it has the lock, so two waiting finishes can both see the lock
-    free. The one that then finds it taken waits again."""
+def hold(path, timeout, stale, *, stopped='this run committed nothing'):
     began, stack = time.monotonic(), contextlib.ExitStack()
     deadline = began + timeout
     while True:
@@ -175,8 +184,7 @@ def hold(path, timeout, stale):
         if time.monotonic() >= deadline:
             who = '; '.join(running()) or f'another run holds {path}'
             raise RuntimeError(f'another release, pull or sync still runs here after {timeout:g} seconds ({who}); '
-                               'finish again, which does not run the tests that passed a second time; this run '
-                               'committed nothing')
+                               f'finish again, which reuses unchanged exact-tree evidence; {stopped}')
         lock_pause(1)
 
 
@@ -202,10 +210,10 @@ def one_finish(args):
     return stack
 
 
-def changed_files(tree):
+def changed_files(tree, origin='origin/main'):
     """Without --no-renames a file renamed from a.py to a.txt would list only a.txt, and without -z git quotes a name
     that is not plain ASCII."""
-    fork = git(tree, 'merge-base', 'HEAD', 'origin/main')
+    fork = git(tree, 'merge-base', 'HEAD', origin)
     listings = (git(tree, 'diff', '--name-only', '--no-renames', '-z', fork),
                 git(tree, 'ls-files', '--others', '--exclude-standard', '-z'))
     return sorted({name for listing in listings for name in listing.split('\0') if name})
@@ -298,10 +306,10 @@ def dirty(root):
     return bool(git(root, 'status', '--porcelain', '--untracked-files=normal'))
 
 
-def ahead(root):
+def ahead(root, origin='origin/main'):
     """Whether the branch has a commit that origin/main lacks. A branch that is only behind, because another
     session pushed since it started, has nothing of its own to release or to pair."""
-    return int(git(root, 'rev-list', '--count', 'origin/main..HEAD')) > 0
+    return int(git(root, 'rev-list', '--count', f'{origin}..HEAD')) > 0
 
 
 def dropped(root):
@@ -337,19 +345,19 @@ def leaks(public, private, message=None):
     listed = private / DENYLIST
     if not listed.is_file():
         raise RuntimeError(f'{listed} is missing, so nothing checks the public side for the strings it names; '
-                           'restore it, then finish again; this run committed nothing')
+                           'restore it, then finish again')
     try:
         text = listed.read_text(encoding='utf-8')
         if '\0' in text:
             raise ValueError('it holds a NUL byte, as a UTF-16 file does')
     except ValueError as error:
         raise RuntimeError(f'{listed} is not UTF-8 ({error}), so nothing checks the public side for the strings it '
-                           'names; save it as UTF-8, then finish again; this run committed nothing') from error
+                           'names; save it as UTF-8, then finish again') from error
     lines = text.replace('\ufeff', '').splitlines()
     patterns = [pattern for line in lines if (pattern := DENYLIST_COMMENT.split(line, maxsplit=1)[0].strip())]
     if not patterns:
         raise RuntimeError(f'{listed} lists no strings, so nothing checks the public side; restore its strings, '
-                           'then finish again; this run committed nothing')
+                           'then finish again')
     found = subprocess.run([*GIT, '-C', str(public), 'grep', '-n', '-I', '-i', '-F', '--untracked', '--full-name',
                             *(part for pattern in patterns for part in ('-e', pattern)), '--'],
                            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=300)
@@ -404,42 +412,43 @@ def message_stop(args):
 
 
 def commit(root, message):
+    folding = (ordinary_tip(root)
+               and git_bytes(root, 'stripspace', data=message.read_bytes())
+               == git_bytes(root, 'stripspace', data=git_bytes(root, 'log', '-1', '--format=%B')))
     git(root, 'add', '-A')
-    git(root, 'commit', '-q', '-F', str(message.resolve()))
+    git(root, 'commit', '-q', *(['--amend'] if folding else []), '-F', str(message.resolve()))
 
 
-def rebase(root, regenerated=frozenset()):
-    """Replay this branch onto origin/main, which another session may have moved since start. A conflict only in
-    files the caller rebuilds afterwards, as finish relocks setup/lock.toml, takes origin's copy. Returns '' when
-    the branch already holds origin/main, 'regenerate' when it took such a copy, and 'rebased' otherwise."""
-    fetch(root)
-    if subprocess.run([*GIT, '-C', str(root), 'merge-base', '--is-ancestor', 'origin/main', 'HEAD'],
-                      capture_output=True, timeout=60).returncode == 0:
+def rebase(root, regenerated=frozenset(), *, onto, paired=False):
+    if holds(root, onto):
         return ''
     # --continue then commits each settled step with its own author and message, minus git's conflict comments.
     environment = {**native_cli_environment(), 'GIT_EDITOR': 'true'}
-    result, step = 'rebased', ('rebase', '-q', 'origin/main')
-    while subprocess.run([*GIT, '-C', str(root), *step], env=environment, capture_output=True, timeout=600).returncode:
+    result, step = 'rebased', ('rebase', '-q', onto)
+    while True:
+        done = subprocess.run([*GIT, '-C', str(root), *step], env=environment, capture_output=True, timeout=600)
+        if not done.returncode:
+            return result
         try:
-            taken = take_origin(root, regenerated)
+            old_pair = paired and pair_only(root, git(root, 'rev-parse', 'REBASE_HEAD'), origin=onto)
+            taken = take_origin(root, regenerated | ({'release.toml'} if old_pair else set()), empty=old_pair)
         except RuntimeError:
             taken = False
         if not taken:
             subprocess.run([*GIT, '-C', str(root), 'rebase', '--abort'], capture_output=True, timeout=60)
-            raise RuntimeError(f'{root}: the branch conflicts with origin/main; rebase it by hand, then finish again')
-        result, step = 'regenerate', ('rebase', '--continue')
-    return result
+            raise RuntimeError(f'{root}: the branch conflicts with origin/main; rebase it by hand, then finish again: '
+                               f'{done.stderr.decode(errors="replace").strip()}')
+        empty = not git(root, 'diff', '--cached', '--name-only')
+        result, step = 'regenerate', ('rebase', '--skip' if old_pair and empty else '--continue')
 
 
-def take_origin(root, regenerated):
-    """Settle a stopped rebase step whose conflicts are all in regenerated files by taking origin's copy. False
-    when another file conflicts, or when the step would then change nothing."""
+def take_origin(root, regenerated, *, empty=False):
     conflicted = sorted(set(git(root, 'diff', '--name-only', '--diff-filter=U').splitlines()))
     if not conflicted or not set(conflicted) <= regenerated:
         return False
     git(root, 'checkout', '--ours', '--', *conflicted)  # during a rebase, ours is origin/main's side
     git(root, 'add', '--', *conflicted)
-    return subprocess.run([*GIT, '-C', str(root), 'diff', '--cached', '--quiet'], timeout=60).returncode != 0
+    return bool(git(root, 'diff', '--cached', '--name-only')) or empty
 
 
 def uncommitted(tree):
@@ -462,8 +471,8 @@ def amend(root, written, then=''):
     the commit and the check that it holds what was tested is no part of the release."""
     if not (changed := uncommitted(root)):
         return
-    if not ahead(root):
-        raise RuntimeError(f'{root}: relocking changed files on a branch without its own commit; commit them, then finish again')
+    if not ordinary_tip(root):
+        raise RuntimeError(f'{root}: relocking needs a new source commit on this tip; supply its message, then finish again')
     if other := sorted(changed - written):
         raise RuntimeError(f'{root}: {", ".join(other)} changed after the commit, and an amend takes only what the '
                            f'relock writes; commit or remove them, then finish again{then}')
@@ -472,50 +481,84 @@ def amend(root, written, then=''):
     print(f'{root}: amended the relock into {git(root, "log", "-1", "--format=%h %s")}', flush=True)
 
 
+def ordinary_tip(tree):
+    return (ahead(tree)
+            and len(git(tree, 'rev-list', '--parents', '-n', '1', 'HEAD').split()) == 2
+            and git(tree, 'diff-tree', '--no-commit-id', '--name-only', '--no-renames', '-r', 'HEAD') != 'release.toml')
+
+
 def relock_only(tree, written):
     """Whether every uncommitted file is one the relock writes, on a branch whose newest commit is its own and can
     take them by an amend. It looks at what is uncommitted rather than at when, because a finish that stops after
     its relock leaves those files for the next one. A merge is not such a commit, because rebase() drops it and what
     was amended into it, and nor is a pair, which changes release.toml alone."""
-    if not written or not dirty(tree) or not ahead(tree):
+    return bool(written and dirty(tree) and ordinary_tip(tree) and uncommitted(tree) <= written)
+
+
+def public_pointer(raw):
+    try:
+        value = tomllib.loads(raw.decode('utf-8'))['public_commit']
+    except (ValueError, KeyError) as error:
+        raise RuntimeError('release.toml needs one valid public_commit; fix it, then finish again') from error
+    matches = list(PUBLIC_COMMIT.finditer(raw))
+    if (not isinstance(value, str) or not COMMIT_ID.fullmatch(value) or len(matches) != 1
+            or matches[0][2].decode() != value or matches[0][1][-1:] != matches[0][3]):
+        raise RuntimeError('release.toml needs one unambiguous full public_commit; fix it, then finish again')
+    return matches[0]
+
+
+def pair(public, private, source, message):
+    raw = git_bytes(private, 'show', f'{source.private}:release.toml')
+    pointer = public_pointer(raw)
+    if pointer[2].decode() == source.public:
+        return source.private
+    changed = raw[:pointer.start(2)] + source.public.encode() + raw[pointer.end(2):]
+    mode = git(private, 'ls-tree', source.private, '--', 'release.toml').split()[0]
+    if mode not in ('100644', '100755'):
+        raise RuntimeError('release.toml must be a regular file; fix it, then finish again')
+    with tempfile.TemporaryDirectory() as folder:
+        index = {'GIT_INDEX_FILE': str(Path(folder) / 'index')}
+        git_bytes(private, 'read-tree', source.private, environment=index)
+        blob = git_bytes(private, 'hash-object', '-w', '--stdin', data=changed).decode().strip()
+        git_bytes(private, 'update-index', '--cacheinfo', f'{mode},{blob},release.toml', environment=index)
+        tree = git_bytes(private, 'write-tree', environment=index).decode().strip()
+        subject = git(public, 'log', '-1', '--format=%s', source.public)
+        wording = message.read_bytes() if message else f'Pair "{subject}"\n'.encode()
+        return git_bytes(private, 'commit-tree', '-S', tree, '-p', source.private,
+                         data=wording).decode().strip()
+
+
+def pair_only(root, commit, *, origin='origin/main'):
+    parents = git(root, 'rev-list', '--parents', '-n', '1', commit).split()
+    if len(parents) != 2 or holds(root, commit, origin):
         return False
-    if len(git(tree, 'rev-list', '--parents', '-n', '1', 'HEAD').split()) != 2:
+    if git(root, 'diff', '--name-only', '--no-renames', parents[1], commit) != 'release.toml':
         return False
-    if git(tree, 'diff-tree', '--no-commit-id', '--name-only', '--no-renames', '-r', 'HEAD') == 'release.toml':
+    before = git_bytes(root, 'show', f'{parents[1]}:release.toml')
+    after = git_bytes(root, 'show', f'{commit}:release.toml')
+    try:
+        old, new = public_pointer(before), public_pointer(after)
+    except RuntimeError:
         return False
-    return uncommitted(tree) <= written
-
-
-def rewrite(path, pattern, replacement):
-    """Substitute in place, keeping the file's own line endings."""
-    text = path.read_bytes().decode('utf-8')
-    changed = pattern.sub(replacement, text)
-    if changed != text:
-        path.write_bytes(changed.encode('utf-8'))
-    return changed != text
-
-
-def pair(public, private, message):
-    """Name the public commit in the private release.toml."""
-    head = git(public, 'rev-parse', 'HEAD')
-    if rewrite(private / 'release.toml', PUBLIC_COMMIT, f'public_commit = "{head}"'):
-        subject = git(public, 'log', '-1', '--format=%s')
-        wording = ['-F', str(message.resolve())] if message else ['-m', f'Pair "{subject}"']
-        git(private, 'commit', '-q', '-a', *wording)
+    modes = [git(root, 'ls-tree', at, '--', 'release.toml').split()[0] for at in (parents[1], commit)]
+    return (modes[0] == modes[1] and before != after
+            and before[:old.start(2)] + before[old.end(2):] == after[:new.start(2)] + after[new.end(2):])
 
 
 def push_url(root):
     return GITHUB_SSH.sub('https://github.com/', git(root, 'remote', 'get-url', '--push', 'origin'))
 
 
-def overlap(root, regenerated=frozenset()):
+def overlap(root, regenerated=frozenset(), *, origin=None):
     """Files origin/main changed since this branch left it that this branch changed too, committed or not. A
     clean rebase can still join two sessions' clashing designs for the same file. A file finish writes anew is
     no design of this branch's."""
-    fetch(root)
-    fork = git(root, 'merge-base', 'HEAD', 'origin/main')
-    theirs = set(git(root, 'diff', '--name-only', '--no-renames', '-z', fork, 'origin/main').split('\0'))
-    return sorted((theirs & set(changed_files(root))) - PAIRING_FILES - regenerated)
+    if origin is None:
+        fetch(root)
+        origin = git(root, 'rev-parse', 'origin/main')
+    fork = git(root, 'merge-base', 'HEAD', origin)
+    theirs = set(git(root, 'diff', '--name-only', '--no-renames', '-z', fork, origin).split('\0'))
+    return sorted((theirs & set(changed_files(root, origin))) - {LOCK} - regenerated)
 
 
 def pin_only(root, entries, at=None):
@@ -561,66 +604,166 @@ def snapshot(root):
 
 
 def tested_state(public, private):
-    """What a run of the tests vouches for: each worktree's content as a commit would take it. A worktree without
-    work of its own, clean and with no commit origin/main lacks, counts as origin/main wherever that stands,
-    because finish moves it there, as it rebases the other one, without testing again."""
-    return {label: content(tree) if dirty(tree) or ahead(tree) else BASE
-            for label, tree in (('public', public), ('private', private))}
+    return Trees(content(public), content(private))
 
 
 def state_changes(public, private, before, after):
     """Where two states of the worktrees differ, for a stop to name."""
     found = []
     for label, tree in (('public', public), ('private', private)):
-        old, new = before[label], after[label]
+        old, new = getattr(before, label), getattr(after, label)
         if old == new:
             continue
-        if BASE in (old, new):
-            found.append(f'{label}: ' + ('its work is gone' if new == BASE else 'it holds work where it held none'))
-        else:
-            names = git(tree, 'diff', '--name-only', '--no-renames', old, new).splitlines()
-            found.append(f'{label}: ' + ', '.join(names[:8]) + (f' and {len(names) - 8} more' if len(names) > 8 else ''))
+        names = git(tree, 'diff', '--name-only', '--no-renames', old, new).splitlines()
+        found.append(f'{label}: ' + ', '.join(names[:8]) + (f' and {len(names) - 8} more' if len(names) > 8 else ''))
     return '; '.join(found)
 
 
 def tests_passed(base):
-    """Where a finish notes the worktrees whose tests passed, as tested_state gives them."""
     return base / 'build/tests-passed'
 
 
-def tested(public, private, base):
-    """The state of the worktrees whose tests have passed: in this run, or in an earlier run of this release that
-    noted the worktrees as they are now. A finish starts again when a pull changed the engine while it ran, and is
-    run again after a stop behind the tests, and neither needs the same files tested twice."""
-    note, state = tests_passed(base), tested_state(public, private)
+def read_receipt(public, private, base):
     try:
-        passed = json.loads(note.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        passed = None
-    if passed == state:
-        print(f'The tests did not run again: they passed on these files before, as {note} notes. Delete that note '
-              'to run them again', flush=True)
-    else:
-        test_suite(public, private, base / 'build/tests.log')
-        after = tested_state(public, private)
-        if after != state:
-            raise RuntimeError('the worktrees changed while their tests ran ('
-                               f'{state_changes(public, private, state, after)}), so the tests vouch for neither '
-                               'state; finish again once the edits are done; this run committed nothing')
-    # Before the note, and before the wait for the lock. The state leaves out a file the allowlist ignores, while
-    # the tests ran with it there: a note written first would let the finish after its deletion skip tests that
-    # then fail.
+        saved = json.loads(tests_passed(base).read_text(encoding='utf-8'))
+    except (FileNotFoundError, ValueError):
+        return None
+    if (not isinstance(saved, dict) or saved.get('version') != 2 or type(saved.get('paired')) is not bool
+            or not isinstance(saved.get('workspace'), str)
+            or not re.fullmatch(r'round-[a-zA-Z0-9_-]+', saved['workspace'])):
+        return None
+    for field in ('source', 'commits', 'trees'):
+        pair_ids = saved.get(field)
+        if (not isinstance(pair_ids, dict) or set(pair_ids) != {'public', 'private'}
+                or any(not isinstance(value, str) or not COMMIT_ID.fullmatch(value) for value in pair_ids.values())):
+            return None
+    for side, root in (('public', public), ('private', private)):
+        ids = [saved[field][side] for field in ('source', 'commits', 'trees')]
+        objects = git_bytes(root, 'cat-file', '--batch-check=%(objecttype)',
+                            data=('\n'.join(ids) + '\n').encode()).decode().splitlines()
+        if objects != ['commit', 'commit', 'tree']:
+            return None
+        if git(root, 'rev-parse', f'{ids[1]}^{{tree}}') != ids[2]:
+            return None
+    if saved['source']['public'] != saved['commits']['public']:
+        return None
+    if not holds(private, saved['source']['private'], saved['commits']['private']):
+        return None
+    workspace = base / 'build/candidates' / saved['workspace']
+    return Candidate(workspace / 'public', workspace / 'private', Heads(**saved['source']),
+                     Heads(**saved['commits']), Trees(**saved['trees']), saved['paired'])
+
+
+def unchanged(public, private, commits):
     dropped_stop(public, private)
-    note.write_text(json.dumps(state) + '\n', encoding='utf-8')
-    return state
+    for side, root in (('public', public), ('private', private)):
+        expected = getattr(commits, side)
+        paths = sorted(uncommitted(root))
+        if head(root) != expected or paths or content(root) != git(root, 'rev-parse', f'{expected}^{{tree}}'):
+            raise RuntimeError(f'{root}: files or HEAD changed after preparation ({", ".join(paths) or "HEAD/tree"}); '
+                               'the edit is preserved; finish again once the edits are done')
 
 
-def conflicts(root, regenerated=frozenset()):
-    """Files in which a merge of origin/main and this branch as it stands would conflict, outside those the
-    rebase settles by itself. The rebase would stop on them too, but only after the tests have run."""
-    fetch(root)
+def tested(draft, base):
+    unchanged(draft.public, draft.private, draft.commits)
+    note, passed = tests_passed(base), read_receipt(draft.public, draft.private, base)
+    if passed and passed.trees == draft.trees:
+        print(f'The tests did not run again: they passed on these exact trees before, as {note} notes', flush=True)
+    else:
+        reason = (state_changes(draft.public, draft.private, passed.trees, draft.trees) if passed
+                  else 'no valid complete exact-tree receipt')
+        print(f'Both complete suites run because {reason}', flush=True)
+        test_suite(draft.public, draft.private, base / 'build/tests.log')
+    unchanged(draft.public, draft.private, draft.commits)
+    if tested_state(draft.public, draft.private) != draft.trees:
+        raise RuntimeError('candidate trees differ from the prepared trees; finish again')
+    saved = {field: asdict(getattr(draft, field)) for field in ('source', 'commits', 'trees')}
+    saved.update(version=2, paired=draft.paired, workspace=draft.public.parent.name)
+    note.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=note.parent, delete=False) as output:
+        temporary = Path(output.name)
+        try:
+            json.dump(saved, output)
+            output.write('\n')
+            output.flush()
+            os.fsync(output.fileno())
+        except BaseException:
+            temporary.unlink(missing_ok=True)
+            raise
+    try:
+        temporary.replace(note)
+    finally:
+        temporary.unlink(missing_ok=True)
+    print(f'Exact trees tested: public {draft.trees.public}; private {draft.trees.private}; no files excluded', flush=True)
+    return TestedCandidate(draft)
+
+
+def candidate_owner(public, private, base):
+    return {'release': str(base.resolve()), **{side: git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+                                            for side, root in (('public', public), ('private', private))}}
+
+
+def retire_candidates(public, private, base, *, keep=None):
+    parent = base / 'build/candidates'
+    if not parent.exists():
+        return
+    owner = candidate_owner(public, private, base)
+    names = {path.name.removesuffix('.owner.json') for path in parent.iterdir()}
+    for name in sorted(names):
+        folder = parent / name
+        if folder == keep:
+            continue
+        retired = parent / f'{name}.owner.json'
+        marker = retired if retired.exists() else folder / 'owner.json'
+        try:
+            known = (re.fullmatch(r'round-[a-zA-Z0-9_-]+', name) and not folder.is_symlink()
+                     and not marker.is_symlink() and json.loads(marker.read_text(encoding='utf-8')) == owner)
+        except (OSError, ValueError):
+            known = False
+        contents = list(folder.iterdir()) if folder.is_dir() else []
+        if (not known or any(path.name not in ('public', 'private', 'owner.json') for path in contents)
+                or (marker == retired and contents)):
+            raise RuntimeError(f'{folder}: unrecognised candidate workspace; inspect it before cleanup')
+        for side, repo in (('public', public), ('private', private)):
+            root = folder / side
+            listed = {line.removeprefix('worktree ') for line in
+                      git(repo, 'worktree', 'list', '--porcelain', '-z').split('\0') if line.startswith('worktree ')}
+            if str(root) in listed:
+                if root.is_symlink() or (root.exists() and candidate_owner(root, repo, base)['public'] != owner[side]):
+                    raise RuntimeError(f'{root}: candidate Git ownership changed; inspect it before cleanup')
+                git(repo, 'worktree', 'remove', '--force', str(root))
+            elif root.exists():
+                raise RuntimeError(f'{root}: candidate is not registered to its repository; inspect it before cleanup')
+        if marker != retired:
+            marker.replace(retired)
+        if folder.exists():
+            folder.rmdir()
+        retired.unlink()
+
+
+@contextlib.contextmanager
+def candidate(public, private, base, *, source, paired, message):
+    unchanged(public, private, source)
+    commits = Heads(source.public, pair(public, private, source, message) if paired else source.private)
+    trees = Trees(*(git(root, 'rev-parse', f'{commit}^{{tree}}')
+                    for root, commit in ((public, commits.public), (private, commits.private))))
+    parent = base / 'build/candidates'
+    parent.mkdir(parents=True, exist_ok=True)
+    folder = Path(staging_folder(prefix='round-', dir=parent))
+    (folder / 'owner.json').write_text(json.dumps(candidate_owner(public, private, base)) + '\n', encoding='utf-8')
+    for side, repo in (('public', public), ('private', private)):
+        git(repo, 'worktree', 'add', '--detach', '-q', str(folder / side), getattr(commits, side))
+    draft = Candidate(folder / 'public', folder / 'private', source, commits, trees, paired)
+    unchanged(draft.public, draft.private, commits)
+    yield draft
+
+
+def conflicts(root, regenerated=frozenset(), *, origin=None):
+    if origin is None:
+        fetch(root)
+        origin = git(root, 'rev-parse', 'origin/main')
     merged = subprocess.run([*GIT, '-C', str(root), 'merge-tree', '--write-tree', '--name-only', '--no-messages', '-z',
-                             'origin/main', snapshot(root)], capture_output=True, timeout=300,
+                             origin, snapshot(root)], capture_output=True, timeout=300,
                             env=native_cli_environment())
     # A merge git could try prints the merged tree's ID first. Without it exit 1 is no conflict: git also exits 1
     # with nothing on stdout when it cannot read a commit.
@@ -631,18 +774,21 @@ def conflicts(root, regenerated=frozenset()):
     return sorted({name for name in names if name and merged.returncode} - regenerated)
 
 
-def origin_stop(public, private, regenerated, overlap_reviewed):
-    """Why this release cannot go onto origin/main as it stands, or None. Asked before the tests, so that a stop
-    costs seconds, and again after the commit, because origin can move while the tests run."""
-    clashing = [f'{tree.name}: {", ".join(files)}' for tree in (public, private)
-                if (files := conflicts(tree, regenerated[tree]))]
+def origin_stop(public, private, regenerated, overlap_reviewed, *, origins, paired=False):
+    allowed = dict(regenerated)
+    if paired and 'release.toml' not in uncommitted(private):
+        changes = git(private, 'log', '--format=%H', f'{origins.private}..HEAD', '--', 'release.toml').splitlines()
+        if changes and all(pair_only(private, commit, origin=origins.private) for commit in changes):
+            allowed[private] |= {'release.toml'}
+    clashing = [f'{side}: {", ".join(files)}' for side, tree in (('public', public), ('private', private))
+                if (files := conflicts(tree, allowed[tree], origin=getattr(origins, side)))]
     if clashing:
         return ('the branch conflicts with origin/main (' + '; '.join(clashing) + '). Commit the worktree, rebase '
                 'it by hand with git rebase origin/main, then finish again')
     if overlap_reviewed:
         return None
-    shared = [f'{tree.name}: {", ".join(files)}' for tree in (public, private)
-              if (files := overlap(tree, regenerated[tree]))]
+    shared = [f'{side}: {", ".join(files)}' for side, tree in (('public', public), ('private', private))
+              if (files := overlap(tree, allowed[tree], origin=getattr(origins, side)))]
     if shared:
         return ('another session changed the same files on origin/main since this branch started ('
                 + '; '.join(shared) + '). Read its commits with git log -p HEAD..origin/main -- FILE, '
@@ -670,12 +816,10 @@ def current(root, path):
 
 
 def toml(read, name, then=''):
-    """The parsed file, or a stop that names it, where the error itself would end a detached finish as a crash.
-    Each caller reads before finish commits anything."""
     try:
         return tomllib.loads(read())
     except (tomllib.TOMLDecodeError, UnicodeDecodeError) as error:
-        raise RuntimeError(f'{name} is not TOML ({error}){then}; this run committed nothing') from error
+        raise RuntimeError(f'{name} is not TOML ({error}){then}') from error
 
 
 def reused_release_names(public, private):
@@ -710,9 +854,9 @@ def edited_owned(public, private, private_repo):
     return drift.edited_owned(setup, DeviceRoots.current())
 
 
-def holds(tree, commit):
+def holds(tree, commit, target='HEAD'):
     """Whether the tree's HEAD holds the commit, or a stop with git's own words when git cannot tell."""
-    result = subprocess.run([*GIT, '-C', str(tree), 'merge-base', '--is-ancestor', commit, 'HEAD'],
+    result = subprocess.run([*GIT, '-C', str(tree), 'merge-base', '--is-ancestor', commit, target],
                             capture_output=True, text=True, timeout=60)
     if result.returncode not in (0, 1):
         raise RuntimeError(f'{tree}: git merge-base exited {result.returncode}: {result.stderr.strip()}')
@@ -733,13 +877,13 @@ def unloadable(checkouts, error):
         shared = [f'{tree.name}: {", ".join(files)}' for tree in behind if (files := overlap(tree))]
     except RuntimeError as failure:
         return (f'{problem}finish could not tell whether the worktrees are older than the engine: {failure}\n'
-                'Fix the setup or bring the worktrees up to date, then finish again; this run committed nothing')
+                'Fix the setup or bring the worktrees up to date, then finish again')
     if older:
         return (f'{problem}The engine is older than this branch: {", ".join(map(str, older))} lacks commits the '
                 f'branch started from. Pull this machine with {sys.executable} -B {ENGINE / "pull.py"} --update '
-                '--apply, then finish again; this run committed nothing')
+                '--apply, then finish again')
     if not behind:
-        return f'{problem}Fix it, then finish again; this run committed nothing'
+        return f'{problem}Fix it, then finish again'
     first = (('Another session changed the same files on origin/main since this branch started ('
              + '; '.join(shared) + '). Read its commits with git log -p HEAD..origin/main -- FILE and reconcile '
              'the two designs before you rebase, because the rebase hides them from the overlap check. ')
@@ -748,7 +892,7 @@ def unloadable(checkouts, error):
     return (f'{problem}This branch is older than the engine: {", ".join(map(str, behind))} lacks commits the '
             f'engine holds, and the setup may load once the branch has them. {first}Commit the work in each such '
             f'worktree with its release message, unless it is committed, run {rebases}, settle any conflict it '
-            'stops on and git rebase --continue, then finish again; this run committed nothing')
+            'stops on and git rebase --continue, then finish again')
 
 
 def unpinned(edited, entries, refresh_owned):
@@ -757,9 +901,9 @@ def unpinned(edited, entries, refresh_owned):
     return {name: path for name, path in edited.items() if name not in accepted}
 
 
-def git_bytes(tree, *args, passing=(0,), environment=None):
+def git_bytes(tree, *args, passing=(0,), environment=None, data=None):
     """A git command's output as bytes, or a stop with git's own words when it exits outside passing."""
-    done = subprocess.run([*GIT, '-C', str(tree), *args], capture_output=True, timeout=120,
+    done = subprocess.run([*GIT, '-C', str(tree), *args], capture_output=True, timeout=120, input=data,
                           env={**native_cli_environment(), **(environment or {})})
     if done.returncode not in passing:
         command = next(arg for arg in args if arg[:1] != '-' and '=' not in arg)
@@ -932,6 +1076,35 @@ def push_state(base):
     return 'nothing was pushed'
 
 
+def origin_heads(public, private):
+    for root in (public, private):
+        fetch(root)
+    return Heads(git(public, 'rev-parse', 'origin/main'), git(private, 'rev-parse', 'origin/main'))
+
+
+def recover_publication(public, private, base, origins):
+    saved = read_receipt(public, private, base)
+    if saved is None:
+        return False
+    public_out = holds(public, saved.commits.public, origins.public)
+    private_out = holds(private, saved.commits.private, origins.private)
+    if saved.paired and public_out and not private_out and holds(private, saved.source.private, origins.private):
+        pointer = public_pointer(git_bytes(private, 'show', f'{origins.private}:release.toml'))[2].decode()
+        # The pointed-to object may not be among the fetched public history after a force-push elsewhere.
+        exists = git_bytes(public, 'cat-file', '--batch-check=%(objecttype)', data=(pointer + '\n').encode())
+        private_out = exists.strip() == b'commit' and holds(public, saved.commits.public, pointer)
+    complete = private_out and (public_out or not saved.paired)
+    note = public_pushed(base)
+    if saved.paired and public_out:
+        if complete:
+            if note.is_file() and note.read_text(encoding='utf-8').strip() == saved.commits.public:
+                note.unlink()
+        else:
+            note.parent.mkdir(parents=True, exist_ok=True)
+            note.write_text(saved.commits.public + '\n', encoding='utf-8')
+    return complete
+
+
 def reapprovals(public, private):
     """Plugins with trusted Codex hooks whose installed Codex content this branch may change: their lock entry
     changed, or they apply tool notes and the notes changed, which the lock leaves out. Codex ties a hook's
@@ -949,11 +1122,6 @@ def reapprovals(public, private):
             if (lock.get('intent'), lock.get('codex')) != (old.get('intent'), old.get('codex')) or (notes and applies):
                 changed.append(name)
     return sorted(changed)
-
-
-def can_change_test_results(name):
-    return name.endswith('.py') or name.startswith(('tests/', 'uv.lock', 'pyproject.toml', 'config/mise/',
-                                                    '.github/workflows/'))
 
 
 def keep(log):
@@ -997,10 +1165,7 @@ def test_suite(public, private, log):
         raise RuntimeError(f'these private test file links point at nothing, so their tests would not run: '
                            f'{", ".join(broken)}; point each at its file or delete it')
     files = sorted(name for name in named if (private / name).is_file())
-    if any(can_change_test_results(name) for tree in (public, private) for name in changed_files(tree)):
-        public_suite(public, log)
-    else:
-        print('The public test suite did not run because the release changes no code', flush=True)
+    public_suite(public, log)
     if not files:
         return
     private_log = log.with_name('private-tests.log')
@@ -1074,8 +1239,8 @@ def device_check(public, private, state):
               flush=True)
 
 
-def push(root):
-    git(root, *CREDENTIALS, 'push', '-q', push_url(root), 'HEAD:main')
+def push(root, commit):
+    git(root, *CREDENTIALS, 'push', '-q', push_url(root), f'{commit}:main')
 
 
 def start(args, public_repo, private_repo):
@@ -1085,7 +1250,9 @@ def start(args, public_repo, private_repo):
         git(repo, 'worktree', 'add', '-q', '-b', args.name, str(tree), 'origin/main')
     # Both branches are new, so a note here is from an abandoned release of the same name, whose worktrees were
     # removed by hand. A start that stops above, on a branch that is still there, keeps the note for its finish.
+    tests_passed(base).unlink(missing_ok=True)
     public_pushed(base).unlink(missing_ok=True)
+    retire_candidates(public_repo, private_repo, base)
     thread = os.environ.get('T3CODE_THREAD_ID', '').strip()
     if thread:
         thread_note(base).write_text(thread + '\n', encoding='utf-8')
@@ -1121,14 +1288,14 @@ def unfinished(tree, name):
         named = git(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'HEAD')
         raise RuntimeError(f'{tree}: git symbolic-ref exited {head.returncode}: {head.stderr.strip()}; {named} names '
                            f'no branch git can read. Point it at the release branch with git -C {tree} symbolic-ref '
-                           f'HEAD refs/heads/{name}, then finish again; this run committed nothing')
+                           f'HEAD refs/heads/{name}, then finish again')
     if head.stdout.strip() == f'refs/heads/{name}':  # --short would print heads/stash beside a stash
         return None
     branch = subprocess.run([*GIT, '-C', str(tree), 'rev-parse', '-q', '--verify', f'refs/heads/{name}'],
                             capture_output=True, text=True, timeout=60)
     if branch.returncode not in (0, 1) or branch.stderr.strip():  # a broken ref file warns and exits 1 too
         raise RuntimeError(f'{tree}: git rev-parse --verify refs/heads/{name} exited {branch.returncode}: '
-                           f'{branch.stderr.strip()}; this run committed nothing')
+                           f'{branch.stderr.strip()}')
     if branch.returncode:
         return (f'{tree} has no release branch {name}; git -C {tree} log origin/main..HEAD lists the commits HEAD '
                 f'holds that origin/main lacks. Where HEAD holds the release, make the branch there with git -C {tree} '
@@ -1140,174 +1307,236 @@ def unfinished(tree, name):
             f'holds. Bring those you want onto {name}, switch to it, then finish again')
 
 
-def finish(args, public_repo, private_repo):
-    base, public, private = places(args)
-    loaded = head(public_repo)
-    if running(('pull', 'sync')):
-        # A pull that runs now may be changing the engine this process has just loaded. On 10 November 2026 a
-        # finish that had waited for one then imported a new host_state.py beside the portable module it had
-        # loaded before the pull, and crashed. So start again from the files as they are once it has ended.
-        if not wait(('pull', 'sync'), args.timeout):
-            raise RuntimeError(f'another pull or sync still runs here after {args.timeout:g} seconds; this run '
-                               'committed nothing')
-        raise Restart('after the wait')
-    # The engine modules edited_owned needs, loaded now, while no pull runs, and beside the ones this process
-    # holds. Another release's pull can move the engine at any moment from here on, since no finish holds the lock
-    # through its checks and tests, and a module loaded after it would be a new one beside old ones.
-    import description, description_toml, drift, host_state  # noqa: F401
-    if stops := [stop for tree in (public, private) if (stop := unfinished(tree, args.name))]:
-        raise RuntimeError('; '.join(stops) + '; this run committed nothing')
-    unmerged = [f'{tree.name}: {", ".join(sorted(set(files)))}' for tree in (public, private)
-                if (files := git(tree, 'diff', '--name-only', '--diff-filter=U').splitlines())]
-    if unmerged:
-        # git add -A would mark them settled and commit their conflict markers.
-        raise RuntimeError(f'files in a conflict that is not settled ({"; ".join(unmerged)}); settle each one: take '
-                           'out its conflict markers and git add it, or, where one side deleted it, git add it to keep '
-                           'it or git rm it to delete it, then finish again; this run committed nothing')
-    for tree in (public, private):
-        # A worktree with no work of its own holds nothing a rebase could lose or the overlap check could name, so
-        # it moves to where a pull brought origin/main; otherwise the engine that pull brought may not read it.
-        if not dirty(tree) and not ahead(tree):
-            # An ignored file is the worktree's own too: the public allowlist ignores a new file until its ! line.
-            try:
-                git(tree, 'merge', '-q', '--ff-only', '--no-overwrite-ignore', 'origin/main')
-            except RuntimeError as error:
-                raise RuntimeError(f'{tree} has no work of its own to rebase, but finish could not bring it up to '
-                                   f'origin/main: {error}; this run committed nothing') from error
+def release_checks(args, public, private, private_repo, *, final=False, hooks=True):
     if stop := review_stop(public, private, args.reviewed, args.name):
-        raise RuntimeError(f'{stop}; this run committed nothing')
+        raise RuntimeError(stop)
     if reused := reused_release_names(public, private):
         raise RuntimeError(f'{", ".join(reused)} changed its selection at the same upstream commit and packaging number, '
-                           'so its release folder keeps its name and every machine\'s pull would stop with "Existing '
-                           'release differs". Raise packaging by one in its setup/packages file, then finish again; '
-                           'this run committed nothing')
-    if stale := unpinned(edited_owned(public, private, private_repo), args.entry, args.refresh_owned):
+                           'so every machine\'s pull would stop with "Existing release differs". Raise packaging by '
+                           'one in its setup/packages file, then finish again')
+    if stale := unpinned(edited_owned(public, private, private_repo), [] if final else args.entry,
+                        args.refresh_owned and not final):
         flags = ' '.join(f'--entry {name}' for name in sorted(stale))
         raise RuntimeError(f'{", ".join(sorted(stale.values()))} changed after its tree was pinned, so every '
-                           f"machine's pull would stop on a stale lock. Finish again with {flags} --refresh-owned; "
-                           'this run committed nothing')
-    python = [sys.executable, '-B']
-    setups = ['--public', str(public / 'setup'), '--private', str(private / 'setup')]
-    entries = [part for entry in args.entry for part in ('--entry', entry)]
-    owned = ['--refresh-owned'] if args.refresh_owned else []
-    lock = [*python, 'lock_setup.py', *setups, '--output', str(base / 'build/lock'), *entries, *owned, '--write']
-    if args.entry:
-        run(lock, public)
-    if args.package:
-        packages = [part for package in args.package for part in ('--package', package)]
-        run([*python, 'build_setup.py', *setups, '--output', str(base / 'build/build'), *packages], public)
-    if not args.hooks_reapproved:
-        if changed := reapprovals(public, private):
-            raise RuntimeError(f'this release may change the Codex content of {", ".join(changed)}, whose Codex hooks '
-                               'are trusted; Codex ties their approval to that content, so every machine\'s pull would '
-                               'stop on those hooks. Ask the user to approve them again, queue the approval in each '
-                               'machine\'s section of maintenance/pending-sync.md, then finish again with '
-                               '--hooks-reapproved')
+                           f"machine's pull would stop on a stale lock. Finish again with {flags} --refresh-owned")
+    if hooks and not args.hooks_reapproved and (changed := reapprovals(public, private)):
+        raise RuntimeError(f'this release may change the Codex content of {", ".join(changed)}, whose Codex hooks '
+                           'are trusted; ask the user to approve them again, queue each machine\'s approval in '
+                           'maintenance/pending-sync.md, then finish again with --hooks-reapproved')
     if hits := leaks(public, private, args.message):
         raise RuntimeError(f'{", ".join(hits[:20])} in {public} hold a string that the private {DENYLIST} names; '
-                           'take it out of the public side, then finish again; this run committed nothing')
-    repinned = args.entry if args.refresh_owned else []
-    # What a relock after a rebase may write and the amend that follows it takes: the lock and the named entries.
-    relocked = frozenset({LOCK, *(f'setup/{kind}/{entry}.toml' for kind in ('skills', 'packages')
-                                  for entry in repinned)})
-    regenerated = {tree: (frozenset({LOCK}) | pin_only(tree, repinned)) if args.entry else frozenset()
-                   for tree in (public, private)}
-    if stop := origin_stop(public, private, regenerated, args.overlap_reviewed):
-        raise RuntimeError(f'{stop}; this run committed nothing')
-    if stop := unnamed_commit(args, public, private, {tree: relock_writes(tree, regenerated[tree], repinned)
-                                                      for tree in (public, private)}):  # here, not after the tests and the wait for the lock
-        raise RuntimeError(f'{stop}; this run committed nothing')
-    passed = tested(public, private, base)
-    # The lock is held from the commit to the pull and no longer through the tests: on 12 November 2026 two
-    # releases held it for 305 and 360 seconds, of which the tests took 88 and 78 per cent, and other finishes
-    # waited behind them for 670 minutes in one evening.
-    held = hold(machine_locks()['release'], args.timeout, lambda: head(public_repo) != loaded)
-    if held is None:
-        raise Restart('because a pull changed the engine while this finish ran its checks or waited')
-    with held:
-        dropped_stop(public, private)  # again, for a file made during the wait
-        # A branch committed by hand, as the stop for a setup the engine cannot load says to do, takes the relock
-        # into that commit. On 12 November 2026 private df80c1f held only a relock, under the subject of the commit
-        # before it.
-        # Both before either commit, which a stop of toml() in it would otherwise follow.
-        written = {tree: relock_writes(tree, regenerated[tree], repinned) for tree in (public, private)}
-        if relock_only(public, written[public]):
-            amend(public, written[public])
-        elif dirty(public):
-            if not args.message:
-                raise RuntimeError(f'{public}: pass --message with the public commit message')
-            commit(public, args.message)
-        if relock_only(private, written[private]):
-            amend(private, written[private])
-        elif dirty(private):
-            if not args.private_message:
-                raise RuntimeError(f'{private}: pass --private-message with the private commit message')
-            commit(private, args.private_message)
-        committed = tested_state(public, private)
-        if committed != passed:
-            # The wait for the lock lies between the tests and the commit, and the commit takes whatever the
-            # worktree holds by then.
-            raise RuntimeError('the worktrees changed after their tests ran ('
-                               f'{state_changes(public, private, passed, committed)}), and the commit took the '
-                               f'change; finish again, which tests them as they are now; {push_state(base)}')
-        if stop := origin_stop(public, private, regenerated, args.overlap_reviewed):
-            raise RuntimeError(stop)
-        paired = ahead(public) or half_published(base, public)
-        for attempt in range(1, ATTEMPTS + 1):
-            if rebase(public, regenerated[public]) and args.entry:
-                run(lock, public)
-                amend(public, relocked, f'; {push_state(base)}')
-            if rebase(private, regenerated[private]) == 'regenerate':
-                run(lock, public)
-                amend(public, relocked, f'; {push_state(base)}')
-                amend(private, relocked, f'; {push_state(base)}')
-            before = git(private, 'rev-parse', 'HEAD')
-            if paired:
-                pair(public, private, args.pair_message)
-            if not ahead(public) and not ahead(private):
-                # Another session's pair already names a public commit that holds this release's, so the note of a
-                # half-published release has nothing left to say.
-                public_pushed(base).unlink(missing_ok=True)
-                raise RuntimeError('nothing to release: both branches match origin/main')
-            device_check(public, private, push_state(base))
-            if not args.push:
-                break
-            # Again, because the commit took whatever the worktree held by then, minutes after the first check.
-            if stop := review_stop(public, private, args.reviewed, args.name):
-                raise RuntimeError(f'{stop}; the code changed after its review, and {push_state(base)}')
-            try:
-                for tree in (public, private):  # login and write access on both before either moves
-                    git(tree, *CREDENTIALS, 'push', '--dry-run', '-q', push_url(tree), 'HEAD:main')
-                if ahead(public):
-                    push(public)
-                    public_pushed(base).parent.mkdir(parents=True, exist_ok=True)
-                    public_pushed(base).write_text(git(public, 'rev-parse', 'HEAD') + '\n', encoding='utf-8')
-                push(private)
-                public_pushed(base).unlink(missing_ok=True)
-                break
-            except RuntimeError as error:
-                git(private, 'reset', '-q', '--hard', before)
-                if not MOVED.search(str(error)):
-                    raise RuntimeError(f'push failed and {push_state(base)}: {error}') from error
-                if attempt == ATTEMPTS:
-                    raise RuntimeError(f'push failed {ATTEMPTS} times because origin keeps moving, and '
-                                       f'{push_state(base)}: {error}') from error
-        print(f'public {git(public, "rev-parse", "--short", "HEAD")}  private {git(private, "rev-parse", "--short", "HEAD")}'
-              + ('  pushed' if args.push else '  not pushed'), flush=True)
-        if args.push:
-            for line in other_machines(tailnet(), windows_side()):
-                print(line, flush=True)
-        if args.pull:
-            if not wait(('pull', 'sync'), WAIT_FOR_PULL):
-                raise RuntimeError(f'pushed, but another pull still runs here after {WAIT_FOR_PULL // 60} minutes; '
-                                   'pull once it ends')
-            # --wait 0: the wait above was the wait, and a second one would run inside this time limit.
-            result = subprocess.run([*python, str(public_repo / 'pull.py'), '--root', str(public_repo), '--private',
-                                     str(private_repo), '--update', '--apply', '--wait', '0'], cwd=public_repo, timeout=1800)
-            if result.returncode == 0 and (args.entry or args.package):
-                subprocess.run([*python, str(public_repo / 'skill_listing.py')], cwd=public_repo, timeout=900)
-            return result.returncode
+                           'take it out of the public side, then finish again')
+    dropped_stop(public, private)
+
+
+def source_commits(args, public, private, written, *, generated=False):
+    if generated:
+        for tree in (public, private):
+            if other := sorted(uncommitted(tree) - written[tree]):
+                raise RuntimeError(f'{tree}: {", ".join(other)} changed after the commit; only relock outputs may '
+                                   'be committed here; preserve or remove the edit, then finish again')
+    if stop := unnamed_commit(args, public, private, written):
+        raise RuntimeError(stop)
+    for tree, message in ((public, args.message), (private, args.private_message)):
+        if relock_only(tree, written[tree]):
+            amend(tree, written[tree])
+        elif dirty(tree):
+            commit(tree, message)
+
+
+def finish_tail(args, public_repo, private_repo, draft, *, published, origins=None):
+    superseded = published and origins is not None and not all(
+        holds(root, getattr(draft.commits, side), getattr(origins, side))
+        for side, root in (('public', public_repo), ('private', private_repo)))
+    state = 'covered by a later pair' if superseded else 'pushed' if published else 'not pushed'
+    print(f'public {draft.commits.public}  private {draft.commits.private}  {state}', flush=True)
+    if not published:
         return 0
+    if superseded:
+        actual = Trees(*(git(root, 'rev-parse', f'{getattr(origins, side)}^{{tree}}')
+                         for side, root in (('public', public_repo), ('private', private_repo))))
+        print(f'Recorded tested trees: public {draft.trees.public}; private {draft.trees.private}', flush=True)
+        print(f'Origin trees now: public {actual.public}; private {actual.private}', flush=True)
+    else:
+        print(f'Exact trees pushed: public {draft.trees.public}; private {draft.trees.private}', flush=True)
+    if not args.push:
+        return 0
+    for line in other_machines(tailnet(), windows_side()):
+        print(line, flush=True)
+    if args.pull:
+        if not wait(('pull', 'sync'), WAIT_FOR_PULL):
+            raise RuntimeError(f'pushed, but another pull still runs here after {WAIT_FOR_PULL // 60} minutes; '
+                               'pull once it ends')
+        result = subprocess.run([sys.executable, '-B', str(public_repo / 'pull.py'), '--root', str(public_repo),
+                                 '--private', str(private_repo), '--update', '--apply', '--wait', '0'],
+                                cwd=public_repo, timeout=1800)
+        if result.returncode == 0 and (args.entry or args.package):
+            subprocess.run([sys.executable, '-B', str(public_repo / 'skill_listing.py')], cwd=public_repo, timeout=900)
+        return result.returncode
+    return 0
+
+
+def finish(args, public_repo, private_repo, *, rounds=ATTEMPTS):
+    base, public, private = places(args)
+    loaded, began = head(public_repo), None
+    published, uncertain, prepared = False, False, False
+
+    def stopped():
+        state = ('publication state could not be verified' if uncertain else
+                 'the pair is already published' if published else push_state(base))
+        if began is None:
+            return f'this run committed nothing; {state}'
+        local = Heads(head(public), head(private))
+        if not prepared and local == began and rounds == ATTEMPTS:
+            return f'this run committed nothing; {state}'
+        return f'Local commits remain at public {local.public}, private {local.private}; {state}'
+
+    def locked(remaining):
+        held = hold(machine_locks()['release'], args.timeout, lambda: head(public_repo) != loaded, stopped=stopped())
+        if held is None:
+            raise Restart('because a pull changed the engine while this finish ran or waited', remaining)
+        return held
+
+    repinned = args.entry if args.refresh_owned else []
+    setups = ['--public', str(public / 'setup'), '--private', str(private / 'setup')]
+    entries = [part for entry in args.entry for part in ('--entry', entry)]
+    lock = [sys.executable, '-B', 'lock_setup.py', *setups, '--output', str(base / 'build/lock'), *entries,
+            *(['--refresh-owned'] if args.refresh_owned else []), '--write']
+    try:
+        for remaining in range(rounds - 1, -1, -1):
+            if running(('pull', 'sync')):
+                if not wait(('pull', 'sync'), args.timeout):
+                    raise RuntimeError(f'another pull or sync still runs here after {args.timeout:g} seconds')
+                raise Restart('after the wait', remaining)
+            import description, description_toml, drift, host_state  # noqa: F401
+            if stops := [stop for tree in (public, private) if (stop := unfinished(tree, args.name))]:
+                raise RuntimeError('; '.join(stops))
+            if began is None:
+                began = Heads(head(public), head(private))
+            unmerged = [f'{tree.name}: {", ".join(sorted(set(files)))}' for tree in (public, private)
+                        if (files := git(tree, 'diff', '--name-only', '--diff-filter=U').splitlines())]
+            if unmerged:
+                raise RuntimeError(f'files in a conflict that is not settled ({"; ".join(unmerged)}); settle each one: take '
+                                   'out its conflict markers and git add it, or, where one side deleted it, git add it to keep '
+                                   'it or git rm it to delete it, then finish again')
+            try:
+                origins = origin_heads(public, private)
+            except RuntimeError:
+                edited_owned(public, private, private_repo)
+                raise
+            published = recover_publication(public, private, base, origins)
+            if published and all(not dirty(root) and not ahead(root, getattr(origins, side))
+                                 for side, root in (('public', public), ('private', private))):
+                dropped_stop(public, private)
+                saved = read_receipt(public, private, base)
+                with locked(remaining):
+                    retire_candidates(public, private, base)
+                    return finish_tail(args, public_repo, private_repo, saved, published=True, origins=origins)
+            paired = ahead(public, origins.public) or dirty(public) or half_published(base, public)
+            for side, tree in (('public', public), ('private', private)):
+                if not dirty(tree) and not ahead(tree, getattr(origins, side)):
+                    try:
+                        git(tree, 'merge', '-q', '--ff-only', '--no-overwrite-ignore', getattr(origins, side))
+                    except RuntimeError as error:
+                        raise RuntimeError(f'{tree} has no work of its own to rebase, but finish could not bring it up to '
+                                           f'origin/main: {error}') from error
+            release_checks(args, public, private, private_repo, hooks=False)
+            if args.entry:
+                run(lock, public)
+            if args.package:
+                packages = [part for package in args.package for part in ('--package', package)]
+                run([sys.executable, '-B', 'build_setup.py', *setups, '--output', str(base / 'build/build'),
+                     *packages], public)
+            release_checks(args, public, private, private_repo)
+            regenerated = {tree: frozenset({LOCK}) | pin_only(tree, repinned) if args.entry else frozenset()
+                           for tree in (public, private)}
+            written = {tree: relock_writes(tree, regenerated[tree], repinned) for tree in (public, private)}
+            if stop := origin_stop(public, private, regenerated, args.overlap_reviewed, origins=origins,
+                                   paired=paired or dirty(public)):
+                raise RuntimeError(stop)
+            if stop := unnamed_commit(args, public, private, written):
+                raise RuntimeError(stop)
+            before = {tree: (head(tree), content(tree), git(tree, 'write-tree')) for tree in (public, private)}
+            with locked(remaining):
+                dropped_stop(public, private)
+                for tree in (public, private):
+                    if (head(tree), content(tree), git(tree, 'write-tree')) != before[tree]:
+                        raise RuntimeError(f'{tree}: files or index changed while waiting; the edit is preserved; '
+                                           'finish again once the edits are done')
+                if stop := origin_stop(public, private, regenerated, args.overlap_reviewed, origins=origins,
+                                       paired=paired or dirty(public)):
+                    raise RuntimeError(stop)
+                prepared = True
+                source_commits(args, public, private, written)
+                paired = paired or ahead(public, origins.public)
+                moved = [rebase(tree, regenerated[tree], onto=getattr(origins, side), paired=paired and side == 'private')
+                         for side, tree in (('public', public), ('private', private))]
+                if any(moved) and args.entry:
+                    run(lock, public)
+                    written = {tree: relock_writes(tree, frozenset({LOCK}), repinned) for tree in (public, private)}
+                    source_commits(args, public, private, written, generated=True)
+                    paired = paired or ahead(public, origins.public)
+                if not paired and not ahead(private, origins.private):
+                    raise RuntimeError('nothing to release: both branches match origin/main')
+                source = Heads(head(public), head(private))
+                unchanged(public, private, source)
+            with candidate(public, private, base, source=source, paired=paired, message=args.pair_message) as draft:
+                release_checks(args, draft.public, draft.private, private_repo, final=True)
+                certified = tested(draft, base)
+                retire_candidates(public, private, base, keep=draft.public.parent)
+                with locked(remaining):
+                    unchanged(public, private, source)
+                    current_origins = origin_heads(public, private)
+                    if any(not holds(root, getattr(current_origins, side), getattr(certified.candidate.commits, side))
+                           for side, root in (('public', public), ('private', private))):
+                        print('Origin moved; preparing and testing a new complete candidate', flush=True)
+                        continue
+                    device_check(draft.public, draft.private, stopped())
+                    if stop := review_stop(draft.public, draft.private, args.reviewed, args.name):
+                        raise RuntimeError(stop)
+                    unchanged(draft.public, draft.private, draft.commits)
+                    unchanged(public, private, source)
+                    if not args.push:
+                        return finish_tail(args, public_repo, private_repo, draft, published=False)
+                    try:
+                        for side, tree in (('public', public), ('private', private)):
+                            git(tree, *CREDENTIALS, 'push', '--dry-run', '-q', push_url(tree),
+                                f'{getattr(certified.candidate.commits, side)}:main')
+                        unchanged(draft.public, draft.private, draft.commits)
+                        unchanged(public, private, source)
+                        if draft.commits.public != current_origins.public:
+                            push(public, certified.candidate.commits.public)
+                            if paired:
+                                public_pushed(base).write_text(draft.commits.public + '\n', encoding='utf-8')
+                        push(private, certified.candidate.commits.private)
+                    except (RuntimeError, OSError, subprocess.SubprocessError) as error:
+                        uncertain = True
+                        refreshed = origin_heads(public, private)
+                        published = recover_publication(public, private, base, refreshed)
+                        uncertain = False
+                        if not published:
+                            if MOVED.search(str(error)):
+                                continue
+                            raise RuntimeError(f'push failed: {error}') from error
+                    else:
+                        uncertain = True
+                        refreshed = origin_heads(public, private)
+                        published = recover_publication(public, private, base, refreshed)
+                        uncertain = False
+                        if not published:
+                            raise RuntimeError('push returned success but origin does not contain the tested pair; '
+                                               'finish again to reconcile it')
+                    retire_candidates(public, private, base)
+                    return finish_tail(args, public_repo, private_repo, draft, published=True, origins=refreshed)
+        raise RuntimeError(f'Origin or the engine changed through all {ATTEMPTS} rounds. '
+                           'Finish again to prepare and test a new pair')
+    except Restart as why:
+        if not why.remaining:
+            raise RuntimeError(f'Origin or the engine changed through all {ATTEMPTS} rounds. '
+                               f'Finish again to prepare and test a new pair; {stopped()}') from why
+        raise
+    except (RuntimeError, OSError, subprocess.SubprocessError) as error:
+        raise RuntimeError(f'{error}; {stopped()}') from error
 
 
 def tailnet():
@@ -1450,6 +1679,8 @@ def clean(args, public_repo, private_repo):
     its public worktree and that note for the finish that pairs it. The note alone tells such a release apart
     when it changed only the public side, where both branches are on origin/main."""
     base, public, private = places(args)
+    if tests_passed(base).exists():
+        recover_publication(public_repo, private_repo, base, origin_heads(public_repo, private_repo))
     if public_pushed(base).is_file() and not args.force:
         raise RuntimeError(f'the public commit of {args.name} is on origin without its pair, as {public_pushed(base)} '
                            f'notes; run its finish again, or pass --force to give the release up; nothing was removed')
@@ -1465,6 +1696,7 @@ def clean(args, public_repo, private_repo):
                 raise RuntimeError(f'{repo}: branch {args.name} is not on origin/main; push it, or pass --force; '
                                    'nothing was removed')
         sides.append((repo, tree, listed))
+    retire_candidates(public_repo, private_repo, base)
     for repo, tree, listed in sides:
         if tree.exists():
             git(repo, 'worktree', 'remove', *(['--force'] if args.force else []), str(tree))
@@ -1533,6 +1765,9 @@ def dispatch(argv, report):
     if args.report:
         report.append(args.report)
     try:
+        budget = os.environ.pop(ROUND_BUDGET, str(ATTEMPTS))
+        if budget not in {str(value) for value in range(1, ATTEMPTS + 1)}:
+            raise RuntimeError('invalid finish round budget; start a fresh finish without the private budget variable')
         if args.action == 'wait':
             if wait(None, args.timeout):
                 print('No release holds this machine\'s lock and no pull or sync runs here.')
@@ -1548,13 +1783,17 @@ def dispatch(argv, report):
                 raise RuntimeError(f'{stop}; this run committed nothing')
             try:
                 with one_finish(args):
-                    return finish(args, ENGINE, args.private.resolve())
+                    return finish(args, ENGINE, args.private.resolve(), rounds=int(budget))
             except Restart as why:
                 print(f'Starting again {why}, to run the engine as it is now', flush=True)
                 sys.stderr.flush()
-                os.execv(sys.executable, [sys.executable, '-B', str(ENGINE / 'release.py'),
-                                          *(sys.argv[1:] if argv is None else argv)])
+                os.execve(sys.executable, [sys.executable, '-B', str(ENGINE / 'release.py'),
+                                           *(sys.argv[1:] if argv is None else argv)],
+                          {**os.environ, ROUND_BUDGET: str(why.remaining)})
         action = {'start': start, 'review': review, 'clean': clean, 'status': status}[args.action]
+        if args.action in ('start', 'clean'):
+            with one_finish(args):
+                return action(args, ENGINE, args.private.resolve())
         return action(args, ENGINE, args.private.resolve())
     except (RuntimeError, OSError, subprocess.SubprocessError) as error:
         print(f'Release stopped: {error}', file=sys.stderr)
