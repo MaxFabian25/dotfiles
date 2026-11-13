@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -37,10 +38,11 @@ class RunSyncTest(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
+        self.state = self.root / 'home/.local/state/dotfiles'
 
     def sync(self, text, **options):
         (self.root / 'sync.py').write_text(text, encoding='utf-8')
-        return run_sync(self.root, None, apply=False, **options)
+        return run_sync(self.root, None, state=self.state, apply=False, **options)
 
     def stop(self, text):
         with self.assertRaises(RuntimeError) as raised, child_stderr_dropped():
@@ -91,15 +93,63 @@ class RunSyncTest(unittest.TestCase):
                 raise PermissionError(13, 'Access is denied', str(path))
             return unlink(path, *args, **kwargs)
 
-        # The folder that is left goes with this test's own folder.
-        with mock.patch('os.unlink', held_as_on_windows), mock.patch.object(tempfile, 'tempdir', str(self.root)):
+        with mock.patch('os.unlink', held_as_on_windows):
+            self.assertEqual(self.sync(recording_sync(1)), 1)
+
+    def test_a_cleaner_that_empties_the_temp_folder_while_the_sync_runs_costs_the_record_nothing(self):
+        # On 2026-11-13 a Windows pull stopped because its empty record folder left %TEMP% while the sync ran.
+        temp = self.root / 'temp'
+        temp.mkdir()
+        cleaner = (f'import os\nfor folder, children, files in os.walk({str(temp)!r}, topdown=False):\n'
+                   f'    if folder != {str(temp)!r} and not os.listdir(folder):\n        os.rmdir(folder)\n')
+        with mock.patch.object(tempfile, 'tempdir', str(temp)):
+            self.assertEqual(self.sync(cleaner + recording_sync(1)), 1)
+
+    def left_behind(self, **ages):
+        records = self.state / 'sync-endings'
+        for name, age in ages.items():
+            (records / name).mkdir(parents=True)
+            (records / name / 'ending.json').write_text('{"status": 0}', encoding='utf-8')
+            then = time.time() - age
+            os.utime(records / name, (then, then))
+        return records
+
+    def test_a_record_folder_left_by_a_run_over_a_day_ago_goes_and_a_younger_one_stays(self):
+        records = self.left_behind(**{'sync-old': 86400 + 60, 'sync-young': 86400 - 3600})
+        self.assertEqual(self.sync(recording_sync(0)), 0)
+        self.assertEqual(sorted(path.name for path in records.iterdir()), ['sync-young'])
+
+    def test_a_left_folder_that_windows_still_holds_costs_the_sync_nothing(self):
+        records = self.left_behind(**{'sync-held': 86400 + 60})
+        rmdir = os.rmdir
+
+        def held_as_on_windows(path, *args, **kwargs):
+            if 'sync-held' in str(path):
+                raise PermissionError(13, 'Access is denied', str(path))
+            return rmdir(path, *args, **kwargs)
+
+        with mock.patch('os.rmdir', held_as_on_windows):
+            self.assertEqual(self.sync(recording_sync(1)), 1)
+        self.assertTrue((records / 'sync-held').exists())
+
+    def test_a_left_folder_another_run_removes_after_the_listing_costs_the_sync_nothing(self):
+        records = self.left_behind(**{'sync-other-run': 86400 + 60})
+        glob = Path.glob
+
+        def removed_once_listed(path, pattern, *args, **kwargs):
+            found = list(glob(path, pattern, *args, **kwargs))
+            shutil.rmtree(records / 'sync-other-run')
+            return iter(found)
+
+        with mock.patch.object(Path, 'glob', removed_once_listed):
             self.assertEqual(self.sync(recording_sync(1)), 1)
 
     def test_the_sync_writes_to_the_callers_own_output_while_it_runs(self):
         (self.root / 'sync.py').write_text(
             recording_sync(0, then="print('to stdout')\nprint('to stderr', file=sys.stderr)\n"), encoding='utf-8')
         caller = (f'import pathlib, sys\nsys.path.insert(0, {str(ENGINE)!r})\nfrom sync_ending import run_sync\n'
-                  f'print(run_sync(pathlib.Path({str(self.root)!r}), None, apply=False))\n')
+                  f'print(run_sync(pathlib.Path({str(self.root)!r}), None, state=pathlib.Path({str(self.state)!r}), '
+                  'apply=False))\n')
         result = subprocess.run([sys.executable, '-c', caller], capture_output=True, text=True, encoding='utf-8',
                                 timeout=60)
         self.assertEqual((result.stdout, result.stderr), ('to stdout\n0\n', 'to stderr\n'))
@@ -111,6 +161,7 @@ class RunSyncTest(unittest.TestCase):
         self.stop(recording_sync(2, then=note + 'raise SystemExit(1)\n'))
         raised = Path((self.root / 'folder').read_text(encoding='utf-8'))
         self.assertEqual((returned.exists(), raised.exists()), (False, False))
+        self.assertEqual(list((self.state / 'sync-endings').iterdir()), [])
 
     def test_a_sync_past_its_time_limit_is_stopped_there_with_the_commands_it_started(self):
         marker = self.root / 'started'
@@ -183,12 +234,12 @@ class RunSyncTest(unittest.TestCase):
     def test_the_sync_gets_the_callers_mode_checkouts_and_notes(self):
         (self.root / 'sync.py').write_text(recording_sync(0, then=keeping_arguments()), encoding='utf-8')
         private = self.root / 'private'
-        run_sync(self.root, private, apply=True, notes=True)
+        run_sync(self.root, private, state=self.state, apply=True, notes=True)
         arguments = json.loads((self.root / 'arguments.json').read_bytes())
         self.assertEqual(arguments[arguments.index('--public') + 1], str(self.root / 'setup'))
         self.assertEqual(arguments[arguments.index('--private') + 1], str(private / 'setup'))
         self.assertEqual([flag in arguments for flag in ('--apply', '--notes', '--check')], [True, True, False])
-        run_sync(self.root, None, apply=False)
+        run_sync(self.root, None, state=self.state, apply=False)
         arguments = json.loads((self.root / 'arguments.json').read_bytes())
         self.assertEqual([flag in arguments for flag in ('--check', '--apply', '--private', '--notes')],
                          [True, False, False, False])
@@ -198,7 +249,7 @@ class RunSyncTest(unittest.TestCase):
                                            f'runpy.run_path({str(ENGINE / "sync.py")!r}, run_name="__main__")\n',
                                            encoding='utf-8')
         with child_stderr_dropped():
-            self.assertEqual(run_sync(self.root, self.root / 'private', apply=False), 3)
+            self.assertEqual(run_sync(self.root, self.root / 'private', state=self.state, apply=False), 3)
 
 
 if __name__ == '__main__':

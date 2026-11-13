@@ -268,6 +268,8 @@ class PairedPullTest(unittest.TestCase):
                 self.assertEqual([flag in arguments for flag in ('--apply', '--check', '--notes')],
                                  [apply, not apply, notes])
                 self.assertEqual(arguments[arguments.index('--private') + 1], str(self.private.resolve() / 'setup'))
+                ending = Path(arguments[arguments.index('--ending') + 1])
+                self.assertTrue(ending.is_relative_to(self.root / 'home/.local/state/dotfiles'), ending)
         self.assertEqual(limits, [1200, 1200])
 
 

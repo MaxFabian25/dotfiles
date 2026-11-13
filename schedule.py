@@ -77,10 +77,10 @@ def main():
     if not signers().is_file():
         raise RuntimeError(f'{signers()}: pin trusted release signers before enabling automatic pulls')
     paired(root, private)
-    if run_sync(root, private, apply=False):
+    state = Path.home() / '.local/state/dotfiles'
+    if run_sync(root, private, state=state, apply=False):
         raise RuntimeError('Resolve device drift before enabling its automatic pull schedule')
     files = render(sys.platform, Path.home(), argv)
-    state = Path.home() / '.local/state/dotfiles'
     state.mkdir(parents=True, exist_ok=True)
     writer = Files(backup_directory(DeviceRoots.current()))
     for path, data in files.items():

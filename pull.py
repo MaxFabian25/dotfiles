@@ -199,7 +199,7 @@ def run(args):
         if args.update:
             update(root, private, signers())
         paired(root, private)
-        status = run_sync(root, private, apply=args.apply, notes=args.notes, timeout=1200)
+        status = run_sync(root, private, state=state, apply=args.apply, notes=args.notes, timeout=1200)
         # 1 after --apply: sync wrote what it could and nothing blocked it, but some managed changes did not take.
         # The pair is not applied, so it gets no receipt, but the mise config was written, so its tools still install.
         # Before the tools, so that a failed install holds back no home file. It stops nothing itself, so the

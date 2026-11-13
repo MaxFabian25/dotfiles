@@ -139,22 +139,24 @@ class WindowsScheduleTest(unittest.TestCase):
                 written = (home / '.local/state/dotfiles/pull-task.xml').exists()
                 arguments = home / 'repo/arguments.json'
                 return (outcome, written, len(registered),
-                        json.loads(arguments.read_bytes()) if arguments.exists() else [])
+                        json.loads(arguments.read_bytes()) if arguments.exists() else [], home)
 
-        outcome, written, registered, arguments = install("raise KeyError('a stand-in sync that crashes')\n")
+        outcome, written, registered, arguments, home = install("raise KeyError('a stand-in sync that crashes')\n")
         self.assertTrue(outcome.startswith('sync.py exited 1 without recording how it ended, as after a crash'),
                         outcome)
         self.assertEqual((written, registered), (False, 0))
         for status in (1, 2, 3):
             with self.subTest(status=status):
-                outcome, written, registered, arguments = install(recording_sync(status))
+                outcome, written, registered, arguments, home = install(recording_sync(status))
                 self.assertEqual(outcome, 'Resolve device drift before enabling its automatic pull schedule')
                 self.assertEqual((written, registered), (False, 0))
-        outcome, written, registered, arguments = install(recording_sync(0, then=keeping_arguments()))
+        outcome, written, registered, arguments, home = install(recording_sync(0, then=keeping_arguments()))
         self.assertEqual((outcome, written, registered), (0, True, 1))
         self.assertIn('--check', arguments)
         self.assertNotIn('--apply', arguments)
         self.assertEqual(Path(arguments[arguments.index('--private') + 1]).parts[-2:], ('private', 'setup'))
+        self.assertEqual(Path(arguments[arguments.index('--ending') + 1]).parent.parent,
+                         home / '.local/state/dotfiles/sync-endings')
 
 
 class CommandTest(unittest.TestCase):
