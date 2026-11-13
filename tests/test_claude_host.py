@@ -208,6 +208,58 @@ class Device(homes.Home):
 
 
 class ObserveTest(unittest.TestCase):
+    def test_a_version_that_is_not_utf8_is_unknown_without_stopping_observation(self):
+        with Device() as device:
+            state = device.state()
+            wrapper = device.bin / 'version.py'
+            device.write(wrapper, 'import subprocess, sys\n'
+                                  'if sys.argv[-1] == "--version":\n'
+                                  '    sys.stdout.buffer.write(b"Claude \\xff\\r\\n")\n'
+                                  '    sys.exit(0)\n'
+                                  'sys.exit(subprocess.run(sys.argv[1:]).returncode)\n')
+            state.cli = [sys.executable, str(wrapper), *state.cli]
+            observation = state.observe(hs.Request())
+        self.assertEqual((observation.version, observation.unknown), ('unknown', ()))
+        self.assertEqual(observation.facts[key(S.PLUGIN, 'kit@codex-aligned')].value,
+                         hs.PluginValue(True, hs.Released('1.0-codex-aligned.x')))
+
+    def test_a_linked_checkout_listing_that_is_not_utf8_is_unread_without_stopping_observation(self):
+        from unittest import mock
+        with Device() as device:
+            checkout = device.roots.claude_home / 'skills'
+            device.write(checkout / 'linked/SKILL.md', '---\nname: linked\n---\n')
+            (checkout / '.git').mkdir()
+            git = device.bin / 'git.py'
+            device.write(git, 'import sys\n'
+                              'answers = {"config": "https://github.com/example/skills.git", "rev-parse": "d" * 40, "status": ""}\n'
+                              'if "ls-tree" in sys.argv:\n'
+                              '    sys.stdout.buffer.write(b"100644 blob \\xff\\r\\n")\n'
+                              'else:\n'
+                              '    print(next(answers[word] for word in sys.argv if word in answers))\n')
+            is_symlink = Path.is_symlink
+            with mock.patch.object(Path, 'is_symlink', lambda path: path == checkout / 'linked' or is_symlink(path)), \
+                    mock.patch.object(claude_host.portable, 'GIT', (sys.executable, str(git))):
+                observation = device.state().observe(hs.Request())
+        [unread] = [u for u in observation.unknown if u.source == '{claude_home}/skills/linked']
+        self.assertIn('not UTF-8', unread.reason)
+        self.assertIn('ls-tree', unread.reason)
+        self.assertNotIn(key(S.LOOSE_SKILL, '{claude_home}/skills/linked'), observation.facts)
+        self.assertEqual(observation.version, '2.1.0 (Claude Code)')
+
+    def test_a_cli_that_warns_in_words_that_are_not_utf8_is_still_read(self):
+        with Device() as device:
+            state = device.state()
+            wrapper = device.bin / 'wrapper.py'
+            device.write(wrapper, 'import subprocess, sys\n'
+                                  'sys.stderr.buffer.write(b"warning: caf\\xe9\\r\\n")\n'
+                                  'sys.stderr.flush()\n'
+                                  'sys.exit(subprocess.run(sys.argv[1:]).returncode)\n')
+            state.cli = [sys.executable, str(wrapper), *state.cli]
+            observation = state.observe(hs.Request())
+        self.assertEqual((observation.version, observation.unknown), ('2.1.0 (Claude Code)', ()))
+        self.assertEqual(observation.facts[key(S.PLUGIN, 'kit@codex-aligned')].value,
+                         hs.PluginValue(True, hs.Released('1.0-codex-aligned.x')))
+
     def test_requested_implicit_skill_is_observed_without_masking_off_explicit_or_missing_skills(self):
         with Device() as device:
             device.skill(device.roots.claude_home / 'plugins/cache/codex-aligned/kit/1.0-codex-aligned.x', 'automatic')
@@ -373,6 +425,28 @@ class ObserveTest(unittest.TestCase):
             observation = device.state().observe(hs.Request())
         [unread] = [u for u in observation.unknown if u.source == '{claude_home}/skills/linked']
         self.assertTrue(unread.reason.startswith(f'git cannot read the checkout: {said} (exit 128 from git '), unread.reason)
+
+    def test_a_loose_skill_whose_checkout_git_lists_in_words_that_are_not_utf8_is_unread_with_those_words(self):
+        from unittest import mock
+        with Device() as device:
+            checkout = device.roots.claude_home / 'skills'
+            device.write(checkout / 'linked/SKILL.md', '---\nname: linked\n---\n')
+            (checkout / '.git').mkdir()
+            git = device.bin / 'git.py'
+            git.write_text('import sys\n'
+                           'answers = {"config": "https://github.com/example/skills.git", "rev-parse": "d" * 40, "status": ""}\n'
+                           'said = next((answers[word] for word in sys.argv if word in answers), None)\n'
+                           'if said is None:\n'
+                           '    sys.stderr.buffer.write(b"fatal: caf\\xe9 cannot be listed\\n")\n'
+                           '    sys.exit(128)\n'
+                           'print(said)\n', newline='\n')
+            is_symlink = Path.is_symlink
+            with mock.patch.object(Path, 'is_symlink', lambda path: path == checkout / 'linked' or is_symlink(path)), \
+                    mock.patch.object(claude_host.portable, 'GIT', (sys.executable, str(git))):
+                observation = device.state().observe(hs.Request())
+        [unread] = [u for u in observation.unknown if u.source == '{claude_home}/skills/linked']
+        self.assertTrue(unread.reason.startswith('git cannot read the checkout: fatal: caf\N{REPLACEMENT CHARACTER} '
+                                                 'cannot be listed (exit 128 from '), unread.reason)
 
     def test_overrides_of_anthropics_own_skills_are_skills_under_their_listed_name_not_residue(self):
         with Device() as device:

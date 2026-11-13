@@ -154,6 +154,22 @@ class CheckoutTest(unittest.TestCase):
                 with self.assertRaises(host_observation.Unread):
                     host_observation.checkout(Path(directory))
 
+    def test_git_whose_words_are_not_utf8_leaves_the_checkout_unread_with_those_words(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / '.git').mkdir()
+            git = Path(directory) / 'git.py'
+            git.write_text('import sys\n'
+                           'if "config" in sys.argv:\n'
+                           '    print("https://github.com/example/skills.git")\n'
+                           'else:\n'
+                           '    sys.stderr.buffer.write(b"fatal: caf\\xe9 is not a commit\\r\\n")\n'
+                           '    sys.exit(128)\n')
+            with mock.patch.object(host_observation.portable, 'GIT', (sys.executable, str(git))):
+                with self.assertRaises(host_observation.Unread) as unread:
+                    host_observation.checkout(Path(directory))
+        self.assertTrue(str(unread.exception).startswith('git cannot read the checkout: fatal: caf\N{REPLACEMENT CHARACTER} '
+                                                         'is not a commit (exit 128 from '), str(unread.exception))
+
     def test_a_folder_that_is_not_a_checkout_is_none(self):
         with tempfile.TemporaryDirectory() as directory:
             self.assertIsNone(host_observation.checkout(Path(directory)))

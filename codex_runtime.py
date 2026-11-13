@@ -555,11 +555,12 @@ class _Upstream:
 def _linked_worktree(folder: Path) -> bool:
     """Whether git places folder in a linked worktree, such as a release's, rather than in a main checkout like the
     canonical one every pull runs in. False whenever git cannot say."""
-    result = subprocess.run([*portable.GIT, '-C', str(folder), 'rev-parse', '--path-format=absolute', '--git-dir',
-                             '--git-common-dir'], capture_output=True, text=True, encoding='utf-8')
-    if result.returncode:
+    try:
+        output = portable.checked_output([*portable.GIT, '-C', str(folder), 'rev-parse', '--path-format=absolute',
+                                          '--git-dir', '--git-common-dir'], text=True)
+    except subprocess.CalledProcessError:
         return False
-    own, common = result.stdout.splitlines()
+    own, common = output.splitlines()
     return Path(own) != Path(common)
 
 
@@ -630,7 +631,7 @@ def review(roots: Roots, *, write: bool, fetch: Fetch = _download, say=print) ->
             _extract(archive, tree)
             manifest, stamps = _survey(tree, {})
             runtime, plugins = _contents(tree, upstream.version)
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, subprocess.SubprocessError) as error:
         say(f'{error}; nothing was written')
         return 3
     pin = RuntimePin(upstream.version, upstream.url, upstream.archive, upstream.archive_bytes, digest(manifest),

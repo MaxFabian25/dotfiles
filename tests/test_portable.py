@@ -105,6 +105,48 @@ class PortableTest(unittest.TestCase):
                 with self.assertRaises(FileNotFoundError):
                     portable.codex_cli()
 
+    def test_windows_discovery_reads_paths_despite_bad_stderr_and_falls_back_when_it_cannot_read_them(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app, fallback = Path(directory) / 'app codex.exe', Path(directory) / 'path codex.exe'
+            app.touch()
+            fallback.touch()
+            run = portable.subprocess.run
+            for stdout, stderr, status, expected in (
+                    ((str(app) + '\r\n').encode(), b'warning: caf\xe9\r\n', 0, app),
+                    (b'\xff\r\n', b'', 0, fallback),
+                    (str(app).encode(), b'error: caf\xe9\r\n', 1, fallback),
+                    (b'', b'', 0, fallback),
+                    ((str(app) + '-missing').encode(), b'', 0, fallback)):
+                with self.subTest(stdout=stdout, status=status):
+                    def discover(command, **options):
+                        code = ('import sys; '
+                                f'sys.stdout.buffer.write({stdout!r}); sys.stderr.buffer.write({stderr!r}); '
+                                f'sys.exit({status})')
+                        return run([sys.executable, '-c', code], **options)
+                    with patch.object(portable, 'WINDOWS', True), patch.dict(os.environ, {'CODEX_CLI': ''}), \
+                            patch.object(portable.shutil, 'which', return_value=str(fallback)), \
+                            patch.object(portable.subprocess, 'run', side_effect=discover):
+                        self.assertEqual(portable.codex_cli(), str(expected))
+
+    def test_windows_discovery_preserves_explicit_override_and_process_failure_fallbacks(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as directory:
+            cli = Path(directory) / 'codex.exe'
+            cli.touch()
+            with patch.object(portable, 'WINDOWS', True), patch.dict(os.environ, {'CODEX_CLI': str(cli)}), \
+                    patch.object(portable.subprocess, 'run', side_effect=AssertionError('discovery ran despite override')):
+                self.assertEqual(portable.codex_cli(), str(cli))
+                with patch.dict(os.environ, {'CODEX_CLI': str(cli) + '-missing'}), self.assertRaises(FileNotFoundError):
+                    portable.codex_cli()
+            for error in (FileNotFoundError('PowerShell is absent'), subprocess.TimeoutExpired('powershell.exe', 15)):
+                with self.subTest(error=error), patch.object(portable, 'WINDOWS', True), \
+                        patch.dict(os.environ, {'CODEX_CLI': ''}), \
+                        patch.object(portable.shutil, 'which', return_value=str(cli)), \
+                        patch.object(portable.subprocess, 'run', side_effect=error):
+                    self.assertEqual(portable.codex_cli(), str(cli))
+                    with patch.object(portable.shutil, 'which', return_value=None), self.assertRaises(FileNotFoundError):
+                        portable.codex_cli()
+
     def test_text_round_trips_bytes_exactly(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'note.md'
@@ -155,21 +197,47 @@ class PortableTest(unittest.TestCase):
                 self.assertIs(raised.exception, stop)
                 self.assertEqual((move.call_count, check.call_count), (1, 1))
 
-    def test_a_command_gives_its_stdout_as_bytes_or_as_text(self):
-        command = [sys.executable, '-c',
-                   'import sys; sys.stdout.buffer.write(b"out\\n"); sys.stderr.buffer.write(b"aside\\n")']
-        self.assertEqual(portable.checked_output(command), b'out\n')
-        self.assertEqual(portable.checked_output(command, text=True), 'out\n')
+    def test_a_command_gives_its_stdout_as_bytes_or_as_text_whatever_its_stderr_holds(self):
+        command = [sys.executable, '-c', 'import sys; sys.stdout.buffer.write(b"one\\r\\ntwo\\rthree\\n"); '
+                                         'sys.stderr.buffer.write(b"warning: caf\\xe9\\r\\n")']
+        self.assertEqual(portable.checked_output(command), b'one\r\ntwo\rthree\n')
+        self.assertEqual(portable.checked_output(command, text=True), 'one\ntwo\nthree\n')
+        for options in ({'encoding': 'utf-8'}, {'errors': 'replace'}, {'universal_newlines': True}):
+            with self.subTest(options=options), self.assertRaises(TypeError):
+                portable.checked_output(command, **options)
+
+    def test_text_stdout_that_is_not_utf8_raises_a_subprocess_error_naming_the_command(self):
+        import subprocess
+        command = [sys.executable, '-c', 'import sys; sys.stdout.buffer.write(b"caf\\xe9\\n")']
+        self.assertEqual(portable.checked_output(command), b'caf\xe9\n')
+        with self.assertRaises(subprocess.SubprocessError) as unread:
+            portable.checked_output(command, text=True)
+        self.assertIn(subprocess.list2cmdline(command), str(unread.exception))
+        self.assertIn('not UTF-8', str(unread.exception))
 
     def test_a_failed_command_raises_a_called_process_error_whose_text_starts_with_its_last_words(self):
         import subprocess
-        for stderr, options, said in ((b'warning: first\nerror: the last words\n\n', {}, 'error: the last words'),
-                                      (b'error: \xff\n', {}, 'error: \N{REPLACEMENT CHARACTER}'),
-                                      (b'hint: run\n\tgit config --global --add safe.directory /x\n', {},
-                                       'git config --global --add safe.directory /x'),
-                                      (b'error: as text\n', {'text': True}, 'error: as text'),
-                                      (b'', {}, None)):
-            command = [sys.executable, '-c', f'import sys; sys.stderr.buffer.write({stderr!r}); sys.exit(2)']
+        tmpfs = (b'fatal: not a git repository (or any parent up to mount point /dev)\n'
+                 b'Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).\n')
+        dubious = (b"fatal: detected dubious ownership in repository at '/r'\n"
+                   b'To add an exception for this directory, call:\n\n\tgit config --global --add safe.directory /r\n')
+        for stderr, options, said in (
+                (b'warning: first\nerror: the last words\n\n', {}, 'error: the last words'),
+                (b'error: \xff\n', {}, 'error: \N{REPLACEMENT CHARACTER}'),
+                (b'hint: run\n\tgit config --global --add safe.directory /x\n', {},
+                 'git config --global --add safe.directory /x'),
+                (b'error: as text\n', {'text': True}, 'error: as text'),
+                (b'50%\rerror: caf\xe9 not found\r\n', {'text': True}, 'error: caf\N{REPLACEMENT CHARACTER} not found'),
+                (tmpfs, {}, 'fatal: not a git repository (or any parent up to mount point /dev) '
+                            'Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).'),
+                (dubious, {}, "fatal: detected dubious ownership in repository at '/r' ... "
+                              'git config --global --add safe.directory /r'),
+                (b'Error: no config\n\nCaused by:\n    No such file (os error 2)\n', {},
+                 'Error: no config ... No such file (os error 2)'),
+                (b'Traceback (most recent call last):\n  File "x", line 1\nValueError: bad\n', {}, 'ValueError: bad'),
+                (b'', {}, None)):
+            command = [sys.executable, '-c', 'import sys; sys.stdout.buffer.write(b"partial \\xff\\n"); '
+                                             f'sys.stderr.buffer.write({stderr!r}); sys.exit(2)']
             with self.subTest(stderr=stderr, **options):
                 with self.assertRaises(subprocess.CalledProcessError) as failed:
                     portable.checked_output(command, **options)
@@ -183,10 +251,10 @@ class PortableTest(unittest.TestCase):
     def test_a_failed_command_whose_stderr_windows_could_not_decode_raises_with_pythons_text(self):
         import subprocess
         command = ['git', 'rev-parse']
-        lost = subprocess.CompletedProcess(command, 128, '', None)
+        lost = subprocess.CompletedProcess(command, 128, b'', None)
         with patch.object(portable.subprocess, 'run', return_value=lost), \
                 self.assertRaises(subprocess.CalledProcessError) as failed:
-            portable.checked_output(command, text=True, encoding='utf-8')
+            portable.checked_output(command, text=True)
         self.assertEqual(str(failed.exception), str(subprocess.CalledProcessError(128, command)))
 
     @unittest.skipIf(sys.platform == 'win32', 'a Windows process ends with an exit code, not a signal')

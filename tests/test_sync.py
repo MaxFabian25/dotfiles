@@ -18,6 +18,99 @@ def setUpModule():
     isolate_git()
 
 
+class CommandTest(unittest.TestCase):
+    def operation(self, home, code):
+        from sync_files import Files
+        from sync_hosts import Apply
+        script = home.write(home.bin / 'install.py', code)
+        operation = Apply.__new__(Apply)
+        operation.roots = home.roots
+        operation.files = Files(home.roots.home / 'backups')
+        operation.device = SimpleNamespace(host=lambda host: SimpleNamespace(cli=[sys.executable, str(script)]))
+        return operation
+
+    def test_command_reads_normalised_stdout_despite_bad_stderr_and_keeps_environment_cwd_and_backups(self):
+        import os
+        from unittest.mock import patch
+        from homes import Home
+        from host_state import Host
+        for host in Host:
+            with self.subTest(host=host), Home() as home:
+                paths = [home.roots.codex_home / 'config.toml'] if host == Host.CODEX else [
+                    home.roots.claude_home / name for name in ('settings.json', 'plugins/installed_plugins.json',
+                                                             'plugins/known_marketplaces.json')]
+                for path in paths:
+                    home.write(path, 'before\n')
+                operation = self.operation(home, 'import json, os, pathlib, sys\n'
+                    'print(json.dumps({key: os.environ[key] for key in '
+                    '("CODEX_HOME", "CLAUDE_CONFIG_DIR", "COMMAND_TEST", "GIT_CONFIG_VALUE_0", "GIT_CONFIG_VALUE_1")}))\n'
+                    'print(pathlib.Path.cwd())\n'
+                    f'for name in {list(map(str, paths))!r}:\n'
+                    '    pathlib.Path(name).write_bytes(b"after\\n")\n'
+                    'sys.stdout.flush()\n'
+                    'sys.stdout.buffer.write(b"one\\r\\ntwo\\rthree\\n")\n'
+                    'sys.stderr.buffer.write(b"warning: caf\\xe9\\r\\n")\n')
+                with patch.dict(os.environ, {'COMMAND_TEST': 'retained', 'GIT_CONFIG_COUNT': '0'}):
+                    output = operation.command(host, 'plugin', 'install', 'kit', '--json')
+                environment, cwd, *lines = output.split('\n')
+                self.assertEqual(json.loads(environment), {
+                    'CODEX_HOME': str(home.roots.codex_home), 'CLAUDE_CONFIG_DIR': str(home.roots.claude_home),
+                    'COMMAND_TEST': 'retained', 'GIT_CONFIG_VALUE_0': 'false', 'GIT_CONFIG_VALUE_1': 'lf'})
+                self.assertEqual(Path(cwd).resolve(), home.roots.home.resolve())
+                self.assertEqual(lines, ['one', 'two', 'three', ''])
+                self.assertEqual({p.name: p.read_bytes() for p in operation.files.backup.iterdir() if p.name != 'files.json'},
+                                 {f'{at:04d}-{path.name}': b'before\n' for at, path in enumerate(paths, 1)})
+                self.assertTrue(all(path.read_bytes() == b'after\n' for path in paths))
+
+    def test_command_failure_keeps_the_diagnostic_tail_and_uses_stdout_only_when_stderr_is_empty(self):
+        from homes import Home
+        from host_state import Host
+        diagnostic = ('discarded prefix' + '界' * 2100).encode() + b'\r\nfatal: caf\xe9\rreason\r\n'
+        tail = ('界' * 2100 + '\nfatal: caf\N{REPLACEMENT CHARACTER}\nreason\n')[-2000:]
+        for stdout, stderr, expected in ((b'ignored \xff', diagnostic, tail),
+                                         (diagnostic, b'', tail), (b'', b'', '')):
+            with self.subTest(stderr=bool(stderr), stdout=bool(stdout)), Home() as home:
+                operation = self.operation(home, 'import sys\n'
+                    f'sys.stdout.buffer.write({stdout!r})\n'
+                    f'sys.stderr.buffer.write({stderr!r})\n'
+                    'sys.exit(7)\n')
+                with self.assertRaises(RuntimeError) as failed:
+                    operation.command(Host.CODEX, 'plugin', 'add', 'kit@personal', '--json')
+                self.assertEqual(str(failed.exception), 'codex plugin add kit@personal failed: ' + expected)
+
+    def test_install_restores_a_kept_disabled_plugin_after_a_bad_diagnostic_or_unreadable_stdout(self):
+        import tomllib
+        import description as d
+        from homes import Home
+        from host_state import Host
+        for host in Host:
+            for status in (0, 7):
+                with self.subTest(host=host, status=status), Home() as home:
+                    install = d.EngineInstall(False, keep_current=True)
+                    identity = d.plugin_id('kit', install, host)
+                    if host == Host.CODEX:
+                        path = home.roots.codex_home / 'config.toml'
+                        enabled = f'[plugins."{identity}"]\nenabled = true\n'
+                    else:
+                        path = home.roots.claude_home / 'settings.json'
+                        enabled = json.dumps({'enabledPlugins': {identity: True}})
+                    home.write(path, '')
+                    operation = self.operation(home, 'import pathlib, sys\n'
+                        f'pathlib.Path({str(path)!r}).write_bytes({enabled.encode()!r})\n'
+                        'sys.stdout.buffer.write(b"unreadable \\xff\\r\\n")\n'
+                        'sys.stderr.buffer.write(b"error: caf\\xe9\\r\\n")\n'
+                        f'sys.exit({status})\n')
+                    operation.current = SimpleNamespace(observations={host: SimpleNamespace(facts={})})
+                    operation.setup = SimpleNamespace(packages={'kit': SimpleNamespace(
+                        placement=lambda _: SimpleNamespace(installs=(install,)))})
+                    with self.assertRaises(RuntimeError if status else subprocess.SubprocessError) as failed:
+                        operation._install(host, identity)
+                    self.assertIn('caf\N{REPLACEMENT CHARACTER}' if status else 'not UTF-8', str(failed.exception))
+                    switch = (tomllib.loads(path.read_text())['plugins'][identity]['enabled'] if host == Host.CODEX
+                              else json.loads(path.read_text())['enabledPlugins'][identity])
+                    self.assertIs(switch, False)
+
+
 class FileSafetyTest(unittest.TestCase):
     def test_claude_explicit_host_setting_uses_the_native_user_invocable_only_value(self):
         from host_state import FactKey, Host, SkillMode, Surface

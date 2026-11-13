@@ -636,6 +636,37 @@ class ObserveTest(unittest.TestCase):
         self.assertEqual(observation.facts[key(S.PLUGIN, 'rpi@skills')].value, hs.PluginValue(True, hs.Pinned(C2)))
         self.assertEqual(observation.unknown, ())
 
+    def wrapped(self, device, code):
+        state = device.state()
+        wrapper = device.bin / 'wrapper.py'
+        wrapper.write_text(f'import subprocess, sys\n{code}\nsys.exit(subprocess.run(sys.argv[1:]).returncode)\n')
+        state.cli = [sys.executable, str(wrapper), *state.cli]
+        return state
+
+    def test_a_version_that_is_not_utf8_is_unknown_without_stopping_observation(self):
+        with Device() as device:
+            observation = self.wrapped(device, 'if sys.argv[-1] == "--version":\n'
+                                               '    sys.stdout.buffer.write(b"codex-cli \\xff\\r\\n")\n'
+                                               '    sys.exit(0)').observe(hs.Request())
+        self.assertEqual((observation.version, observation.unknown), ('unknown', ()))
+        self.assertEqual(observation.facts[key(S.PLUGIN, 'rpi@skills')].value, hs.PluginValue(True, hs.Pinned(C2)))
+
+    def test_a_cli_that_warns_in_words_that_are_not_utf8_is_still_read(self):
+        with Device() as device:
+            observation = self.wrapped(device, 'sys.stderr.buffer.write(b"warning: caf\\xe9\\r\\n"); sys.stderr.flush()'
+                                       ).observe(hs.Request())
+        self.assertEqual((observation.version, observation.unknown), ('codex-cli 0.0.0', ()))
+        self.assertEqual(observation.facts[key(S.PLUGIN, 'rpi@skills')].value, hs.PluginValue(True, hs.Pinned(C2)))
+
+    def test_a_plugin_listing_that_fails_in_words_that_are_not_utf8_is_unread_with_those_words(self):
+        with Device() as device:
+            observation = self.wrapped(device, 'if sys.argv[-4:-2] == ["plugin", "list"]:\n'
+                                               '    sys.stderr.buffer.write(b"Error: caf\\xe9 cannot be read\\r\\n")\n'
+                                               '    sys.exit(1)').observe(hs.Request())
+        [unread] = [u for u in observation.unknown if u.source == 'codex plugin list --available --json']
+        self.assertTrue(unread.reason.startswith('Error: caf\N{REPLACEMENT CHARACTER} cannot be read (exit 1 from '),
+                        unread.reason)
+
     def slow_listing(self, device, seconds):
         """A CLI whose plugin listing takes SECONDS, as a listing without a warm catalog cache does."""
         state = device.state()

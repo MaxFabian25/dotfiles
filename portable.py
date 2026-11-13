@@ -45,21 +45,37 @@ def native_cli_environment(environment=None):
     return environment
 
 
-def checked_output(command, **options):
-    """The stdout of subprocess.run with its output captured. A non-zero exit raises a CalledProcessError whose text
-    starts with the command's own last non-blank line on stderr, when it wrote one; a run past its timeout raises
-    TimeoutExpired."""
-    result = subprocess.run(command, capture_output=True, **options)
+def checked_output(command, *, text=False, timeout=None, env=None, cwd=None):
+    """The stdout of command, captured as bytes on every platform. With text it is UTF-8 text, with \\r\\n and a lone
+    \\r read as \\n as Python's text mode reads them, and stdout that is not UTF-8 raises SubprocessError. A
+    non-zero exit raises a CalledProcessError whose text starts with the command's own words on stderr, read with
+    replacement characters, when it wrote any; a run past its timeout raises TimeoutExpired."""
+    result = subprocess.run(command, capture_output=True, timeout=timeout, env=env, cwd=cwd)
     if result.returncode:
         raise _CommandFailed(result.returncode, result.args, result.stdout, result.stderr)
-    return result.stdout
+    if not text:
+        return result.stdout
+    try:
+        return result.stdout.decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
+    except UnicodeDecodeError as error:
+        raise subprocess.SubprocessError(
+            f'its output is not UTF-8 ({error}) from {subprocess.list2cmdline(result.args)}') from error
+
+
+def _words(stderr):
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    if not lines:
+        return ''
+    last = len(lines) - 1
+    named = next((at for at in range(last, -1, -1) if lines[at].lower().startswith(('fatal:', 'error:'))), last)
+    if named == last:
+        return lines[last]
+    return f'{lines[named]}{" " if named + 1 == last else " ... "}{lines[last]}'
 
 
 class _CommandFailed(subprocess.CalledProcessError):
     def __str__(self):
-        # On Windows, text-mode stderr that does not decode comes back as None.
-        stderr = self.stderr.decode('utf-8', 'replace') if isinstance(self.stderr, bytes) else self.stderr or ''
-        said = next((line.strip() for line in reversed(stderr.splitlines()) if line.strip()), '')
+        said = _words((self.stderr or b'').decode('utf-8', 'replace'))
         if not said:
             return super().__str__()
         status = f'exit {self.returncode}' if self.returncode >= 0 else f'signal {-self.returncode}'
@@ -111,9 +127,8 @@ def codex_cli():
     if WINDOWS:
         command = "$p = Get-AppxPackage -Name OpenAI.Codex | Sort-Object Version -Descending | Select-Object -First 1; if ($p) { Join-Path $p.InstallLocation 'app/resources/codex.exe' }"
         try:
-            result = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', command],
-                                    capture_output=True, text=True, encoding='utf-8', timeout=15, check=True)
-            app = result.stdout.strip()
+            app = checked_output(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', command],
+                                 text=True, timeout=15).strip()
         except (OSError, subprocess.SubprocessError):
             app = None
     return _executable('CODEX_CLI', 'codex', [app])

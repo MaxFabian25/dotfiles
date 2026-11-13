@@ -13,9 +13,9 @@ from host_state import (Commit, Detail, DeviceRoots, Fact, FactKey, FactValue, F
 COMMAND_SECONDS = 120
 
 
-def run(command: list[str], seconds: float | None = None, **options) -> str:
-    options['env'] = portable.native_cli_environment(options.get('env'))
-    return portable.checked_output(command, text=True, encoding='utf-8', timeout=seconds or COMMAND_SECONDS, **options)
+def run(command: list[str], seconds: float | None = None, *, env: Mapping[str, str] | None = None) -> str:
+    return portable.checked_output(command, text=True, timeout=seconds or COMMAND_SECONDS,
+                                   env=portable.native_cli_environment(env))
 
 
 class Unread(Exception):

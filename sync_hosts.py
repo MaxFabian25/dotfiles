@@ -67,11 +67,12 @@ class Apply:
         environment = portable.native_cli_environment()
         environment['CODEX_HOME'] = str(self.roots.codex_home)
         environment['CLAUDE_CONFIG_DIR'] = str(self.roots.claude_home)
-        result = subprocess.run([*state.cli, *args], capture_output=True, text=True, encoding='utf-8', timeout=180,
-                                cwd=self.roots.home, env=environment)
-        if result.returncode:
-            raise RuntimeError(f'{host.value} {" ".join(args[:3])} failed: {(result.stderr or result.stdout)[-2000:]}')
-        return result.stdout
+        try:
+            return portable.checked_output([*state.cli, *args], text=True, timeout=180,
+                                           cwd=self.roots.home, env=environment)
+        except subprocess.CalledProcessError as error:
+            said = (error.stderr or error.stdout).decode('utf-8', 'replace').replace('\r\n', '\n').replace('\r', '\n')
+            raise RuntimeError(f'{host.value} {" ".join(args[:3])} failed: {said[-2000:]}') from error
 
     def _marketplaces(self):
         for difference in self.current.changes:

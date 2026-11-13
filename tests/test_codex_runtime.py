@@ -439,6 +439,62 @@ class PinTest(unittest.TestCase):
 
 
 class ReviewTest(unittest.TestCase):
+    def test_linked_worktree_keeps_its_boolean_contract_with_byte_output_and_bad_stderr(self):
+        with homes.Home() as home:
+            common = home.roots.home / '.git'
+            own = common / 'worktrees/release'
+            linked = f'{own}\r\n{common}\r'.encode()
+            main = f'{common}\r\n{common}\r\n'.encode()
+            for stdout, status, expected in ((linked, 0, True), (main, 0, False), (b'bad \xff', 128, False)):
+                with self.subTest(status=status, expected=expected):
+                    git = home.write(home.bin / 'git.py', 'import sys\n'
+                        f'sys.stdout.buffer.write({stdout!r})\n'
+                        'sys.stderr.buffer.write(b"fatal: caf\\xe9\\r\\nhint\\r\\n")\n'
+                        f'sys.exit({status})\n')
+                    with mock.patch.object(cr.portable, 'GIT', (sys.executable, str(git))):
+                        self.assertIs(cr._linked_worktree(home.roots.home), expected)
+
+    def test_review_preserves_the_pin_and_skips_archive_download_when_worktree_discovery_is_unreadable(self):
+        with Runtime() as runtime:
+            runtime.publish('26.1.1')
+            runtime.server.publish('26.2.1', bundle('26.2.1'))
+            common = runtime.checkout / '.git'
+            main = f'{common}\r\n{common}\r\n'.encode()
+            cases = ((b'bad \xff', 128, 'not in a linked worktree'),
+                     (b'bad \xff', 0, 'not UTF-8'),
+                     (main, 0, 'not in a linked worktree'),
+                     (b'one path\r\n', 0, 'not enough values to unpack'))
+            for stdout, status, reason in cases:
+                with self.subTest(stdout=stdout, status=status):
+                    git = runtime.write(runtime.bin / 'git.py', 'import sys\n'
+                        f'sys.stdout.buffer.write({stdout!r})\n'
+                        f'sys.exit({status})\n')
+                    before = snapshot(runtime.setup.public)
+                    runtime.server.calls.clear()
+                    said = []
+                    with mock.patch.object(cr.portable, 'GIT', (sys.executable, str(git))):
+                        self.assertEqual(cr.review(runtime.setup, write=True, fetch=runtime.server, say=said.append), 3)
+                    self.assertEqual(runtime.server.calls, [cr.LATEST])
+                    self.assertEqual(snapshot(runtime.setup.public), before)
+                    self.assertIn(reason, said[-1])
+                    self.assertIn('nothing was written', said[-1])
+
+    def test_review_accepts_a_linked_worktree_despite_unreadable_stderr(self):
+        with Runtime() as runtime:
+            runtime.server.publish('26.1.1', bundle('26.1.1'))
+            common = runtime.checkout / '.git'
+            stdout = f'{common / "worktrees/public"}\r\n{common}\r\n'.encode()
+            git = runtime.write(runtime.bin / 'git.py', 'import pathlib, sys\n'
+                'if "--show-toplevel" in sys.argv:\n'
+                '    print(pathlib.Path(sys.argv[2]).parent)\n'
+                '    sys.exit(0)\n'
+                f'sys.stdout.buffer.write({stdout!r})\n'
+                'sys.stderr.buffer.write(b"warning: caf\\xe9\\r\\n")\n')
+            with mock.patch.object(cr.portable, 'GIT', (sys.executable, str(git))):
+                self.assertEqual(cr.review(runtime.setup, write=True, fetch=runtime.server, say=quiet), 1)
+            self.assertEqual(rp.RuntimePin.read(runtime.setup.public / rp.PIN, []).version, '26.1.1')
+            self.assertEqual(len(runtime.server.downloads()), 1)
+
     def test_each_command_reads_the_setup_folders_it_is_given(self):
         with mock.patch('codex_runtime.review', return_value=0) as review:
             self.assertEqual(cr.main(['review', '--public', '/public', '--private', '/private', '--write']), 0)
