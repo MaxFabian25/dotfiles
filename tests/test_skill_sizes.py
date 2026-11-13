@@ -5,6 +5,7 @@ points at them. The user's global rules read a file whole only under 600 lines a
 to be read in sections, and a description past 1,024 characters breaks the Agent Skills limit. The private
 repository's setup/test_skill_sizes.py holds its own skills to the same limits."""
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest import mock
@@ -21,8 +22,19 @@ BYTE_LIMIT = 30_000
 # Add no entry.
 CEILINGS = {'skills/browser-and-computer-use/SKILL.md': 36_596}
 FIX = 'Move a part that only some tasks reach into its own file behind a one-line pointer, or split the file by branch.'
+DATED = re.compile(r'\b20\d\d\b|\b[Oo]n \d{1,2}(?:(?: and | to |-|–)\d{1,2})?\s+(?:January|February|March|April|May|June|July|August|September|'
+                   r'October|November|December)\b')
+UNDATED = ('A session reads every description on every turn. Move the dated test or story into the skill\'s body or '
+           'its references/incidents.md and keep the rule.')
 # Folders .gitignore leaves out. A checkout that has run a package's own tools holds other projects' Markdown there.
 INSTALLED = {'node_modules', '.venv', '.pytest_cache', 'dist', 'build'}
+
+
+def frontmatter(path):
+    lines = path.read_text(encoding='utf-8').split('\n')
+    if lines[0] != '---' or '---' not in lines[1:]:
+        return {}
+    return yaml.safe_load('\n'.join(lines[1:lines.index('---', 1)])) or {}
 
 
 def owned(pattern):
@@ -48,6 +60,16 @@ class SkillSizes(unittest.TestCase):
                                      f'{name} has a description of {len(description)} characters and the limit is '
                                      f'{DESCRIPTION_LIMIT}. Keep what the skill is and one trigger per branch, and '
                                      'move the rest into the body.')
+
+    def test_no_description_holds_a_date(self):
+        for path in owned('SKILL.md'):
+            name = path.relative_to(REPO).as_posix()
+            with self.subTest(skill=name):
+                loaded = frontmatter(path)
+                description = str(loaded.get('description') or '') if isinstance(loaded, dict) else ''
+                found = DATED.search(description)
+                self.assertIsNone(found, f'{name} has a date in its description ("{found and found.group()}"). '
+                                         f'{UNDATED}')
 
     def test_every_markdown_file_fits_one_whole_read(self):
         files = owned('*.md')
@@ -107,6 +129,28 @@ class SkillSizes(unittest.TestCase):
         self.assertEqual(result.errors, [])
         [(_, failure)] = result.failures
         self.assertIn('skills/one/SKILL.md needs a `description:` in its frontmatter', failure)
+
+    def test_a_dated_description_is_named_and_others_pass(self):
+        def failures(text):
+            with tempfile.TemporaryDirectory() as directory, mock.patch(f'{__name__}.REPO', Path(directory)):
+                (Path(directory) / 'skills/one').mkdir(parents=True)
+                (Path(directory) / 'skills/one/SKILL.md').write_text(text)
+                result = unittest.TestResult()
+                SkillSizes('test_no_description_holds_a_date').run(result)
+            self.assertEqual(result.errors, [], text)
+            return [failure for _, failure in result.failures]
+        for dated, found in (('Use it. On 4 November its check refused a browser.', 'On 4 November'),
+                             ('Use it, as on 4 November its check refused a browser.', 'on 4 November'),
+                             ('Use it. On 12 and 13 November its check refused a browser.', 'On 12 and 13 November'),
+                             ('>-\n  Use it.\n  On 4 November its check refused.', 'On 4 November'),
+                             ('|\n  Use it. On 4\n  November its check refused.', 'On 4\nNovember'),
+                             ('Use it, because its login changed in 2026.', '2026')):
+            [failure] = failures(f'---\ndescription: {dated}\n---\nbody\n')
+            self.assertIn(f'skills/one/SKILL.md has a date in its description ("{found}")', failure)
+        for text in ('---\ndescription: Use it for 4 accounts on Monday, before 20 sign-ins.\n---\nbody\n',
+                     '---\ndescription: Use it for ES2020 modules and 12026 rows.\n---\nbody\n',
+                     'On 4 November 2026, a body with no frontmatter.\n', '---\n- On 4 November 2026\n---\nbody\n'):
+            self.assertEqual(failures(text), [], text)
 
 
 if __name__ == '__main__':

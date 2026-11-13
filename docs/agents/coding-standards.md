@@ -30,11 +30,8 @@ covered by a hash of the whole file, so there another session's edit does change
 its own text, not by what it points to, so a link without a code suffix that points to a script is not
 counted: read it when the release changes one.
 
-The author takes fixed code to a reviewer that did not write it. That is the same reviewer only within five
-minutes of its report, while its prompt cache is warm, and otherwise a fresh reviewer for a closure check:
-after those five minutes `subagent-cache-guard.py` refuses to resume a reviewer with a large context, as it did
-in 18 threads in November 2026. A closure check reads the earlier review file, the author's answer to each finding
-and the changes since that review. It answers only whether each fix closed its finding and whether the changes
+The author takes fixed code to a fresh reviewer that did not write it, for a closure check. A closure check
+reads the earlier review file, the author's answer to each finding and the changes since that review. It answers only whether each fix closed its finding and whether the changes
 add a finding that holds the release back. It writes the `Reviewed:` lines when neither holds the release back,
 and lists any other finding as one that does not.
 
