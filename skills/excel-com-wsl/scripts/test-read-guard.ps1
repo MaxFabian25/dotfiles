@@ -1,6 +1,6 @@
 <#
-Test helper for test_fixtures.py. Runs Read-Refs and Find-Errors from excel-job.ps1 on stand-in workbooks, with no
-Excel: some answer as a healthy Excel does, some hand back $null for one property or throw a rejected call, as
+Test helper for test_fixtures.py. Runs Read-Refs, Get-Cell and Find-Errors from excel-job.ps1 on stand-in workbooks,
+with no Excel: some answer as a healthy Excel does, some hand back $null for one property or throw a rejected call, as
 PowerShell does when a busy Excel refused it and the wait ran out, and some sheets answer the error scan's questions
 with something that is no answer. A stand-in range knows how many rectangles it has, and a stand-in name its text.
 A stand-in workbook with sheets takes the references that name a sheet. It writes what each made of them to -Log as
@@ -45,8 +45,25 @@ $ranges = [ordered]@{
   # and late_range gets its range on the second ask, as after a call that a busy Excel refused.
   long_name      = $null
   late_range     = $null
+  # Names whose text lists 40 rectangles, for which Excel gave a range of fewer: one, or 17 as on 12 November 2026.
+  # no_text has a range and a text that Excel refused.
+  cut_to_one     = New-Range 1 5.0 '5' 1 1
+  cut_short      = New-Range 34 $twoRows $null 2 1 17
+  no_text        = New-Range 1 5.0 '5' 1 1
 }
-$texts = @{ long_name = '=' + ('S!$A$1,' * 40); late_range = '=S!$A$1' }
+# Each name has a text of one rectangle unless it is named here. The texts of the last nine have commas that are
+# no union, inside a quoted sheet name, a function's parentheses, a string or a table's brackets, and three of them a
+# union whose comma follows a parenthesis inside quotes, an apostrophe inside brackets or a function's parentheses.
+$texts = @{ long_name = '=' + ('S!$A$1,' * 40); two_areas = '=S!$A$1:$A$2,S!$C$1:$C$2'; one_cell_first = '=S!$A$1,S!$C$1:$C$2'
+  cut_to_one = '=' + (@(foreach ($row in 1..40) { "S!`$A`$$row" }) -join ','); no_range = $null; no_text = $null }
+$texts.cut_short = $texts.cut_to_one
+$commas = [ordered]@{
+  in_quotes = '=''a,b''!$A$1'; doubled_in_quotes = '=''It''''s, ok''!$A$1'; in_parentheses = '=OFFSET(S!$A$1,0,0,1,1)'
+  in_string = '=IF(S!$A$1=")",S!$A$1,S!$B$1)'; nested_columns = '=T[[#This Row],[a]]'; escaped_column = '=T[x''],y]'
+  parenthesis_in_quotes = '=''a)b''!$A$1,S!$B$1'; apostrophe_in_column = '=T[''#x],S!$A$1'; after_parentheses = '=OFFSET(S!$A$1,0,0,1,1),S!$B$1'
+}
+foreach ($name in $commas.Keys) { $ranges[$name] = New-Range 1 5.0 '5' 1 1; $texts[$name] = $commas[$name] }
+foreach ($name in @($ranges.Keys)) { if (-not $texts.ContainsKey($name)) { $texts[$name] = '=S!$A$1' } }
 $later = @{ late_range = New-Range 1 5.0 '5' 1 1 }
 $names = [pscustomobject]@{ Ranges = $ranges; Texts = $texts; Later = $later } | Add-Member -MemberType ScriptMethod -Name Item -Value {
   param($name)
@@ -196,9 +213,9 @@ foreach ($case in $sheets.Keys) {
 # A stand-in workbook with sheets, for a reference that names its sheet, in quotes or not. Worksheets.Item knows a
 # sheet by its exact name and nothing else, a range gives its address as Excel does, such as $B$2 or $B$2:$C$3, and
 # what is no cell or rectangle, such as a table column, as it was asked. A sheet turns away Elsewhere and Nowhere, as
-# Excel's does a name whose cells lie on another sheet. The workbook has three names, each scoped to the sheet
-# Okonomi: Elsewhere, whose cell lies on the sheet S, FY2024, which is also the address of a cell, and LocalConst,
-# which has a text and no range. Its name lookup keeps what it was asked for. Okonomi is spelt with the letter O with
+# Excel's does a name whose cells lie on another sheet. The workbook has four names, each scoped to the sheet
+# Okonomi: Elsewhere, whose cell lies on the sheet S, FY2024, which is also the address of a cell, LocalConst,
+# which has a text and no range, and Cut, whose text lists two cells where its range is one. Its name lookup keeps what it was asked for. Okonomi is spelt with the letter O with
 # a stroke and Cafe with an accent as a combining mark, built from their codes because Windows PowerShell reads a
 # script without a byte-order mark in the ANSI code page. The second round reads the addresses that the first round
 # gave.
@@ -211,11 +228,13 @@ $known = @{
   "$stroked!Elsewhere"  = [pscustomobject]@{ RefersTo = '=S!$A$1'; RefersToRange = (New-Cell ([pscustomobject]@{ Name = 'S' }) 'A1') }
   "$stroked!FY2024"     = [pscustomobject]@{ RefersTo = "=$stroked!`$B`$2"; RefersToRange = (New-Cell ([pscustomobject]@{ Name = $stroked }) 'B2') }
   "$stroked!LocalConst" = [pscustomobject]@{ RefersTo = '=5'; RefersToRange = $null }
+  "$stroked!Cut"        = [pscustomobject]@{ RefersTo = '=S!$A$1,S!$C$1'; RefersToRange = (New-Cell ([pscustomobject]@{ Name = 'S' }) 'A1') }
 }
 $scoped = [pscustomobject]@{ Known = $known; Asked = (New-Object Collections.ArrayList) } | Add-Member -MemberType ScriptMethod -Name Item -Value {
   param($name)
   [void]$this.Asked.Add($name)
-  if (-not $this.Known.ContainsKey($name)) { throw "the stand-in workbook has no name $name" }
+  # 0x800A03EC is what Excel's Names.Item gives for a name the workbook lacks.
+  if (-not $this.Known.ContainsKey($name)) { throw [Runtime.InteropServices.COMException]::new("the stand-in workbook has no name $name", -2146827284) }
   return $this.Known[$name]
 } -PassThru
 $titled = [pscustomobject]@{ Titles = @("It's", "O'Neil's", 'My sheet', 'S', 'A', $stroked, 'Data_1', $marked) } | Add-Member -MemberType ScriptMethod -Name Item -Value {
@@ -228,7 +247,7 @@ $titled = [pscustomobject]@{ Titles = @("It's", "O'Neil's", 'My sheet', 'S', 'A'
   } -PassThru
 } -PassThru
 $quotedBook = [pscustomobject]@{ Names = $scoped; Worksheets = $titled }
-$quoted = Read-Refs $quotedBook @("'It''s'!B2", "'O''Neil''s'!C7", "'My sheet'!A1", 'S!A1', "'$stroked'!A1", "'My sheet'!T[Owner''s share]", "S!T['#Items]", "$stroked!B3", 'Data_1!A1', "$marked!A2", "$stroked!Elsewhere", "'$stroked'!Elsewhere", 'S!Elsewhere', "$stroked!FY2024", "'$stroked'!FY2024", "$stroked!LocalConst", 'S!Nowhere', 'My sheet!A1', 'My-sheet!A1', "'It's'!B2", "'O'Neil''s'!C7", "'It''s!B2", "'A'!B'C'!D1")
+$quoted = Read-Refs $quotedBook @("'It''s'!B2", "'O''Neil''s'!C7", "'My sheet'!A1", 'S!A1', "'$stroked'!A1", "'My sheet'!T[Owner''s share]", "S!T['#Items]", "$stroked!B3", 'Data_1!A1', "$marked!A2", "$stroked!Elsewhere", "'$stroked'!Elsewhere", 'S!Elsewhere', "$stroked!FY2024", "'$stroked'!FY2024", "$stroked!LocalConst", "$stroked!Cut", 'S!Nowhere', 'My sheet!A1', 'My-sheet!A1', "'It's'!B2", "'O'Neil''s'!C7", "'It''s!B2", "'A'!B'C'!D1")
 $lookups = @($scoped.Asked)
 # Workbooks whose name lookup a busy Excel refused: the call is rejected, hands back $null, or Names itself is $null.
 # The sheet knows FY2024 as a cell, so a read that went on to the sheet would give that cell.
@@ -238,5 +257,22 @@ $refusedLookups = [ordered]@{}
 foreach ($case in @(@('rejected', $rejected), @('no_name', $silent), @('no_names', $null))) {
   $refusedLookups[$case[0]] = (Read-Refs ([pscustomobject]@{ Names = $case[1]; Worksheets = $titled }) @("$stroked!FY2024"))["$stroked!FY2024"]
 }
+# Workbooks whose name lookup fails with an error other than a missing name's: 0x800AC472, which Excel's object model
+# gives while it takes no calls, 0x800706BA (the server is gone), 0x80010105 (the server failed), and one that is no
+# COM error at all.
+$failedLookups = [ordered]@{}
+foreach ($code in -2146777998, -2147023174, -2147417851, 0) {
+  $failing = [pscustomobject]@{ Code = $code } | Add-Member -MemberType ScriptMethod -Name Item -Value {
+    param($name)
+    if ($this.Code -eq 0) { throw 'the stand-in lookup broke' }
+    throw [Runtime.InteropServices.COMException]::new(('the stand-in lookup failed with 0x{0:X8}' -f $this.Code), $this.Code)
+  } -PassThru
+  $failedLookups[$(if ($code) { '0x{0:X8}' -f $code } else { 'other' })] = (Read-Refs ([pscustomobject]@{ Names = $failing; Worksheets = $titled }) @("$stroked!FY2024"))["$stroked!FY2024"]
+}
+# What a --set makes of a cell, a name whose text lists 40 rectangles where Excel gave one cell, and two rectangles.
+$sets = [ordered]@{}
+foreach ($name in 'healthy_cell', 'cut_to_one', 'two_areas') {
+  try { $cell = Get-Cell $workbook $name; $sets[$name] = "cells: $($cell.Count)" } catch { $sets[$name] = $_.Exception.Message }
+}
 $quotedAgain = Read-Refs $quotedBook @($quoted.Values | Where-Object { $_.Contains('address') } | ForEach-Object { $_.address })
-[ordered]@{ reads = (Read-Refs $workbook @($ranges.Keys)); scans = $scans; quoted = $quoted; name_lookups = $lookups; refused_lookups = $refusedLookups; quoted_again = $quotedAgain } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Log -Encoding UTF8
+[ordered]@{ reads = (Read-Refs $workbook @($ranges.Keys)); scans = $scans; quoted = $quoted; name_lookups = $lookups; refused_lookups = $refusedLookups; failed_lookups = $failedLookups; sets = $sets; quoted_again = $quotedAgain } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Log -Encoding UTF8

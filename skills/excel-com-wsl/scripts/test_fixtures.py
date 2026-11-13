@@ -193,7 +193,9 @@ def build(out: pathlib.Path) -> None:
     # References that the job took wrongly: of several rectangles, typed or through a name, whose Value2 is the first
     # rectangle only; a sheet named with a letter outside A to Z, which unquoted went to the name lookup; and a sheet
     # whose name holds "=", where --set cut the reference. Pairs and Singles list more rectangles than Excel gives as
-    # one range, most of them over cells that are empty.
+    # one range, most of them over cells that are empty. Two names are scoped to the sheet with the letter outside A
+    # to Z: Elsewhere, whose cell lies on another sheet, and FY2024, spelt as a cell's address, which Excel's own
+    # screens refuse and a file from another tool can hold.
     book = openpyxl.Workbook()
     sheet = book.active
     sheet.title = "S"
@@ -202,6 +204,8 @@ def build(out: pathlib.Path) -> None:
             sheet.cell(row, column, row * 100 + column)
     sheet = book.create_sheet("\u00d8konomi")
     sheet["A1"], sheet["B1"] = 7, "=A1*2"
+    sheet.defined_names["Elsewhere"] = DefinedName("Elsewhere", attr_text="S!$A$1")
+    sheet.defined_names["FY2024"] = DefinedName("FY2024", attr_text="'\u00d8konomi'!$B$1")
     sheet = book.create_sheet("a=b")
     sheet["A1"], sheet["B1"] = 1, "=A1*2"
     for name, text in (("Few", "S!$A$1:$A$2,S!$C$1:$C$2"), ("Pairs", PAIRS), ("Singles", SINGLES), ("Fixed", "5"),
@@ -399,8 +403,8 @@ def excel_cases(evidence: pathlib.Path, temp: pathlib.Path, temp_win: str) -> No
     base = result.get("base") or {}
     check("a reference or name of several rectangles fails the read with their count, whether its first rectangle is one cell or more",
           all(base.get(ref) == {"read_error": TWO_RECTANGLES} for ref in several), {ref: base.get(ref) for ref in several})
-    check("a name of more rectangles than Excel gives as one range fails the read, cut short or with no range at all",
-          re.fullmatch(r"range has ([2-9]|[1-3][0-9]|40) rectangles; read each rectangle by its own REF", base.get("Pairs", {}).get("read_error", "")) is not None
+    check("a name of more rectangles than Excel gives as one range fails the read with the count its text lists, or with no range at all",
+          base.get("Pairs") == {"read_error": "range has 40 rectangles; read each rectangle by its own REF"}
           and base.get("Singles") == {"read_error": NO_RANGE.format(name="Singles", length=len(SINGLES) + 1)},
           {ref: base.get(ref) for ref in ("Pairs", "Singles")})
     check("a name that refers to no cells fails the read with that reason",
@@ -418,10 +422,15 @@ def excel_cases(evidence: pathlib.Path, temp: pathlib.Path, temp_win: str) -> No
           {key: result.get(key) for key in ("ok", "error", "base", "after", "reopened")} | {"exit": code})
 
     # A sheet name with a letter outside A to Z needs no quotes, and a read's address goes into --set whole, with a
-    # "=" in its sheet name.
+    # "=" in its sheet name. A REF with such a sheet name unquoted is looked up as a name first, which finds a name
+    # scoped to that sheet wherever its cells lie and where it is spelt as a cell's address.
     result, code = job("letters", "refs.xlsx", "--read", "\u00d8konomi!A1", "--read", "'\u00d8konomi'!A1", "--read", "'\u00d8konomi'!B1", "--read", "Bel\u00f8b",
-                       "--read", "'a=b'!B1", "--set", "'a=b'!$A$1=5")
+                       "--read", "'a=b'!B1", "--read", "\u00d8konomi!Elsewhere", "--read", "\u00d8konomi!FY2024", "--set", "'a=b'!$A$1=5")
     base, after = result.get("base") or {}, result.get("after") or {}
+    check("a name scoped to a sheet named with a letter outside A to Z reads where its cell lies on another sheet",
+          near(base.get("\u00d8konomi!Elsewhere"), 101) and base.get("\u00d8konomi!Elsewhere", {}).get("address") == "'S'!$A$1", base.get("\u00d8konomi!Elsewhere"))
+    check("such a name spelt as a cell's address reads the name, not the cell",
+          near(base.get("\u00d8konomi!FY2024"), 14) and base.get("\u00d8konomi!FY2024", {}).get("address") == "'\u00d8konomi'!$B$1", base.get("\u00d8konomi!FY2024"))
     check("an unquoted sheet name with a letter outside A to Z reads as the quoted one does",
           near(base.get("\u00d8konomi!A1"), 7) and base.get("\u00d8konomi!A1", {}).get("address") == "'\u00d8konomi'!$A$1"
           and base.get("\u00d8konomi!A1") == base.get("'\u00d8konomi'!A1") and near(base.get("'\u00d8konomi'!B1"), 14), base)
@@ -528,6 +537,12 @@ def excel_cases(evidence: pathlib.Path, temp: pathlib.Path, temp_win: str) -> No
     check("an Excel whose job died is stopped", code == 1 and stopped and not left, result.get("runner"))
     check("a job that died says why", "ended without a result: " in (result.get("error") or ""), result.get("error"))
 
+    # A job that ends without a result says why on stderr only. These jobs usually write nothing there, so the check is
+    # that each one's file is there beside what it printed; the no-value job of stand_in_cases shows what reaches it.
+    jobs = sorted(path.stem for path in evidence.glob("*.out"))
+    lost = [name for name in jobs if not (evidence / f"{name}.stderr").is_file()]
+    check("each job through real Excel keeps its stderr in the evidence folder", "tiny" in jobs and "driver-died" in jobs and not lost, lost or jobs)
+
 
 def stand_in_cases(evidence: pathlib.Path, temp: pathlib.Path, temp_win: str) -> None:
     """The cases that start no Excel: stand-in workbooks for the reads and the error scan, a job that argparse turns
@@ -578,7 +593,7 @@ def stand_in_cases(evidence: pathlib.Path, temp: pathlib.Path, temp_win: str) ->
     healthy = (reads.get("healthy_cell", {}).get("value") == 5 and reads.get("empty_cell", {}).get("formula") == ""
                and reads.get("healthy_rows", {}).get("values") == [[1], [2]])
     check("stand-in workbooks that answer read as values", healthy, reads)
-    silent = [name for name in ("no_range", "no_areas", "no_area_count", "no_count", "no_formula", "no_value", "no_values") if "read_error" not in reads.get(name, {})]
+    silent = [name for name in ("no_range", "no_areas", "no_area_count", "no_count", "no_formula", "no_value", "no_values", "no_text") if "read_error" not in reads.get(name, {})]
     check("a range whose row and column counts Excel refused still reads whole", reads.get("no_rows", {}).get("values") == [[1], [2]], reads.get("no_rows"))
     check("a read that Excel refused is an error, not an empty value", bool(reads) and not silent, {name: reads.get(name) for name in silent} or reads)
     check("a stand-in range of several rectangles is an error that names their count, whether its first rectangle is one cell or more",
@@ -587,6 +602,21 @@ def stand_in_cases(evidence: pathlib.Path, temp: pathlib.Path, temp_win: str) ->
           reads.get("long_name") == {"read_error": NO_RANGE.format(name="long_name", length=281)}
           and reads.get("no_range") == {"read_error": "Excel gave no answer for the range"}, {name: reads.get(name) for name in ("long_name", "no_range")})
     check("a stand-in name whose range Excel gives on the second ask reads", reads.get("late_range", {}).get("value") == 5, reads.get("late_range"))
+    shortened = {name: reads.get(name) for name in ("cut_to_one", "cut_short", "no_text")}
+    check("a stand-in name whose text lists more rectangles than Excel's range has fails the read with the count its text lists, "
+          "and one whose text Excel refused is a refused read",
+          shortened == {"cut_to_one": {"read_error": "range has 40 rectangles; read each rectangle by its own REF"},
+                  "cut_short": {"read_error": "range has 40 rectangles; read each rectangle by its own REF"},
+                  "no_text": {"read_error": "Excel gave no answer for the text of the name no_text"}}, shortened)
+    commas = {name: reads.get(name) for name in ("in_quotes", "doubled_in_quotes", "in_parentheses", "in_string", "nested_columns", "escaped_column",
+                                                 "parenthesis_in_quotes", "apostrophe_in_column", "after_parentheses")}
+    check("a stand-in name's text counts no comma inside a quoted sheet name, a function's parentheses, a string or a table's brackets as a union, "
+          "and counts the union after a parenthesis in quotes, an apostrophe in brackets or a function's parentheses",
+          all((commas[name] or {}).get("value") == 5 for name in list(commas)[:6])
+          and all(commas[name] == {"read_error": TWO_RECTANGLES} for name in list(commas)[6:]), commas)
+    sets = guard.get("sets") or {}
+    check("--set through a stand-in name whose text lists several rectangles ends the job, where Excel gave one cell for it",
+          sets == {"healthy_cell": "cells: 1", "cut_to_one": "set target cut_to_one is not one cell", "two_areas": "set target two_areas is not one cell"}, sets)
 
     def scan(name: str) -> dict:
         return {key: scans.get(name, {}).get(key) for key in ("found", "unscanned")}
@@ -622,13 +652,15 @@ def stand_in_cases(evidence: pathlib.Path, temp: pathlib.Path, temp_win: str) ->
     check("an undoubled apostrophe in a quoted stand-in sheet name is an error that says to double it",
           bool(quoted) and all(UNDOUBLED in quoted.get(ref, {}).get("read_error", "") for ref in ("'It's'!B2", "'O'Neil''s'!C7", "'It''s!B2", "'A'!B'C'!D1")),
           {ref: quoted.get(ref) for ref in ("'It's'!B2", "'O'Neil''s'!C7", "'It''s!B2", "'A'!B'C'!D1")})
-    scoped = ("\u00d8konomi!Elsewhere", "\u00d8konomi!FY2024", "\u00d8konomi!LocalConst")
+    scoped = ("\u00d8konomi!Elsewhere", "\u00d8konomi!FY2024", "\u00d8konomi!LocalConst", "\u00d8konomi!Cut")
     check("a stand-in reference whose unquoted sheet name holds a letter outside A to Z is looked up as a name first, as before the change, "
           "so a name scoped to that sheet reads where its cell lies on another sheet and where it is spelt as a cell's address",
           quoted.get(scoped[0], {}).get("value") == 5 and quoted.get(scoped[0], {}).get("address") == "'S'!$A$1"
           and quoted.get(scoped[1], {}).get("address") == "'\u00d8konomi'!$B$2", {ref: quoted.get(ref) for ref in scoped[:2]})
     check("a stand-in name scoped to such a sheet, with a text and no range, is an error that says so",
           quoted.get(scoped[2]) == {"read_error": NO_RANGE.format(name=scoped[2], length=2)}, quoted.get(scoped[2]))
+    check("a stand-in name scoped to such a sheet whose text lists two rectangles fails the read with that count, where Excel gave one cell for it",
+          quoted.get(scoped[3]) == {"read_error": TWO_RECTANGLES}, quoted.get(scoped[3]))
     alone = ("'\u00d8konomi'!Elsewhere", "S!Elsewhere", "S!Nowhere")
     check("a stand-in sheet named in quotes or in A to Z is asked alone, as before the change, so a cell's address reads as the cell "
           "and a name whose cell lies on another sheet fails with the sheet's error",
@@ -640,6 +672,12 @@ def stand_in_cases(evidence: pathlib.Path, temp: pathlib.Path, temp_win: str) ->
     check("a stand-in name lookup that Excel refused is an error, and the read does not go on to the sheet",
           "refused" in refused.get("rejected", {}).get("read_error", "") and refused.get("no_name") == {"read_error": "Excel gave no answer for the range"}
           and refused.get("no_names") == {"read_error": "Excel gave no answer for the names"}, refused)
+    broken = guard.get("failed_lookups") or {}
+    check("a stand-in name lookup that fails with an error other than a missing name's is an error, and the read does not go on to the sheet",
+          list(broken) == ["0x800AC472", "0x800706BA", "0x80010105", "other"]
+          and all(set(entry) == {"read_error"} for entry in broken.values())
+          and all(f"the stand-in lookup failed with {code}" in broken[code]["read_error"] for code in list(broken)[:3])
+          and "the stand-in lookup broke" in broken["other"]["read_error"], broken)
     check("an unquoted stand-in sheet name with a space or a hyphen is taken for a workbook name",
           all("has no name" in quoted.get(ref, {}).get("read_error", "") for ref in ("My sheet!A1", "My-sheet!A1")), {ref: quoted.get(ref) for ref in ("My sheet!A1", "My-sheet!A1")})
     # What a question costs is part of the answer: a scan that read every piece would pass the limit on such sheets.

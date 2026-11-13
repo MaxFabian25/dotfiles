@@ -59,48 +59,80 @@ function Convert-Cell($v) {
   return $v
 }
 
+function Measure-References([string] $text) {
+  # How many references a name's text lists: one more than its commas outside quotes, brackets and parentheses, which
+  # in the English, A1-style text that RefersTo gives are union operators. A doubled quote inside quotes ends them
+  # and opens them again, an array constant sits inside a function's parentheses, and inside a table's brackets an
+  # apostrophe marks the next character as part of a column's name. A reference that is another name or a function's
+  # result counts as one, so this is the least the name has.
+  $count = 1; $depth = 0; $brackets = 0; $quote = $null
+  for ($at = 0; $at -lt $text.Length; $at++) {
+    $c = $text[$at]
+    if ($quote) { if ($c -eq $quote) { $quote = $null } }
+    elseif ($brackets -gt 0) { if ($c -eq "'") { $at++ } elseif ($c -eq '[') { $brackets++ } elseif ($c -eq ']') { $brackets-- } }
+    elseif ($c -eq "'" -or $c -eq '"') { $quote = $c }
+    elseif ($c -eq '[') { $brackets++ }
+    elseif ($c -eq '(') { $depth++ }
+    elseif ($c -eq ')') { $depth-- }
+    elseif ($c -eq ',' -and $depth -eq 0) { $count++ }
+  }
+  return $count
+}
+
 function Get-NameRange($name, [string] $ref) {
-  # The range a name refers to. $name is what Names.Item gave for $ref.
+  # The range a name refers to, and how many references its text lists. $name is what Names.Item gave for $ref.
   $range = $name.RefersToRange
+  # For a name of many rectangles Excel can give a range of fewer, with no error, and the text whole: on 12 November
+  # 2026 a name of 40 gave a range of 17 and its text of 568 characters. So the text is asked for every name.
+  $text = $name.RefersTo
   if ($null -eq $range) {
     # Excel has no range, and no error, for a name that refers to no cells, such as a constant or a formula, to cells
     # on several sheets, or to more rectangles than it gives as one range. It answers for such a name's text, so the
     # text and a second ask tell that from a call a busy Excel refused, which comes back as $null too.
-    $text = $name.RefersTo
     $range = $name.RefersToRange
     if ($null -eq $range -and $text -is [string]) { throw "Excel gave no range for the name $ref, whose text has $($text.Length) characters: it has none for a name that refers to no cells, to cells on several sheets, or to more rectangles than it gives as one range, so give each rectangle as a REF of its own" }
+    if ($null -eq $range) { return $null, 0 }
   }
-  # The comma keeps PowerShell from unrolling a multi-cell range into its cells.
-  return , $range
+  Confirm-Answer $text "the text of the name $ref"
+  return $range, (Measure-References $text)
 }
 
 function Get-Target($wb, [string] $ref) {
-  # A sheet name in quotes has each apostrophe in it doubled, as Excel writes it and as errors and a read's address
-  # give it. A reference that opens with a quote and is not such a name and a range is refused: no workbook name
-  # starts with a quote, and taking 'It's' for the sheet It's would leave 'It''s' meaning two sheets. No range holds
-  # an apostrophe before a !, so a quoted name that an undoubled apostrophe before a ! ended early is refused too. A
-  # table column can hold an apostrophe elsewhere, as in T['#Items]. A sheet name without quotes holds letters of
-  # any script with their marks, digits and underscores.
+  # The range a REF names, and for a name how many references its text lists, else 0. A sheet name in quotes has
+  # each apostrophe in it doubled, as Excel writes it and as errors and a read's address give it. A reference that
+  # opens with a quote and is not such a name and a range is refused: no workbook name starts with a quote, and taking
+  # 'It's' for the sheet It's would leave 'It''s' meaning two sheets. No range holds an apostrophe before a !, so a
+  # quoted name that an undoubled apostrophe before a ! ended early is refused too. A table column can hold an
+  # apostrophe elsewhere, as in T['#Items]. A sheet name without quotes holds letters of any script with their marks,
+  # digits and underscores.
   if ($ref -match '^(?:''(?<q>(?:[^'']|'''')+)''|(?<s>[\p{L}\p{M}\p{Nd}_]+))!(?<a>(?:[^'']|''(?!!))+)$') {
     $quoted = $Matches['q']; $unquoted = $Matches['s']; $address = $Matches['a']
     # Until 13 November 2026 an unquoted sheet name held A to Z, digits and underscores only, and a reference with
     # any other letter before its ! was looked up as a name, which finds a name scoped to that sheet wherever its
     # cells lie. Such a reference still goes to the name lookup first, so that what read then reads the same, and
     # to the sheet when the workbook has no such name. With A to Z alone, a sheet named in Danish never got there.
-    # A lookup that a busy Excel refused ends the read: going on to the sheet would read the cell FY2024 where the
-    # workbook has a name of that spelling.
+    # A lookup that failed for another reason, such as a busy Excel's refusal, ends the read: going on to the sheet
+    # would read the cell FY2024 where the workbook has a name of that spelling.
     if (-not $quoted -and $unquoted -notmatch '^[A-Za-z0-9_]+$') {
       $names = $wb.Names; Confirm-Answer $names 'the names'
       $known = $true
-      try { $name = $names.Item($ref) } catch { if (Test-Refused $_) { throw }; $known = $false }
-      if ($known) { $range = Get-NameRange $name $ref; return , $range }
+      try { $name = $names.Item($ref) } catch { if (-not (Test-Missing $_)) { throw }; $known = $false }
+      if ($known) { return Get-NameRange $name $ref }
     }
     $sheet = if ($quoted) { $quoted.Replace("''", "'") } else { $unquoted }
-    return , $wb.Worksheets.Item($sheet).Range($address)
+    # Returned beside the count, a multi-cell range is not unrolled into its cells: PowerShell unrolls one level only.
+    return $wb.Worksheets.Item($sheet).Range($address), 0
   }
   if ($ref.StartsWith("'")) { throw "$ref is no sheet name in single quotes with a range after it: double each apostrophe inside the quotes, as in 'It''s'!B2" }
-  $range = Get-NameRange ($wb.Names.Item($ref)) $ref
-  return , $range
+  return Get-NameRange ($wb.Names.Item($ref)) $ref
+}
+
+function Get-Cell($wb, [string] $ref) {
+  # The one cell a --set writes to. A name whose text lists several references is not one cell, even where Excel gave
+  # a range of one cell for it.
+  $cell, $listed = Get-Target $wb $ref
+  if ($cell.Count -ne 1 -or $listed -gt 1) { throw "set target $ref is not one cell" }
+  return , $cell
 }
 
 function Confirm-Answer($value, [string] $what) {
@@ -113,12 +145,14 @@ function Read-Refs($wb, $refs) {
   $out = [ordered]@{}
   foreach ($ref in $refs) {
     try {
-      $r = Get-Target $wb $ref
+      $r, $listed = Get-Target $wb $ref
       Confirm-Answer $r 'the range'
       # Value2 of several rectangles is the first one's values, while Count and Address cover them all, so such a
-      # read would give part of the range under the address of the whole.
+      # read would give part of the range under the address of the whole. A name's text can list more rectangles than
+      # the range Excel gives for it, which may have only one.
       $areas = $r.Areas; Confirm-Answer $areas 'the rectangles'
       $areaCount = $areas.Count; Confirm-Answer $areaCount 'the count of rectangles'
+      if ($listed -gt $areaCount) { $areaCount = $listed }
       if ($areaCount -gt 1) { throw "range has $areaCount rectangles; read each rectangle by its own REF" }
       $count = $r.Count; Confirm-Answer $count 'the cell count'
       if ($count -gt 2000) { throw "range has $count cells; the limit is 2000" }
@@ -153,6 +187,13 @@ function Read-Refs($wb, $refs) {
 function Test-Refused($caught) {
   # RPC_E_CALL_REJECTED and RPC_E_SERVERCALL_RETRYLATER, wherever PowerShell wrapped them.
   for ($e = $caught.Exception; $e; $e = $e.InnerException) { if ($e.HResult -in -2147418111, -2147417846) { return $true } }
+  return $false
+}
+
+function Test-Missing($caught) {
+  # 0x800A03EC, wherever PowerShell wrapped it, which Excel's Names.Item gives for a name the workbook lacks. Excel
+  # gives that code for many other failures too, so this cannot tell a missing name from them.
+  for ($e = $caught.Exception; $e; $e = $e.InnerException) { if ($e.HResult -eq -2146827284) { return $true } }
   return $false
 }
 
@@ -397,7 +438,7 @@ try {
   $result.timings_ms.scan = $sw.ElapsedMilliseconds
 
   if ($spec.set.Count -gt 0) {
-    foreach ($s in $spec.set) { $t = Get-Target $wb $s.ref; if ($t.Count -ne 1) { throw "set target $($s.ref) is not one cell" }; Set-Cell $t $s.value }
+    foreach ($s in $spec.set) { Set-Cell (Get-Cell $wb $s.ref) $s.value }
     $xl.CalculateFull(); [void](Wait-Calculation $xl $wb $spec.calc_timeout_s)
     $result.after = Read-Refs $wb $spec.read
     $result.timings_ms.after = $sw.ElapsedMilliseconds
