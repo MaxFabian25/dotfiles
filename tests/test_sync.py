@@ -863,14 +863,15 @@ class SyncMainTest(unittest.TestCase):
             self.assertEqual(sync.main(['--apply']), 3)
         self.assertEqual(stderr.getvalue(), f'Sync stopped: {late}\n')
 
-    def test_a_failed_git_command_stops_the_sync_with_3_on_one_line_that_starts_with_its_own_last_words(self):
+    def test_a_failed_git_command_stops_the_sync_with_3_on_one_line_that_starts_with_its_own_words(self):
         from unittest import mock
         import invocation_overrides
         import sync
 
         with tempfile.TemporaryDirectory() as temp:
             command = ['rev-parse', '--verify', 'main^{commit}']
-            said = subprocess.run(['git', '-C', temp, *command], capture_output=True, text=True).stderr.splitlines()[-1].strip()
+            said = ' '.join(subprocess.run(['git', '-C', temp, *command], capture_output=True,
+                                           text=True).stderr.splitlines())
             with mock.patch('sync.load', side_effect=lambda *args: invocation_overrides.git_line(Path(temp), *command)), \
                     redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as stderr:
                 self.assertEqual(sync.main(['--apply']), 3)

@@ -335,8 +335,8 @@ class InvocationOverridesTest(unittest.TestCase):
 
     def test_a_file_git_cannot_show_raises_with_gits_own_words(self):
         with tempfile.TemporaryDirectory() as directory:
-            said = module.subprocess.run(['git', '-C', directory, 'show', 'main:SKILL.md'], capture_output=True,
-                                         text=True).stderr.splitlines()[-1].strip()
+            said = ' '.join(module.subprocess.run(['git', '-C', directory, 'show', 'main:SKILL.md'], capture_output=True,
+                                                  text=True).stderr.splitlines())
             with self.assertRaises(module.subprocess.CalledProcessError) as failed:
                 module.git_text(Path(directory), 'main', 'SKILL.md')
         self.assertTrue(str(failed.exception).startswith(f'{said} (exit 128 from git '), str(failed.exception))
