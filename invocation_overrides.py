@@ -1,10 +1,12 @@
 """Plan the file writes that give a plugin tree its invocation preferences (implicit or explicit-only), harness
-adaptations, tool notes and Windows-only hook and launcher edits. Sync applies them to its build of a release.
+adaptations, tool notes, sibling skill links and Windows-only hook and launcher edits. Sync applies them to its
+build of a release, and refuses a SKILL.md whose `../` link to a SKILL.md does not resolve.
 Harness adaptations replay each plugin's adaptation repository onto the tree with a three-way merge, so
 upstream edits merge or stop for review.
 Tool notes name the other host's equivalent after a host-specific tool name.
 """
 import json
+import os
 from pathlib import Path
 import posixpath
 import re
@@ -255,6 +257,27 @@ def replace_on_windows(text, find, replacement, label):
     return text.replace(find, replacement)
 
 
+# A relative path to a skill's SKILL.md that starts at ../, so the ../ inside a URL or a longer path is not one.
+SKILL_LINK = re.compile(r'(?<![\w./-])\.\./(?:[\w.-]+/)*SKILL\.md')
+
+
+def relink_skills(text, path, skills):
+    # Upstream links a sibling skill as ../NAME/SKILL.md, which resolves where skills are installed side by side.
+    # A plugin that keeps them in category folders gets the path to that skill's SKILL.md instead.
+    def relink(found):
+        name = found[0].removeprefix('../').removesuffix('/SKILL.md')
+        if name not in skills or (path.parent / found[0]).is_file():
+            return found[0]
+        return Path(os.path.relpath(skills[name], path.parent)).as_posix()
+    return SKILL_LINK.sub(relink, text)
+
+
+def check_skill_links(identity, root, path, text):
+    if broken := sorted({link for link in SKILL_LINK.findall(text) if not (path.parent / link).is_file()}):
+        relative = path.resolve().relative_to(Path(root).resolve()).as_posix()
+        raise ValueError(f'{identity}: {relative} links to {", ".join(broken)}, which the built plugin does not have')
+
+
 def note_files(root):
     folders = {path.parent for path in skill_paths(root).values()}
     return sorted({path for folder in folders for path in folder.rglob('*.md')
@@ -372,6 +395,12 @@ def plan(registry, installs, adaptations=None):
                 policy = path.parent / 'agents/openai.yaml'
                 if host == 'Codex' or policy.exists():
                     stage(policy, lambda text, allow=name in selected: transform_policy(text, allow))
+        for path in available.values():
+            text = staged[path.resolve()][1] if path.resolve() in staged else read_text(path)
+            relinked = relink_skills(text, path, available)
+            if relinked != text:
+                stage(path, lambda _, relinked=relinked: relinked)
+            check_skill_links(identity, root, path, relinked)
         writes.extend((path, old, new, host, identity) for path, (old, new) in staged.items())
     return writes, counts
 

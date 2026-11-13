@@ -10,7 +10,7 @@ The other modes in state.json's `modes` make it misbehave:
   refuse-flag-only, refuse-code-only, refuse-error-only, refuse-iserror-only   clipboard_read refuses with one
       sign alone, and with the clipboard's text
   null-types   clipboard_read's `types` is null
-  slow-restore   the second clipboard_write takes 2 seconds
+  slow-restore   the second clipboard_write writes the file `restoring`, then waits for the file `released`
   user-copies   the user copies "NEWER" while run_steps runs
   user-copies-image   the user copies an image while run_steps runs, which has no text
   user-copies-formatted   the user copies their earlier text again while run_steps runs, now with formatting
@@ -90,7 +90,10 @@ if tool == "clipboard_read":
 elif tool == "clipboard_write":
     state["writes"] = state.get("writes", 0) + 1
     if "slow-restore" in modes and state["writes"] == 2:
-        time.sleep(2)
+        (box / "restoring").touch()
+        give_up = time.monotonic() + 60  # a test that died before releasing it leaves no stand-in behind
+        while not (box / "released").exists() and time.monotonic() < give_up:
+            time.sleep(0.05)
     if "refuse-write" in modes:
         reply = refused
     elif "lose-write" not in modes and not ("lose-restore" in modes and state["writes"] == 2):
@@ -427,8 +430,12 @@ class WinPaste(unittest.TestCase):
         child.stdin.close()
         self.assertEqual(child.stdout.readline(), "clipboard holds the text\n")
         self.assertEqual(child.stdout.readline(), "sent the click and ctrl+v\n")
-        time.sleep(0.7)
+        restoring, limit = self.box / "restoring", time.monotonic() + 30
+        while not restoring.exists():
+            self.assertLess(time.monotonic(), limit, "the restore did not start within 30 seconds")
+            time.sleep(0.05)
         os.killpg(child.pid, signal.SIGINT)  # as Ctrl+C does: to the command and every child in its group
+        (self.box / "released").touch()
         self.assertEqual(child.wait(timeout=30), 1)
         out, err = child.stdout.read(), child.stderr.read()
         child.stdout.close()

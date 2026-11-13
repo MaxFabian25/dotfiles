@@ -307,6 +307,7 @@ class Builder:
     def claude(self, package: Package, codex: Built, *, verify: bool = True) -> dict[str, Built]:
         from align_with_codex import build_from
         from claude_package import build as build_collection
+        from invocation_overrides import check_skill_links, skill_paths
 
         if package.claude is None:
             return {}
@@ -335,6 +336,9 @@ class Builder:
                 if entry is None:
                     raise BuildError(f'{identity}: aligned plugin has no selected skills')
                 root = catalog / entry['source']
+                # The Codex overlay checked these links in the effective tree, before this copy left out Claude's off skills.
+                for path in skill_paths(root).values():
+                    check_skill_links(identity, root, path, read_utf8(path))
             elif isinstance(install, EngineInstall):
                 if collection is None:  # one build makes every engine install's plugin
                     collection_source = codex.pristine or codex.root

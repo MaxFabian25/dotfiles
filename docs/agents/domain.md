@@ -10,6 +10,8 @@ The dotfiles pair is one context: this repository's engine and the private repos
 
 If any of these files don't exist, **proceed silently**. The `domain-modeling` skill creates them when a term or decision is actually resolved.
 
+None of them exists yet. Setup decisions live today in the paired private checkout's `skills/maintain-dotfiles/references/preservation.md` and its dated records under `maintenance/`, so read the lines there that name the entry or file you are about to change.
+
 ## Keep this repository public-safe
 
 Write glossary entries and ADRs here only when they are safe to publish. Terms and decisions that name hosts, accounts, credentials, private projects or course content go in the private repository's `GLOSSARY.md` or `docs/adr/`.

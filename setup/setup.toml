@@ -23,7 +23,7 @@ note = " (Codex: `request_user_input`)"
 
 [[tool_note]]
 match = "\\bSkill tool\\b"
-note = " (Codex: open the named skill's `SKILL.md`)"
+note = " (Claude Code and Codex: open the named skill's `SKILL.md`)"
 
 [[tool_note]]
 match = "\\bTask tool\\b"

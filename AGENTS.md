@@ -6,7 +6,7 @@ Issues live in the GitHub Issues of `MaxFabian25/dotfiles-private`, not this pub
 
 ### Triage labels
 
-The five canonical roles, applied in the private tracker. See `docs/agents/triage-labels.md`.
+None: the private tracker is a flat backlog. `/triage`, run by name, uses the five canonical roles there. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 

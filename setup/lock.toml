@@ -74,9 +74,9 @@ intent = "sha256:f96e3fcb12086e815b17687cd745722cf9beefa5950c1cec3bfe45769a302ff
 intent = "sha256:ee4aaa9f84683e296b8a98f79ca5ad19a7ba260a0024caeb5a9b889a7c86c19b"
 
 [mattpocock-skills]
-intent = "sha256:66185e9aa6fd9749be3d764f7bdc00fa14cc2fe6a0206fe0be3a9e8fa9cbd00d"
-codex = { version = "1.3.2+upstream.4ae2317ddb22.codex5.explicit.215f1e108dd17fef", tree = "sha256:ea442067a1f17d9de9fa9921925bddaecde413b683d430e319bc0ea4587747ce" }
-claude = { version = "1.3.2+codex-aligned.656ea32c5e63", tree = "sha256:cd9a8a33be5599f22b84bfe390c58a4cb65f59008d1441c0132cd134a1c78e38" }
+intent = "sha256:94396f5b9a8fa0e0b3ae10fccae3ad43acb428c952b897400981d434261b12c0"
+codex = { version = "1.3.2+upstream.4ae2317ddb22.codex5.explicit.4e227093fd540c74", tree = "sha256:eb239ab4bf30100d44bce934c21a0af1640cabf8724a1c202f43be86bbab1bc3" }
+claude = { version = "1.3.2+codex-aligned.3b3d676fadd6", tree = "sha256:53ea9fc6fe3a38adf50bdbfffaaf8a602214e6b5d378d7c1cd8e3aba501c3e4d" }
 
 [narrow-react-prop-types]
 intent = "sha256:3bff1fe58adad4228f235b57cd438844bcf1c9eaca0183cebc910556d3cdb1d7"
@@ -108,9 +108,9 @@ codex = { version = "0.3.19+dotfiles.20261113", tree = "sha256:de585f6640e9e9819
 claude = { version = "0.3.19+codex-aligned.4e01f14fab30", tree = "sha256:aef0894d4d3092acf9bbb596e686a67dc475910428ebfee66a68462d3f534801" }
 
 [pstack]
-intent = "sha256:319226b47733ef5613f16cce87f74a67f91bc342ecaa1f3fbb4c5f975fafce44"
-codex = { version = "0.15.36+upstream.1ba91fc25c09.codex2.explicit.5ac7f1c293475616", tree = "sha256:b381fd68190bd1acf7a43de44a71ba998bf79172f1cee0790f2e7b97068b1733" }
-claude = { version = "0.15.36+codex-aligned.81c7929a69b7", tree = "sha256:79644bea5508a5186ccbb2628c4dbfe5fed6bae8d31706b9385b28e32bccf29a" }
+intent = "sha256:a0b41c763eff0a5599bc6eb9fe3e343baa0d72d6db4ff0ffba8e6e86d0f21ad6"
+codex = { version = "0.15.36+upstream.1ba91fc25c09.codex3.explicit.02177524e99b395f", tree = "sha256:51de1db11dee8bda06435f80d6f8c06d9251c28e3711bf5234212c8f7d4a367f" }
+claude = { version = "0.15.36+codex-aligned.95461fbee892", tree = "sha256:f3843e453e49731dbc23caee281ac6df8cc30d08506bb0d6ccfad614ed7e4bb8" }
 roles = { "comment-sicko.toml" = "sha256:6f3ea8222b5e7abf65decd3712a9d32f5804953e0539e61b2a9f92e11148d56e", "poteto-agent.toml" = "sha256:3d113f3faefd9ee007f001bedc51aa9227b46bb5a233567e87eba1f56e89c206", "pstack-reader.toml" = "sha256:e1ce58630b65ea7ce264d6590d4209a525ae2df8ba422fafdc2a6fc3a55a885a" }
 
 [show-me]

@@ -6,7 +6,7 @@ repository = "https://github.com/cursor/plugins.git"
 commit = "1ba91fc25c0977741dd0e267849e6234b037ed0a"
 subdirectory = "pstack"
 manifest = ".cursor-plugin/plugin.json"
-packaging = 2
+packaging = 3
 display_name = "pstack"
 select = [
   "./skills/architect",
@@ -23,6 +23,7 @@ select = [
   "./skills/in-your-own-words",
   "./skills/interrogate",
   "./skills/ketchup",
+  "./skills/ketchup-video",
   "./skills/maintain-formal-verification-skill",
   "./skills/maintain-verification-skill",
   "./skills/make-bot-ui",
@@ -98,6 +99,7 @@ on = [
   "principle-subtract-before-you-add",
   "principle-test-behavior-not-implementation",
   "principle-type-system-discipline",
+  "tdd",
   "typescript-best-practices",
 ]
 explicit = [
@@ -115,6 +117,7 @@ explicit = [
   "in-your-own-words",
   "interrogate",
   "ketchup",
+  "ketchup-video",
   "maintain-formal-verification-skill",
   "maintain-verification-skill",
   "make-bot-ui",
@@ -127,7 +130,6 @@ explicit = [
   "show-me-your-work",
   "statechart",
   "swarm",
-  "tdd",
   "teach",
   "technical-writing",
   "unslop",
@@ -137,7 +139,7 @@ tool_notes = "exempt"
 
 [codex]
 install = [{ via = "personal", enabled = true }]
-adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "5568d87290548bcf913bce23dcd313e5d29ba796", adapted = "311c4c84410cded20fda0f169525eb17e4474c17", harness = "skills/poteto-mode/references/harnesses.md" }
+adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "5568d87290548bcf913bce23dcd313e5d29ba796", adapted = "e08c1985d2c745533f8f4f58e1cd4c15bc19df55", harness = "skills/poteto-mode/references/harnesses.md" }
 
 [codex.roles]
 from = "plugin"
@@ -174,7 +176,6 @@ on = [
   "show-me-your-work",
   "statechart",
   "swarm",
-  "tdd",
   "teach",
   "technical-writing",
   "unslop",
