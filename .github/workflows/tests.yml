@@ -13,11 +13,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Windows waits on a test pass: fixtures still write CRLF text, backslash paths in TOML strings and
-        # 8.3 temp paths, which fail 84 tests there although the engine itself runs on Windows devices.
-        os: [macos-latest, ubuntu-latest]
+        os: [macos-latest, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
@@ -32,3 +30,4 @@ jobs:
       - run: uv run --locked python -B tests/run.py
       # The engine's .sync folder is the cache real pulls use, so no test may write into the checkout's copy.
       - run: test ! -e .sync || { echo "::error::the tests wrote into .sync"; exit 1; }
+        shell: bash
