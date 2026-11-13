@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,11 @@ from threading import Thread
 import time
 
 import portable
+
+
+def stopped_reading(error):
+    """A write to an app-server that has exited fails with a broken pipe, which Windows reports as EINVAL."""
+    return isinstance(error, BrokenPipeError) or (portable.WINDOWS and error.errno == errno.EINVAL)
 
 
 class Client:
@@ -43,8 +49,13 @@ class Client:
         self.queue.put(None)
 
     def send(self, value):
-        self.process.stdin.write(json.dumps(value) + '\n')
-        self.process.stdin.flush()
+        try:
+            self.process.stdin.write(json.dumps(value) + '\n')
+            self.process.stdin.flush()
+        except OSError as error:
+            if not stopped_reading(error):
+                raise
+            raise RuntimeError('Native app-server exited before replying') from error
 
     def call(self, method, params):
         self.identifier += 1
@@ -72,7 +83,12 @@ class Client:
 
     def close(self):
         if self.process.stdin:
-            self.process.stdin.close()
+            try:
+                self.process.stdin.close()
+            except OSError as error:
+                # Closing flushes what a failed send left behind, and closes the pipe even when that fails.
+                if not stopped_reading(error):
+                    raise
         try:
             self.process.wait(timeout=5)
         except subprocess.TimeoutExpired:

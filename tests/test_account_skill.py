@@ -1,7 +1,9 @@
+import errno
 import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -114,11 +116,71 @@ class ClientTest(unittest.TestCase):
     def test_an_app_server_that_exits_before_replying_stops_the_read(self):
         with tempfile.TemporaryDirectory() as temporary:
             server = Path(temporary) / 'codex'
-            server.write_text(f'#!{sys.executable}\n')
+            # It reads the request before it exits, so the client's write always reaches it.
+            server.write_text(f'#!{sys.executable}\nimport sys\nsys.stdin.readline()\n')
             server.chmod(0o755)
             with patch('read_account_skill.portable.codex_cli', return_value=str(server)), \
                     self.assertRaisesRegex(RuntimeError, 'Native app-server exited before replying'):
                 Client()
+
+
+class ExitedServerTest(unittest.TestCase):
+    def test_an_app_server_that_exits_before_the_first_write_stops_the_read(self):
+        popen = subprocess.Popen
+        started = []
+
+        def started_and_exited(*args, **kwargs):
+            process = popen(*args, **kwargs)
+            process.wait()
+            started.append(process)
+            return process
+
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            # This Python runs the stand-in as `app-server --stdio` from the home folder, on Windows too.
+            (home / 'app-server').write_text('')
+            with patch('read_account_skill.portable.codex_cli', return_value=sys.executable), \
+                    patch.object(Path, 'home', return_value=home), \
+                    patch('read_account_skill.subprocess.Popen', started_and_exited), \
+                    self.assertRaisesRegex(RuntimeError, 'Native app-server exited before replying') as caught:
+                Client()
+        # The stop comes from the failed write, and close() still ran to its end after it.
+        self.assertIsInstance(caught.exception.__cause__, OSError)
+        self.assertTrue(started[0].stdout.closed)
+
+
+class WriteFailureTest(unittest.TestCase):
+    def client_error(self, windows, write_error=None, close_error=None):
+        def write(text):
+            if write_error:
+                raise write_error
+
+        def close():
+            if close_error:
+                raise close_error
+
+        process = SimpleNamespace(stdin=SimpleNamespace(write=write, flush=lambda: None, close=close),
+                                  stdout=io.StringIO(), wait=lambda timeout: 0)
+        with patch('read_account_skill.portable.WINDOWS', windows), \
+                patch('read_account_skill.portable.codex_cli', return_value='codex'), \
+                patch('read_account_skill.subprocess.Popen', return_value=process), \
+                self.assertRaises(Exception) as caught:
+            Client()
+        return caught.exception
+
+    def test_windows_reports_the_broken_pipe_of_an_exited_server_as_einval(self):
+        # As on the Windows PC, closing the pipe fails the same way as the write.
+        write_error = OSError(errno.EINVAL, 'Invalid argument')
+        error = self.client_error(True, write_error=write_error, close_error=OSError(errno.EINVAL, 'Invalid argument'))
+        self.assertEqual((type(error), str(error), error.__cause__),
+                         (RuntimeError, 'Native app-server exited before replying', write_error))
+
+    def test_other_write_and_close_failures_reach_the_caller(self):
+        for windows, write_error, close_error in ((False, OSError(errno.EINVAL, 'Invalid argument'), None),
+                                                  (True, OSError(errno.EIO, 'Input/output error'), None),
+                                                  (True, None, OSError(errno.EIO, 'Input/output error'))):
+            with self.subTest(windows=windows, write_error=write_error, close_error=close_error):
+                self.assertIs(self.client_error(windows, write_error, close_error), write_error or close_error)
 
 
 if __name__ == '__main__':
