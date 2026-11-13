@@ -161,7 +161,11 @@ def snapshot(root):
             for path in sorted(Path(root).rglob('*'))}
 
 
+not_on_windows = unittest.skipIf(sys.platform == 'win32', 'the runtime is built for Linux and installed only there')
+
+
 class InstallTest(unittest.TestCase):
+    @not_on_windows
     def test_review_pins_the_archive_and_install_unpacks_exactly_that_tree(self):
         with Runtime() as runtime:
             pin = runtime.publish('26.1.1')
@@ -185,6 +189,7 @@ class InstallTest(unittest.TestCase):
             self.assertEqual([(x.kind, x.observed) for x in unregistered],
                              [(Kind.CHANGED, cr.RuntimeCatalog('26.1.1', False))])
 
+    @not_on_windows
     def test_a_rerun_at_the_pin_hashes_no_file_and_downloads_nothing(self):
         with Runtime() as runtime:
             pin = runtime.publish('26.1.1')
@@ -205,6 +210,7 @@ class InstallTest(unittest.TestCase):
                 self.assertFalse(runtime.work.exists(), 'the failed attempt leaves no work folder')
                 self.assertEqual([x.kind for x in runtime.inspect(pin)], [Kind.MISSING])
 
+    @not_on_windows
     def test_a_bump_replaces_the_tree_and_leaves_one_folder(self):
         with Runtime() as runtime:
             old = runtime.publish('26.1.1')
@@ -218,6 +224,7 @@ class InstallTest(unittest.TestCase):
             self.assertEqual(os.listdir(runtime.bundle.parent), [cr.ROOT])
             self.assertEqual((runtime.inspect(new), runtime.verify(new)), ((), 0))
 
+    @not_on_windows
     def test_a_crash_after_the_swap_is_finished_without_a_download(self):
         with Runtime() as runtime:
             runtime.install(runtime.publish('26.1.1'))
@@ -241,6 +248,7 @@ class InstallTest(unittest.TestCase):
             self.assertFalse(runtime.work.exists())
             self.assertEqual((runtime.inspect(new), runtime.verify(new)), ((), 0))
 
+    @not_on_windows
     def test_a_crash_between_the_renames_is_finished_without_a_download(self):
         with Runtime() as runtime:
             runtime.install(runtime.publish('26.1.1'))
@@ -278,6 +286,7 @@ class InstallTest(unittest.TestCase):
             self.assertEqual(snapshot(runtime.bundle), before)
             self.assertEqual(runtime.server.downloads(), downloads)
 
+    @not_on_windows
     def test_a_receiptless_copy_of_the_pin_is_adopted_without_a_download(self):
         with Runtime() as runtime:
             pin = runtime.publish('26.1.1')
@@ -290,6 +299,7 @@ class InstallTest(unittest.TestCase):
             self.assertEqual(runtime.server.downloads(), downloads)
             self.assertEqual(runtime.inspect(pin), ())
 
+    @not_on_windows
     def test_an_edited_file_is_a_local_edit_and_new_bytecode_is_not(self):
         with Runtime() as runtime:
             pin = runtime.publish('26.1.1')
@@ -319,6 +329,7 @@ class InstallTest(unittest.TestCase):
             self.assertEqual(change.kind, Kind.LOCAL_EDIT)
             self.assertIn('dependencies/bin/node', change.observed.problem)
 
+    @not_on_windows
     def test_an_edit_that_keeps_the_size_and_mtime_is_a_local_edit(self):
         with Runtime() as runtime:
             pin = runtime.publish('26.1.1')
@@ -552,6 +563,7 @@ else:
 
 
 class ApplyTest(unittest.TestCase):
+    @not_on_windows
     def test_one_apply_installs_the_runtime_registers_its_catalog_and_adds_its_plugins(self):
         from codex_host import CodexState
         from device import Device

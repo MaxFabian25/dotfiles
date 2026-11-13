@@ -134,6 +134,7 @@ sys.exit(code)
 '''
 
 
+@unittest.skipIf(sys.platform == "win32", "win_paste.py runs on WSL and handles signals Windows lacks")
 class WinPaste(unittest.TestCase):
     def setUp(self):
         box = tempfile.TemporaryDirectory()
