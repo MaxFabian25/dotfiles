@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 SCRIPT = Path(__file__).resolve().parent.parent / 'skills/planted-error-checks/scripts/plant.py'
 SOURCE = 'def double(number):\n    return number * 2\n\n\ndef label(number):\n    return f"n={number}"\n'
@@ -87,6 +88,18 @@ class Plant(unittest.TestCase):
         (self.root / 'code/test_value.py').write_text(printing, encoding='utf-8')
         self.assertEqual(self.plant([['triples', 'number * 2', 'number * 3']])[:2],
                          (0, ['CAUGHT triples: test_double failed', '1 of 1 plants caught']))
+
+    def test_a_caught_plant_names_its_failed_test_in_a_session_that_forces_colour(self):
+        # The test file runs with -I, which ignores PYTHON_COLORS, but the Python run it starts does not use -I.
+        child = ('        child = subprocess.run([sys.executable, "-c", "1/0"], capture_output=True, text=True)\n'
+                 '        self.assertNotIn("\\x1b[", child.stderr)\n        self.assert')
+        (self.root / 'code/test_value.py').write_text('import subprocess\n' + TEST.replace('        self.assert', child),
+                                                     encoding='utf-8')
+        # Python reads NO_COLOR before FORCE_COLOR, and tests/run.py sets it for this module.
+        with patch.dict(os.environ, {'FORCE_COLOR': '1', 'PYTHON_COLORS': '1'}):
+            os.environ.pop('NO_COLOR', None)
+            status, lines, error = self.plant([['triples', 'number * 2', 'number * 3']])
+        self.assertEqual((status, lines), (0, ['CAUGHT triples: test_double failed', '1 of 1 plants caught']), error)
 
     def test_a_caught_plant_that_fails_no_named_test_says_how_the_run_ended(self):
         status, lines, _ = self.plant([['breaks the syntax', 'def double(number):', 'def double(number:']])

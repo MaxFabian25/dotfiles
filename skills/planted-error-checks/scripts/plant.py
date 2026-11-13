@@ -5,9 +5,10 @@ Usage: python3 -I plant.py SOURCE TEST PLANTS_JSON [ROOT] [-- TEST_ARGUMENT...]
 PLANTS_JSON holds a list of [label, old, new]: each plant replaces the one place where `old` occurs in SOURCE
 with `new`. ROOT is the folder copied for each run, which must hold SOURCE, TEST and every file TEST reads; it
 defaults to SOURCE's folder. TEST runs from its own folder in the copy as `python -I -B TEST`, so it must find
-SOURCE by a path relative to itself. Everything after `--` is passed to TEST as its arguments. In each of them,
-`{fresh}` becomes the path of a folder that does not exist yet, a new one for each run, for a TEST that writes
-its results to a folder it must create itself. The folder goes when its run ends.
+SOURCE by a path relative to itself. It runs with NO_COLOR set and PYTHON_COLORS left out, so its headings stay
+plain. Everything after `--` is passed to TEST as its arguments. In each of them, `{fresh}` becomes the path of a
+folder that does not exist yet, a new one for each run, for a TEST that writes its results to a folder it must
+create itself. The folder goes when its run ends.
 
 Prints CAUGHT, MISSED, TIMED OUT or NOT APPLIED for each plant, after the unchanged copy has passed. A CAUGHT
 line names the tests that failed. In a run that holds unittest's `Ran N tests` line, those are its `FAIL: name`
@@ -18,6 +19,7 @@ Exits 0 when every plant was caught, 1 when one was not, and 2, with the reason 
 copy fails or the arguments are wrong.
 """
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -42,10 +44,14 @@ def run(root, source, test, text, arguments=()):
         copy = Path(folder) / root.name
         shutil.copytree(root, copy, symlinks=True, ignore=shutil.ignore_patterns('__pycache__', '.git', '.venv'))
         (copy / source.relative_to(root)).write_bytes(text.encode('utf-8'))
+        # Without colour, because with FORCE_COLOR set unittest colours the headings that FAILED reads. TEST runs
+        # with -I, but the Python runs it starts read PYTHON_COLORS before NO_COLOR.
+        environment = {name: value for name, value in os.environ.items()
+                       if name != 'PYTHON_COLORS'} | {'NO_COLOR': '1'}
         try:
             passed = [argument.replace(FRESH, str(Path(folder) / f'{root.name}.fresh')) for argument in arguments]
             done = subprocess.run([sys.executable, '-I', '-B', test.name, *passed], cwd=copy / test.parent.relative_to(root),
-                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=LIMIT)
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=LIMIT, env=environment)
         except subprocess.TimeoutExpired:
             return None, f'ran past {LIMIT} s'
         return done.returncode, done.stdout.decode(errors='replace')

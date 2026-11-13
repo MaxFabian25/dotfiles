@@ -4,12 +4,12 @@ Run it with the engine's own Python from the canonical public checkout. `start N
 each repository at origin/main on branch NAME. Edit there. `finish NAME` locks and builds the named
 entries, stops on a changed plugin whose Codex hooks are trusted until --hooks-reapproved, stops on a private
 test file link that points at nothing, runs the public test suite unless the release changes no code, runs each
-private test file by itself, up to eight at a time, takes this machine's release lock once no other release, pull
-or sync runs here, stops on new files the .gitignore allowlist would leave out, commits both worktrees, stops if
-the commits hold other files than the tests ran on, stops if
-origin/main changed the same files meanwhile, rebases them onto it, pairs the private release.toml with the
-public commit, checks that this device's pull could apply the pair, naming each Claude plugin cache that
-running sessions hold, checks both pushes with --dry-run, pushes, and pulls, after any other pull here ends.
+private test file by itself, up to eight at a time, and names each that skipped tests, takes this machine's release
+lock once no other release, pull or sync runs here, stops on new files the .gitignore allowlist would leave out,
+commits both worktrees, stops if the commits hold other files than the tests ran on, stops if origin/main changed
+the same files meanwhile, rebases them onto it, pairs the private release.toml with the public commit, checks
+that this device's pull could apply the pair, naming each Claude plugin cache that running sessions hold, checks
+both pushes with --dry-run, pushes, and pulls, after any other pull here ends.
 Before all of that it stops on changed code that `--reviewed FILE` does not show another agent reviewed, for which
 `review NAME` prints the files, the command that shows their changes and the lines the reviewer writes, and checks
 that again before the push.
@@ -29,7 +29,8 @@ which a restart of the agent's host leaves running. A finish that starts while a
 for it and starts again, and so does one that finds, before it takes the lock, that a pull changed the engine
 while it ran its checks and tests or waited, so it runs the engine as it is now.
 `result NAME --timeout SECONDS` waits for that unit, prints the end of its log and exits with its status, or with
-70 when the finish ended on an uncaught error or its unit is gone without a status.
+70 when its unit is gone without a status. Any run that ends on an uncaught error prints it and exits 70, so a
+finish that crashes after its push does not read as the pull's status.
 On Windows itself every action but status and wait stops at once and changes nothing, because releases are made
 on WSL or Omarchy.
 """
@@ -51,6 +52,7 @@ import sys
 import tempfile
 import time
 import tomllib
+import traceback
 
 import candidate_result
 import claims
@@ -69,7 +71,7 @@ CREDENTIALS = ('-c', 'credential.https://github.com.helper=',
                '-c', 'credential.https://github.com.helper=!gh auth git-credential')
 ATTEMPTS = 3
 RESULT_LINES = 25  # lines of a detached finish's log that result prints
-CRASHED = 70  # status of a detached finish that ended on an uncaught error, or without writing a status
+CRASHED = 70
 MOVED = re.compile(r'\((?:fetch first|non-fast-forward)\)')
 # Files every release rewrites, so both sides changing them says nothing about clashing work.
 PAIRING_FILES = frozenset({'release.toml', 'setup/lock.toml'})
@@ -97,8 +99,9 @@ STORED_COPIES = ('setup/snapshots/',)
 STANDARDS = 'docs/agents/coding-standards.md'
 
 ISOLATED_RUN = ('-I', '-B')
-UNITTEST_END = re.compile(r'^Ran (\d+) tests? in [^\n]*\n\n(OK|FAILED)', re.MULTILINE)
+UNITTEST_END = re.compile(r'^Ran (\d+) tests? in [^\n]*\n\n(OK|FAILED)(?: \(([^)\n]*)\))?', re.MULTILINE)
 UNITTEST_FAILURE = re.compile(r'^(?:FAIL|ERROR): (\S+)', re.MULTILINE)
+UNITTEST_SKIPPED = re.compile(r'\bskipped=(\d+)')
 PRIVATE_TESTS_AT_ONCE = 8
 PRIVATE_TEST_TIMEOUT_SECONDS = 1800
 
@@ -1019,7 +1022,7 @@ def test_suite(public, private, log):
                               for part in (late.stdout, late.stderr))
             return subprocess.CompletedProcess(late.cmd, None, stdout, stderr)
 
-    problems, total = [], 0
+    problems, skips, total = [], [], 0
     keep(private_log)
     with private_log.open('w', encoding='utf-8') as output, \
             ThreadPoolExecutor(min(PRIVATE_TESTS_AT_ONCE, os.cpu_count() or 1)) as pool:
@@ -1037,10 +1040,13 @@ def test_suite(public, private, log):
                                 'so end it with unittest.main() under if __name__ == "__main__"')
             else:
                 total += int(ends[-1][0])
+                if skip := UNITTEST_SKIPPED.search(ends[-1][2]):
+                    skips.append(f'{name} {skip[1]}')
     if problems:
         raise RuntimeError(f'{"; ".join(problems)}; read {private_log}')
     folders = {str(Path(name).parent) for name in files}
-    print(f'Ran {total} private tests in {len(folders)} folders: OK; log {private_log}', flush=True)
+    skipped = f'; skipped tests: {", ".join(skips)}' if skips else ''
+    print(f'Ran {total} private tests in {len(folders)} folders: OK{skipped}; log {private_log}', flush=True)
 
 
 def device_check(public, private, state):
@@ -1476,6 +1482,9 @@ def main(argv=None):
     except SystemExit as stop:
         code = stop.code if isinstance(stop.code, int) else 1
         raise
+    except Exception:
+        traceback.print_exc()
+        code = CRASHED
     finally:
         for path in report:  # a detached finish tells result how it ended, an uncaught error included
             path.write_text(f'{code}\n', encoding='utf-8')
