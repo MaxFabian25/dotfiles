@@ -48,9 +48,9 @@ class InvocationOverridesTest(unittest.TestCase):
             root = home / '.codex/skills/.system/review-agent'
             root.mkdir(parents=True)
             original = '---\nname: review-agent\ndescription: Review code changes.\n---\nRead-only; do not modify code.\n'
-            (root / 'SKILL.md').write_text(original)
+            (root / 'SKILL.md').write_text(original, newline='\n')
             (root / 'agents').mkdir()
-            (root / 'agents/openai.yaml').write_text('policy:\n  allow_implicit_invocation: false\n')
+            (root / 'agents/openai.yaml').write_text('policy:\n  allow_implicit_invocation: false\n', newline='\n')
             registry = {'targets': {'Codex': {'review-agent@system': ['review-agent']}, 'Claude': {}}}
             installs = [('Codex', 'review-agent@system', root)]
             writes, counts = module.plan(registry, installs)
@@ -153,22 +153,22 @@ class InvocationOverridesTest(unittest.TestCase):
             skill = repository / 'skills/sample/SKILL.md'
             skill.parent.mkdir(parents=True)
             original = '---\nname: sample\ndescription: Use for samples.\ndisable-model-invocation: true\n---\nSpawn a Task with readonly: true.\n'
-            skill.write_text(original)
+            skill.write_text(original, newline='\n')
             git = ['git', '-C', str(repository), '-c', 'user.name=t', '-c', 'user.email=t@t']
             module.subprocess.run([*git[:3], 'init', '-q', '-b', 'main'], check=True)
             module.subprocess.run([*git, 'add', '-A'], check=True)
             module.subprocess.run([*git, 'commit', '-qm', 'upstream'], check=True)
             module.subprocess.run([*git, 'branch', 'upstream'], check=True)
             adapted_body = 'Spawn a read-only agent per harnesses.md.\n'
-            skill.write_text(original.replace('Spawn a Task with readonly: true.\n', adapted_body))
+            skill.write_text(original.replace('Spawn a Task with readonly: true.\n', adapted_body), newline='\n')
             (repository / 'skills/sample/references').mkdir()
-            (repository / 'skills/sample/references/harnesses.md').write_text('map\n')
+            (repository / 'skills/sample/references/harnesses.md').write_text('map\n', newline='\n')
             module.subprocess.run([*git, 'add', '-A'], check=True)
             module.subprocess.run([*git, 'commit', '-qm', 'adapt'], check=True)
 
             root = directory / 'cache/plugin/1.0'
             (root / 'skills/sample').mkdir(parents=True)
-            (root / 'skills/sample/SKILL.md').write_text(original)
+            (root / 'skills/sample/SKILL.md').write_text(original, newline='\n')
             adaptations = {'plugins': {'plugin': {'repository': str(repository), 'baseRef': 'upstream',
                                                    'adaptedRef': 'main', 'hosts': ['Codex']}}}
             registry = {'targets': {'Codex': {'plugin@m': ['sample']}, 'Claude': {}}}
@@ -183,19 +183,19 @@ class InvocationOverridesTest(unittest.TestCase):
 
             for path, _, new, _, _ in writes:
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(new)
+                path.write_text(new, newline='\n')
             self.assertEqual(changed(module.plan(registry, installs, adaptations)[0], root), {})
 
     def _adaptation_repository(self, directory):
         repository = directory / 'adaptation'
         (repository / 'docs').mkdir(parents=True)
-        (repository / 'docs/a.md').write_text('one\ntwo\nthree\nfour\nfive\n')
+        (repository / 'docs/a.md').write_text('one\ntwo\nthree\nfour\nfive\n', newline='\n')
         git = ['git', '-C', str(repository), '-c', 'user.name=t', '-c', 'user.email=t@t']
         module.subprocess.run([*git[:3], 'init', '-q', '-b', 'main'], check=True)
         module.subprocess.run([*git, 'add', '-A'], check=True)
         module.subprocess.run([*git, 'commit', '-qm', 'upstream 1'], check=True)
         module.subprocess.run([*git, 'branch', 'upstream'], check=True)
-        (repository / 'docs/a.md').write_text('one\nTWO\nthree\nfour\nfive\n')
+        (repository / 'docs/a.md').write_text('one\nTWO\nthree\nfour\nfive\n', newline='\n')
         module.subprocess.run([*git, 'commit', '-qam', 'adapt'], check=True)
         return repository, git
 
@@ -204,15 +204,15 @@ class InvocationOverridesTest(unittest.TestCase):
             directory = Path(directory).resolve()
             repository, git = self._adaptation_repository(directory)
             module.subprocess.run([*git, 'checkout', '-q', 'upstream'], check=True)
-            (repository / 'docs/a.md').write_text('one\ntwo\nthree\nfour\nFIVE\n')
-            (repository / 'docs/new.md').write_text('added upstream\n')
+            (repository / 'docs/a.md').write_text('one\ntwo\nthree\nfour\nFIVE\n', newline='\n')
+            (repository / 'docs/new.md').write_text('added upstream\n', newline='\n')
             module.subprocess.run([*git, 'add', '-A'], check=True)
             module.subprocess.run([*git, 'commit', '-qm', 'upstream 2'], check=True)
             module.subprocess.run([*git, 'checkout', '-q', 'main'], check=True)
             root = directory / 'cache'
             (root / 'docs').mkdir(parents=True)
-            (root / 'docs/a.md').write_text('one\ntwo\nthree\nfour\nFIVE\n')
-            (root / 'docs/new.md').write_text('added upstream\n')
+            (root / 'docs/a.md').write_text('one\ntwo\nthree\nfour\nFIVE\n', newline='\n')
+            (root / 'docs/new.md').write_text('added upstream\n', newline='\n')
             adaptations = {'plugins': {'plugin': {'repository': str(repository), 'baseRef': 'upstream',
                                                    'adaptedRef': 'main', 'hosts': ['Codex']}}}
             registry = {'targets': {'Codex': {'plugin@m': []}, 'Claude': {}}}
@@ -226,19 +226,21 @@ class InvocationOverridesTest(unittest.TestCase):
             skill = repository / 'skills/sample/SKILL.md'
             skill.parent.mkdir(parents=True)
             original = '---\nname: sample\ndescription: Use for samples.\ndisable-model-invocation: true\n---\nBody.\n'
-            skill.write_text(original)
+            skill.write_text(original, newline='\n')
             git = ['git', '-C', str(repository), '-c', 'user.name=t', '-c', 'user.email=t@t']
             module.subprocess.run([*git[:3], 'init', '-q', '-b', 'main'], check=True)
             module.subprocess.run([*git, 'add', '-A'], check=True)
             module.subprocess.run([*git, 'commit', '-qm', 'upstream'], check=True)
             module.subprocess.run([*git, 'branch', 'upstream'], check=True)
-            skill.write_text(original.replace('Use for samples.', 'Use when asked for samples by name.'))
+            skill.write_text(original.replace('Use for samples.', 'Use when asked for samples by name.'), newline='\n')
             module.subprocess.run([*git, 'commit', '-qam', 'adapt'], check=True)
 
             root = directory / 'export'
             (root / 'skills/sample/agents').mkdir(parents=True)
-            (root / 'skills/sample/SKILL.md').write_text(original.replace('invocation: true', 'invocation: false'))
-            (root / 'skills/sample/agents/openai.yaml').write_text('policy:\n  allow_implicit_invocation: true\n')
+            (root / 'skills/sample/SKILL.md').write_text(original.replace('invocation: true', 'invocation: false'),
+                                                         newline='\n')
+            (root / 'skills/sample/agents/openai.yaml').write_text('policy:\n  allow_implicit_invocation: true\n',
+                                                                   newline='\n')
             (root / '.dotfiles-policy.json').write_text('{"schema": 2, "explicit": [], "implicit": ["sample"]}\n')
             adaptations = {'plugins': {'plugin': {'repository': str(repository), 'baseRef': 'upstream',
                                                    'adaptedRef': 'main', 'hosts': ['Codex']}}}
@@ -283,7 +285,7 @@ class InvocationOverridesTest(unittest.TestCase):
             for marketplace in ('a', 'b'):
                 root = directory / 'cache' / marketplace / 'plugin/1'
                 (root / 'docs').mkdir(parents=True)
-                (root / 'docs/a.md').write_text('one\ntwo\nthree\nfour\nfive\n')
+                (root / 'docs/a.md').write_text('one\ntwo\nthree\nfour\nfive\n', newline='\n')
                 installs.append(('Codex', f'plugin@{marketplace}', root))
             registry = {'targets': {'Codex': {}, 'Claude': {}}}
             adaptations = {'plugins': {'plugin': {'repository': str(repository), 'baseRef': 'upstream', 'adaptedRef': 'main',
@@ -321,7 +323,7 @@ class InvocationOverridesTest(unittest.TestCase):
             skill = root / 'skills/sample/SKILL.md'
             skill.parent.mkdir(parents=True)
             original = '---\nname: sample\ndescription: Only use when the user explicitly invokes this skill by name.\n---\nPublish only with approval.\n'
-            skill.write_text(original)
+            skill.write_text(original, newline='\n')
             registry = {'targets': {'Codex': {}, 'Claude': {}}, 'explicitTargets': {'Codex': {'plugin@m': ['sample']}}}
             installs = [('Codex', 'plugin@m', root)]
             writes, counts = module.plan(registry, installs)

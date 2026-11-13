@@ -14,7 +14,7 @@ from candidate_result import CandidateResult, HeldCache, dump, read
 import release
 
 HELD = HeldCache('plugin:claude:kit@m', Path('/cache/kit/1.0.0'), (4242, 4343))
-LEASE = 'Claude lease: plugin:claude:kit@m at /cache/kit/1.0.0, held by running Claude processes 4242, 4343'
+LEASE = f'Claude lease: plugin:claude:kit@m at {HELD.cache}, held by running Claude processes 4242, 4343'
 GOOD = {'blocking': 0, 'held': []}
 
 
@@ -146,7 +146,7 @@ class DeviceCheckTest(unittest.TestCase):
         self.assertIsNone(stop)
         after = ('; the pull here swaps it at once if only skill text changes, and otherwise applies the rest of the '
                  'release and replaces that cache once they exit\n')
-        self.assertEqual(output, LEASE + after + 'Claude lease: plugin:claude:pack@m at /cache/pack/2.0.0, held by '
+        self.assertEqual(output, LEASE + after + f'Claude lease: plugin:claude:pack@m at {other.cache}, held by '
                                                  'running Claude processes 5151' + after)
 
 

@@ -338,13 +338,15 @@ class PullEnvironmentTest(unittest.TestCase):
 
     def test_git_stops_child_processes_at_its_time_limit(self):
         # A loaded machine can use up a short limit before Git reaches the alias, so a run with no marker proves nothing.
+        # Git for Windows' shell gives $! as its own process ID, and /proc/$!/winpid as the one Windows knows.
+        pid = 'cat /proc/$!/winpid' if portable.WINDOWS else 'echo $!'
         for limit in (1, 5, 30):
             with tempfile.TemporaryDirectory() as temporary, patch('pull.GIT_TIMEOUT', limit):
                 marker = Path(temporary) / 'grandchild'
                 started = time.monotonic()
                 with self.assertRaisesRegex(RuntimeError, f'did not finish within {limit} seconds'):
                     pull_git(Path(temporary), '-c',
-                             f'alias.dotfiles-hang=!sleep 60 & echo $! > "{marker}"; wait', 'dotfiles-hang')
+                             f'alias.dotfiles-hang=!sleep 60 & {pid} > "{marker}"; wait', 'dotfiles-hang')
                 self.assertLess(time.monotonic() - started, limit + 14)
                 written = marker.read_text().strip() if marker.exists() else ''
                 if not written:
@@ -352,7 +354,10 @@ class PullEnvironmentTest(unittest.TestCase):
                 grandchild = int(written)
                 for _ in range(50):
                     try:
-                        os.kill(grandchild, 0)
+                        if not portable.WINDOWS:
+                            os.kill(grandchild, 0)
+                        elif not portable.process_running(grandchild):  # os.kill(pid, 0) is no probe there
+                            return
                     except ProcessLookupError:
                         return
                     time.sleep(0.1)

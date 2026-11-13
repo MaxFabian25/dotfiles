@@ -57,9 +57,10 @@ class ToolNotesTest(unittest.TestCase):
             root = home / '.codex/plugins/cache/personal/example-tools/1.0.0'
             skill = root / 'skills/example'
             (skill / 'references').mkdir(parents=True)
-            (skill / 'SKILL.md').write_text('---\nname: example\ndescription: Research.\n---\nTrack with TodoWrite.\n')
+            (skill / 'SKILL.md').write_text('---\nname: example\ndescription: Research.\n---\nTrack with TodoWrite.\n',
+                                            newline='\n')
             original = 'Use WebFetch to read it.\n'
-            (skill / 'references/process.md').write_text(original)
+            (skill / 'references/process.md').write_text(original, newline='\n')
             registry = {'targets': {'Codex': {}, 'Claude': {}}, 'explicitTargets': {'Codex': {}, 'Claude': {}}}
             installs = [('Codex', 'example-tools@personal', root)]
             writes, _ = module.plan(registry, installs, ADAPTATIONS)
@@ -68,7 +69,7 @@ class ToolNotesTest(unittest.TestCase):
                                                                 'Track with TodoWrite (Codex: `update_plan`).\n',
                                      'skills/example/references/process.md': "Use WebFetch (Codex: the web tool's `open`) to read it.\n"})
             for path, _, new, _, _ in writes:
-                path.write_text(new)
+                path.write_text(new, newline='\n')
             self.assertEqual([path for path, old, new, _, _ in module.plan(registry, installs, ADAPTATIONS)[0] if old != new], [])
 
 

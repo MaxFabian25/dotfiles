@@ -58,7 +58,7 @@ class ClaudeSkillTests(unittest.TestCase):
             root = Path(directory).resolve()
             write_skills(root, 'claude-handoff', 'handoff', 'tdd')
             disabled = {'mattpocock-skills:claude-handoff', 'mattpocock-skills:handoff'}
-            self.assertEqual([str(path) for path in alignment.selected_skills(root, {}, disabled, 'mattpocock-skills', {'claude-handoff'})],
+            self.assertEqual([path.as_posix() for path in alignment.selected_skills(root, {}, disabled, 'mattpocock-skills', {'claude-handoff'})],
                              ['skills/claude-handoff/SKILL.md', 'skills/tdd/SKILL.md'])
 
     def test_a_claude_skill_is_not_listed_as_excluded(self):

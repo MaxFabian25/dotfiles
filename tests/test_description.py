@@ -355,10 +355,10 @@ class LeakTest(unittest.TestCase):
             (roots.public / 'rules').mkdir()
             (roots.public / 'rules/AGENTS.md').write_text('')
             problems = roots.problems(private=False)
-            for problem in (f'{roots.public}/skills/x.toml:source.snapshot: personal snapshots are private',
-                            f'{roots.public}/packages/y.toml:source.build: snapshots are private',
-                            f'{roots.public}/hosts/codex.toml:: host toggles are private',
-                            f'{roots.public}/rules/AGENTS.md:: shared rules are private'):
+            for problem in (f'{roots.public / "skills/x.toml"}:source.snapshot: personal snapshots are private',
+                            f'{roots.public / "packages/y.toml"}:source.build: snapshots are private',
+                            f'{roots.public / "hosts/codex.toml"}:: host toggles are private',
+                            f'{roots.public / "rules/AGENTS.md"}:: shared rules are private'):
                 self.assertIn(problem, problems)
 
     def test_a_device_list_loads_from_the_private_root_only(self):
@@ -375,13 +375,14 @@ class LeakTest(unittest.TestCase):
                 host_state.FactKey(H.CLAUDE, host_state.Surface.LOOSE_SKILL, '{claude_home}/skills/orca-cli')})})
             for outside in ('/home/x/*/home', 'C:/Users/x/*/home', '~/x/*/home', '../x/*/home', 'x/../../y', '', '.'):
                 (roots.private / 'devices/linux.toml').write_text(f'account_homes = ["{outside}"]\n')
-                self.assertEqual(roots.problems(), [f'{roots.private}/devices/linux.toml:account_homes: expected a glob '
-                                                    f'under the home folder, not {outside!r}'])
+                self.assertEqual(roots.problems(), [f'{roots.private / "devices/linux.toml"}:account_homes: expected a '
+                                                    f'glob under the home folder, not {outside!r}'])
             (roots.private / 'devices/linux.toml').write_text('[codex]\nplugins = ["x"]\n')
-            self.assertEqual(roots.problems(), [f'{roots.private}/devices/linux.toml:codex.plugins: unknown key'])
+            self.assertEqual(roots.problems(), [f'{roots.private / "devices/linux.toml"}:codex.plugins: unknown key'])
             (roots.private / 'devices/linux.toml').unlink()
             shutil.move(roots.private / 'devices', roots.public / 'devices')
-            self.assertIn(f'{roots.public}/devices/macos.toml:: device lists are private', roots.problems(private=False))
+            self.assertIn(f'{roots.public / "devices/macos.toml"}:: device lists are private',
+                          roots.problems(private=False))
 
     def test_a_mistyped_private_value_is_a_problem_not_a_crash(self):
         with Roots() as roots:

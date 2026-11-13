@@ -30,7 +30,7 @@ class WindowsHookCommandTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             (root / 'hooks').mkdir()
-            (root / 'hooks/hooks.json').write_text(render(manifest), encoding='utf-8')
+            (root / 'hooks/hooks.json').write_text(render(manifest), encoding='utf-8', newline='\n')
             writes, _ = module.plan(REGISTRY, [('Codex', IDENTITY, root)], adaptations)
         return [(Path(path).name, old, new) for path, old, new, _, _ in writes]
 
@@ -50,15 +50,16 @@ class WindowsHookCommandTest(unittest.TestCase):
             root = Path(folder)
             launcher = root / 'skills/x/impeccable.cmd'
             launcher.parent.mkdir(parents=True)
-            launcher.write_text('rem head\n"%~1" engine-probe >"%tmp%" 2>nul\nrem tail\n', encoding='utf-8')
+            launcher.write_text('rem head\n"%~1" engine-probe >"%tmp%" 2>nul\nrem tail\n', encoding='utf-8',
+                                newline='\n')
             replace = {'plugins': {}, 'windows': {'impeccable': {'replace': [
                 ('skills/x/impeccable.cmd', '"%~1" engine-probe >"%tmp%" 2>nul', 'call "%~1" engine-probe >"%tmp%" 2>nul')]}}}
             writes, _ = module.plan(REGISTRY, [('Codex', IDENTITY, root)], replace)
             self.assertEqual(writes[0][2], 'rem head\ncall "%~1" engine-probe >"%tmp%" 2>nul\nrem tail\n')
-            launcher.write_text('rem an upstream rewrite with no such line\n', encoding='utf-8')
+            launcher.write_text('rem an upstream rewrite with no such line\n', encoding='utf-8', newline='\n')
             with self.assertRaisesRegex(ValueError, 'Review upstream change to an adapted file'):
                 module.plan(REGISTRY, [('Codex', IDENTITY, root)], replace)
-            launcher.write_text('call "%~1" engine-probe >"%tmp%" 2>nul\n', encoding='utf-8')
+            launcher.write_text('call "%~1" engine-probe >"%tmp%" 2>nul\n', encoding='utf-8', newline='\n')
             writes, _ = module.plan(REGISTRY, [('Codex', IDENTITY, root)], replace)
             self.assertEqual(writes[0][1], writes[0][2])
 
@@ -67,7 +68,7 @@ class WindowsHookCommandTest(unittest.TestCase):
             root = Path(folder)
             launcher = root / 'skills/x/impeccable.cmd'
             launcher.parent.mkdir(parents=True)
-            launcher.write_text('"%~1" engine-probe\nwhere curl.exe\ncurl.exe url\n', encoding='utf-8')
+            launcher.write_text('"%~1" engine-probe\nwhere curl.exe\ncurl.exe url\n', encoding='utf-8', newline='\n')
             replace = {'plugins': {}, 'windows': {'impeccable': {'replace': [
                 ('skills/x/impeccable.cmd', '"%~1" engine-probe', 'call "%~1" engine-probe'),
                 ('skills/x/impeccable.cmd', 'where curl.exe', 'exit /b 1')]}}}

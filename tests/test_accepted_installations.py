@@ -441,7 +441,7 @@ class InstallationTest(unittest.TestCase):
         receipt = next(json.loads(p.read_bytes()) for p in self.receipt_paths()
                        if json.loads(p.read_bytes())['identity'].startswith('plugin:'))
         self.assertEqual(receipt['accepted']['image']['entries']['ordinary.txt'],
-                         {'kind': 'file', 'sha256': str(bytes_digest(b'ordinary release bytes\n'))})
+                         {'kind': 'file', 'sha256': str(bytes_digest((self.source / 'ordinary.txt').read_bytes()))})
         snapshot = self.snapshot()
         with patch('sync_sources.Builder', side_effect=AssertionError('no-op built sources')):
             result, backup = apply(self.setup, self.device, plan(self.setup, self.device))
@@ -890,7 +890,9 @@ class InstallationTest(unittest.TestCase):
         self.seeds = (repo,)
         self.assertEqual(self.run_apply().exit_code, 0)
         self.assertEqual((self.installed() / 'adapted.txt').read_text(), 'adapted\n')
-        shutil.rmtree(self.roots.engine / 'harness-adaptations')
+        # Git makes its object files read-only, and Windows refuses to delete a read-only file.
+        shutil.rmtree(self.roots.engine / 'harness-adaptations',
+                      onexc=lambda remove, path, _: (os.chmod(path, 0o600), remove(path)))
         before = self.snapshot()
         with patch('sync_sources.Builder', side_effect=AssertionError('check built sources')):
             current = plan(self.setup, self.device)

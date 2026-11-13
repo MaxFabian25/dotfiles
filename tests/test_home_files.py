@@ -3,6 +3,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -30,7 +31,7 @@ class HomeFilesTest(unittest.TestCase):
         for relative, (text, executable) in files.items():
             path = self.private / home_files.SOURCE / relative
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text, encoding='utf-8')
+            path.write_text(text, encoding='utf-8', newline='\n')
             path.chmod(0o755 if executable else 0o644)
 
     def deliver(self, apply=True):
@@ -40,6 +41,7 @@ class HomeFilesTest(unittest.TestCase):
         return {path.relative_to(self.home).as_posix(): (path.read_text(encoding='utf-8'), os.access(path, os.X_OK))
                 for path in sorted(self.home.rglob('*')) if path.is_file()}
 
+    @unittest.skipIf(sys.platform == 'win32', 'Windows files have no executable bit')
     def test_a_first_delivery_creates_each_file_with_the_sources_executable_bit(self):
         cache = self.private / home_files.SOURCE / '.local/bin/__pycache__'
         cache.mkdir()
@@ -62,6 +64,7 @@ class HomeFilesTest(unittest.TestCase):
                          if path.is_file() and path.name != 'files.json')
         self.assertEqual(backups, ['rc 1\n', 'tool 1\n'])
 
+    @unittest.skipIf(sys.platform == 'win32', 'Windows files have no executable bit')
     def test_an_edited_copy_is_left_and_named_while_the_rest_is_delivered(self):
         self.deliver()
         (self.home / '.local/bin/tool').write_text('a fix under test\n')
@@ -77,6 +80,7 @@ class HomeFilesTest(unittest.TestCase):
         self.assertEqual(self.deliver().written, ('.local/bin/tool',))
         self.assertEqual(self.installed()['.local/bin/tool'], ('tool 2\n', True))
 
+    @unittest.skipIf(sys.platform == 'win32', 'Windows files have no executable bit')
     def test_without_a_record_only_a_matching_or_absent_file_is_taken_over(self):
         for relative, text in (('.local/bin/tool', 'tool 1\n'), ('.config/tool/rc', 'made by hand\n')):
             (self.home / relative).parent.mkdir(parents=True)
@@ -105,6 +109,7 @@ class HomeFilesTest(unittest.TestCase):
         self.assertEqual((self.state / home_files.RECORD).read_bytes(), record)
         self.assertEqual(self.deliver().written, ('.local/bin/tool',))
 
+    @unittest.skipIf(sys.platform == 'win32', 'chmod cannot make a Windows folder unwritable')
     def test_a_link_or_folder_in_a_files_place_and_a_failed_write_are_left_with_the_reason(self):
         self.deliver()
         (self.home / '.local/bin/tool').unlink()
@@ -168,6 +173,7 @@ class HomeFilesTest(unittest.TestCase):
                 home_files._record(self.state / home_files.RECORD, files)
             self.assertEqual(list(self.state.iterdir()), [])
 
+    @unittest.skipIf(sys.platform == 'win32', 'Windows files have no executable bit')
     def test_a_file_a_release_dropped_and_a_later_one_brings_back_is_still_known(self):
         self.deliver()
         (self.private / home_files.SOURCE / '.config/tool/rc').unlink()
@@ -178,12 +184,14 @@ class HomeFilesTest(unittest.TestCase):
         delivery = self.deliver()
         self.assertEqual((delivery.written, delivery.left), (('.config/tool/rc',), ()))
 
+    @unittest.skipIf(sys.platform == 'win32', 'Windows files have no executable bit')
     def test_a_source_that_loses_its_executable_bit_takes_it_from_the_copy(self):
         self.deliver()
         (self.private / home_files.SOURCE / '.local/bin/tool').chmod(0o644)
         self.assertEqual(self.deliver().written, ('.local/bin/tool',))
         self.assertEqual(self.installed()['.local/bin/tool'], ('tool 1\n', False))
 
+    @unittest.skipIf(sys.platform == 'win32', 'chmod cannot make a Windows file unreadable')
     def test_a_copy_that_changes_during_the_write_and_a_source_that_cannot_be_read_are_left(self):
         self.deliver()
         self.release({'.local/bin/tool': ('tool 2\n', True), '.config/tool/rc': ('rc 2\n', False)})
@@ -196,6 +204,7 @@ class HomeFilesTest(unittest.TestCase):
         (self.private / home_files.SOURCE / '.config/tool/rc').chmod(0o644)
         self.assertEqual(self.deliver().written, ('.config/tool/rc', '.local/bin/tool'))
 
+    @unittest.skipIf(sys.platform == 'win32', 'chmod cannot make a Windows folder unlistable')
     def test_a_source_folder_that_cannot_be_listed_stops_the_delivery_and_names_the_folder(self):
         self.deliver()
         self.release({'.local/bin/tool': ('tool 2\n', True)})
@@ -290,7 +299,8 @@ class PullDeliversHomeFilesTest(unittest.TestCase):
         (self.private / home_files.SOURCE / '.local/bin/tool').write_text('tool 2\n')
         status, out, err = self.pull()
         self.assertEqual((status, out), (1, ''))
-        self.assertRegex(err, rf'^Home files not delivered: {record}: cannot read the record of delivered home files: ')
+        self.assertRegex(err, rf'^Home files not delivered: {re.escape(str(record))}: '
+                              'cannot read the record of delivered home files: ')
         self.assertIn('Without that file a pull takes over each copy that matches the release', err)
         self.assertTrue(self.receipt.exists())
         self.assertEqual((self.home / '.local/bin/tool').read_text(), 'tool 1\n')

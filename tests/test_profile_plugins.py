@@ -253,7 +253,7 @@ class ProfilePluginsTest(unittest.TestCase):
             kit.install('1.0.0')
             mirrors, _, _ = kit.inspect()
             home.write(home.roots.home / 'backup/account-homes', 'a file where the backup folder goes')
-            with self.assertRaises(NotADirectoryError):
+            with self.assertRaises(FileExistsError if sys.platform == 'win32' else NotADirectoryError):
                 kit.apply(mirrors)
             self.assertEqual([path.name for path in kit.cache.iterdir()], ['1.0.0'])
 

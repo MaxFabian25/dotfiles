@@ -33,7 +33,7 @@ class Plant(unittest.TestCase):
         self.addCleanup(folder.cleanup)
         self.root = Path(folder.name) / 'project'
         (self.root / 'code').mkdir(parents=True)
-        (self.root / 'code/value.py').write_text(SOURCE, encoding='utf-8')
+        (self.root / 'code/value.py').write_bytes(SOURCE.encode())
         (self.root / 'code/test_value.py').write_text(TEST, encoding='utf-8')
 
     def plant(self, plants, *root, test='test_value.py'):
@@ -120,11 +120,14 @@ class Plant(unittest.TestCase):
 
     def test_a_source_that_is_not_utf8_or_a_root_that_cannot_be_copied_stops_with_the_reason(self):
         tripled = ['triples', 'number * 2', 'number * 3']
-        os.mkfifo(self.root / 'code/pipe')
-        status, lines, error = self.plant([tripled])
-        self.assertEqual((status, lines), (2, []))
-        self.assertRegex(error, r'^no copy of .*/code could run with .*value\.py: .*pipe')
-        (self.root / 'code/pipe').unlink()
+        with self.subTest('a root that holds a named pipe'):
+            if sys.platform == 'win32':
+                self.skipTest('Windows has no named pipes in a folder')
+            os.mkfifo(self.root / 'code/pipe')
+            status, lines, error = self.plant([tripled])
+            self.assertEqual((status, lines), (2, []))
+            self.assertRegex(error, r'^no copy of .*/code could run with .*value\.py: .*pipe')
+            (self.root / 'code/pipe').unlink()
         (self.root / 'code/value.py').write_bytes(b'# caf\xe9\n' + SOURCE.encode())
         status, lines, error = self.plant([tripled])
         self.assertEqual((status, lines), (2, []))

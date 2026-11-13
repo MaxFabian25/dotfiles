@@ -1,4 +1,4 @@
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import sys
 import tempfile
 import tomllib
@@ -115,7 +115,8 @@ expose_spawn_agent_model_overrides = true # managed
         self.assertEqual(_expand(template, Path('/home'), {'ProgramFiles(x86)': r'C:\Program Files (x86)'}),
                          r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe')
         self.assertIsNone(_expand(template, Path('/home'), {}))
-        self.assertEqual(_expand('{home}/Applications/Chrome', Path('/Users/u'), {}), '/Users/u/Applications/Chrome')
+        self.assertEqual(_expand('{home}/Applications/Chrome', PurePosixPath('/Users/u'), {}),
+                         '/Users/u/Applications/Chrome')
 
 
 class PstackPolicyTests(unittest.TestCase):

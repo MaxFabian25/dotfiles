@@ -22,7 +22,7 @@ def roots_for(home):
 
 def write(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text)
+    path.write_text(text, newline='\n')
 
 
 class TreeDigestTest(unittest.TestCase):

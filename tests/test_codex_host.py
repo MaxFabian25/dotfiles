@@ -185,7 +185,7 @@ ref = "{C2}"
 
 [marketplaces.openai-bundled]
 source_type = "local"
-source = "{r.codex_home}/.tmp/bundled-marketplaces/openai-bundled"
+source = '{r.codex_home}/.tmp/bundled-marketplaces/openai-bundled'
 
 [plugins."sharepoint@openai-curated-remote"]
 enabled = false
@@ -217,18 +217,18 @@ name = "plugin-creator"
 enabled = false
 
 [[skills.config]]
-path = "{r.codex_home}/skills/define-goal/SKILL.md"
+path = '{r.codex_home}/skills/define-goal/SKILL.md'
 enabled = false
 
 [[skills.config]]
-path = "{r.home}/Documents/project/.codex/skills/x/SKILL.md"
+path = '{r.home}/Documents/project/.codex/skills/x/SKILL.md'
 enabled = false
 
 [hooks.state."impeccable@personal:hooks/hooks.json:stop:0:0"]
 enabled = true
 trusted_hash = "sha256:x"
 
-[projects."{r.home}/Documents/project"]
+[projects.'{r.home}/Documents/project']
 trust_level = "trusted"
 ''')
         cache = r.codex_home / 'plugins/cache'
@@ -709,7 +709,7 @@ class ObserveTest(unittest.TestCase):
         with Device() as device:
             clone = device.checkout('local', 'https://github.com/example/local.git')
             config = device.roots.codex_home / 'config.toml'
-            config.write_text(config.read_text() + f'\n[marketplaces.local]\nsource_type = "local"\nsource = "{clone}"\n')
+            config.write_text(config.read_text() + f'\n[marketplaces.local]\nsource_type = "local"\nsource = \'{clone}\'\n')
             device.inventory.append(plugin(device, 'prose@local', True, '0.2.0+codex.1',
                                            {'source': 'git-subdir', 'url': 'https://github.com/example/prose.git', 'path': 'plugin', 'ref': 'main'}))
             device.skill(device.roots.codex_home / 'plugins/cache/local/prose/0.2.0+codex.1', 'prose')
@@ -723,7 +723,7 @@ class ObserveTest(unittest.TestCase):
         with Device() as device:
             broken = device.write(device.roots.home / 'Documents/broken/.git', 'gitdir: /nowhere\n').parent
             config = device.roots.codex_home / 'config.toml'
-            config.write_text(config.read_text() + f'\n[marketplaces.broken]\nsource_type = "local"\nsource = "{broken}"\n')
+            config.write_text(config.read_text() + f'\n[marketplaces.broken]\nsource_type = "local"\nsource = \'{broken}\'\n')
             observation = device.state().observe(hs.Request())
         self.assertNotIn(key(S.MARKETPLACE, 'broken'), observation.facts)
         self.assertEqual([(u.source, u.surfaces, u.subjects) for u in observation.unknown],

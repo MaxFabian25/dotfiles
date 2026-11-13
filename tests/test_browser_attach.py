@@ -88,6 +88,7 @@ class SessionTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
 
+    @unittest.skipIf(sys.platform == 'win32', 'Chrome on Windows makes no SingletonLock link; --approve is Linux only')
     def test_chrome_is_found_from_its_profile_lock(self):
         lock = self.root / 'SingletonLock'
         lock.symlink_to(f'Some-Host-{os.getpid()}')
