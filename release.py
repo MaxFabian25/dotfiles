@@ -2,10 +2,11 @@
 
 Run it with the engine's own Python from the canonical public checkout. `start NAME` makes a worktree of
 each repository at origin/main on branch NAME. Edit there. `finish NAME` locks and builds the named
-entries, stops on a changed plugin whose Codex hooks are trusted until --hooks-reapproved, runs the public
-test suite unless the release changes no code, runs each private test file by itself, takes this machine's release
-lock once no other release, pull or sync runs here, stops on new files the .gitignore allowlist would leave out,
-commits both worktrees, stops if the commits hold other files than the tests ran on, stops if
+entries, stops on a changed plugin whose Codex hooks are trusted until --hooks-reapproved, stops on a private
+test file link that points at nothing, runs the public test suite unless the release changes no code, runs each
+private test file by itself, up to eight at a time, takes this machine's release lock once no other release, pull
+or sync runs here, stops on new files the .gitignore allowlist would leave out, commits both worktrees, stops if
+the commits hold other files than the tests ran on, stops if
 origin/main changed the same files meanwhile, rebases them onto it, pairs the private release.toml with the
 public commit, checks that this device's pull could apply the pair, naming each Claude plugin cache that
 running sessions hold, checks both pushes with --dry-run, pushes, and pulls, after any other pull here ends.
@@ -35,6 +36,7 @@ on WSL or Omarchy.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import contextlib
 import hashlib
 import itertools
@@ -96,6 +98,9 @@ STANDARDS = 'docs/agents/coding-standards.md'
 
 ISOLATED_RUN = ('-I', '-B')
 UNITTEST_END = re.compile(r'^Ran (\d+) tests? in [^\n]*\n\n(OK|FAILED)', re.MULTILINE)
+UNITTEST_FAILURE = re.compile(r'^(?:FAIL|ERROR): (\S+)', re.MULTILINE)
+PRIVATE_TESTS_AT_ONCE = 8
+PRIVATE_TEST_TIMEOUT_SECONDS = 1800
 
 
 def machine_locks():
@@ -981,14 +986,18 @@ def public_suite(public, log):
 
 def test_suite(public, private, log):
     log.parent.mkdir(parents=True, exist_ok=True)
+    # -z, because git otherwise quotes a name that is not ASCII, and such a file would not be run. A file the
+    # release deletes is still listed until the commit.
+    named = [name for name in git(private, 'ls-files', '-co', '--exclude-standard', '-z').split('\0')
+             if Path(name).name.startswith('test_') and name.endswith('.py')]
+    if broken := [name for name in named if (private / name).is_symlink() and not (private / name).exists()]:
+        raise RuntimeError(f'these private test file links point at nothing, so their tests would not run: '
+                           f'{", ".join(broken)}; point each at its file or delete it')
+    files = sorted(name for name in named if (private / name).is_file())
     if any(can_change_test_results(name) for tree in (public, private) for name in changed_files(tree)):
         public_suite(public, log)
     else:
         print('The public test suite did not run because the release changes no code', flush=True)
-    # -z, because git otherwise quotes a name that is not ASCII, and such a file would not be run. A file the
-    # release deletes is still listed until the commit.
-    files = sorted(name for name in git(private, 'ls-files', '-co', '--exclude-standard', '-z').split('\0')
-                   if Path(name).name.startswith('test_') and name.endswith('.py') and (private / name).is_file())
     if not files:
         return
     private_log = log.with_name('private-tests.log')
@@ -998,22 +1007,38 @@ def test_suite(public, private, log):
     environment = {name: value for name, value in os.environ.items() if name != 'PYTHON_COLORS'} | {
         'CODEX_HOME': str(absent / 'codex'), 'CLAUDE_CONFIG_DIR': str(absent / 'claude'),
         'PYTHONDONTWRITEBYTECODE': '1', 'NO_COLOR': '1'}
-    total = 0
+
+    def run_alone(name):
+        try:
+            return subprocess.run([sys.executable, *ISOLATED_RUN, name], cwd=private, env=environment,
+                                  stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding='utf-8',
+                                  errors='replace', timeout=PRIVATE_TEST_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired as late:
+            # On Linux and macOS subprocess hands back a timed-out run's output as bytes, even with text=True.
+            stdout, stderr = (part.decode('utf-8', 'replace') if isinstance(part, bytes) else part or ''
+                              for part in (late.stdout, late.stderr))
+            return subprocess.CompletedProcess(late.cmd, None, stdout, stderr)
+
+    problems, total = [], 0
     keep(private_log)
-    with private_log.open('w', encoding='utf-8') as output:
-        for name in files:
-            result = subprocess.run([sys.executable, *ISOLATED_RUN, name], cwd=private, env=environment,
-                                    capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=1800)
+    with private_log.open('w', encoding='utf-8') as output, \
+            ThreadPoolExecutor(min(PRIVATE_TESTS_AT_ONCE, os.cpu_count() or 1)) as pool:
+        for name, result in zip(files, pool.map(run_alone, files)):
             output.write(f'== {name}\n{result.stdout}{result.stderr}')
             ends = UNITTEST_END.findall(result.stderr)
+            if result.returncode is None:
+                problems.append(f'{name} ran past the {PRIVATE_TEST_TIMEOUT_SECONDS} s limit')
             # unittest.main(exit=False) exits 0 on a failed test.
-            if result.returncode or (ends and ends[-1][1] != 'OK'):
-                raise RuntimeError(f'the private tests in {name} failed; read {private_log}')
-            if not ends:
-                raise RuntimeError(f'{name} ran no tests as {Path(sys.executable).name} {" ".join(ISOLATED_RUN)} '
-                                   f'{name}, by its output in {private_log}; end it with unittest.main() under '
-                                   'if __name__ == "__main__", so that it runs by itself')
-            total += int(ends[-1][0])
+            elif result.returncode or (ends and ends[-1][1] != 'OK'):
+                tests = ', '.join(dict.fromkeys(UNITTEST_FAILURE.findall(result.stderr)))
+                problems.append(f'the private tests in {name} failed' + (f' ({tests})' if tests else ''))
+            elif not ends:
+                problems.append(f'{name} ran no tests as {Path(sys.executable).name} {" ".join(ISOLATED_RUN)} {name}, '
+                                'so end it with unittest.main() under if __name__ == "__main__"')
+            else:
+                total += int(ends[-1][0])
+    if problems:
+        raise RuntimeError(f'{"; ".join(problems)}; read {private_log}')
     folders = {str(Path(name).parent) for name in files}
     print(f'Ran {total} private tests in {len(folders)} folders: OK; log {private_log}', flush=True)
 

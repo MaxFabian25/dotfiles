@@ -21,11 +21,15 @@ MODULE_SKIP = ONE_TEST.replace('import unittest\n', 'import unittest\n\n\ndef se
                                '    raise unittest.SkipTest("not on this machine")\n', 1)
 FAILS_AND_SKIPS = ONE_SKIP.replace('        pass', '        self.fail("the broken detail")', 1)
 PRINTS_A_RESULT = ONE_TEST.replace('        pass', '        __import__("sys").stderr.write("OK (skipped=9)\\n")')
+READS_STDIN = ONE_TEST.replace('import unittest\n', 'import sys\nimport threading\nimport unittest\n', 1).replace(
+    '        pass', '        read = []\n'
+    '        reader = threading.Thread(target=lambda: read.append(sys.stdin.read()), daemon=True)\n'
+    '        reader.start()\n        reader.join(30)\n        self.assertEqual(read, [""])')
 ENDS_WITH_A_NOTE = ONE_TEST.replace('import unittest\n', 'import atexit\nimport sys\nimport unittest\n\n'
                                     'atexit.register(print, "left OK (skipped=8)", file=sys.stderr)\n', 1)
 
 
-def full_run(modules, runner=RUNNER):
+def full_run(modules, runner=RUNNER, stdin=None):
     with tempfile.TemporaryDirectory() as folder:
         tests = Path(folder) / 'tests'
         tests.mkdir()
@@ -33,7 +37,7 @@ def full_run(modules, runner=RUNNER):
         for name, text in modules.items():
             (tests / name).write_text(text, encoding='utf-8')
         return subprocess.run([sys.executable, '-B', str(tests / 'run.py')], cwd=folder, capture_output=True, text=True,
-                              encoding='utf-8', timeout=300)
+                              encoding='utf-8', timeout=300, stdin=stdin)
 
 
 class FullRun(unittest.TestCase):
@@ -91,6 +95,15 @@ class FullRun(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn('test_slow.py ran past the 1 s limit', result.stdout)
         self.assertRegex(result.stdout, r'FAILED \(test_slow\.py\)\n\Z')
+
+    def test_a_module_reads_an_ended_stdin_while_the_runner_keeps_its_own_open(self):
+        read, write = os.pipe()
+        try:
+            result = full_run({'test_a.py': READS_STDIN, 'test_b.py': READS_STDIN}, stdin=read)
+        finally:
+            os.close(read)
+            os.close(write)
+        self.assertEqual(result.returncode, 0, result.stdout)
 
     def test_a_run_with_no_tests_exits_5(self):
         self.assertEqual(full_run({}).returncode, 5)

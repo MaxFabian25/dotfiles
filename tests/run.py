@@ -33,7 +33,7 @@ def run_module(path):
     try:
         return subprocess.run([sys.executable, '-B', str(Path(__file__).resolve()), '-p', path.name], capture_output=True,
                               text=True, encoding='utf-8', errors='replace', timeout=MODULE_TIMEOUT_SECONDS,
-                              env=environment)
+                              env=environment, stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(path.name, 1, '', f'{path.name} ran past the {MODULE_TIMEOUT_SECONDS} s limit')
 

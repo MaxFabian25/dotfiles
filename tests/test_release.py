@@ -407,7 +407,7 @@ class ReleaseTest(unittest.TestCase):
                  'the private tests in config/tool/test_tool.py failed', 'FAILED (failures=1)'),
                 (FAILING_TEST.replace('self.fail', 'import sys; sys.stderr.buffer.write(b"caf\\xe9\\n"); self.fail')
                  + RUN_ALONE, 'the private tests in config/tool/test_tool.py failed', 'caf\ufffd\n'),
-                (PASSING_TEST, f'config/tool/test_tool.py, by its output in {log}; end it with unittest.main()',
+                (PASSING_TEST, 'config/tool/test_tool.py, so end it with unittest.main()',
                  '== config/tool/test_tool.py\n'),
                 (imports.format(path=''), 'the private tests in config/tool/test_tool.py failed',
                  "ModuleNotFoundError: No module named 'helper'")):
@@ -429,6 +429,97 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(git(self.private_origin, 'ls-tree', '-r', '--name-only', 'main', 'config/'),
                          f'config/other/test_other.py\n{release.DENYLIST}\nconfig/tool/helper.py\n'
                          'config/tool/test_more.py\nconfig/tool/test_tool.py')
+
+    def test_finish_runs_the_private_test_files_at_the_same_time(self):
+        release_main(['start', 'together', *self.options()], self.public)
+        meeting = self.root / 'meeting'
+        meeting.mkdir()
+        meet = ('import os\nfrom pathlib import Path\nimport time\nimport unittest\n\n\nclass Meet(unittest.TestCase):\n'
+                '    def test_meets_the_other_file(self):\n'
+                '        meeting = Path(os.environ["MEETING"])\n'
+                '        (meeting / Path(__file__).name).touch()\n'
+                '        deadline = time.monotonic() + 60\n'
+                '        while len(list(meeting.iterdir())) < 2 and time.monotonic() < deadline:\n'
+                '            time.sleep(0.05)\n'
+                '        self.assertEqual(len(list(meeting.iterdir())), 2)\n' + RUN_ALONE)
+        for name in ('test_one.py', 'test_two.py'):
+            (self.worktrees / 'together/private' / name).write_text(meet, encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Add two tests\n', encoding='utf-8')
+        os.environ['MEETING'] = str(meeting)
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(release_main(['finish', 'together', '--private-message', str(message), *self.options()],
+                                          self.public), 0)
+        self.assertIn('Ran 2 private tests in 1 folders: OK', output.getvalue())
+
+    def test_a_private_test_file_reads_an_ended_stdin_while_the_finish_keeps_its_own_open(self):
+        release_main(['start', 'stdin', *self.options()], self.public)
+        (self.worktrees / 'stdin/private/test_reads.py').write_text(
+            'import sys\nimport threading\nimport unittest\n\n\nclass Reads(unittest.TestCase):\n'
+            '    def test_reads_an_ended_stdin(self):\n'
+            '        read = []\n'
+            '        reader = threading.Thread(target=lambda: read.append(sys.stdin.read()), daemon=True)\n'
+            '        reader.start()\n'
+            '        reader.join(30)\n'
+            '        self.assertEqual(read, [""])\n' + RUN_ALONE, encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Add a test that reads stdin\n', encoding='utf-8')
+        read, write = os.pipe()
+        kept = os.dup(0)
+        os.dup2(read, 0)
+        try:
+            with redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(release_main(['finish', 'stdin', '--private-message', str(message), *self.options()],
+                                              self.public), 0)
+        finally:
+            os.dup2(kept, 0)
+            for descriptor in (read, write, kept):
+                os.close(descriptor)
+        self.assertIn('Ran 1 private tests in 1 folders: OK', output.getvalue())
+
+    def test_finish_names_every_failing_private_test_file_and_keeps_each_ones_output(self):
+        release_main(['start', 'failures', *self.options()], self.public)
+        private = self.worktrees / 'failures/private'
+        for folder, body in (('first', 'self.fail("first reason")'),
+                             ('hangs', 'print("hangs output", flush=True); '
+                                       'print("hangs reason", file=__import__("sys").stderr, flush=True); '
+                                       '__import__("time").sleep(3600)'),
+                             ('second', 'raise ValueError("second reason")')):
+            (private / 'config' / folder).mkdir(parents=True)
+            (private / 'config' / folder / 'test_tool.py').write_text(
+                PASSING_TEST.replace('        pass', f'        {body}').replace('test_passes', f'test_{folder}')
+                + RUN_ALONE,
+                encoding='utf-8')
+        (private / 'test_passing.py').write_text(PASSING_TEST + RUN_ALONE, encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Add failing tests\n', encoding='utf-8')
+        with redirect_stderr(io.StringIO()) as error, patch.object(release, 'PRIVATE_TEST_TIMEOUT_SECONDS', 10):
+            self.assertEqual(release_main(['finish', 'failures', '--private-message', str(message), *self.options()],
+                                          self.public), 3)
+        self.assertIn('the private tests in config/first/test_tool.py failed (test_first); config/hangs/test_tool.py '
+                      'ran past the 10 s limit; the private tests in config/second/test_tool.py failed (test_second); '
+                      'read', error.getvalue())
+        log = (self.worktrees / 'failures/build/private-tests.log').read_text(encoding='utf-8')
+        for folder, kept in (('first', ['FAIL: test_first', 'AssertionError: first reason']),
+                             ('hangs', ['hangs output', 'hangs reason']),
+                             ('second', ['ERROR: test_second', 'ValueError: second reason'])):
+            block = log.split(f'== config/{folder}/test_tool.py\n')[1].split('\n== ')[0]
+            for text in kept:
+                self.assertIn(text, block)
+        self.assertIn('== test_passing.py\n', log)
+
+    def test_finish_stops_on_a_private_test_file_link_that_points_at_nothing(self):
+        release_main(['start', 'link', *self.options()], self.public)
+        (self.worktrees / 'link/private/config/tool').mkdir()
+        (self.worktrees / 'link/private/config/tool/test_tool.py').symlink_to('tool_tests.py')
+        message = self.root / 'message'
+        message.write_text('Link a test\n', encoding='utf-8')
+        with redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(['finish', 'link', '--private-message', str(message), *self.options()],
+                                          self.public), 3)
+        self.assertIn('these private test file links point at nothing, so their tests would not run: '
+                      'config/tool/test_tool.py;', error.getvalue())
+        self.assertFalse((self.worktrees / 'link/build/tests.log').exists())
 
     def test_the_private_tests_pass_in_a_session_that_forces_colour(self):
         release_main(['start', 'coloured', *self.options()], self.public)
