@@ -17,7 +17,7 @@ import tempfile
 
 import yaml
 
-from portable import GIT, read_utf8, write_utf8
+from portable import GIT, checked_output, read_utf8, write_utf8
 
 
 def read_json(path, default=None):
@@ -110,12 +110,11 @@ def transform_policy(text, allow=True):
 
 
 def git_text(repository, ref, relative):
-    result = subprocess.run([*GIT, '-C', str(repository), 'show', f'{ref}:{relative}'], capture_output=True, check=True)
-    return result.stdout.decode('utf-8')
+    return checked_output([*GIT, '-C', str(repository), 'show', f'{ref}:{relative}']).decode('utf-8')
 
 
 def git_line(repository, *arguments):
-    return subprocess.run([*GIT, '-C', str(repository), *arguments], capture_output=True, check=True).stdout.decode().strip()
+    return checked_output([*GIT, '-C', str(repository), *arguments]).decode().strip()
 
 
 def adaptation_files(adaptation):
@@ -124,8 +123,8 @@ def adaptation_files(adaptation):
     repository = Path(adaptation['repository'])
     adapted_ref = git_line(repository, 'rev-parse', '--verify', adaptation['adaptedRef'] + '^{commit}')
     base_ref = git_line(repository, 'merge-base', adaptation['baseRef'], adapted_ref)
-    listing = subprocess.run([*GIT, '-C', str(repository), 'diff', '--no-renames', '--name-status', '-z', base_ref, adapted_ref],
-                             capture_output=True, check=True).stdout.decode('utf-8').split('\0')
+    listing = checked_output([*GIT, '-C', str(repository), 'diff', '--no-renames', '--name-status', '-z', base_ref,
+                              adapted_ref]).decode('utf-8').split('\0')
     files = []
     for status, relative in zip(listing[0::2], listing[1::2]):
         if Path(relative).is_absolute() or '..' in Path(relative).parts:

@@ -15,8 +15,7 @@ COMMAND_SECONDS = 120
 
 def run(command: list[str], seconds: float | None = None, **options) -> str:
     options['env'] = portable.native_cli_environment(options.get('env'))
-    return subprocess.run(command, capture_output=True, text=True, encoding='utf-8', check=True,
-                          timeout=seconds or COMMAND_SECONDS, **options).stdout
+    return portable.checked_output(command, text=True, encoding='utf-8', timeout=seconds or COMMAND_SECONDS, **options)
 
 
 class Unread(Exception):

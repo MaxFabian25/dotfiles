@@ -192,8 +192,7 @@ class UnmanagedBuild(unittest.TestCase):
         self.assertFalse((self.root / 'other/kit').exists())
 
     def test_a_package_whose_build_fails_is_reported_for_it_whatever_the_fault(self):
-        cases = {'git': ({'subdirectory': 'absent'}, r"Command .*'archive'.* returned non-zero exit status \d+\.",
-                         r'^fatal: .+\n$'),
+        cases = {'git': ({'subdirectory': 'absent'}, r'fatal: .+ \(exit \d+ from git .* archive .+\)', r'^$'),
                  'builder': ({'select': ('skills/absent',)}, r'Missing selected skill directory: skills/absent', r'^$'),
                  'recipe field': ({'manifest': 'authorless.json'}, r"KeyError\('author'\)",
                                   r'''^Traceback (?s:.+) in package\n(?s:.+)\nKeyError: 'author'\n$''')}

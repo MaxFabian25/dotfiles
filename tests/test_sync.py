@@ -2,6 +2,7 @@ from contextlib import redirect_stderr, redirect_stdout
 import io
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -769,31 +770,19 @@ class SyncMainTest(unittest.TestCase):
             self.assertEqual(sync.main(['--apply']), 3)
         self.assertEqual(stderr.getvalue(), f'Sync stopped: {late}\n')
 
-    def test_a_failed_command_stops_the_sync_with_3_on_one_line_that_ends_with_its_own_last_words(self):
+    def test_a_failed_git_command_stops_the_sync_with_3_on_one_line_that_starts_with_its_own_last_words(self):
         from unittest import mock
         import invocation_overrides
         import sync
 
-        def stop(step):
-            with mock.patch('sync.load', side_effect=step), redirect_stdout(io.StringIO()), \
-                    redirect_stderr(io.StringIO()) as stderr:
-                self.assertEqual(sync.main(['--apply']), 3)
-            return stderr.getvalue()
-
         with tempfile.TemporaryDirectory() as temp:
-            def git_fails(*args):
-                return invocation_overrides.git_line(Path(temp), 'rev-parse', '--verify', 'main^{commit}')
-
-            with self.assertRaises(subprocess.CalledProcessError) as failed:
-                git_fails()
-            self.assertEqual(stop(git_fails),
-                             f'Sync stopped: {failed.exception} It said: {failed.exception.stderr.decode().splitlines()[-1]}\n')
-        for stderr, said in (('warning: first\nerror: the last words\n\n', ' It said: error: the last words'),
-                             (b'error: \xff\n', ' It said: error: \N{REPLACEMENT CHARACTER}'),
-                             ('', ''), (b'', ''), (None, '')):
-            error = subprocess.CalledProcessError(1, ['codex', 'plugin', 'add'], stderr=stderr)
-            with self.subTest(stderr=stderr):
-                self.assertEqual(stop(error), f'Sync stopped: {error}{said}\n')
+            command = ['rev-parse', '--verify', 'main^{commit}']
+            said = subprocess.run(['git', '-C', temp, *command], capture_output=True, text=True).stderr.splitlines()[-1].strip()
+            with mock.patch('sync.load', side_effect=lambda *args: invocation_overrides.git_line(Path(temp), *command)), \
+                    redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(sync.main(['--apply']), 3)
+        self.assertRegex(stderr.getvalue(),
+                         rf'^Sync stopped: {re.escape(said)} \(exit 128 from git .+ rev-parse --verify main\^{{commit}}\)\n$')
 
 
 if __name__ == '__main__':

@@ -745,7 +745,8 @@ class ObserveTest(unittest.TestCase):
         self.assertEqual([(u.source, u.surfaces, u.subjects) for u in observation.unknown],
                          [('codex plugin list --available --json',
                            frozenset({S.PLUGIN, S.TREE, S.HOOK, S.SKILL}), None)])
-        self.assertTrue(observation.unknown[0].reason.startswith('Command'), observation.unknown[0].reason)
+        self.assertTrue(observation.unknown[0].reason.startswith('unrecorded: plugin list --available --json (exit 1 '),
+                        observation.unknown[0].reason)
         self.assertEqual(observation.offered, frozenset())
 
 

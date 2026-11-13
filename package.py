@@ -4,10 +4,10 @@ import json
 from pathlib import Path
 import re
 import shutil
-import subprocess
 
 from description import BuildSource, GenericRecipe
-from portable import GIT, extract_tar, posix, read_utf8, replace, require_readable, staging_directory, write_utf8
+from portable import (GIT, checked_output, extract_tar, posix, read_utf8, replace, require_readable, staging_directory,
+                      write_utf8)
 
 
 def files(root):
@@ -24,7 +24,7 @@ def files(root):
 
 
 def git(repository, *arguments):
-    return subprocess.check_output([*GIT, '-C', str(repository), *arguments])
+    return checked_output([*GIT, '-C', str(repository), *arguments])
 
 
 def require_clean(repository):

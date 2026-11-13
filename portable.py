@@ -45,6 +45,27 @@ def native_cli_environment(environment=None):
     return environment
 
 
+def checked_output(command, **options):
+    """The stdout of subprocess.run with its output captured. A non-zero exit raises a CalledProcessError whose text
+    starts with the command's own last non-blank line on stderr, when it wrote one; a run past its timeout raises
+    TimeoutExpired."""
+    result = subprocess.run(command, capture_output=True, **options)
+    if result.returncode:
+        raise _CommandFailed(result.returncode, result.args, result.stdout, result.stderr)
+    return result.stdout
+
+
+class _CommandFailed(subprocess.CalledProcessError):
+    def __str__(self):
+        # On Windows, text-mode stderr that does not decode comes back as None.
+        stderr = self.stderr.decode('utf-8', 'replace') if isinstance(self.stderr, bytes) else self.stderr or ''
+        said = next((line.strip() for line in reversed(stderr.splitlines()) if line.strip()), '')
+        if not said:
+            return super().__str__()
+        status = f'exit {self.returncode}' if self.returncode >= 0 else f'signal {-self.returncode}'
+        return f'{said} ({status} from {subprocess.list2cmdline(self.cmd)})'
+
+
 def _home(home):
     return Path.home() if home is None else Path(home)
 

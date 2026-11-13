@@ -155,6 +155,49 @@ class PortableTest(unittest.TestCase):
                 self.assertIs(raised.exception, stop)
                 self.assertEqual((move.call_count, check.call_count), (1, 1))
 
+    def test_a_command_gives_its_stdout_as_bytes_or_as_text(self):
+        command = [sys.executable, '-c',
+                   'import sys; sys.stdout.buffer.write(b"out\\n"); sys.stderr.buffer.write(b"aside\\n")']
+        self.assertEqual(portable.checked_output(command), b'out\n')
+        self.assertEqual(portable.checked_output(command, text=True), 'out\n')
+
+    def test_a_failed_command_raises_a_called_process_error_whose_text_starts_with_its_last_words(self):
+        import subprocess
+        for stderr, options, said in ((b'warning: first\nerror: the last words\n\n', {}, 'error: the last words'),
+                                      (b'error: \xff\n', {}, 'error: \N{REPLACEMENT CHARACTER}'),
+                                      (b'hint: run\n\tgit config --global --add safe.directory /x\n', {},
+                                       'git config --global --add safe.directory /x'),
+                                      (b'error: as text\n', {'text': True}, 'error: as text'),
+                                      (b'', {}, None)):
+            command = [sys.executable, '-c', f'import sys; sys.stderr.buffer.write({stderr!r}); sys.exit(2)']
+            with self.subTest(stderr=stderr, **options):
+                with self.assertRaises(subprocess.CalledProcessError) as failed:
+                    portable.checked_output(command, **options)
+                self.assertEqual((failed.exception.returncode, failed.exception.cmd), (2, command))
+                text = str(failed.exception)
+                if said:
+                    self.assertTrue(text.startswith(f'{said} (exit 2 from '), text)
+                else:
+                    self.assertEqual(text, str(subprocess.CalledProcessError(2, command)))
+
+    def test_a_failed_command_whose_stderr_windows_could_not_decode_raises_with_pythons_text(self):
+        import subprocess
+        command = ['git', 'rev-parse']
+        lost = subprocess.CompletedProcess(command, 128, '', None)
+        with patch.object(portable.subprocess, 'run', return_value=lost), \
+                self.assertRaises(subprocess.CalledProcessError) as failed:
+            portable.checked_output(command, text=True, encoding='utf-8')
+        self.assertEqual(str(failed.exception), str(subprocess.CalledProcessError(128, command)))
+
+    @unittest.skipIf(sys.platform == 'win32', 'a Windows process ends with an exit code, not a signal')
+    def test_a_failed_command_that_a_signal_ended_names_the_signal(self):
+        import subprocess
+        command = [sys.executable, '-c', 'import os, signal, sys; sys.stderr.write("killed\\n"); sys.stderr.flush(); '
+                                         'os.kill(os.getpid(), signal.SIGKILL)']
+        with self.assertRaises(subprocess.CalledProcessError) as failed:
+            portable.checked_output(command)
+        self.assertTrue(str(failed.exception).startswith('killed (signal 9 from '), str(failed.exception))
+
     def test_posix_keys_use_forward_slashes(self):
         self.assertEqual(portable.posix(Path('skills') / 'a' / 'SKILL.md'), 'skills/a/SKILL.md')
         self.assertEqual(portable.posix(portable.PurePath('skills/a')), 'skills/a')

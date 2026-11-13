@@ -361,6 +361,19 @@ class ObserveTest(unittest.TestCase):
                          (hs.FileValue(digest), hs.FolderDetail(link, url, head, 'linked')))
         self.assertEqual((edited.facts[linked].value, edited.details[linked]), (hs.WorkingCopy(url, 'linked'), hs.FolderDetail(link)))
 
+    @unittest.skipIf(sys.platform == 'win32', 'Windows links require privileges')
+    def test_a_loose_skill_linked_into_a_checkout_git_cannot_read_is_unread_with_gits_own_words(self):
+        with Device() as device:
+            broken = device.roots.home / 'work/broken'
+            device.write(broken / 'linked/SKILL.md', '---\nname: linked\n---\n')
+            (broken / '.git').write_text(f'gitdir: {device.roots.home / "moved"}\n')
+            said = subprocess.run(['git', '-C', str(broken), 'config', '--get', 'remote.origin.url'], capture_output=True,
+                                  text=True).stderr.splitlines()[-1].strip()
+            (device.roots.claude_home / 'skills/linked').symlink_to(broken / 'linked', target_is_directory=True)
+            observation = device.state().observe(hs.Request())
+        [unread] = [u for u in observation.unknown if u.source == '{claude_home}/skills/linked']
+        self.assertTrue(unread.reason.startswith(f'git cannot read the checkout: {said} (exit 128 from git '), unread.reason)
+
     def test_overrides_of_anthropics_own_skills_are_skills_under_their_listed_name_not_residue(self):
         with Device() as device:
             settings = device.roots.claude_home / 'settings.json'

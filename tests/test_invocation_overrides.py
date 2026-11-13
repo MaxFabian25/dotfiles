@@ -333,6 +333,28 @@ class InvocationOverridesTest(unittest.TestCase):
                        for path, old, new, _, identity in writes if old != new]
             self.assertEqual(changed, [('plugin@a', 'cache/a/plugin/1/docs/a.md', 'one\nTWO\nthree\nfour\nfive\n')])
 
+    def test_a_file_git_cannot_show_raises_with_gits_own_words(self):
+        with tempfile.TemporaryDirectory() as directory:
+            said = module.subprocess.run(['git', '-C', directory, 'show', 'main:SKILL.md'], capture_output=True,
+                                         text=True).stderr.splitlines()[-1].strip()
+            with self.assertRaises(module.subprocess.CalledProcessError) as failed:
+                module.git_text(Path(directory), 'main', 'SKILL.md')
+        self.assertTrue(str(failed.exception).startswith(f'{said} (exit 128 from git '), str(failed.exception))
+
+    def test_an_adaptation_whose_tree_git_cannot_read_raises_with_gits_own_words(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository, git = self._adaptation_repository(Path(directory).resolve())
+            tree = module.subprocess.run([*git, 'rev-parse', 'main^{tree}'], capture_output=True,
+                                         text=True).stdout.strip()
+            lost = repository / '.git/objects' / tree[:2] / tree[2:]
+            lost.chmod(0o644)  # git writes its objects read-only, and Windows deletes no read-only file
+            lost.unlink()
+            said = module.subprocess.run([*git, 'diff', '--no-renames', '--name-status', '-z', 'upstream', 'main'],
+                                         capture_output=True, text=True).stderr.splitlines()[-1].strip()
+            with self.assertRaises(module.subprocess.CalledProcessError) as failed:
+                module.adaptation_files({'repository': str(repository), 'baseRef': 'upstream', 'adaptedRef': 'main'})
+        self.assertTrue(str(failed.exception).startswith(f'{said} (exit 128 from git '), str(failed.exception))
+
     def test_plan_without_adaptations_reads_no_registry_file(self):
         with patch.object(module, 'read_json', side_effect=AssertionError('read a registry file')):
             self.assertEqual(module.plan({'targets': {'Codex': {}, 'Claude': {}}}, []), ([], {'Codex': 0, 'Claude': 0}))
