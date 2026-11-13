@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import contextlib
 from dataclasses import dataclass, replace
+from enum import Enum
+from functools import partial
 import hashlib
 import json
 import opencode
@@ -19,7 +21,7 @@ from configuration import (BlockedConfiguration, FileConfiguration, JsonConfigur
 from description import (AlignedInstall, LocalSource, RepoSource, SkillRoot, SnapshotSource, ToolNotes, _canonical,
                          plugin_id)
 from drift import Difference, EntryRef, Kind
-from host_state import FactKey, Host, InstallDetail, Surface, Unpinned, bytes_digest
+from host_state import FactKey, Host, InstallDetail, Released, Surface, Unpinned, bytes_digest
 from portable import WINDOWS, process_running, staging_directory, replace as replace_path, while_held
 from sync_files import ConcurrentEdit, contents
 from sync_sources import BuildError
@@ -28,6 +30,15 @@ from sync_sources import BuildError
 _ABSENT = {'kind': 'absent'}
 _RENDERER = 1
 _PYTHON_CACHE = '__pycache__'
+_WORK = re.compile(r'\.sync-(.+)-[0-9a-f]{32}')
+
+
+class _Stop(Enum):
+    SWAPPED = 'swapped'
+    ASIDE = 'aside'
+    UNSTARTED = 'unstarted'
+    NATIVE = 'native'
+    LOST = 'lost'
 
 
 def _encoded(value):
@@ -136,9 +147,9 @@ def _claude_runtime(path):
     return tuple(sorted(holders))
 
 
-def copy_tree(source: Path, destination: Path):
+def copy_tree(source: Path, destination: Path, copy_function=shutil.copy2):
     """Copy a tree without the Python caches that image() leaves out."""
-    shutil.copytree(source, destination, ignore=shutil.ignore_patterns(_PYTHON_CACHE))
+    shutil.copytree(source, destination, ignore=shutil.ignore_patterns(_PYTHON_CACHE), copy_function=copy_function)
 
 
 class HeldCache(ConcurrentEdit):
@@ -199,11 +210,29 @@ def _carry_leases(source, target, *, overwrite=False):
             marker.replace(target / '.in_use' / marker.name)
 
 
+def _fold_leases(folder, tree):
+    _carry_leases(folder, tree, overwrite=True)
+    try:
+        if (folder / '.in_use').exists():
+            (folder / '.in_use').rmdir()
+        folder.rmdir()
+    except OSError as error:
+        raise ConcurrentEdit(f'Tree changed before replacement: {folder}') from error
+
+
 def _remnant(actual, expected):
     """Whether a tree is the expected one, whole or with entries gone, as a removal that stopped part-way leaves
     it."""
     return (actual['kind'] == expected['kind'] == 'tree'
             and all(expected['entries'].get(path) == value for path, value in actual['entries'].items()))
+
+
+def _unfinished_stage(found, target, stage, source):
+    return found['kind'] == target['kind'] == 'tree' and all(
+        target['entries'].get(path) == value
+        or (value['kind'] == 'file' and target['entries'].get(path, {}).get('kind') == 'file'
+            and (source / path).read_bytes().startswith((stage / path).read_bytes()))
+        for path, value in found['entries'].items())
 
 
 def _only_leases(path):
@@ -286,7 +315,7 @@ class _PreparedArtifact:
     source: Path | None = None
     data: bytes | None = None
     pending: dict | None = None
-    stale: dict | None = None       # an unstarted pending replacement of older desired inputs, which this one replaces
+    taken_over: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -370,9 +399,15 @@ class AcceptedInstallations:
                     package = self.setup.packages[fact.entry]
                     plugin_key = FactKey(key.host, Surface.PLUGIN, key.subject)
                     installed = observations[state.host].facts.get(plugin_key)
+                    pin = installed and installed.value.pin
+                    # Codex names an installed version after the folders under the plugin's cache folder, so it
+                    # names the engine's work folder while a replacement has the version folder moved aside.
+                    if key.host == Host.CODEX and (work := _WORK.fullmatch(current.name)):
+                        current = current.parent / work[1]
+                        pin = Released(work[1]) if isinstance(pin, Released) else pin
                     desired_plugin = facts[plugin_key].value
                     needs_native = installed is None or (not isinstance(desired_plugin.pin, Unpinned) and
-                                                         installed.value.pin != desired_plugin.pin)
+                                                         pin != desired_plugin.pin)
                     fingerprint = {'lock': _canonical(self.setup.lock[fact.entry]),
                                    'package': _canonical(package), 'notes': _canonical(self.setup.note_rules),
                                    'renderer': _RENDERER, 'host': key.host.value, 'paths': device_paths}
@@ -437,10 +472,16 @@ class AcceptedInstallations:
             _same(field, recorded.get(tuple(field['path']), {'path': field['path'], 'present': False}))
             for field in current['fields'])
 
+    def _read_as_recorded(self, artifact, pending, path):
+        if artifact.fields is None:
+            return self._read(artifact, path)
+        return image(path, dict.fromkeys(tuple(field['path']) for field in pending['target']['image']['fields']),
+                     artifact.syntax)
+
     def _known_pending(self, artifact, pending):
         target = pending['target']
         path = Path(target['path'])
-        actual = self._read(artifact, path)
+        actual = self._read_as_recorded(artifact, pending, path)
         known = [target['image'], pending.get('pristine')]
         if str(path) == pending['before_path']:
             known.append(pending['before'])
@@ -449,20 +490,90 @@ class AcceptedInstallations:
         displaced_known = False
         if pending.get('displaced') and (actual == _ABSENT or (artifact.claude_cache and _only_leases(path))):
             displaced = Path(pending['displaced'])
-            if displaced.exists() and _same(self._read(artifact, displaced), pending['swap_before']):
+            if displaced.exists() and _same(self._read_as_recorded(artifact, pending, displaced), pending['swap_before']):
                 displaced_known, actual = True, dict(_ABSENT)
         if not displaced_known and not any(candidate is not None and _same(actual, candidate) for candidate in known):
             raise ConcurrentEdit(f'Unknown partial installation preserved: {artifact.identity}')
         old = Path(pending['before_path'])
-        if old != path and not _same(self._read(artifact, old), pending['before']):
-            raise ConcurrentEdit(f'Previous installation changed during replacement: {artifact.identity}')
+        if old != path:
+            # Codex's installer and Claude Code's sweep of its cache remove old version folders.
+            found = self._read_as_recorded(artifact, pending, old)
+            if found != _ABSENT and not _same(found, pending['before']):
+                raise ConcurrentEdit(f'Previous installation changed during replacement: {artifact.identity}')
         return actual
+
+    def _stopped(self, artifact, pending):
+        path, displaced = Path(pending['target']['path']), Path(pending['displaced'])
+        actual = self._read_as_recorded(artifact, pending, path)
+        if _same(actual, pending['target']['image']):
+            return _Stop.SWAPPED
+        vacant = actual == _ABSENT or (artifact.claude_cache and _only_leases(path))
+        if displaced.exists() or _linked(displaced):
+            if (vacant and _own_work(path, displaced)
+                    and _same(self._read_as_recorded(artifact, pending, displaced), pending['swap_before'])):
+                return _Stop.ASIDE
+            return None
+        if _same(actual, pending['destination_before']):
+            return _Stop.UNSTARTED
+        if _same(actual, pending.get('pristine')):
+            return _Stop.NATIVE
+        return _Stop.LOST if vacant else None
+
+    def _settled_read(self, artifact, stale, state, path):
+        if state is _Stop.ASIDE and path == Path(stale['target']['path']):
+            return stale['swap_before']
+        return self._read(artifact, path)
+
+    def _taken_over(self, artifact, receipt, state):
+        stale = receipt['pending']
+        path = Path(stale['target']['path'])
+        verified = [(Path(stale['before_path']), stale['before'])]
+        if state in (_Stop.NATIVE, _Stop.ASIDE, _Stop.UNSTARTED):
+            verified += [(path, stale['destination_before']), (path, stale['pristine'])]
+        elif state is _Stop.LOST and artifact.claude_cache:
+            verified.append((path, {'kind': 'tree', 'entries': {}}))
+        accepted = stale['target'] if state is _Stop.SWAPPED else receipt.get('accepted')
+        return accepted, partial(self._settled_read, artifact, stale, state), verified
+
+    def _baseline(self, artifact, accepted, read, verified):
+        actual = read(artifact.current)
+        if (_missing(actual)
+                or (accepted and Path(accepted['path']) == artifact.current
+                    and self._unchanged(artifact, actual, accepted['image']))
+                or any(place == artifact.current and _same(actual, held) for place, held in verified)):
+            return actual
+        raise ConcurrentEdit(f'Unverified existing content preserved: {artifact.identity}; an independently pinned baseline is required')
+
+    def _destination_admissible(self, artifact, at_target, verified, target=None, pristine=None):
+        if artifact.current != artifact.destination and not _missing(at_target):
+            if any(place == artifact.destination and _same(at_target, held) for place, held in verified):
+                known = True
+            elif target is None:
+                known = (artifact.destination.is_dir()
+                         and self.roots.tree_digest(artifact.destination) == artifact.expected.digest)
+            else:
+                # A native host can cache the pinned release before its installer registers it, as Claude Code's
+                # plugin listing does for a marketplace that moved to the new version.
+                known = _same(at_target, target) or (artifact.native and _same(at_target, pristine))
+            if not known:
+                raise ConcurrentEdit(f'Unverified destination preserved: {artifact.destination}')
+        if any(part in {'.git', 'node_modules'} for path in at_target.get('entries', {}) for part in Path(path).parts):
+            raise ConcurrentEdit(f'Unowned tree content preserved: {artifact.destination}')
 
     def _assessment(self, artifact):
         receipt = self._receipt(artifact)
-        if receipt and receipt.get('pending'):
-            self._known_pending(artifact, receipt['pending'])
-            return Kind.CHANGED, 'Finish a verified pending replacement'
+        pending = receipt and receipt.get('pending')
+        if pending:
+            state = self._stopped(artifact, pending)
+            if pending['target']['intent'] == artifact.intent and state is not _Stop.LOST:
+                self._known_pending(artifact, pending)
+                return Kind.CHANGED, 'Finish a verified pending replacement'
+            if state is None:
+                raise ConcurrentEdit(f'Unknown partial installation preserved: {artifact.identity}')
+            accepted, read, verified = self._taken_over(artifact, receipt, state)
+            self._baseline(artifact, accepted, read, verified)
+            self._destination_admissible(artifact, read(artifact.destination), verified)
+            return Kind.CHANGED, 'Take over a stopped replacement for the newer release'
         actual = self._read(artifact)
         accepted = receipt and receipt.get('accepted')
         if accepted:
@@ -518,7 +629,7 @@ class AcceptedInstallations:
                 continue
             plugin = FactKey(Host.CLAUDE, Surface.PLUGIN, artifact.key.subject)
             detail = observations[Host.CLAUDE].details.get(plugin)
-            if not isinstance(detail, InstallDetail) or detail.root != artifact.destination:
+            if not isinstance(detail, InstallDetail):
                 continue
             try:
                 receipt = self._receipt(artifact)
@@ -526,6 +637,17 @@ class AcceptedInstallations:
                 if not pending:
                     continue
                 target = pending['target']
+                stopped = (self._stopped(artifact, pending) if detail.root == Path(target['path'])
+                           and (not detail.root.exists() or _only_leases(detail.root)) else None)
+                newer = target['intent'] != artifact.intent
+                staged = Path(pending['staged'])
+                if stopped is _Stop.LOST or (stopped is _Stop.ASIDE and newer) or (
+                        stopped is _Stop.UNSTARTED
+                        and (newer or not staged.exists() or _remnant(image(staged), target['image']))):
+                    recoverable[artifact.key] = self.roots.tokens(detail.root)
+                    continue
+                if detail.root != artifact.destination:
+                    continue
                 destination = artifact.destination
                 before_path = Path(pending['before_path'])
                 staged, displaced = Path(pending['staged']), Path(pending['displaced'])
@@ -542,10 +664,9 @@ class AcceptedInstallations:
                         or _linked(work) or (image(destination) != _ABSENT and not _only_leases(destination))
                         or not _same(image(staged), target['image'])
                         or pending['swap_before']['kind'] != 'tree'
-                        or not _same(self._read(artifact, displaced), pending['swap_before'])
+                        or not _same(self._read_as_recorded(artifact, pending, displaced), pending['swap_before'])
                         or not any(_same(pending['swap_before'], known) for known in
-                                   (pending['before'], pending['destination_before'], pending.get('pristine')) if known)
-                        or (before_path != destination and not _same(self._read(artifact, before_path), pending['before']))):
+                                   (pending['before'], pending['destination_before'], pending.get('pristine')) if known)):
                     continue
                 self._known_pending(artifact, pending)
             except (ConcurrentEdit, OSError, ValueError, KeyError, TypeError):
@@ -681,35 +802,25 @@ class AcceptedInstallations:
             raise BuildError(f'Excluded source content is not ownership evidence: {artifact.identity}')
         return target
 
-    def _unstarted(self, artifact, pending):
-        """Whether a pending replacement stopped before it changed anything, as one does on a held Claude cache:
-        nothing displaced, its destination as it found it, and the previous installation where it was."""
-        displaced, old = Path(pending['displaced']), Path(pending['before_path'])
-        if displaced.exists() or _linked(displaced):
-            return False
-        if not _same(self._read(artifact, Path(pending['target']['path'])), pending['destination_before']):
-            return False
-        return str(old) == pending['target']['path'] or _same(self._read(artifact, old), pending['before'])
-
     def _discard(self, artifact, stale):
         """Remove the work folder of a replacement a newer release took over or that moved nothing aside, before
         its receipt stops naming it."""
         staged = Path(stale['staged'])
-        if Path(stale['displaced']) == staged.parent / 'displaced':
-            self._remove_work(artifact, Path(stale['target']['path']), staged, stale['target']['image'])
+        if Path(stale['displaced']) != staged.parent / 'displaced':
+            if staged.parent.exists():
+                print(f'Work folder left in place: {staged.parent}: its receipt names a displaced tree outside it',
+                      file=sys.stderr)
+            return
+        self._remove_work(artifact, Path(stale['target']['path']), staged, stale['target']['image'])
 
     def _remove_work(self, artifact, destination, held, expected):
-        """Remove the work folder beside destination that its receipt is about to stop naming. The folder goes only
-        when it holds nothing but held, a replacement's own staged tree or the tree one moved aside, plus in a Claude
-        cache the orphan marker Claude Code writes into every folder there that is not an installed version, and
-        only when held is gone or is a tree whose entries are all entries of expected, as a removal that stopped
-        part-way leaves it. expected is the record's image of the tree. A backup recorded before records held one
-        has none and cannot be checked, so its folder stays. stderr names each folder that stays for what it holds
-        or because the operating system refused, and why. One the operating system would not remove may then hold
-        part of its tree. A path that is not one of destination's work folders is passed over without a line."""
         work = held.parent
         if not _own_work(destination, held):
+            if work.exists():
+                print(f"Work folder left in place: {work}: it is not one of {destination}'s work folders",
+                      file=sys.stderr)
             return
+        # Claude Code writes an orphan marker into every folder under its plugin cache that is not an installed version.
         allowed = {held.name, '.orphaned_at'} if artifact.claude_cache else {held.name}
 
         def kept():
@@ -739,23 +850,25 @@ class AcceptedInstallations:
             print(f'Work folder left in place: {work}: {reason}', file=sys.stderr)
 
     def _accept(self, artifact, record, accepted, pending):
-        """Save record as the accepted installation, with the tree its replacement moved aside as its backup and
-        that tree's image, and hand _remove_work the work folders the receipt then no longer names: the
-        replacement's own when it moved nothing aside, and the one holding the backup of the record it replaces.
-        Each is handed over before the record is saved, while the receipt still names it, so a run that stops during a
-        removal leaves the folder named for the next run to finish. With no replacement, as when a release changes
-        only the intent, the record keeps that backup while its path and image stay, because an account home may still
-        hold that copy. A Claude cache's lease markers move from the tree moved aside to the new one before the record
-        is saved, so a run that stops before then leaves them for the next run to move."""
-        if pending and Path(pending['displaced']).exists():
-            record['backup'], record['backup_image'] = pending['displaced'], pending['swap_before']
+        changed, displaced = None, pending and Path(pending['displaced'])
+        if displaced and displaced.exists():
+            try:
+                if not _same(self._read(artifact, displaced), pending['swap_before']):
+                    changed = 'its tree is not the one its receipt holds'
+            except (ConcurrentEdit, OSError) as error:
+                changed = error
+            if changed is None:
+                record['backup'], record['backup_image'] = pending['displaced'], pending['swap_before']
+            else:
+                print(f'Work folder left in place: {displaced.parent}: the tree moved aside changed: {changed}',
+                      file=sys.stderr)
             if artifact.claude_cache:
                 # Sessions that held the old tree read the new one from now on.
-                _carry_leases(Path(pending['displaced']), Path(record['path']))
+                _carry_leases(displaced, Path(record['path']))
         elif (not pending and accepted and accepted.get('backup') and accepted['path'] == record['path']
               and _same(accepted['image'], record['image'])):
             record.update({key: accepted[key] for key in ('backup', 'backup_image') if key in accepted})
-        if pending and 'backup' not in record:
+        if pending and 'backup' not in record and not (changed and _own_work(Path(record['path']), displaced)):
             self._discard(artifact, pending)
         if accepted and accepted.get('backup') and accepted['backup'] != record.get('backup'):
             self._remove_work(artifact, Path(accepted['path']), Path(accepted['backup']), accepted.get('backup_image'))
@@ -764,39 +877,25 @@ class AcceptedInstallations:
     def _prepare_artifact(self, artifact, target, source, data, pristine):
         receipt = self._receipt(artifact)
         pending = receipt and receipt.get('pending')
-        stale = None
+        accepted, read, verified = receipt and receipt.get('accepted'), partial(self._read, artifact), []
         if pending:
-            if pending['target']['intent'] == artifact.intent and _same(pending['target']['image'], target):
+            state = self._stopped(artifact, pending)
+            if (state is not _Stop.LOST and pending['target']['intent'] == artifact.intent
+                    and _same(pending['target']['image'], target)):
                 self._known_pending(artifact, pending)
                 return _PreparedArtifact(artifact, target, pending['before'], Path(pending['before_path']),
                                          pending['bindings'], pending['destination_before'], pristine, source, data,
                                          pending)
-            if not self._unstarted(artifact, pending):
-                raise ConcurrentEdit(f'Finish the pending release before changing desired inputs: {artifact.identity}')
-            # It changed nothing, so the newer release prepares from the accepted installation as if it never ran.
-            stale = pending
-        actual = self._read(artifact)
-        at_target = self._read(artifact, artifact.destination)
-        accepted = receipt and receipt.get('accepted')
-        if _same(at_target, target):
-            before = actual
-        elif _missing(actual):
-            before = actual
-        elif accepted and Path(accepted['path']) == artifact.current and self._unchanged(artifact, actual, accepted['image']):
-            before = actual
-        else:
-            raise ConcurrentEdit(f'Unverified existing content preserved: {artifact.identity}; an independently pinned baseline is required')
-        # A native host can cache the pinned release before its installer registers it, as Claude Code's
-        # plugin listing does for a marketplace that moved to the new version.
-        native_copy = artifact.native and pristine is not None and _same(at_target, pristine)
-        if artifact.current != artifact.destination and not (_missing(at_target) or _same(at_target, target) or native_copy):
-            raise ConcurrentEdit(f'Unverified destination preserved: {artifact.destination}')
-        if target['kind'] == 'tree' and any(part in {'.git', 'node_modules'} for path in at_target.get('entries', {})
-                                          for part in Path(path).parts) and not _same(at_target, target):
-            raise ConcurrentEdit(f'Unowned tree content preserved: {artifact.destination}')
+            if state is None:
+                raise ConcurrentEdit(f'Unknown partial installation preserved: {artifact.identity}')
+            accepted, read, verified = self._taken_over(artifact, receipt, state)
+        at_target = read(artifact.destination)
+        before = (read(artifact.current) if _same(at_target, target)
+                  else self._baseline(artifact, accepted, read, verified))
+        self._destination_admissible(artifact, at_target, verified, target, pristine)
         return _PreparedArtifact(artifact, target, before, artifact.current,
                                  _bindings((*artifact.aliases, artifact.current)), at_target, pristine, source, data,
-                                 stale=stale)
+                                 taken_over=pending or None)
 
     def _check(self, prepared):
         artifact = prepared.artifact
@@ -804,9 +903,16 @@ class AcceptedInstallations:
             raise ConcurrentEdit(f'Path binding changed after preparation: {artifact.identity}')
         if prepared.pending:
             self._known_pending(artifact, prepared.pending)
-        elif not (_same(self._read(artifact, prepared.before_path), prepared.before) and
-                  _same(self._read(artifact, artifact.destination), prepared.destination_before)):
-            raise ConcurrentEdit(f'Changed after preparation: {artifact.identity}')
+        else:
+            read = partial(self._read, artifact)
+            if prepared.taken_over:
+                state = self._stopped(artifact, prepared.taken_over)
+                if state is None:
+                    raise ConcurrentEdit(f'Unknown partial installation preserved: {artifact.identity}')
+                read = partial(self._settled_read, artifact, prepared.taken_over, state)
+            if not (_same(read(prepared.before_path), prepared.before)
+                    and _same(read(artifact.destination), prepared.destination_before)):
+                raise ConcurrentEdit(f'Changed after preparation: {artifact.identity}')
         if prepared.source is not None and not _same(image(prepared.source), prepared.target):
             raise ConcurrentEdit(f'Prepared source changed: {artifact.identity}')
 
@@ -835,17 +941,15 @@ class AcceptedInstallations:
         prepared = self._resolve(token)
         self._check(prepared)
         artifact = prepared.artifact
+        if prepared.taken_over:
+            self._settle(artifact, prepared.taken_over)
+            prepared = replace(prepared, taken_over=None)
         destination = artifact.destination
         record = {'path': str(destination), 'bindings': _bindings(artifact.aliases),
                   'intent': artifact.intent, 'image': prepared.target, 'provenance': artifact.provenance}
         receipt = self._receipt(artifact)
         accepted = receipt and receipt.get('accepted')
-        if prepared.stale:
-            if not (receipt and _same(receipt.get('pending'), prepared.stale) and self._unstarted(artifact, prepared.stale)):
-                raise ConcurrentEdit(f'Pending replacement changed after preparation: {artifact.identity}')
         if _same(self._read(artifact, destination), prepared.target):
-            if prepared.stale:
-                self._discard(artifact, prepared.stale)
             self._accept(artifact, record, accepted, prepared.pending)
             return
         work = destination.parent / ('.sync-' + destination.name + '-' + uuid.uuid4().hex)
@@ -854,8 +958,6 @@ class AcceptedInstallations:
                                        'target': record, 'pristine': prepared.pristine,
                                        'staged': str(work / 'staged'), 'displaced': str(work / 'displaced'),
                                        'swap_before': prepared.destination_before}
-        if prepared.stale:
-            self._discard(artifact, prepared.stale)
         try:
             self._save(artifact, accepted, pending)
             self._check(prepared)
@@ -891,21 +993,49 @@ class AcceptedInstallations:
             raise ConcurrentEdit(f'Effective output failed verification: {artifact.identity}')
         self._accept(artifact, record, accepted, pending)
 
-    def _try_put_back(self, artifact, pending):
+    def _settle(self, artifact, stale):
+        receipt = self._receipt(artifact)
+        state = self._stopped(artifact, stale)
+        if state is None or not (receipt and _same(receipt.get('pending'), stale)):
+            raise ConcurrentEdit(f'Pending replacement changed after preparation: {artifact.identity}')
+        if state is _Stop.SWAPPED:
+            self._accept(artifact, dict(stale['target']), receipt.get('accepted'), stale)
+            return
+        if state is _Stop.ASIDE:
+            try:
+                self._put_back(artifact, stale)
+            except (ConcurrentEdit, OSError) as error:
+                raise ConcurrentEdit(f'Old tree left aside: {stale["displaced"]}, from {stale["target"]["path"]}: '
+                                     f'{error}') from error
+        self._discard(artifact, stale)
+
+    def _put_back(self, artifact, pending):
         destination, displaced = Path(pending['target']['path']), Path(pending['displaced'])
         if not displaced.exists():
             return
-        try:
+
+        def unchanged():
             if not _same(self._read(artifact, displaced), pending['swap_before']):
-                reason = 'it changed after it was moved aside'
-            elif destination.exists():
-                reason = 'its place is taken'
-            else:
-                displaced.rename(destination)
-                return
+                raise ConcurrentEdit('it changed after it was moved aside')
+
+        def ready():
+            unchanged()
+            if destination.exists() or _linked(destination):
+                raise ConcurrentEdit('its place is taken')
+
+        unchanged()
+        if destination.exists() or _linked(destination):
+            if not (artifact.claude_cache and _only_leases(destination)):
+                raise ConcurrentEdit('its place is taken')
+            _fold_leases(destination, displaced)
+        while_held(lambda: displaced.rename(destination), before_retry=ready)
+
+    def _try_put_back(self, artifact, pending):
+        try:
+            self._put_back(artifact, pending)
         except (ConcurrentEdit, OSError) as error:
-            reason = error
-        print(f'Old tree left aside: {displaced}, from {destination}: {reason}', file=sys.stderr)
+            print(f'Old tree left aside: {pending["displaced"]}, from {pending["target"]["path"]}: {error}',
+                  file=sys.stderr)
 
     def _tree(self, prepared, pending, accepted, actual):
         artifact = prepared.artifact
@@ -916,13 +1046,14 @@ class AcceptedInstallations:
         if staged.exists():
             found = image(staged)
             if not _same(found, prepared.target):
-                # A copy or a removal that stopped part-way leaves a stage that holds nothing but entries of its
-                # target. The receipt's path is removed only where this installer makes its stages.
-                if not (staged.name == 'staged' and _own_work(destination, staged) and _remnant(found, prepared.target)):
+                if not (staged.name == 'staged' and _own_work(destination, staged)
+                        and _unfinished_stage(found, prepared.target, staged, prepared.source)):
                     raise ConcurrentEdit(f'Prepared stage was edited: {staged}')
                 shutil.rmtree(staged)
         if not staged.exists():
-            copy_tree(prepared.source, staged)
+            # On Windows shutil.copy2 copies through CopyFile2, which gives a file its full length before its bytes,
+            # so a copy killed inside a file leaves zeros where the stage rule needs a short file.
+            copy_tree(prepared.source, staged, shutil.copy)
         if not _same(image(staged), prepared.target):
             raise ConcurrentEdit(f'Prepared stage failed verification: {staged}')
         # Running sessions hold a cache only against a change beyond its skills' Markdown text.
@@ -946,13 +1077,7 @@ class AcceptedInstallations:
             stage_intact()
 
         if artifact.claude_cache and actual == _ABSENT and displaced.exists() and _only_leases(destination):
-            _carry_leases(destination, displaced, overwrite=True)
-            try:
-                if (destination / '.in_use').exists():
-                    (destination / '.in_use').rmdir()
-                destination.rmdir()
-            except OSError as error:
-                raise ConcurrentEdit(f'Tree changed before replacement: {destination}') from error
+            _fold_leases(destination, displaced)
         unchanged()
         pending['swap_before'] = actual if actual != _ABSENT else pending['swap_before']
         self._save(artifact, accepted, pending)
