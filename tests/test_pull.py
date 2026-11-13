@@ -400,7 +400,7 @@ class GitOutputDecodingTest(unittest.TestCase):
                     self.assertEqual(str(failure.exception), f'{root.name}: git status failed: {expected}')
                     self.assertEqual(errors.getvalue(), '')
 
-    @unittest.skipIf(os.name == 'nt', 'Windows filenames cannot contain non-UTF-8 bytes')
+    @unittest.skipIf(os.name == 'nt' or sys.platform == 'darwin', 'Requires non-UTF-8 filenames')
     def test_malformed_filename_stops_private_test_discovery_and_review_fingerprinting(self):
         import release
 
