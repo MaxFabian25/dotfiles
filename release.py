@@ -29,6 +29,8 @@ for it and starts again, and so does one that finds, before it takes the lock, t
 while it ran its checks and tests or waited, so it runs the engine as it is now.
 `result NAME --timeout SECONDS` waits for that unit, prints the end of its log and exits with its status, or with
 70 when the finish ended on an uncaught error or its unit is gone without a status.
+On Windows itself every action but status and wait stops at once and changes nothing, because releases are made
+on WSL or Omarchy.
 """
 from __future__ import annotations
 
@@ -1485,6 +1487,13 @@ def dispatch(argv, report):
                              'message files and --reviewed; read it with result NAME')
     parser.add_argument('--report', type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    # Releases are made on WSL or Omarchy. status and wait only read the machine they run on, such as its locks,
+    # and agents on the PC read its own that way. This comes before the --report file and any read, lock, fetch or
+    # write.
+    if sys.platform == 'win32' and args.action not in ('status', 'wait'):
+        print('Release stopped: run this from WSL or Omarchy, not from Windows itself; nothing was changed',
+              file=sys.stderr)
+        return 3
     if args.action in ('start', 'finish', 'review', 'clean', 'result') and not args.name:
         parser.error(f'{args.action} needs a NAME')
     if args.report:
