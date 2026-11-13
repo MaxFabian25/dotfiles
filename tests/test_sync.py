@@ -787,7 +787,7 @@ class SyncMainTest(unittest.TestCase):
             with self.assertRaises(subprocess.CalledProcessError) as failed:
                 git_fails()
             self.assertEqual(stop(git_fails),
-                             f'Sync stopped: {failed.exception} It said: {failed.exception.stderr.decode().strip()}\n')
+                             f'Sync stopped: {failed.exception} It said: {failed.exception.stderr.decode().splitlines()[-1]}\n')
         for stderr, said in (('warning: first\nerror: the last words\n\n', ' It said: error: the last words'),
                              (b'error: \xff\n', ' It said: error: \N{REPLACEMENT CHARACTER}'),
                              ('', ''), (b'', ''), (None, '')):
