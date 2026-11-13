@@ -761,13 +761,39 @@ class SyncMainTest(unittest.TestCase):
         import sync
         device = mock.Mock()
         device.roots.installed_engine.return_value = None
-        late = subprocess.TimeoutExpired(['codex', 'plugin', 'add'], 180)
+        late = subprocess.TimeoutExpired(['codex', 'plugin', 'add'], 180, stderr=b'still adding\n')
         with mock.patch('sync.load'), mock.patch('sync.Device.current', return_value=device), \
                 mock.patch('sync.plan', return_value=SimpleNamespace(blocked=(), changes=('a',), result='plan')), \
                 mock.patch('sync.apply', side_effect=late), redirect_stdout(io.StringIO()), \
                 redirect_stderr(io.StringIO()) as stderr:
             self.assertEqual(sync.main(['--apply']), 3)
         self.assertEqual(stderr.getvalue(), f'Sync stopped: {late}\n')
+
+    def test_a_failed_command_stops_the_sync_with_3_on_one_line_that_ends_with_its_own_last_words(self):
+        from unittest import mock
+        import invocation_overrides
+        import sync
+
+        def stop(step):
+            with mock.patch('sync.load', side_effect=step), redirect_stdout(io.StringIO()), \
+                    redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(sync.main(['--apply']), 3)
+            return stderr.getvalue()
+
+        with tempfile.TemporaryDirectory() as temp:
+            def git_fails(*args):
+                return invocation_overrides.git_line(Path(temp), 'rev-parse', '--verify', 'main^{commit}')
+
+            with self.assertRaises(subprocess.CalledProcessError) as failed:
+                git_fails()
+            self.assertEqual(stop(git_fails),
+                             f'Sync stopped: {failed.exception} It said: {failed.exception.stderr.decode().strip()}\n')
+        for stderr, said in (('warning: first\nerror: the last words\n\n', ' It said: error: the last words'),
+                             (b'error: \xff\n', ' It said: error: \N{REPLACEMENT CHARACTER}'),
+                             ('', ''), (b'', ''), (None, '')):
+            error = subprocess.CalledProcessError(1, ['codex', 'plugin', 'add'], stderr=stderr)
+            with self.subTest(stderr=stderr):
+                self.assertEqual(stop(error), f'Sync stopped: {error}{said}\n')
 
 
 if __name__ == '__main__':

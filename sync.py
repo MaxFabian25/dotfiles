@@ -82,8 +82,17 @@ def run(args):
                   f'unmanaged differences left untouched: {len(current.unmanaged)}{expected}.')
         return current.exit_code
     except (DescriptionError, RuntimeError, ValueError, OSError, subprocess.SubprocessError) as error:
-        print(f'Sync stopped: {error}', file=sys.stderr)
+        tail = _stderr_tail(error)
+        print(f'Sync stopped: {error}' + (f' It said: {tail}' if tail else ''), file=sys.stderr)
         return 3
+
+
+def _stderr_tail(error):
+    stderr = error.stderr if isinstance(error, subprocess.CalledProcessError) else None
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode(errors='replace')
+    lines = (stderr or '').strip().splitlines()
+    return lines[-1].strip() if lines else ''
 
 
 if __name__ == '__main__':

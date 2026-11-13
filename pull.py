@@ -15,6 +15,7 @@ import subprocess
 import sys
 import time
 import tomllib
+import traceback
 
 from portable import GIT, WINDOWS, exclusive_lock, lock_holder, native_cli_environment
 from sync_ending import run_sync
@@ -282,6 +283,11 @@ def main():
         return run(args)
     except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as error:
         print(f'Dotfiles pull stopped: {error}', file=sys.stderr)
+        return 3
+    except Exception as error:
+        traceback.print_exc()
+        print(f'Dotfiles pull stopped: pull.py crashed with {type(error).__name__}: {error}; the traceback above says '
+              'where', file=sys.stderr)
         return 3
 
 

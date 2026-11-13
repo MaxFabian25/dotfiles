@@ -515,5 +515,43 @@ class InstallToolsTest(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
 
+class CrashedPullTest(unittest.TestCase):
+    def test_a_step_that_raises_an_unexpected_exception_stops_the_pull_with_3_and_leaves_no_receipt(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            public, private = root / 'public', root / 'private'
+
+            def commit(tree, name, text):
+                git(root, 'init', '-q', '-b', 'main', str(tree))
+                (tree / name).write_text(text, encoding='utf-8')
+                git(tree, 'add', name)
+                git(tree, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'release')
+                return git(tree, 'rev-parse', 'HEAD')
+
+            commit(private, 'release.toml', f'public_commit = "{commit(public, "sync.py", recording_sync(0))}"\n')
+            receipt = root / 'home/.local/state/dotfiles/last-applied.json'
+            argv = ['pull.py', '--root', str(public), '--private', str(private), '--apply', '--wait', '0']
+            crash = AttributeError("'list' object has no attribute 'get'")
+            with patch('pull.Path.home', return_value=root / 'home'), patch.object(sys, 'argv', argv), \
+                    patch('pull.home_files', side_effect=crash), patch('pull.install_tools') as install, \
+                    redirect_stderr(io.StringIO()) as errors:
+                self.assertEqual(pull.main(), 3)
+            said = errors.getvalue()
+            self.assertIn('Traceback (most recent call last):\n', said)
+            self.assertIn(f'\nAttributeError: {crash}\n', said)
+            self.assertTrue(said.splitlines()[-1].startswith('Dotfiles pull stopped: '), said)
+            self.assertIn(f'AttributeError: {crash}', said.splitlines()[-1])
+            self.assertNotIn('managed changes remain', said)
+            self.assertFalse(receipt.exists())
+            install.assert_not_called()
+
+    def test_ctrl_c_and_a_system_exit_still_end_the_pull_as_they_did(self):
+        for interrupt in (KeyboardInterrupt(), SystemExit(2)):
+            with self.subTest(interrupt=type(interrupt).__name__), patch.object(pull, 'run', side_effect=interrupt), \
+                    patch.object(sys, 'argv', ['pull.py']), redirect_stderr(io.StringIO()), \
+                    self.assertRaises(type(interrupt)):
+                pull.main()
+
+
 if __name__ == '__main__':
     unittest.main()
