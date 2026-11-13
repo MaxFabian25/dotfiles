@@ -7,6 +7,8 @@ repository's setup/test_skill_sizes.py holds its own skills to the same limits."
 from pathlib import Path
 import unittest
 
+import yaml
+
 REPO = Path(__file__).resolve().parents[1]
 ROOTS = ('skills', 'packages')
 DESCRIPTION_LIMIT = 1024
@@ -23,7 +25,7 @@ def owned(pattern):
 
 
 class SkillSizes(unittest.TestCase):
-    def test_every_skill_has_a_one_line_description_within_the_limit(self):
+    def test_every_skill_has_a_description_within_the_limit(self):
         skills = owned('SKILL.md')
         self.assertTrue(skills, f'no SKILL.md under {ROOTS}; has the layout changed?')
         for path in skills:
@@ -31,15 +33,9 @@ class SkillSizes(unittest.TestCase):
             lines = path.read_text(encoding='utf-8').split('\n')
             with self.subTest(skill=name):
                 self.assertEqual(lines[0], '---', f'{name} needs frontmatter')
-                front = lines[1:lines.index('---', 1)]
-                found = [index for index, line in enumerate(front) if line.startswith('description:')]
-                self.assertEqual(len(found), 1, f'{name} needs one `description:` line in its frontmatter')
-                description = front[found[0]].removeprefix('description:').strip()
-                following = front[found[0] + 1:found[0] + 2]
-                self.assertFalse(description in ('>', '|', '>-', '|-', '>+', '|+', '') or
-                                 any(line[:1] in (' ', '\t') for line in following),
-                                 f'{name} runs its description over several lines; write it on one line so that '
-                                 'this test can count it')
+                # As a YAML reader takes it, so a description folded or quoted over several lines counts whole.
+                description = yaml.safe_load('\n'.join(lines[1:lines.index('---', 1)])).get('description')
+                self.assertIsInstance(description, str, f'{name} needs a `description:` in its frontmatter')
                 self.assertLessEqual(len(description), DESCRIPTION_LIMIT,
                                      f'{name} has a description of {len(description)} characters and the limit is '
                                      f'{DESCRIPTION_LIMIT}. Keep what the skill is and one trigger per branch, and '

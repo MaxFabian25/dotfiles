@@ -200,7 +200,8 @@ class UnmanagedBuild(unittest.TestCase):
             with self.subTest(fault=fault):
                 options = {'select': recipe.get('select', ()), 'manifest': recipe.get('manifest', 'plugin.json')}
                 self.package = self.kit(recipe.get('subdirectory'), CodexPlacement((EngineInstall(False),)), None, **options)
-                with process_stderr() as stderr:
+                # Git translates its messages, "fatal:" included, unless the locale is C.
+                with process_stderr() as stderr, mock.patch.dict(os.environ, {'LC_ALL': 'C'}):
                     code, [failed, summary] = self.run_build(f'failure-{fault}', '--unmanaged')
                 self.assertRegex(stderr.getvalue(), shown)
                 self.assertEqual(code, 1)

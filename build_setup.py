@@ -62,8 +62,8 @@ def main():
             print(f'verified {name}: Codex tree, {len(claude)} Claude tree(s), {len(roles)} role(s)', flush=True)
         except Exception as error:  # a fault in one builder fails its package, not the run
             errors.append(name)
-            # Their text names the fault. Any other is a fault in the engine: a KeyError's text is only the key, so it
-            # prints with its type, and its traceback says where.
+            # A fault of these types names itself in its text. Any other is a fault in the engine: a KeyError's text is
+            # only the key, so it prints with its type, and its traceback says where.
             worded = isinstance(error, (BuildError, ValueError, OSError, RuntimeError, subprocess.CalledProcessError))
             print(f'FAILED {name}: {error if worded else repr(error)}', flush=True)
             if not worded:

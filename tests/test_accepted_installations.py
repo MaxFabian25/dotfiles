@@ -2,6 +2,7 @@ from dataclasses import replace
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import sys
 import tempfile
@@ -358,6 +359,77 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual(self.run_apply().exit_code, 0)
         self.assertIn('displaced', [path.name for path in held], 'the replaced tree is moved aside')
         self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
+
+    def test_a_tree_edited_while_windows_holds_it_is_left_where_it_is(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        installed = self.installed()
+
+        def edit(target):
+            if target.name == 'displaced':
+                (installed / 'ordinary.txt').write_text('edited during the wait\n')
+
+        held = hold_built_trees_once(self, meanwhile=edit)
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        with self.assertRaisesRegex(ConcurrentEdit, f'^Tree changed before replacement: {re.escape(str(installed))}$'):
+            self.run_apply()
+        self.assertEqual([path.name for path in held], ['displaced'])
+        self.assertEqual((installed / 'ordinary.txt').read_text(), 'edited during the wait\n')
+        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+
+    def stage_edited_during_the_wait_for(self, name):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        installed = self.installed()
+
+        def edit(target):
+            if target.name == name:
+                [stage] = installed.parent.glob('.sync-*/staged')
+                (stage / 'ordinary.txt').write_text('edited during the wait\n')
+
+        held = hold_built_trees_once(self, meanwhile=edit)
+        if name == 'displaced':
+            held.append(installed)  # so that only the first move waits, and the second is tried once
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        with self.assertRaises(ConcurrentEdit) as stopped:
+            self.run_apply()
+        [stage] = installed.parent.glob('.sync-*/staged')
+        self.assertEqual(str(stopped.exception), f'Prepared stage was edited: {stage}')
+        self.assertFalse(installed.exists(), 'the old tree was moved aside before the stage was read again')
+        self.assertIn('use the local reader', (stage.parent / 'displaced/skills/one/SKILL.md').read_text())
+
+    def test_a_stage_edited_while_windows_holds_the_old_tree_stops_the_replacement(self):
+        self.stage_edited_during_the_wait_for('displaced')
+
+    def test_a_stage_edited_while_windows_holds_the_new_tree_stops_the_replacement(self):
+        self.stage_edited_during_the_wait_for('1.0.0')
+
+    @unittest.skipIf(sys.platform == 'win32' or getattr(os, 'geteuid', lambda: 1)() == 0, 'needs a file its owner cannot read')
+    def test_a_tree_that_cannot_be_read_again_while_windows_holds_it_is_left_where_it_is(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        installed = self.installed()
+        held = hold_built_trees_once(
+            self, meanwhile=lambda target: target.name == 'displaced' and (installed / 'ordinary.txt').chmod(0))
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        with self.assertRaises(PermissionError) as stopped:
+            self.run_apply()
+        self.assertEqual(Path(stopped.exception.filename), installed / 'ordinary.txt')
+        self.assertEqual([path.name for path in held], ['displaced'])
+        (installed / 'ordinary.txt').chmod(0o644)
+        self.assertEqual((installed / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
+        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
+
+    def test_a_folder_that_appears_where_windows_holds_the_new_tree_is_not_replaced(self):
+        def appear(target):
+            if target.name != 'displaced':
+                target.mkdir()
+                (target / 'theirs.txt').write_text('made during the wait\n')
+
+        held = hold_built_trees_once(self, meanwhile=appear)
+        with self.assertRaises(ConcurrentEdit) as stopped:
+            self.run_apply()
+        self.assertEqual(str(stopped.exception), f'Tree changed during replacement: {held[-1]}')
+        self.assertEqual([path.name for path in held[-1].iterdir()], ['theirs.txt'])
 
     def test_install_then_strict_noop_and_complete_manifest(self):
         after = self.run_apply()
@@ -1102,6 +1174,15 @@ class InstallationTest(unittest.TestCase):
         package = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
         lock = replace(self.setup.lock['kit'], intent=intent(package, {}), trees={Host.CLAUDE: LockedTree('1.0.0', digest)})
         self.setup = replace(self.setup, packages={'kit': package}, lock={'kit': lock})
+
+    def test_a_claude_session_that_starts_while_windows_holds_the_cache_keeps_it(self):
+        destination = self._installed_claude()
+        self.revise_release('revised release bytes\n')
+        held = hold_built_trees_once(
+            self, meanwhile=lambda target: target.name == 'displaced' and own_lease(destination / '.in_use'))
+        self.assert_held(destination)
+        self.assertEqual([path.name for path in held], ['displaced'])
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
 
     def test_claude_same_path_replacement_waits_for_a_running_holder(self):
         destination = self._installed_claude()

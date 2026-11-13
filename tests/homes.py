@@ -42,11 +42,12 @@ def isolate_git():
     unittest.addModuleCleanup(patcher.__exit__, None, None, None)
 
 
-def hold_built_trees_once(case):
+def hold_built_trees_once(case, meanwhile=None):
     """As a test's setUp: the first move of each tree out of its staging folder, or into one beside it, is refused
-    the way Windows refuses it while another process holds the folder. Returns the targets refused so far."""
+    the way Windows refuses it while another process holds the folder. Returns the targets refused so far.
+    meanwhile, given the refused target, does what another process does during the wait before the next attempt."""
     import portable
-    refused, device = [], portable.WINDOWS
+    refused, waiting, device, sleep = [], [], portable.WINDOWS, portable.time.sleep
     case.addCleanup(setattr, portable, 'WINDOWS', device)
 
     def held_once(move):
@@ -56,13 +57,23 @@ def hold_built_trees_once(case):
                     target.parent.name.startswith('.') and source.parent == target.parent.parent):
                 if target not in refused:
                     refused.append(target)
-                    portable.WINDOWS = True  # portable.replace retries only there, so the device is Windows until the retry
+                    # portable.while_held retries only on Windows, so the device is Windows from the refusal until
+                    # the wait that follows it.
+                    portable.WINDOWS = True
+                    waiting.append(target)
                     raise PermissionError(13, 'Access is denied', str(target))
-                portable.WINDOWS = device
             return move(source, target, *args, **kwargs)
         return attempt
 
-    for patcher in (mock.patch.object(portable.time, 'sleep'), mock.patch('os.rename', held_once(os.rename)),
+    def wait(seconds):
+        if not waiting:
+            return sleep(seconds)  # a wait of some other code's
+        portable.WINDOWS = device
+        target = waiting.pop()
+        if meanwhile:
+            meanwhile(target)
+
+    for patcher in (mock.patch.object(portable.time, 'sleep', wait), mock.patch('os.rename', held_once(os.rename)),
                     mock.patch('os.replace', held_once(os.replace))):
         patcher.start()
         case.addCleanup(patcher.stop)

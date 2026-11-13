@@ -84,6 +84,36 @@ class PortableTest(unittest.TestCase):
             portable.replace('a', 'b')
         self.assertEqual((move.call_count, sleep.call_count), (2, 1))
 
+    def test_a_move_windows_never_frees_raises_its_last_refusal_after_the_attempts_it_was_given(self):
+        refused = PermissionError(13, 'Access is denied')
+        with patch.object(portable, 'WINDOWS', True), patch.object(portable.os, 'replace', side_effect=refused) as move, \
+                patch.object(portable.time, 'sleep') as sleep:
+            with self.assertRaises(PermissionError) as raised:
+                portable.replace('a', 'b', attempts=3, delay=7)
+        self.assertIs(raised.exception, refused)
+        self.assertEqual((move.call_count, sleep.call_args_list), (3, [unittest.mock.call(7)] * 2))
+
+    def test_only_a_refusal_is_retried_and_the_check_before_each_retry_can_stop_it(self):
+        missing, refused, changed = FileNotFoundError(2, 'gone'), PermissionError(13, 'Access is denied'), RuntimeError('changed')
+        with patch.object(portable, 'WINDOWS', True), patch.object(portable.time, 'sleep') as sleep:
+            move = unittest.mock.Mock(side_effect=missing)
+            with self.assertRaises(FileNotFoundError):
+                portable.while_held(move)
+            self.assertEqual((move.call_count, sleep.call_count), (1, 0))
+            steps = unittest.mock.Mock()
+            steps.attach_mock(sleep, 'wait')
+            steps.move.side_effect = [refused, refused, 'moved']
+            self.assertEqual(portable.while_held(steps.move, before_retry=steps.check), 'moved')
+            self.assertEqual([step[0] for step in steps.mock_calls],
+                             ['move', 'wait', 'check', 'move', 'wait', 'check', 'move'])
+            # A check that cannot read what it checks is refused too, and that is not the move's refusal to wait out.
+            for stop in (changed, PermissionError(13, 'the check could not read the tree')):
+                move, check = unittest.mock.Mock(side_effect=refused), unittest.mock.Mock(side_effect=stop)
+                with self.assertRaises(type(stop)) as raised:
+                    portable.while_held(move, before_retry=check)
+                self.assertIs(raised.exception, stop)
+                self.assertEqual((move.call_count, check.call_count), (1, 1))
+
     def test_posix_keys_use_forward_slashes(self):
         self.assertEqual(portable.posix(Path('skills') / 'a' / 'SKILL.md'), 'skills/a/SKILL.md')
         self.assertEqual(portable.posix(portable.PurePath('skills/a')), 'skills/a')

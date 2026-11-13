@@ -832,18 +832,31 @@ class AcceptedInstallations:
             raise ConcurrentEdit(f'Prepared stage failed verification: {staged}')
         # Running sessions hold a cache only against a change beyond its skills' Markdown text.
         text = artifact.claude_cache and _skill_text_only(actual, prepared.target)
-        if not _same(self._read(artifact, destination, replacing=not text), actual):
-            raise ConcurrentEdit(f'Tree changed before replacement: {destination}')
+
+        def unchanged():
+            if not _same(self._read(artifact, destination, replacing=not text), actual):
+                raise ConcurrentEdit(f'Tree changed before replacement: {destination}')
+
+        def ready():
+            if destination.exists():
+                raise ConcurrentEdit(f'Tree changed during replacement: {destination}')
+            if not _same(image(staged), prepared.target):
+                raise ConcurrentEdit(f'Prepared stage was edited: {staged}')
+
+        unchanged()
         pending['swap_before'] = actual if actual != _ABSENT else pending['swap_before']
         self._save(artifact, accepted, pending)
-        if not _same(self._read(artifact, destination, replacing=not text), actual):
-            raise ConcurrentEdit(f'Tree changed before replacement: {destination}')
+        unchanged()
         destination.parent.mkdir(parents=True, exist_ok=True)
+        # Windows can refuse a move for seconds, in which the tree can be edited or a Claude session can start, so
+        # each further attempt first repeats the check the first attempt was made under, and the second move is
+        # checked afresh because the first may have waited.
         if destination.exists():
             if displaced.exists():
                 raise ConcurrentEdit(f'Displaced tree already exists: {displaced}')
-            while_held(lambda: destination.rename(displaced))
-        while_held(lambda: staged.rename(destination))
+            while_held(lambda: destination.rename(displaced), before_retry=unchanged)
+            ready()
+        while_held(lambda: staged.rename(destination), before_retry=ready)
         if text:
             _carry_leases(displaced, destination)
 

@@ -76,7 +76,7 @@ class WindowsScheduleTest(unittest.TestCase):
 
     def test_install_anchors_the_timer_after_the_drift_check(self):
         with tempfile.TemporaryDirectory() as directory:
-            home = Path(directory)
+            home = Path(directory).resolve()  # as the install resolves its roots; macOS keeps its temp folder behind a link
             (home / '.config/dotfiles').mkdir(parents=True)
             (home / '.config/dotfiles/allowed_signers').write_text('')
             argv = ['schedule.py', '--root', str(home / 'repo'), '--private', str(home / 'private'), '--install']

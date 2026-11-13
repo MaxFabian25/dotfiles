@@ -116,10 +116,12 @@ def posix(path):
     return PurePath(path).as_posix()
 
 
-def while_held(move, attempts=20, delay=0.25):
-    """Run move, again while Windows refuses it. Windows refuses to replace a file or move a folder that another
-    process holds open: Codex or Claude may be reading it, or a scanner the folder it has just seen appear. It refuses
-    a move onto a folder that already exists the same way, so that one fails only after the last attempt."""
+def while_held(move, attempts=20, delay=0.25, before_retry=None):
+    """Run move, and run it again while Windows refuses it. Windows refuses to replace a file or move a folder that
+    another process holds open: Codex or Claude may be reading it, or a scanner may have opened a folder that has
+    just appeared. The last refusal is raised. before_retry runs before each further attempt, for a caller whose
+    check before the move has to hold at the moment of the move, not seconds earlier. Whatever it raises ends the
+    attempts, a refused read included, because a check that could not be made has not passed."""
     for attempt in range(attempts):
         try:
             return move()
@@ -127,9 +129,13 @@ def while_held(move, attempts=20, delay=0.25):
             if not WINDOWS or attempt == attempts - 1:
                 raise
             time.sleep(delay)
+            if before_retry:
+                before_retry()
 
 
 def replace(source, target, attempts=20, delay=0.25):
+    """os.replace, again while Windows refuses it. Windows refuses a move onto a folder that already exists the
+    same way as a move of a held one, so that move fails only after the last attempt."""
     return while_held(lambda: os.replace(source, target), attempts, delay)
 
 
