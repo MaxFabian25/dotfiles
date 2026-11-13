@@ -1,4 +1,5 @@
 import ctypes
+from datetime import datetime, timezone
 import importlib.util
 import io
 import os
@@ -134,10 +135,17 @@ class PortableTest(unittest.TestCase):
         import sys
         with tempfile.TemporaryDirectory() as directory:
             lock = Path(directory) / 'state/pull.lock'
+            before = datetime.now(timezone.utc).replace(microsecond=0)  # the note gives whole seconds
             with portable.exclusive_lock(lock, record=True):
                 holder = portable.lock_holder(lock)
                 self.assertEqual(holder['pid'], os.getpid())
                 self.assertIn(Path(sys.argv[0]).name, holder['command'])
+                # release.py status prints since's hour and minute as this machine's clock time, and the private CI
+                # census's finish_sampler.py reads when the hold began from it.
+                since = datetime.fromisoformat(holder['since'])
+                self.assertEqual(since.utcoffset(), datetime.now().astimezone().utcoffset(), holder['since'])
+                self.assertLessEqual(before, since, holder['since'])
+                self.assertLessEqual(since, datetime.now(timezone.utc), holder['since'])
             self.assertIsNone(portable.lock_holder(lock))
             self.assertFalse(lock.with_name('pull.lock.holder').exists())
             child = subprocess.run([sys.executable, '-c', 'import os; print(os.getpid())'],
