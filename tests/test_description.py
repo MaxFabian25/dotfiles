@@ -158,12 +158,49 @@ class RenderTest(unittest.TestCase):
             package = setup.packages['hooked']
             self.assertEqual(package.codex.windows_hook_command, command)
             self.assertEqual(package.codex.windows_replace, (description.WindowsReplace('a/run.cmd', '"%~1" engine-probe >', 'call "%~1" engine-probe >'),))
+            # A lock's intent holds this name, so another name would make every Windows-patched package's lock stale.
+            self.assertEqual(type(package.codex.windows_replace[0]).__name__, 'WindowsReplace')
             files = description_toml.render_root(setup, description.Visibility.PUBLIC, None)
             path.write_bytes(files['packages/hooked.toml'])
             self.assertEqual(description_toml.load(roots.roots()).packages['hooked'], package)
             path.write_text(path.read_text().replace('run.cmd', 'other.cmd'))
             changed = description_toml.load(roots.roots()).packages['hooked']
             self.assertNotEqual(description.intent(package, setup.repos), description.intent(changed, setup.repos))
+
+    def test_a_text_replace_round_trips_changes_intent_and_needs_an_aligned_claude_copy(self):
+        block = ("\n[[codex.replace]]\npath = 'skills/deslop/SKILL.md'\nfind = 'Hand it over.'\n"
+                 "replace = '''Read its files.\nThen rank.'''\n")
+        with Roots() as roots:
+            path = roots.public / 'packages/cursor-team-kit.toml'
+            before = description_toml.load(roots.roots()).packages['cursor-team-kit']
+            path.write_text(path.read_text().replace('\n[claude]\n', block + '\n[claude]\n'))
+            setup = description_toml.load(roots.roots())
+            package = setup.packages['cursor-team-kit']
+            self.assertEqual(package.codex.replace,
+                             (description.TextReplace('skills/deslop/SKILL.md', 'Hand it over.', 'Read its files.\nThen rank.'),))
+            self.assertEqual(package.codex.windows_replace, ())
+            self.assertNotEqual(description.intent(before, setup.repos), description.intent(package, setup.repos))
+            files = description_toml.render_root(setup, description.Visibility.PUBLIC, None)
+            path.write_bytes(files['packages/cursor-team-kit.toml'])
+            self.assertEqual(description_toml.load(roots.roots()).packages['cursor-team-kit'], package)
+            aligned = 'via = "codex-aligned", enabled = true, agents = []'
+            path.write_text(path.read_text().replace(aligned, 'via = "personal-collections", enabled = false')
+                            .replace('[claude.skills]\nexplicit = ["fix-ci"]\n', ''))
+            self.assertEqual(description_toml.load(roots.roots()).packages['cursor-team-kit'].codex.replace, package.codex.replace)
+            disabled = 'via = "personal-collections", enabled = false'
+            for managed in ('enabled = true', 'enabled = false, keep_current = true'):
+                with self.subTest(managed=managed):
+                    path.write_text(path.read_text().replace(disabled, f'via = "personal-collections", {managed}'))
+                    with self.assertRaisesRegex(description.DescriptionError, r'claude\.install\[0\]: codex\.replace '
+                                                r'reaches Claude only through an aligned install'):
+                        description_toml.load(roots.roots())
+                    disabled = f'via = "personal-collections", {managed}'
+
+    def test_a_malformed_text_replace_names_its_own_key(self):
+        with Roots() as roots:
+            path = roots.public / 'packages/cursor-team-kit.toml'
+            path.write_text(path.read_text().replace('\n[claude]\n', "\n[[codex.replace]]\npath = 'a'\nfind = 'b'\n\n[claude]\n"))
+            self.assertEqual(roots.problems(), [f'{path}:codex.replace[0]: expected path, find and replace strings'])
 
     def test_a_kept_current_install_round_trips_and_changes_intent(self):
         with Roots() as roots:

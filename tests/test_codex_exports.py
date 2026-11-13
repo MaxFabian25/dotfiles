@@ -4,13 +4,14 @@ from pathlib import Path
 import shutil
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from homes import Home, hold_built_trees_once
 from description import (AlignedInstall, ClaudePlacement, CodexPlacement, EngineInstall, LocalSource, MarketplaceInstall,
-                         Package, Roots, Setup, ToolNotes, Visibility)
-from host_state import SkillMode
+                         Package, Roots, Setup, TextReplace, ToolNotes, Visibility)
+from host_state import Host, SkillMode
 from sync_sources import Builder, BuildError
 
 
@@ -92,6 +93,44 @@ class PolicyExportTest(unittest.TestCase):
             dormant = replace(kept, codex=CodexPlacement((EngineInstall(False),)), claude=ClaudePlacement((AlignedInstall(False),)))
             self.assertEqual(builder.codex(dormant, verify=False).version, '1.0.0')
             self.assertEqual(builder.claude(dormant, built, verify=False), {})
+
+    def test_a_text_replace_reaches_the_codex_install_and_the_aligned_copy_on_every_platform(self):
+        with Home() as home:
+            source, _, package, builder = self.fixture(home)
+            home.skill(source, 'ordinary', body='Hand it over.\nThen stop.\n')
+            edit = TextReplace('skills/ordinary/SKILL.md', 'Hand it over.', 'Read its files.')
+            package = replace(package, source=LocalSource('source', home.roots.tree_digest(source)),
+                              codex=CodexPlacement((EngineInstall(True),), replace=(edit,)),
+                              claude=ClaudePlacement((AlignedInstall(True),)))
+            built = builder.codex(package, verify=False)
+            self.assertIn('Hand it over.', (built.root / 'skills/ordinary/SKILL.md').read_text(), 'the release stays pristine')
+            patched = '---\nname: ordinary\ndescription: ordinary\n---\nRead its files.\nThen stop.\n'
+            install = home.roots.home / 'install'
+            shutil.copytree(built.root, install)
+            with patch('sync_sources.WINDOWS', False):
+                writes = builder.overlay(package, Host.CODEX, 'kit@personal', install)
+                self.assertEqual([new for path, _, new, *_ in writes if path.name == 'SKILL.md' and path.parent.name == 'ordinary'],
+                                 [patched])
+                aligned = builder.claude(package, built, verify=False)['kit@codex-aligned'].root
+            self.assertEqual((aligned / 'skills/ordinary/SKILL.md').read_text(), patched)
+            (install / 'skills/ordinary/SKILL.md').write_text(patched)
+            again = builder.overlay(package, Host.CODEX, 'kit@personal', install)
+            self.assertEqual([old for path, old, new, *_ in again if path.parent.name == 'ordinary' and old != new], [])
+            (install / 'skills/ordinary/SKILL.md').write_text('---\nname: ordinary\ndescription: ordinary\n---\nUpstream rewrote it.\n')
+            with self.assertRaisesRegex(ValueError, 'Review upstream change to an adapted file: kit@personal:skills/ordinary/SKILL.md'):
+                builder.overlay(package, Host.CODEX, 'kit@personal', install)
+
+    def test_a_text_replace_whose_passage_or_file_is_gone_stops_the_build_without_a_claude_copy(self):
+        with Home() as home:
+            source, _, package, builder = self.fixture(home)
+            home.skill(source, 'ordinary', body='Upstream rewrote it.\n')
+            package = replace(package, source=LocalSource('source', home.roots.tree_digest(source)))
+            for path in ('skills/ordinary/SKILL.md', 'skills/ordinary/gone.md'):
+                with self.subTest(path=path):
+                    edit = TextReplace(path, 'Hand it over.', 'Read its files.')
+                    codex_only = replace(package, codex=CodexPlacement((EngineInstall(True),), replace=(edit,)), claude=None)
+                    with self.assertRaisesRegex(ValueError, f'Review upstream change to an adapted file: kit@personal:{path}'):
+                        builder.codex(codex_only, verify=False)
 
     def test_the_aligned_copy_keeps_claudes_own_skill_and_only_the_agents_its_install_lists(self):
         with Home() as home:

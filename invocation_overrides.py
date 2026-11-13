@@ -4,6 +4,8 @@ build of a release, and refuses a SKILL.md whose `../` link to a SKILL.md does n
 Harness adaptations replay each plugin's adaptation repository onto the tree with a three-way merge, so
 upstream edits merge or stop for review.
 Tool notes name the other host's equivalent after a host-specific tool name.
+Text replacements, on every platform or only on Windows, patch one exact passage of a file and stop for review when
+upstream changes that passage.
 """
 import json
 import os
@@ -243,10 +245,11 @@ def windows_overlay(hook_command, replaces):
     return {'hookCommand': hook_command, 'replace': [(r.path, r.find, r.replace) for r in replaces]}
 
 
-def replace_on_windows(text, find, replacement, label):
-    # A patch to an upstream file, for a bug only a Windows launcher has. An upstream that fixed it needs no patch.
+def replace_once(text, find, replacement, label):
+    # A patch to one passage of an upstream file. An upstream that already reads as the patch needs none, and one
+    # that changed, moved or removed the passage stops for review.
     if text is None:
-        return text
+        raise ValueError(f'Review upstream change to an adapted file: {label}')
     newline = '\r\n' if '\r\n' in text else '\n'
     find = find.replace('\r\n', '\n').replace('\n', newline)
     replacement = replacement.replace('\r\n', '\n').replace('\n', newline)
@@ -369,9 +372,9 @@ def plan(registry, installs, adaptations=None):
         windows = adaptations.get('windows', {}).get(plugin, {})
         if command := windows.get('hookCommand'):
             stage(root / 'hooks/hooks.json', lambda text, command=command: add_windows_hook_command(text, command))
-        for relative, find, replacement in windows.get('replace', ()):
+        for relative, find, replacement in (*adaptations.get('replace', {}).get(plugin, ()), *windows.get('replace', ())):
             stage(root / relative, lambda text, find=find, replacement=replacement, label=f'{identity}:{relative}':
-                  replace_on_windows(text, find, replacement, label))
+                  replace_once(text, find, replacement, label))
         rules = noted_here(adaptations, identity)
         if rules:
             for path in note_files(root):

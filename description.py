@@ -225,10 +225,14 @@ class Adaptation:
 
 
 @dataclass(frozen=True)
-class WindowsReplace:
+class TextReplace:
     path: str                        # a file in the plugin, which must hold `find` once
     find: str
     replace: str
+
+
+class WindowsReplace(TextReplace):
+    """One applied only on Windows. A lock's intent holds the type's name, so this name keeps those locks."""
 
 
 @dataclass(frozen=True)
@@ -240,6 +244,8 @@ class CodexPlacement:
     # The commandWindows a pull on Windows gives the plugin's hooks. Absent from the intent of every other package.
     windows_hook_command: str | None = field(default=None, metadata={'intent': 'when-set'})
     windows_replace: tuple[WindowsReplace, ...] = field(default=(), metadata={'intent': 'when-set'})
+    # Edits on every platform. Claude gets them only through an aligned copy, built from the effective Codex tree.
+    replace: tuple[TextReplace, ...] = field(default=(), metadata={'intent': 'when-set'})
 
 
 @dataclass(frozen=True)

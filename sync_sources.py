@@ -180,6 +180,8 @@ class Builder:
             expected = locked.trees.get(Host.CODEX) if locked else None
             if expected is not None and result.digest != expected.digest:
                 raise BuildError(f'{package.name}: rebuilt tree {result.digest} differs from lock {expected.digest}')
+        if package.codex and package.codex.replace:
+            self.effective(package, result)  # so a passage upstream changed stops the build, not each device's pull
         return result
 
     def local(self, visibility, source: LocalSource, placement=None) -> Path:
@@ -273,6 +275,8 @@ class Builder:
         if package.tool_notes == ToolNotes.APPLY:
             adaptations['toolNotes'] = {'plugins': [package.name],
                                          'rules': [{'match': r.match, 'note': r.note} for r in self.setup.note_rules]}
+        if host == Host.CODEX and package.codex and package.codex.replace:
+            adaptations['replace'] = {package.name: [(r.path, r.find, r.replace) for r in package.codex.replace]}
         placement = package.placement(host)
         if placement and WINDOWS:
             command = placement.windows_hook_command if host == Host.CODEX else None

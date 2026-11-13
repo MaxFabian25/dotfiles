@@ -142,6 +142,9 @@ def check_invariants(setup: Setup, errors: list[str]) -> None:
                 if (host == Host.CLAUDE and install.managed and placement.windows_replace
                         and not isinstance(install, MarketplaceInstall)):
                     errors.append(f'{path}:{key}: Windows patches require a native marketplace install')
+                if (host == Host.CLAUDE and install.managed and package.codex and package.codex.replace
+                        and not isinstance(install, AlignedInstall)):
+                    errors.append(f'{path}:{key}: codex.replace reaches Claude only through an aligned install')
                 if isinstance(install, AlignedInstall) and install.managed and not (
                         package.codex and any(i.managed for i in package.codex.installs)):
                     errors.append(f'{path}:{key}: an enabled or kept-current aligned copy needs an enabled or '

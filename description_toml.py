@@ -17,7 +17,7 @@ from description import (Adaptation, AlignedInstall, BUILDS, BuildSource, Claude
                          Hooks, HostMarketplace, Install, Lock, LockedTree, LocalSource, LooseSkill, MarketplaceInstall, MarketplaceMode,
                          NoteRule, Origin, Package, PluginRoles, PublicEmilRecipe, Recipe, Repo, RepoName, RepoRoles,
                          RepoSource, Roots, Rules, SCHEMA, Setup, SkillRoot, SnapshotRecipe, SnapshotSource, Source,
-                         ToolNotes, Visibility, entry_path, via, WindowsReplace)
+                         TextReplace, ToolNotes, Visibility, entry_path, via, WindowsReplace)
 from description_checks import check_invariants, check_placement, check_privacy, check_references
 from host_state import (ALIGNED_MARKETPLACE, ENGINE_MARKETPLACE, Commit, EntryName, FactKey, Host, Platform, SkillMode, Surface,
                         parse_commit, parse_digest)
@@ -166,13 +166,14 @@ def _parse_installs(table: _Table, host: Host) -> tuple[Install, ...]:
                  if (install := _parse_install(table, index, item, host)) is not None)
 
 
-def _parse_windows_replace(table: _Table) -> tuple[WindowsReplace, ...]:
+def _parse_replace(table: _Table, key: str) -> tuple[TextReplace, ...]:
+    kind = WindowsReplace if key == 'windows_replace' else TextReplace
     replaces = []
-    for index, item in enumerate(table.get('windows_replace', list, [])):
+    for index, item in enumerate(table.get(key, list, [])):
         if isinstance(item, dict) and set(item) == {'path', 'find', 'replace'} and all(isinstance(v, str) and v for v in item.values()):
-            replaces.append(WindowsReplace(item['path'], item['find'], item['replace']))
+            replaces.append(kind(item['path'], item['find'], item['replace']))
         else:
-            table.error(f'windows_replace[{index}]', 'expected path, find and replace strings')
+            table.error(f'{key}[{index}]', 'expected path, find and replace strings')
     return tuple(replaces)
 
 
@@ -250,12 +251,13 @@ def _parse_package(path: Path, data: Mapping, visibility: Visibility, errors: li
         codex = CodexPlacement(_parse_installs(codex_table, Host.CODEX),
                                codex_table.parse('hooks', Hooks, codex_table.get('hooks', str, Hooks.OFF.value)),
                                _parse_roles(codex_table.sub('roles')), adaptation,
-                               codex_table.get('windows_hook_command', str, None), _parse_windows_replace(codex_table))
+                               codex_table.get('windows_hook_command', str, None),
+                               _parse_replace(codex_table, 'windows_replace'), _parse_replace(codex_table, 'replace'))
         codex_table.done()
     claude_table = table.sub('claude')
     if claude_table:
         claude = ClaudePlacement(_parse_installs(claude_table, Host.CLAUDE), _parse_claude_modes(claude_table.sub('skills')),
-                                 _parse_windows_replace(claude_table))
+                                 _parse_replace(claude_table, 'windows_replace'))
         claude_table.done()
     table.done()
     return Package(EntryName(path.stem), visibility, note, source, modes, tool_notes, codex, claude, platforms)
@@ -639,8 +641,9 @@ def _dump_package(package: Package) -> dict:
                                            **({'harness': adaptation.harness} if adaptation.harness else {})})
         if package.codex.windows_hook_command:
             codex['windows_hook_command'] = package.codex.windows_hook_command
-        if package.codex.windows_replace:
-            codex['windows_replace'] = [_Inline({'path': r.path, 'find': r.find, 'replace': r.replace}) for r in package.codex.windows_replace]
+        for key in ('windows_replace', 'replace'):
+            if replaces := getattr(package.codex, key):
+                codex[key] = [_Inline({'path': r.path, 'find': r.find, 'replace': r.replace}) for r in replaces]
         roles = package.codex.roles
         if isinstance(roles, RepoRoles):
             codex['roles'] = {'from': 'repo', 'directory': roles.directory, 'pattern': roles.pattern,
