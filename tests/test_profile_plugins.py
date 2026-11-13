@@ -1,6 +1,11 @@
 from dataclasses import replace
+import contextlib
+import errno
+import io
 import json
+import os
 from pathlib import Path
+import re
 import shutil
 import sys
 from types import SimpleNamespace
@@ -9,12 +14,13 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from homes import Home
+from homes import Home, hold_built_trees_once
 from accepted_installations import image
 from description import CodexPlacement, EngineInstall, Hooks, LocalSource, Lock, LockedTree, Package, Roots, Setup
 from description import ToolNotes, Visibility
 from host_observation import Unread
 from host_state import Host, Platform
+import portable
 import profile_plugins
 from sync_files import ConcurrentEdit, Files
 import sync_hosts
@@ -23,6 +29,51 @@ VERSION = '2.0.0+explicit.abc'
 ACCOUNT_HOMES = ('.local/share/orca/codex-accounts/*/home',)
 MARKETPLACE = '[marketplaces.personal]\nsource_type = "local"\nsource = "/home/user"\n'
 HOOK = 'kit@personal:hooks/hooks.json:session_start:0:0'
+SWITCHED_OFF = (('off', '[plugins."kit@personal"]\nenabled = false\n\n'), ('not mentioned', ''))
+SAVED = 'backup/account-homes/.local/share/orca/codex-accounts/account/home/personal/kit'
+
+
+def hold_moves_into_the_backup_once(case, backup, meanwhile=None):
+    """hold_built_trees_once for the moves of a home's copies into backup, which its rule does not match: the first
+    move of each copy is refused the way Windows refuses it while another process holds the folder. Returns the
+    copies refused so far. meanwhile, given the refused copy, does what another process does during the wait."""
+    refused, waiting, device, sleep, rename = [], [], portable.WINDOWS, portable.time.sleep, os.rename
+    case.addCleanup(setattr, portable, 'WINDOWS', device)
+
+    def attempt(source, target):
+        source = Path(source)
+        if Path(target).is_relative_to(backup) and source not in refused:
+            refused.append(source)
+            portable.WINDOWS = True
+            waiting.append(source)
+            raise PermissionError(errno.EACCES, 'Access is denied', str(source))
+        return rename(source, target)
+
+    def wait(seconds):
+        if not waiting:
+            return sleep(seconds)
+        portable.WINDOWS = device
+        source = waiting.pop()
+        if meanwhile:
+            meanwhile(source)
+
+    for patcher in (patch.object(portable.time, 'sleep', wait), patch('os.rename', attempt)):
+        patcher.start()
+        case.addCleanup(patcher.stop)
+    return refused
+
+
+def refuse_moves_into(backup, code, refused):
+    """A patch of os.rename that refuses every move into backup with the OSError of errno code, and records the
+    copies it refused."""
+    rename = os.rename
+
+    def attempt(source, target):
+        if Path(target).is_relative_to(backup):
+            refused.append(Path(source))
+            raise OSError(code, os.strerror(code), str(source))
+        return rename(source, target)
+    return patch('os.rename', attempt)
 
 
 class Fixture:
@@ -63,6 +114,11 @@ class Fixture:
             raise self.trusted
         return self.trusted
 
+    def keep_current(self, hooks=Hooks.OFF):
+        package = replace(self.setup.packages['kit'],
+                          codex=CodexPlacement((EngineInstall(False, keep_current=True),), hooks=hooks))
+        self.setup = replace(self.setup, packages={'kit': package})
+
     def install(self, version='1.0.0', source=None):
         shutil.copytree(source or self.native, self.cache / version)
         return self.cache / version
@@ -98,7 +154,7 @@ class ProfilePluginsTest(unittest.TestCase):
             files = kit.apply(mirrors)
             self.assertEqual(image(kit.target), kit.record['image'])
             self.assertFalse(old.exists())
-            saved = files.backup / 'account-homes/account/personal/kit/1.0.0'
+            saved = home.roots.home / SAVED / '1.0.0'
             self.assertEqual((saved / 'my-note.txt').read_text(), 'an edit in a version Codex no longer loads')
             self.assertEqual(kit.config.read_bytes(), settings)
             self.assertEqual([p.name for p in kit.cache.iterdir()], [VERSION])
@@ -193,13 +249,44 @@ class ProfilePluginsTest(unittest.TestCase):
     def test_a_kept_current_plugin_a_home_has_on_is_mirrored_there(self):
         with Home() as home:
             kit = Fixture(home)
-            package = replace(kit.setup.packages['kit'], codex=CodexPlacement((EngineInstall(False, keep_current=True),)))
-            kit.setup = replace(kit.setup, packages={'kit': package})
+            kit.keep_current()
             kit.install('1.0.0')
             mirrors, differences, notes = kit.inspect()
             self.assertEqual((len(mirrors), [d.kind.value for d in differences], notes), (1, ['tree'], ()))
             kit.apply(mirrors)
             self.assertEqual(image(kit.target), kit.record['image'])
+
+    def test_a_kept_current_plugin_a_home_has_off_or_does_not_mention_is_mirrored_there_and_stays_off(self):
+        for case, switch in SWITCHED_OFF:
+            with self.subTest(case), Home() as home:
+                kit = Fixture(home)
+                kit.keep_current()
+                kit.config.write_text(switch + MARKETPLACE)
+                kit.install('1.0.0')
+                mirrors, differences, notes = kit.inspect()
+                self.assertEqual((len(mirrors), [d.kind.value for d in differences], notes), (1, ['tree'], ()))
+                kit.apply(mirrors)
+                self.assertEqual(image(kit.target), kit.record['image'])
+                self.assertEqual(kit.config.read_text(), switch + MARKETPLACE)
+
+    def test_a_kept_current_plugin_is_not_installed_in_a_home_that_lacks_its_folder(self):
+        for case, switch in SWITCHED_OFF:
+            with self.subTest(case), Home() as home:
+                kit = Fixture(home)
+                kit.keep_current()
+                kit.config.write_text(switch + MARKETPLACE)
+                self.assertEqual(kit.inspect(), ((), (), ()))
+                self.assertFalse(kit.cache.exists())
+
+    def test_a_kept_current_plugin_a_home_has_off_asks_that_home_for_no_hook_approval(self):
+        with Home() as home:
+            kit = Fixture(home, hooks=Hooks.TRUSTED)
+            kit.keep_current(Hooks.TRUSTED)
+            shutil.copytree(kit.canonical, kit.target)
+            kit.config.write_text(SWITCHED_OFF[0][1] + MARKETPLACE)
+            self.assertEqual(kit.inspect(hooks=True), ((), (), ()))
+            kit.config.write_text('[plugins."kit@personal"]\nenabled = true\n\n' + MARKETPLACE)
+            self.assertEqual([d.kind.value for d in kit.inspect(hooks=True)[1]], ['approval'])
 
     def test_homes_that_disable_lack_or_configure_the_plugin_differently_are_left_alone(self):
         with Home() as home:
@@ -229,6 +316,9 @@ class ProfilePluginsTest(unittest.TestCase):
                 else:
                     self.assertEqual(differences[0].kind.value, 'local-edit')
                     self.assertIn('Path leaves its source', differences[0].detail)
+                    kit.keep_current()
+                    kit.config.write_text(MARKETPLACE)
+                    self.assertEqual(kit.inspect(), ((), (), ()))
 
     def test_changes_after_planning_and_an_unverified_codex_home_copy_stop_before_any_move(self):
         for change in ('settings', 'home copy', 'codex home copy'):
@@ -257,10 +347,11 @@ class ProfilePluginsTest(unittest.TestCase):
                 kit.apply(mirrors)
             self.assertEqual([path.name for path in kit.cache.iterdir()], ['1.0.0'])
 
-    def test_a_copy_that_fails_after_the_old_tree_moved_leaves_no_work_folder_in_the_home(self):
+    def test_a_copy_that_fails_after_the_old_tree_moved_puts_it_back_and_leaves_no_work_folder_in_the_home(self):
         with Home() as home:
             kit = Fixture(home)
-            kit.install('1.0.0')
+            old = kit.install('1.0.0')
+            before = image(old)
             mirrors, _, _ = kit.inspect()
             rename = Path.rename
 
@@ -271,8 +362,236 @@ class ProfilePluginsTest(unittest.TestCase):
 
             with patch.object(Path, 'rename', stop), self.assertRaisesRegex(RuntimeError, 'stopped at the rename'):
                 kit.apply(mirrors)
-            self.assertEqual(list(kit.cache.iterdir()), [])
-            self.assertTrue((home.roots.home / 'backup/account-homes/account/personal/kit/1.0.0').is_dir())
+            self.assertEqual([path.name for path in kit.cache.iterdir()], ['1.0.0'])
+            self.assertEqual(image(old), before)
+            self.assertEqual(json.loads((home.roots.home / SAVED / 'moved.json').read_text()), [])
+            self.assertFalse((home.roots.home / SAVED / '1.0.0').exists())
+            mirrors, differences, _ = kit.inspect()
+            self.assertEqual([d.kind.value for d in differences], ['tree'])
+            kit.apply(mirrors, 'second-backup')
+            self.assertEqual(image(kit.target), kit.record['image'])
+
+    def test_a_staged_copy_edited_while_windows_refuses_a_move_into_the_backup_does_not_reach_the_home(self):
+        with Home() as home:
+            kit = Fixture(home)
+            native, old = kit.install(VERSION), kit.install('1.0.0')
+            before = {native: image(native), old: image(old)}
+            mirrors, _, _ = kit.inspect()
+
+            def edit(copy):
+                if copy == old:
+                    [stage] = kit.cache.glob('.sync-*/staged')
+                    home.write(stage / 'late.txt', 'written during sync')
+
+            refused = hold_moves_into_the_backup_once(self, home.roots.home / 'backup', meanwhile=edit)
+            with self.assertRaisesRegex(ConcurrentEdit, r'^Staged copy failed verification: .*staged$'):
+                kit.apply(mirrors)
+            self.assertEqual(refused, [native, old])
+            self.assertEqual({path: image(path) for path in before}, before)
+
+    def test_each_move_windows_refuses_once_succeeds_on_the_retry(self):
+        with Home() as home:
+            kit = Fixture(home)
+            native, old = kit.install(VERSION), kit.install('1.0.0')
+            home.write(old / 'my-note.txt', 'an edit in a version Codex no longer loads')
+            images = {VERSION: image(native), '1.0.0': image(old)}
+            mirrors, _, _ = kit.inspect()
+            into_place = hold_built_trees_once(self)
+            into_backup = hold_moves_into_the_backup_once(self, home.roots.home / 'backup')
+            kit.apply(mirrors)
+            self.assertEqual((into_backup, into_place), ([kit.target, old], [kit.target]))
+            self.assertEqual(image(kit.target), kit.record['image'])
+            self.assertEqual([path.name for path in kit.cache.iterdir()], [VERSION])
+            self.assertEqual({name: image(home.roots.home / SAVED / name) for name in images}, images)
+            self.assertEqual(json.loads((home.roots.home / SAVED / 'moved.json').read_text()),
+                             [{'from': str(path), 'to': str(home.roots.home / SAVED / path.name)}
+                              for path in (native, old)])
+
+    def test_an_old_copy_edited_while_windows_refuses_its_move_into_the_backup_stays_in_the_home(self):
+        with Home() as home:
+            kit = Fixture(home)
+            old = kit.install('1.0.0')
+            mirrors, _, _ = kit.inspect()
+            hold_moves_into_the_backup_once(self, home.roots.home / 'backup',
+                                            meanwhile=lambda copy: home.write(copy / 'late.txt', 'written during sync'))
+            with self.assertRaisesRegex(ConcurrentEdit,
+                                        f'^Account home plugin changed during sync: {re.escape(str(old))}$'):
+                kit.apply(mirrors)
+            self.assertEqual((old / 'late.txt').read_text(), 'written during sync')
+            self.assertTrue((old / 'skills/publish/SKILL.md').is_file())
+            self.assertFalse((home.roots.home / SAVED / '1.0.0').exists())
+            self.assertFalse(kit.target.exists())
+
+    def test_a_folder_that_appears_where_windows_refuses_the_move_into_place_is_not_replaced(self):
+        with Home() as home:
+            kit = Fixture(home)
+            kit.install('1.0.0')
+            mirrors, _, _ = kit.inspect()
+
+            def appear(target):
+                target.mkdir()
+                (target / 'theirs.txt').write_text('made during the wait\n')
+
+            held = hold_built_trees_once(self, meanwhile=appear)
+            with self.assertRaisesRegex(ConcurrentEdit,
+                                        f'^Account home plugin changed during sync: {re.escape(str(kit.target))}$'):
+                kit.apply(mirrors)
+            self.assertEqual(held, [kit.target])
+            self.assertEqual([path.name for path in kit.target.iterdir()], ['theirs.txt'])
+
+    def test_a_staged_copy_edited_while_windows_refuses_the_move_into_place_does_not_reach_the_home(self):
+        with Home() as home:
+            kit = Fixture(home)
+            kit.install('1.0.0')
+            mirrors, _, _ = kit.inspect()
+
+            def edit(target):
+                [stage] = target.parent.glob('.sync-*/staged')
+                home.write(stage / 'late.txt', 'written during sync')
+
+            hold_built_trees_once(self, meanwhile=edit)
+            with self.assertRaisesRegex(ConcurrentEdit, r'^Staged copy failed verification: .*staged$'):
+                kit.apply(mirrors)
+            self.assertFalse(kit.target.exists())
+
+    def test_a_later_copy_edited_while_windows_refuses_an_earlier_one_stops_the_sync_with_both_in_the_home(self):
+        with Home() as home:
+            kit = Fixture(home)
+            native, old = kit.install(VERSION), kit.install('1.0.0')
+            before = image(native)
+            mirrors, _, _ = kit.inspect()
+            refused = hold_moves_into_the_backup_once(
+                self, home.roots.home / 'backup',
+                meanwhile=lambda copy: copy == native and home.write(old / 'late.txt', 'written during sync'))
+            refused.append(old)  # so that the later copy's move is tried once, on the read before it
+            with self.assertRaisesRegex(ConcurrentEdit,
+                                        f'^Account home plugin changed during sync: {re.escape(str(old))}$'):
+                kit.apply(mirrors)
+            self.assertEqual((old / 'late.txt').read_text(), 'written during sync')
+            self.assertEqual(image(native), before)
+            self.assertEqual(json.loads((home.roots.home / SAVED / 'moved.json').read_text()), [])
+
+    def test_a_folder_that_appears_at_the_target_keeps_the_copy_it_displaced_in_the_backup_by_name(self):
+        for case in ('during a move into the backup', 'during the move into place'):
+            with self.subTest(case), Home() as home:
+                kit = Fixture(home)
+                native, old = kit.install(VERSION), kit.install('1.0.0')
+                images = {native: image(native), old: image(old)}
+                mirrors, _, _ = kit.inspect()
+                saved = home.roots.home / SAVED / VERSION
+                if case == 'during the move into place':
+                    hold_built_trees_once(self, meanwhile=lambda target: target.mkdir())
+                else:
+                    hold_moves_into_the_backup_once(self, home.roots.home / 'backup',
+                                                    meanwhile=lambda copy: copy == old and kit.target.mkdir())
+                with (patch('sys.stderr', new_callable=io.StringIO) as stderr,
+                      self.assertRaisesRegex(ConcurrentEdit,
+                                             f'^Account home plugin changed during sync: {re.escape(str(kit.target))}$')):
+                    kit.apply(mirrors)
+                self.assertEqual(list(kit.target.iterdir()), [])
+                self.assertEqual((image(old), image(saved)), (images[old], images[native]))
+                self.assertEqual(json.loads((home.roots.home / SAVED / 'moved.json').read_text()),
+                                 [{'from': str(native), 'to': str(saved)}])
+                self.assertEqual(stderr.getvalue(), f'Account home copy left in the sync backup: {saved}, from '
+                                                    f'{native}: its place in the home is taken\n')
+
+    def moves_out_of_the_backup_refused(self, home, times, meanwhile=None):
+        """A patch of os.rename that refuses that many moves out of the sync backup, on a device that counts as
+        Windows and waits no time. meanwhile, given the refused copy, acts during the wait."""
+        rename, left, waiting = os.rename, [times], []
+
+        def attempt(source, target):
+            if Path(source).is_relative_to(home.roots.home / 'backup') and left[0]:
+                left[0] -= 1
+                waiting.append(Path(source))
+                raise PermissionError(errno.EACCES, 'Access is denied', str(source))
+            return rename(source, target)
+
+        def wait(seconds):
+            if waiting and meanwhile:
+                meanwhile(waiting.pop())
+
+        stack = contextlib.ExitStack()
+        for patcher in (patch.object(portable, 'WINDOWS', True), patch.object(portable.time, 'sleep', wait),
+                        patch('os.rename', attempt)):
+            stack.enter_context(patcher)
+        return stack
+
+    def stopped_at_the_move_into_place(self, kit, mirrors, error=RuntimeError):
+        rename = Path.rename
+
+        def stop(path, target):
+            if path.name == 'staged':
+                raise error('stopped at the rename')
+            return rename(path, target)
+
+        with patch.object(Path, 'rename', stop), self.assertRaisesRegex(error, 'stopped at the rename'):
+            kit.apply(mirrors)
+
+    def test_an_interrupt_at_the_move_into_place_puts_the_old_copy_back(self):
+        with Home() as home:
+            kit = Fixture(home)
+            old = kit.install('1.0.0')
+            before = image(old)
+            self.stopped_at_the_move_into_place(kit, kit.inspect()[0], KeyboardInterrupt)
+            self.assertEqual(image(old), before)
+
+    def test_a_move_back_that_windows_refuses_once_succeeds_on_the_retry(self):
+        with Home() as home:
+            kit = Fixture(home)
+            old = kit.install('1.0.0')
+            before = image(old)
+            mirrors, _, _ = kit.inspect()
+            with self.moves_out_of_the_backup_refused(home, 1):
+                self.stopped_at_the_move_into_place(kit, mirrors)
+            self.assertEqual(image(old), before)
+            self.assertEqual(json.loads((home.roots.home / SAVED / 'moved.json').read_text()), [])
+
+    def test_a_copy_that_cannot_be_moved_back_stays_whole_in_the_backup_under_its_name(self):
+        for case in ('refused to the end', 'changed in the backup during a refusal'):
+            with self.subTest(case), Home() as home:
+                kit = Fixture(home)
+                old = kit.install('1.0.0')
+                before = image(old)
+                mirrors, _, _ = kit.inspect()
+                saved = home.roots.home / SAVED / '1.0.0'
+                edit = (lambda copy: home.write(copy / 'late.txt', 'written during sync')) if 'changed' in case else None
+                with (patch('sys.stderr', new_callable=io.StringIO) as stderr,
+                      self.moves_out_of_the_backup_refused(home, 1 if edit else 20, edit)):
+                    self.stopped_at_the_move_into_place(kit, mirrors)
+                self.assertEqual(list(kit.cache.iterdir()), [])
+                self.assertEqual({**image(saved)['entries'], **before['entries']}, image(saved)['entries'])
+                self.assertEqual(json.loads((home.roots.home / SAVED / 'moved.json').read_text()),
+                                 [{'from': str(old), 'to': str(saved)}])
+                self.assertIn(f'Account home copy left in the sync backup: {saved}, from {old}: ', stderr.getvalue())
+
+    def test_a_refused_move_into_the_backup_that_is_not_retried_leaves_the_old_copy_whole_where_it_was(self):
+        with Home() as home:
+            kit = Fixture(home)
+            old = kit.install('1.0.0')
+            before = image(old)
+            mirrors, _, _ = kit.inspect()
+            refused = []
+            with (patch.object(portable, 'WINDOWS', False), self.assertRaises(PermissionError),
+                  refuse_moves_into(home.roots.home / 'backup', errno.EACCES, refused)):
+                kit.apply(mirrors)
+            self.assertEqual(refused, [old])
+            self.assertEqual(image(old), before)
+            self.assertFalse((home.roots.home / SAVED / '1.0.0').exists())
+
+    def test_a_backup_on_another_file_system_still_receives_the_old_copy(self):
+        with Home() as home:
+            kit = Fixture(home)
+            old = kit.install('1.0.0')
+            before = image(old)
+            mirrors, _, _ = kit.inspect()
+            refused = []
+            with refuse_moves_into(home.roots.home / 'backup', errno.EXDEV, refused):
+                kit.apply(mirrors)
+            self.assertEqual(set(refused), {old})
+            self.assertFalse(old.exists())
+            self.assertEqual(image(home.roots.home / SAVED / '1.0.0'), before)
+            self.assertEqual(image(kit.target), kit.record['image'])
 
     def test_trusted_hooks_need_approval_in_each_home(self):
         with Home() as home:

@@ -51,7 +51,8 @@ An account home is a separate Codex home that another app keeps, such as each ac
 with its own plugin cache. The private `devices/<platform>.toml` lists them as globs under the home folder,
 `account_homes = [".local/share/orca/codex-accounts/*/home"]`, and a device whose file lists none has none. When Codex starts
 in one, its `plugin/list` call installs a newer catalog version, which lacks the install overlay and harness
-adaptation of the accepted `~/.codex` copy. So for each plugin a home has installed and enabled, a sync
+adaptation of the accepted `~/.codex` copy. So for each plugin a home has installed and enabled, and for each
+kept-current plugin a home has installed, whatever that home's switch says, a sync
 copies the accepted `~/.codex` copy into that home in place of an older version, the native copy, its own
 earlier copy, or the `~/.codex` copy a release replaced at the same version, which a home that already
 matched holds without a copy receipt (`profile_plugins.py`). It decides which homes need a copy after updating `~/.codex`, so a

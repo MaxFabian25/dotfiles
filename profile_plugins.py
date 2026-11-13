@@ -2,19 +2,23 @@
 
 An account home is a separate Codex home that another app keeps, such as each account of the Orca desktop app,
 with its own plugin cache. The private devices/<platform>.toml lists them as account_homes, and a device whose
-file lists none has none. Codex refreshes a plugin there from
-the catalog, which lacks the install overlay and harness adaptation the accepted ~/.codex copy carries. Sync
-replaces that native copy, an older version, its own earlier copy, or the ~/.codex copy a release replaced at the
-same version with the accepted ~/.codex copy, for plugins the home already has installed and enabled. It installs nothing new, enables nothing, approves no hook, and leaves
-settings and credentials alone.
+file lists none has none. Codex refreshes a plugin there from the catalog, which lacks the install overlay and
+harness adaptation the accepted ~/.codex copy carries. Sync replaces that native copy, an older version, its own
+earlier copy, or the ~/.codex copy a release replaced at the same version with the accepted ~/.codex copy, for
+plugins the home already has installed: an enabled install where the home's own switch is on too, and a kept-current
+install whatever that switch says, so a project that turns it on there runs the release. It installs nothing new,
+enables nothing, approves no hook, and leaves settings and credentials alone.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+import errno
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
+import sys
 import tempfile
 import tomllib
 
@@ -24,7 +28,7 @@ from description import EngineInstall, Hooks, MarketplaceInstall, RepoSource, pl
 from drift import Difference, EntryRef, Kind
 from host_observation import Unread
 from host_state import Host, Note, NoteKind
-from portable import replace, staging_directory
+from portable import replace, staging_directory, while_held
 from sync_files import ConcurrentEdit, contents
 from sync_sources import BuildError, child
 
@@ -115,13 +119,19 @@ def inspect(setup, roots, patterns, accepted, approved=None):
         settings = tomllib.loads(config.decode('utf-8'))
         trusted = None
         for package, install, subject, marketplace, relative in _plugins(setup):
-            if settings.get('plugins', {}).get(subject, {}).get('enabled') is not True:
+            switched_on = settings.get('plugins', {}).get(subject, {}).get('enabled') is True
+            if not (switched_on or getattr(install, 'keep_current', False)):
                 continue
             entry = EntryRef(package.name, package.visibility)
             canonical = roots.codex_home / relative
             try:
                 shared = (profile / relative).resolve() == canonical.resolve()
-                target = profile / relative if shared else child(profile, relative)
+                try:
+                    target = profile / relative if shared else child(profile, relative)
+                except BuildError:
+                    if switched_on:
+                        raise
+                    continue
                 if not shared:
                     if not target.parent.is_dir():
                         continue
@@ -156,7 +166,7 @@ def inspect(setup, roots, patterns, accepted, approved=None):
                         differences.append(Difference(Kind.TREE, None, None, None, entry, host=Host.CODEX,
                                                       detail=f'{profile}: {subject} {target.name} from ~/.codex'))
                         continue
-                if approved is not None and package.codex.hooks == Hooks.TRUSTED:
+                if switched_on and approved is not None and package.codex.hooks == Hooks.TRUSTED:
                     defined = _hook_keys(subject, target)
                     if defined:
                         trusted = approved(profile) if trusted is None else trusted
@@ -173,17 +183,40 @@ def inspect(setup, roots, patterns, accepted, approved=None):
     return tuple(mirrors), tuple(differences), tuple(notes)
 
 
+def _unchanged(path, planned):
+    if image(path) != planned:
+        raise ConcurrentEdit(f'Account home plugin changed during sync: {path}')
+
+
+def _verified(staged, expected):
+    if image(staged) != expected:
+        raise ConcurrentEdit(f'Staged copy failed verification: {staged}')
+
+
 def preflight(mirrors):
     for mirror in mirrors:
         if contents(mirror.profile / 'config.toml') != mirror.config:
             raise ConcurrentEdit(f'Account home settings changed during sync: {mirror.profile}')
-        for path, expected in ((mirror.target, mirror.before), *mirror.superseded):
-            if image(path) != expected:
-                raise ConcurrentEdit(f'Account home plugin changed during sync: {path}')
+        for path, planned in ((mirror.target, mirror.before), *mirror.superseded):
+            _unchanged(path, planned)
+
+
+def _move_copy(path, planned, destination):
+    """Move a home's copy into the sync backup, or back, with os.rename, again while Windows refuses it and the
+    copy is still the one planned. shutil.move runs only when destination is on another file system, because after
+    any failed rename it copies and then deletes, and Windows stops deleting a held tree part-way."""
+    try:
+        while_held(lambda: os.rename(path, destination), before_retry=lambda: _unchanged(path, planned))
+    except OSError as error:
+        if error.errno != errno.EXDEV:
+            raise
+        shutil.move(path, destination)
 
 
 def apply(mirrors, roots, accepted, files):
-    """Copy each accepted ~/.codex plugin into its account home. The copies it replaces move to the sync backup."""
+    """Copy each accepted ~/.codex plugin into its account home. The copies it replaces move to the sync backup
+    and are moved back when a later step fails. A copy that cannot be moved back stays there, moved.json in the
+    backup names it, and stderr says why."""
     preflight(mirrors)
     for mirror in mirrors:
         record = accepted(f'plugin:{Host.CODEX}:{mirror.subject}')
@@ -192,19 +225,44 @@ def apply(mirrors, roots, accepted, files):
         with staging_directory(prefix=f'.sync-{mirror.target.name}-', dir=mirror.target.parent) as work:
             staged = Path(work) / 'staged'
             copy_tree(mirror.canonical, staged)
-            if image(staged) != record['image']:
-                raise ConcurrentEdit(f'Staged copy failed verification: {staged}')
+            _verified(staged, record['image'])
             preflight((mirror,))
-            backup = (files.backup / 'account-homes' / mirror.profile.parent.name /
+            backup = (files.backup / 'account-homes' / mirror.profile.relative_to(roots.home) /
                       mirror.target.parent.relative_to(mirror.profile / 'plugins/cache'))
             backup.mkdir(parents=True, exist_ok=True, mode=0o700)
+
+            def placeable():
+                _unchanged(mirror.target, _ABSENT)
+                _verified(staged, record['image'])
+
+            def record_moves():
+                names = [{'from': str(path), 'to': str(saved)} for path, _, saved in moved]
+                (backup / 'moved.json').write_text(json.dumps(names, indent=2) + '\n', encoding='utf-8')
+
             moved = []
-            for path in (mirror.target, *(path for path, _ in mirror.superseded)):
-                if path.exists():
-                    shutil.move(path, backup / path.name)
-                    moved.append({'from': str(path), 'to': str(backup / path.name)})
-            (backup / 'moved.json').write_text(json.dumps(moved, indent=2) + '\n', encoding='utf-8')
-            staged.rename(mirror.target)
+            try:
+                for path, planned in ((mirror.target, mirror.before), *mirror.superseded):
+                    if path.exists():
+                        _unchanged(path, planned)
+                        _move_copy(path, planned, backup / path.name)
+                        moved.append((path, planned, backup / path.name))
+                record_moves()
+                placeable()
+                while_held(lambda: staged.rename(mirror.target), before_retry=placeable)
+            except BaseException:
+                for move in tuple(moved):
+                    path, planned, saved = move
+                    reason = 'its place in the home is taken'
+                    if not path.exists():
+                        try:
+                            _move_copy(saved, planned, path)
+                            moved.remove(move)
+                            continue
+                        except (OSError, ConcurrentEdit) as failure:
+                            reason = failure
+                    print(f'Account home copy left in the sync backup: {saved}, from {path}: {reason}', file=sys.stderr)
+                record_moves()
+                raise
         if image(mirror.target) != record['image']:
             raise ConcurrentEdit(f'Account home copy failed verification: {mirror.target}')
         _save(roots, mirror, record['image'])
