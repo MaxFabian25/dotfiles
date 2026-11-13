@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from homes import Home, hold_built_trees_once
 from accepted_installations import image
 from description import CodexPlacement, EngineInstall, Hooks, LocalSource, Lock, LockedTree, Package, Roots, Setup
-from description import ToolNotes, Visibility
+from description import MarketplaceInstall, ToolNotes, Visibility
 from host_observation import Unread
 from host_state import Host, Platform
 import portable
@@ -161,7 +161,7 @@ class ProfilePluginsTest(unittest.TestCase):
             self.assertEqual(kit.inspect(), ((), (), ()))
 
     def test_native_refresh_and_partly_overlaid_copies_are_replaced_but_edits_are_preserved(self):
-        for case in ('native', 'partly overlaid', 'edited', 'extra file'):
+        for case in ('native', 'partly overlaid', 'edited', 'extra file', 'extra file of a kept-current plugin set off'):
             with self.subTest(case), Home() as home:
                 kit = Fixture(home)
                 target = kit.install(VERSION)
@@ -169,12 +169,15 @@ class ProfilePluginsTest(unittest.TestCase):
                     shutil.copy(kit.canonical / 'skills/publish/SKILL.md', target / 'skills/publish/SKILL.md')
                 if case == 'edited':
                     home.write(target / 'skills/publish/SKILL.md', 'my edit')
-                if case == 'extra file':
+                if case.startswith('extra file'):
                     home.write(target / 'skills/publish/notes.md', 'mine')
+                if case.endswith('set off'):
+                    kit.keep_current()
+                    kit.config.write_text(SWITCHED_OFF[0][1] + MARKETPLACE)
                 before = image(target)
                 mirrors, differences, _ = kit.inspect()
-                if case in ('edited', 'extra file'):
-                    self.assertEqual((mirrors, differences[0].kind.value), ((), 'local-edit'))
+                if case.startswith(('edited', 'extra file')):
+                    self.assertEqual((mirrors, [d.kind.value for d in differences]), ((), ['local-edit']))
                     self.assertIn('preserved for review', differences[0].detail)
                     self.assertEqual(image(target), before)
                     continue
@@ -300,6 +303,10 @@ class ProfilePluginsTest(unittest.TestCase):
             self.assertEqual((mirrors, differences), ((), ()))
             self.assertIn('configures the personal marketplace differently', notes[0].detail)
             self.assertTrue(old.is_dir())
+            marketplace = replace(kit.setup.packages['kit'], codex=CodexPlacement((MarketplaceInstall('personal', True),)))
+            kit.setup = replace(kit.setup, packages={'kit': marketplace})
+            kit.config.write_text('[plugins."kit@personal"]\nenabled = false\n\n' + MARKETPLACE)
+            self.assertEqual(kit.inspect(), ((), (), ()))
 
     def test_a_cache_shared_with_codex_home_is_skipped_and_other_links_are_local_edits(self):
         for canonical in (True, False):
@@ -536,6 +543,25 @@ class ProfilePluginsTest(unittest.TestCase):
             self.stopped_at_the_move_into_place(kit, kit.inspect()[0], KeyboardInterrupt)
             self.assertEqual(image(old), before)
 
+    def test_an_interrupt_as_a_move_into_the_backup_returns_puts_every_old_copy_back(self):
+        for versions in (('1.0.0',), (VERSION, '1.0.0')):
+            with self.subTest(versions=versions), Home() as home:
+                kit = Fixture(home)
+                before = {copy: image(copy) for copy in map(kit.install, versions)}
+                mirrors, _, _ = kit.inspect()
+                rename = os.rename
+
+                # Python raises an interrupt that arrives during os.rename once the call returns, with the move done.
+                def interrupted(source, target):
+                    rename(source, target)
+                    if Path(target).is_relative_to(home.roots.home / 'backup') and Path(source).name == '1.0.0':
+                        raise KeyboardInterrupt
+
+                with patch('os.rename', interrupted), self.assertRaises(KeyboardInterrupt):
+                    kit.apply(mirrors)
+                self.assertEqual({copy: image(copy) for copy in before}, before)
+                self.assertEqual(json.loads((home.roots.home / SAVED / 'moved.json').read_text()), [])
+
     def test_a_move_back_that_windows_refuses_once_succeeds_on_the_retry(self):
         with Home() as home:
             kit = Fixture(home)
@@ -563,7 +589,68 @@ class ProfilePluginsTest(unittest.TestCase):
                 self.assertEqual({**image(saved)['entries'], **before['entries']}, image(saved)['entries'])
                 self.assertEqual(json.loads((home.roots.home / SAVED / 'moved.json').read_text()),
                                  [{'from': str(old), 'to': str(saved)}])
-                self.assertIn(f'Account home copy left in the sync backup: {saved}, from {old}: ', stderr.getvalue())
+                reason = (f'Account home plugin changed during sync: {saved}' if edit else
+                          f'[Errno {errno.EACCES}] Access is denied: {str(saved)!r}')
+                self.assertEqual(stderr.getvalue(),
+                                 f'Account home copy left in the sync backup: {saved}, from {old}: {reason}\n')
+                self.assertEqual(kit.inspect(), ((), (), ()))
+
+    def test_a_second_interrupt_during_the_moves_back_leaves_moved_json_naming_the_copies_still_in_the_backup(self):
+        for case in ('a later copy changed before moved.json was written', 'the move into place failed'):
+            with self.subTest(case), Home() as home:
+                kit = Fixture(home)
+                native, old = kit.install(VERSION), kit.install('1.0.0')
+                mirrors, _, _ = kit.inspect()
+                early = case.startswith('a later copy')
+                left = native if early else old
+                saved = home.roots.home / SAVED / left.name
+                rename = os.rename
+
+                def attempt(source, target):
+                    if Path(source) == saved:
+                        raise PermissionError(errno.EACCES, 'Access is denied', str(source))
+                    if Path(source).name == 'staged':
+                        raise RuntimeError('stopped at the rename')
+                    rename(source, target)
+                    if early and Path(source) == native:
+                        home.write(old / 'late.txt', 'written during sync')
+
+                def interrupt(seconds):
+                    raise KeyboardInterrupt
+
+                with (patch.object(portable, 'WINDOWS', True), patch.object(portable.time, 'sleep', interrupt),
+                      patch('os.rename', attempt), self.assertRaises(KeyboardInterrupt)):
+                    kit.apply(mirrors)
+                self.assertEqual(sorted(path.name for path in saved.parent.iterdir()), [left.name, 'moved.json'])
+                self.assertEqual(json.loads((saved.parent / 'moved.json').read_text()),
+                                 [{'from': str(left), 'to': str(saved)}])
+
+    def test_part_of_a_copy_in_a_backup_on_another_file_system_is_not_moved_into_the_home(self):
+        with Home() as home:
+            kit = Fixture(home)
+            old = kit.install('1.0.0')
+            mirrors, _, _ = kit.inspect()
+            saved = home.roots.home / SAVED / '1.0.0'
+            copytree = shutil.copytree
+
+            # Across file systems shutil.move copies and then deletes. This copy stops part-way, as when another
+            # process removes the home's copy meanwhile.
+            def stopped(source, target, *args, **kwargs):
+                copytree(source, target, *args, **kwargs)
+                if Path(target) != saved:
+                    return target
+                (saved / 'skills/publish/SKILL.md').unlink()
+                shutil.rmtree(source)
+                raise shutil.Error([(str(source), str(target), 'the source vanished part-way')])
+
+            with (patch('sys.stderr', new_callable=io.StringIO) as stderr, patch.object(shutil, 'copytree', stopped),
+                  refuse_moves_into(home.roots.home / 'backup', errno.EXDEV, []), self.assertRaises(shutil.Error)):
+                kit.apply(mirrors)
+            self.assertFalse(old.exists())
+            self.assertTrue(saved.is_dir())
+            self.assertEqual(json.loads((saved.parent / 'moved.json').read_text()), [{'from': str(old), 'to': str(saved)}])
+            self.assertEqual(stderr.getvalue(), f'Account home copy left in the sync backup: {saved}, from {old}: '
+                                                f'Account home plugin changed during sync: {saved}\n')
 
     def test_a_refused_move_into_the_backup_that_is_not_retried_leaves_the_old_copy_whole_where_it_was(self):
         with Home() as home:

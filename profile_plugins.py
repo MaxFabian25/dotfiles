@@ -235,33 +235,42 @@ def apply(mirrors, roots, accepted, files):
                 _unchanged(mirror.target, _ABSENT)
                 _verified(staged, record['image'])
 
+            # The backup folder is new at every sync, so a copy in it is one this run moved, also when an interrupt
+            # was raised as its move returned.
+            copies = ((mirror.target, mirror.before), *mirror.superseded)
+
             def record_moves():
-                names = [{'from': str(path), 'to': str(saved)} for path, _, saved in moved]
+                names = [{'from': str(path), 'to': str(backup / path.name)} for path, _ in copies
+                         if (backup / path.name).exists()]
                 (backup / 'moved.json').write_text(json.dumps(names, indent=2) + '\n', encoding='utf-8')
 
-            moved = []
             try:
-                for path, planned in ((mirror.target, mirror.before), *mirror.superseded):
+                for path, planned in copies:
                     if path.exists():
                         _unchanged(path, planned)
                         _move_copy(path, planned, backup / path.name)
-                        moved.append((path, planned, backup / path.name))
                 record_moves()
                 placeable()
                 while_held(lambda: staged.rename(mirror.target), before_retry=placeable)
             except BaseException:
-                for move in tuple(moved):
-                    path, planned, saved = move
-                    reason = 'its place in the home is taken'
-                    if not path.exists():
-                        try:
-                            _move_copy(saved, planned, path)
-                            moved.remove(move)
+                try:
+                    for path, planned in copies:
+                        saved = backup / path.name
+                        if not saved.exists():
                             continue
-                        except (OSError, ConcurrentEdit) as failure:
-                            reason = failure
-                    print(f'Account home copy left in the sync backup: {saved}, from {path}: {reason}', file=sys.stderr)
-                record_moves()
+                        reason = 'its place in the home is taken'
+                        if not path.exists():
+                            try:
+                                # A copy across file systems that stopped part-way left part of one under this name.
+                                _unchanged(saved, planned)
+                                _move_copy(saved, planned, path)
+                                continue
+                            except (OSError, ConcurrentEdit) as failure:
+                                reason = failure
+                        print(f'Account home copy left in the sync backup: {saved}, from {path}: {reason}',
+                              file=sys.stderr)
+                finally:
+                    record_moves()
                 raise
         if image(mirror.target) != record['image']:
             raise ConcurrentEdit(f'Account home copy failed verification: {mirror.target}')
