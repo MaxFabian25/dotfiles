@@ -1,4 +1,5 @@
 from dataclasses import replace
+import io
 import json
 import os
 from pathlib import Path
@@ -12,6 +13,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import accepted_installations
 from codex_host import CodexState
 from configuration import desired
 from description import (Adaptation, AlignedInstall, ClaudePlacement, CodexPlacement, EngineInstall, Hooks, LocalSource, Lock, LockedTree,
@@ -175,6 +177,12 @@ class InstallationTest(unittest.TestCase):
         backup, = (self.roots.codex_home / 'skills').glob('.sync-loose-*/displaced')
         return backup
 
+    def apply_reporting(self):
+        """Run a sync that exits 0 and give what it printed to stderr."""
+        with patch('sys.stderr', new_callable=io.StringIO) as stderr:
+            self.assertEqual(self.run_apply().exit_code, 0)
+        return stderr.getvalue()
+
     def test_a_sync_removes_the_plugin_trees_it_staged(self):
         self.assertEqual(self.run_apply().exit_code, 0)
         self.assertEqual(self.staged_images(), [])
@@ -261,6 +269,28 @@ class InstallationTest(unittest.TestCase):
         self.assertIn('use the local reader', (backup / 'skills/one/SKILL.md').read_text())
         self.assertEqual(self.unnamed_work_folders(), [])
 
+    def test_a_backup_kept_through_a_release_that_changes_only_intent_is_still_checked_before_it_goes(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        backup, = self.installed().parent.glob('.sync-1.0.0-*/displaced')
+        self.setup = replace(self.setup, note_rules=(*self.setup.note_rules, NoteRule('Grep', 'a tool the kit never names')))
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(json.loads(self.receipt_of('plugin:').read_bytes())['accepted']['backup'], str(backup))
+        (backup / 'ordinary.txt').write_text('My edit in the backup.\n')
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.assertIn(f'Work folder left in place: {backup.parent}: ', self.apply_reporting())
+        self.assertEqual((backup / 'ordinary.txt').read_text(), 'My edit in the backup.\n')
+
+    def test_a_backup_kept_through_a_release_that_changes_only_intent_goes_at_the_next_replacement(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        work, = self.installed().parent.glob('.sync-1.0.0-*')
+        self.setup = replace(self.setup, note_rules=(*self.setup.note_rules, NoteRule('Grep', 'a tool the kit never names')))
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertTrue(work.exists())
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertFalse(work.exists())
+        self.assertEqual(self.unnamed_work_folders(), [])
+
     def test_a_destination_that_already_holds_the_new_release_drops_the_backup_of_the_one_before(self):
         backup = self.loose_backup()
         self.revise_loose('A third loose skill.\n')
@@ -284,7 +314,8 @@ class InstallationTest(unittest.TestCase):
         note = backup.parent / 'note.txt'
         note.write_text('mine')
         self.revise_loose('A third loose skill.\n')
-        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(self.apply_reporting(),
+                         f'Work folder left in place: {backup.parent}: it holds more than the tree\n')
         self.assertEqual(note.read_text(), 'mine')
         self.assertEqual((backup / 'SKILL.md').read_text(), 'A loose skill.\n')
 
@@ -297,14 +328,14 @@ class InstallationTest(unittest.TestCase):
                             ('with a short suffix', skills / '.sync-loose-abcd/displaced'),
                             ('holding another name', skills / name / 'kept')):
             with self.subTest(case):
-                named.mkdir(parents=True)
-                (named / 'mine.txt').write_text('mine')
                 value = json.loads(receipt.read_bytes())
+                # A copy of the recorded backup, so that only the folder's place and name keep it.
+                shutil.copytree(value['accepted']['backup'], named)
                 value['accepted']['backup'] = str(named)
                 receipt.write_text(json.dumps(value))
                 self.revise_loose(f'A loose skill {case}.\n')
                 self.assertEqual(self.run_apply().exit_code, 0)
-                self.assertEqual((named / 'mine.txt').read_text(), 'mine')
+                self.assertTrue((named / 'SKILL.md').exists())
 
     def test_a_version_change_removes_the_backup_beside_the_old_version(self):
         self.assertEqual(self.run_apply().exit_code, 0)
@@ -317,6 +348,188 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual(self.run_apply().exit_code, 0)
         self.assertEqual(self.installed().name, '1.1.0')
         self.assertFalse(old.exists())
+        self.assertEqual(self.unnamed_work_folders(), [])
+
+    def receipt_of(self, prefix):
+        path, = (path for path in self.receipt_paths() if json.loads(path.read_bytes())['identity'].startswith(prefix))
+        return path
+
+    def test_a_version_that_changes_in_the_lock_alone_with_its_folder_in_place_drops_the_backup_beside_the_old(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        old = self.installed()
+        work, = old.parent.glob('.sync-1.0.0-*')
+        lock = replace(self.setup.lock['kit'],
+                       trees={Host.CODEX: LockedTree('1.1.0', self.setup.lock['kit'].trees[Host.CODEX].digest)})
+        self.setup = replace(self.setup, lock={**self.setup.lock, 'kit': lock})
+        shutil.copytree(old, old.parent / '1.1.0')
+        # The fixture's host goes on reporting 1.0.0 as installed, so the sync ends with that difference left.
+        self.assertEqual(self.run_apply().exit_code, 1)
+        accepted = json.loads(self.receipt_of('plugin:').read_bytes())['accepted']
+        self.assertEqual((Path(accepted['path']).name, accepted.get('backup')), ('1.1.0', None))
+        self.assertFalse(work.exists())
+        self.assertEqual(self.unnamed_work_folders(), [])
+
+    def test_a_destination_that_went_missing_is_created_again_without_the_backup_of_the_tree_before(self):
+        backup = self.loose_backup()
+        shutil.rmtree(self.roots.codex_home / 'skills/loose')
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual((self.roots.codex_home / 'skills/loose/SKILL.md').read_text(), 'A second loose skill.\n')
+        self.assertFalse(backup.parent.exists())
+        self.assertEqual(self.unnamed_work_folders(), [])
+
+    def test_a_backup_edited_after_its_swap_stays_when_its_receipt_stops_naming_it(self):
+        backup = self.loose_backup()
+        (backup / 'SKILL.md').write_text('My edit in the backup.\n')
+        self.revise_loose('A third loose skill.\n')
+        self.assertEqual(self.apply_reporting(),
+                         f'Work folder left in place: {backup.parent}: its tree is not the one its record holds\n')
+        self.assertEqual((self.roots.codex_home / 'skills/loose/SKILL.md').read_text(), 'A third loose skill.\n')
+        self.assertEqual((backup / 'SKILL.md').read_text(), 'My edit in the backup.\n')
+        self.assertEqual(self.unnamed_work_folders(), [str(backup.parent.relative_to(self.roots.home))])
+
+    def test_a_file_where_the_backup_was_stays_and_is_reported(self):
+        backup = self.loose_backup()
+        shutil.rmtree(backup)
+        backup.write_text('mine')
+        self.revise_loose('A third loose skill.\n')
+        self.assertEqual(self.apply_reporting(),
+                         f'Work folder left in place: {backup.parent}: its tree is not the one its record holds\n')
+        self.assertEqual(backup.read_text(), 'mine')
+
+    def test_a_backup_that_gained_a_file_after_its_swap_stays(self):
+        backup = self.loose_backup()
+        (backup / 'mine.txt').write_text('mine')
+        self.revise_loose('A third loose skill.\n')
+        self.assertIn(f'Work folder left in place: {backup.parent}: ', self.apply_reporting())
+        self.assertEqual((backup / 'mine.txt').read_text(), 'mine')
+
+    def test_a_receipt_that_names_a_work_folder_holding_another_tree_removes_nothing(self):
+        skills = self.loose_backup().parent.parent
+        other = skills / ('.sync-loose-' + 'ab' * 16) / 'displaced'
+        other.mkdir(parents=True)
+        (other / 'SKILL.md').write_text('mine')
+        receipt = self.receipt_of('codex:LOOSE_SKILL')
+        value = json.loads(receipt.read_bytes())
+        value['accepted']['backup'] = str(other)
+        receipt.write_text(json.dumps(value))
+        self.revise_loose('A third loose skill.\n')
+        self.assertIn(f'Work folder left in place: {other.parent}: ', self.apply_reporting())
+        self.assertEqual((other / 'SKILL.md').read_text(), 'mine')
+
+    def test_a_backup_recorded_without_its_image_stays_and_is_reported(self):
+        backup = self.loose_backup()
+        receipt = self.receipt_of('codex:LOOSE_SKILL')
+        value = json.loads(receipt.read_bytes())
+        del value['accepted']['backup_image']
+        receipt.write_text(json.dumps(value))
+        self.revise_loose('A third loose skill.\n')
+        self.assertEqual(self.apply_reporting(),
+                         f'Work folder left in place: {backup.parent}: its record holds no image of the tree\n')
+        self.assertEqual((backup / 'SKILL.md').read_text(), 'A loose skill.\n')
+        self.assertEqual(self.unnamed_work_folders(), [str(backup.parent.relative_to(self.roots.home))])
+
+    def test_a_backup_whose_recorded_image_is_no_image_of_a_tree_stays_and_is_reported(self):
+        backup = self.loose_backup()
+        receipt = self.receipt_of('codex:LOOSE_SKILL')
+        for number, malformed in enumerate(({}, 'x', {'entries': {}}, {'kind': 'tree', 'entries': []})):
+            with self.subTest(malformed=malformed):
+                value = json.loads(receipt.read_bytes())
+                value['accepted']['backup_image'] = malformed
+                receipt.write_text(json.dumps(value))
+                self.revise_loose(f'Loose skill {number}.\n')
+                self.assertEqual(self.apply_reporting(), f'Work folder left in place: {backup.parent}: '
+                                                         'its record holds no image of the tree\n')
+                self.assertTrue((backup / 'SKILL.md').exists())
+                backup = Path(json.loads(receipt.read_bytes())['accepted']['backup'])
+
+    def test_a_backup_that_cannot_be_read_is_reported_and_the_rest_of_the_release_applies(self):
+        backup = self.loose_backup()
+        read = accepted_installations.image
+
+        def refuse(path, *args, **kwargs):
+            if path == backup:
+                raise PermissionError(13, 'Permission denied', str(path))
+            return read(path, *args, **kwargs)
+
+        self.revise_loose('A third loose skill.\n')
+        self.setup = replace(self.setup, rules=Rules(b'Revised rules.\n'))
+        with patch('accepted_installations.image', refuse):
+            printed = self.apply_reporting()
+        self.assertEqual((self.roots.codex_home / 'AGENTS.md').read_text(), 'Revised rules.\n')
+        self.assertTrue((backup / 'SKILL.md').exists())
+        self.assertIn(f'Work folder left in place: {backup.parent}: ', printed)
+        self.assertIn('Permission denied', printed)
+
+    def refuse_removal_of(self, work, error):
+        rmtree = shutil.rmtree
+
+        def refuse(path, *args, **kwargs):
+            if Path(path) == work:
+                raise error
+            return rmtree(path, *args, **kwargs)
+
+        return patch('shutil.rmtree', refuse)
+
+    def test_a_work_folder_that_cannot_be_removed_is_reported_and_the_rest_of_the_release_applies(self):
+        work = self.loose_backup().parent
+        self.revise_loose('A third loose skill.\n')
+        self.setup = replace(self.setup, rules=Rules(b'Revised rules.\n'))
+        with self.refuse_removal_of(work, PermissionError(13, 'Access is denied', str(work))), \
+                patch('sys.stderr', new_callable=io.StringIO) as stderr:
+            self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual((self.roots.codex_home / 'skills/loose/SKILL.md').read_text(), 'A third loose skill.\n')
+        self.assertEqual((self.roots.codex_home / 'AGENTS.md').read_text(), 'Revised rules.\n')
+        self.assertEqual((work / 'displaced/SKILL.md').read_text(), 'A loose skill.\n')
+        self.assertIn(f'Work folder left in place: {work}: ', stderr.getvalue())
+        self.assertIn('Access is denied', stderr.getvalue())
+
+    def test_a_run_that_stops_while_removing_the_folder_of_a_replacement_that_moved_nothing_aside_leaves_it_named(self):
+        skills = self.roots.codex_home / 'skills'
+        rmtree = shutil.rmtree
+
+        def stop(path, *args, **kwargs):
+            if Path(path).name.startswith('.sync-loose-'):
+                raise RuntimeError('stopped during the removal')
+            return rmtree(path, *args, **kwargs)
+
+        with patch('shutil.rmtree', stop), self.assertRaisesRegex(RuntimeError, 'stopped during the removal'):
+            self.run_apply()
+        self.assertEqual(len(list(skills.glob('.sync-loose-*'))), 1)
+        self.assertEqual(self.unnamed_work_folders(), [])
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(list(skills.glob('.sync-loose-*')), [])
+
+    def test_a_run_that_stops_while_removing_the_old_backup_leaves_it_for_the_next_run_to_remove(self):
+        work = self.loose_backup().parent
+        self.revise_loose('A third loose skill.\n')
+        with self.refuse_removal_of(work, RuntimeError('stopped during the removal')), \
+                self.assertRaisesRegex(RuntimeError, 'stopped during the removal'):
+            self.run_apply()
+        self.assertEqual(self.unnamed_work_folders(), [])
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertFalse(work.exists())
+        self.assertEqual(self.unnamed_work_folders(), [])
+        backups = [path for path in (self.roots.codex_home / 'skills').glob('.sync-loose-*/displaced/SKILL.md')]
+        self.assertEqual([path.read_text() for path in backups], ['A second loose skill.\n'])
+
+    def test_a_removal_that_stopped_part_way_is_finished_by_the_next_run(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        work, = self.installed().parent.glob('.sync-1.0.0-*')
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        rmtree = shutil.rmtree
+
+        def stop_part_way(path, *args, **kwargs):
+            if Path(path) != work:
+                return rmtree(path, *args, **kwargs)
+            (work / 'displaced/ordinary.txt').unlink()
+            rmtree(work / 'displaced/skills')
+            raise RuntimeError('stopped during the removal')
+
+        with patch('shutil.rmtree', stop_part_way), self.assertRaisesRegex(RuntimeError, 'stopped during the removal'):
+            self.run_apply()
+        self.assertTrue((work / 'displaced/agents/reviewer.toml').exists())
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertFalse(work.exists())
         self.assertEqual(self.unnamed_work_folders(), [])
 
     def claude_backup_folder(self, note):
@@ -332,8 +545,159 @@ class InstallationTest(unittest.TestCase):
         invalid = self.claude_backup_folder('a second note')
         self.assertFalse(marked.exists())
         (invalid / '.orphaned_at').write_text('not a time')
-        self.claude_backup_folder('a third note')
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'a third note'),))
+        self.assertIn(f'Work folder left in place: {invalid}: Invalid Claude orphan marker', self.apply_reporting())
         self.assertEqual(sorted(path.name for path in invalid.iterdir()), ['.orphaned_at', 'displaced'])
+
+    def test_a_claude_backup_that_holds_the_markers_of_sessions_goes_like_any_other(self):
+        self._installed_claude()
+        first = self.claude_backup_folder('a first note')
+        (first / 'displaced/.in_use').mkdir()
+        (first / 'displaced/.in_use/17').write_text('{"pid":17,"procStart":"Thu Oct 15 12:30:00 2026"}')
+        self.claude_backup_folder('a second note')
+        self.assertFalse(first.exists())
+
+    def test_a_claude_backup_that_holds_a_file_beside_its_markers_stays_and_is_reported(self):
+        self._installed_claude()
+        first = self.claude_backup_folder('a first note')
+        (first / 'displaced/.in_use').mkdir()
+        (first / 'displaced/.in_use/notes.txt').write_text('mine')
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'a second note'),))
+        self.assertIn(f'Work folder left in place: {first}: ', self.apply_reporting())
+        self.assertEqual((first / 'displaced/.in_use/notes.txt').read_text(), 'mine')
+
+    def stage_removed_part_way(self):
+        """Hold a Claude cache so that a first revision stays staged, then stop a second revision's run part-way
+        through removing that stage. Gives the cache, the lease that holds it and the stage's work folder."""
+        destination = self._installed_claude()
+        lease = own_lease(destination / '.in_use')
+        self.revise_release('first revision\n')
+        self.assert_held(destination)
+        work = Path(json.loads(self._pending_claude_receipt().read_bytes())['pending']['staged']).parent
+        self.revise_release('second revision\n')
+        rmtree = shutil.rmtree
+
+        def stop_part_way(path, *args, **kwargs):
+            if Path(path) != work:
+                return rmtree(path, *args, **kwargs)
+            (work / 'staged/ordinary.txt').unlink()
+            raise RuntimeError('stopped during the removal')
+
+        with patch('shutil.rmtree', stop_part_way), self.assertRaisesRegex(RuntimeError, 'stopped during the removal'):
+            self.run_apply()
+        return destination, lease, work
+
+    def test_a_stage_removed_part_way_is_removed_by_the_next_run_of_the_release_that_took_over(self):
+        destination, _, work = self.stage_removed_part_way()
+        self.assert_held(destination)
+        self.assertFalse(work.exists())
+        self.assertEqual(self.unnamed_work_folders(), [])
+
+    def test_a_stage_removed_part_way_is_built_again_for_the_release_it_was_staged_for(self):
+        destination, lease, _ = self.stage_removed_part_way()
+        self.revise_release('first revision\n')
+        lease.unlink()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'first revision\n')
+        self.assertEqual(self.unnamed_work_folders(), [])
+
+    def test_a_stage_that_holds_an_edit_stops_its_release_and_keeps_the_edit(self):
+        destination = self._installed_claude()
+        lease = own_lease(destination / '.in_use')
+        self.revise_release('first revision\n')
+        self.assert_held(destination)
+        edited = Path(json.loads(self._pending_claude_receipt().read_bytes())['pending']['staged']) / 'ordinary.txt'
+        edited.write_text('edited in the stage\n')
+        lease.unlink()
+        with self.assertRaisesRegex(ConcurrentEdit, f'^Prepared stage was edited: {re.escape(str(edited.parent))}$'):
+            self.run_apply()
+        self.assertEqual(edited.read_text(), 'edited in the stage\n')
+
+    def test_a_receipt_edited_to_name_a_folder_elsewhere_as_its_stage_stops_its_release_and_keeps_the_folder(self):
+        destination = self._installed_claude()
+        lease = own_lease(destination / '.in_use')
+        self.revise_release('first revision\n')
+        self.assert_held(destination)
+        name = f'.sync-{destination.name}-{"ab" * 16}'
+        for case, mine in (('outside the work folders', self.root / 'elsewhere/mine'),
+                           ('under another folder', self.root / 'elsewhere' / name / 'staged'),
+                           ('with a short suffix', destination.parent / f'.sync-{destination.name}-abcd/staged'),
+                           ('under another name', destination.parent / name / 'displaced')):
+            with self.subTest(case):
+                mine.mkdir(parents=True)
+                (mine / 'ordinary.txt').write_text('first revision\n')
+                receipt = self._pending_claude_receipt()
+                value = json.loads(receipt.read_bytes())
+                value['pending']['staged'] = str(mine)
+                receipt.write_text(json.dumps(value))
+                lease.unlink(missing_ok=True)
+                with self.assertRaisesRegex(ConcurrentEdit, f'^Prepared stage was edited: {re.escape(str(mine))}$'):
+                    self.run_apply()
+                self.assertEqual((mine / 'ordinary.txt').read_text(), 'first revision\n')
+
+    def test_a_stage_that_holds_session_markers_stays_when_a_newer_release_takes_over(self):
+        destination = self._installed_claude()
+        own_lease(destination / '.in_use')
+        self.revise_release('first revision\n')
+        self.assert_held(destination)
+        staged = Path(json.loads(self._pending_claude_receipt().read_bytes())['pending']['staged'])
+        (staged / '.in_use').mkdir()
+        (staged / '.in_use/17').write_text('{"pid":17,"procStart":"Thu Oct 15 12:30:00 2026"}')
+        self.revise_release('second revision\n')
+        with patch('sys.stderr', new_callable=io.StringIO) as stderr:
+            self.assert_held(destination)
+        self.assertIn(f'Work folder left in place: {staged.parent}: its tree is not the one its record holds\n',
+                      stderr.getvalue())
+        self.assertTrue((staged / '.in_use/17').exists())
+
+    def test_a_stage_whose_copy_stopped_part_way_is_built_again(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.revise_loose('A second loose skill.\n')
+        copy_tree = accepted_installations.copy_tree
+
+        def stop(source, destination):
+            copy_tree(source, destination)
+            if destination.name == 'staged':
+                (destination / 'SKILL.md').unlink()
+                raise RuntimeError('stopped while copying the stage')
+
+        with patch('accepted_installations.copy_tree', stop), \
+                self.assertRaisesRegex(RuntimeError, 'stopped while copying the stage'):
+            self.run_apply()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual((self.roots.codex_home / 'skills/loose/SKILL.md').read_text(), 'A second loose skill.\n')
+        self.assertEqual(self.unnamed_work_folders(), [])
+
+    def test_a_run_that_stops_while_removing_a_stage_a_newer_release_took_over_leaves_it_for_the_next_run(self):
+        destination = self._installed_claude()
+        own_lease(destination / '.in_use')
+        self.revise_release('first revision\n')
+        self.assert_held(destination)
+        work = Path(json.loads(self._pending_claude_receipt().read_bytes())['pending']['staged']).parent
+        self.revise_release('second revision\n')
+        with self.refuse_removal_of(work, RuntimeError('stopped during the removal')), \
+                self.assertRaisesRegex(RuntimeError, 'stopped during the removal'):
+            self.run_apply()
+        self.assertEqual(self.unnamed_work_folders(), [])
+        self.assert_held(destination)
+        self.assertFalse(work.exists())
+        self.assertEqual(self.unnamed_work_folders(), [])
+
+    def test_a_run_that_stops_while_removing_a_stage_its_release_no_longer_needs_leaves_it_for_the_next_run(self):
+        destination = self._installed_claude()
+        lease = own_lease(destination / '.in_use')
+        self.revise_release('first revision\n')
+        self.assert_held(destination)
+        work = Path(json.loads(self._pending_claude_receipt().read_bytes())['pending']['staged']).parent
+        self.revise_release('ordinary release bytes\n')
+        with self.refuse_removal_of(work, RuntimeError('stopped during the removal')), \
+                self.assertRaisesRegex(RuntimeError, 'stopped during the removal'):
+            self.run_apply()
+        self.assertEqual(self.unnamed_work_folders(), [])
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertFalse(work.exists())
+        self.assertEqual(self.unnamed_work_folders(), [])
+        self.assertTrue(lease.exists())
 
     def test_a_stopped_replacement_whose_receipt_names_another_displaced_path_keeps_its_stage(self):
         destination = self._installed_claude()
@@ -1504,7 +1868,7 @@ class InstallationTest(unittest.TestCase):
         extra.write_text('edited in the stage\n')
         lease.unlink()
         self.revise_release('second revision\n')
-        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn(f'Work folder left in place: {extra.parent.parent}: ', self.apply_reporting())
         self.assertEqual((destination / 'ordinary.txt').read_text(), 'second revision\n')
         self.assertEqual(extra.read_text(), 'edited in the stage\n')
 

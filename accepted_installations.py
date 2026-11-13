@@ -9,6 +9,7 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import uuid
 
@@ -196,6 +197,22 @@ def _carry_leases(old, new):
     for marker in leases.iterdir():
         if '.tmp.' not in marker.name and not (new / '.in_use' / marker.name).exists():
             marker.rename(new / '.in_use' / marker.name)
+
+
+def _remnant(actual, expected):
+    """Whether a tree is the expected one, whole or with entries gone, as a removal that stopped part-way leaves
+    it."""
+    return (actual['kind'] == expected['kind'] == 'tree'
+            and all(expected['entries'].get(path) == value for path, value in actual['entries'].items()))
+
+
+def _own_work(destination, held):
+    """Whether held is the staged tree or the tree moved aside in one of destination's own work folders."""
+    work = held.parent
+    suffix = work.name.removeprefix('.sync-' + destination.name + '-')
+    return (work.parent == destination.parent and suffix != work.name
+            and re.fullmatch('[0-9a-f]{32}', suffix) is not None
+            and held.name in ('staged', 'displaced') and not _linked(work) and work.is_dir())
 
 
 def _cache_inputs(provenance, notes):
@@ -646,50 +663,70 @@ class AcceptedInstallations:
         return str(old) == pending['target']['path'] or _same(self._read(artifact, old), pending['before'])
 
     def _discard(self, artifact, stale):
-        """Remove the work folder of a replacement a newer release took over or that moved nothing aside, once
-        its receipt no longer names it."""
+        """Remove the work folder of a replacement a newer release took over or that moved nothing aside, before
+        its receipt stops naming it."""
         staged = Path(stale['staged'])
         if Path(stale['displaced']) == staged.parent / 'displaced':
             self._remove_work(artifact, Path(stale['target']['path']), staged, stale['target']['image'])
 
-    def _remove_work(self, artifact, destination, held, expected=None):
-        """Remove the work folder beside destination that no receipt names any more. The folder goes only when it
-        holds nothing but held, a replacement's own staged tree or the tree one moved aside, plus in a Claude cache
-        the orphan marker Claude Code writes into every folder there that is not an installed version."""
+    def _remove_work(self, artifact, destination, held, expected):
+        """Remove the work folder beside destination that its receipt is about to stop naming. The folder goes only
+        when it holds nothing but held, a replacement's own staged tree or the tree one moved aside, plus in a Claude
+        cache the orphan marker Claude Code writes into every folder there that is not an installed version, and
+        only when held is gone or is a tree whose entries are all entries of expected, as a removal that stopped
+        part-way leaves it. expected is the record's image of the tree. A backup recorded before records held one
+        has none and cannot be checked, so its folder stays. stderr names each folder that stays for what it holds
+        or because the operating system refused, and why. One the operating system would not remove may then hold
+        part of its tree. A path that is not one of destination's work folders is passed over without a line."""
         work = held.parent
-        suffix = work.name.removeprefix('.sync-' + destination.name + '-')
-        if (work.parent != destination.parent or suffix == work.name or not re.fullmatch('[0-9a-f]{32}', suffix)
-                or held.name not in ('staged', 'displaced') or _linked(work) or not work.is_dir()):
+        if not _own_work(destination, held):
             return
         allowed = {held.name, '.orphaned_at'} if artifact.claude_cache else {held.name}
-        try:
+
+        def kept():
             names = {entry.name for entry in work.iterdir()}
             if names - allowed:
-                return
+                return 'it holds more than the tree'
             if '.orphaned_at' in names:
                 _claude_runtime(work / '.orphaned_at')
-            if expected is not None and held.exists() and not _same(image(held), expected):
-                return
-        except ConcurrentEdit:
-            return
-        shutil.rmtree(work)
+            if not held.exists():
+                return None
+            if not (isinstance(expected, dict) and expected.get('kind') == 'tree'
+                    and isinstance(expected.get('entries'), dict)):
+                return 'its record holds no image of the tree'
+            # A tree moved aside from a Claude cache can hold its sessions' markers. A stage never held any.
+            actual = self._read(artifact, held) if held.name == 'displaced' else image(held)
+            if not _remnant(actual, expected):
+                return 'its tree is not the one its record holds'
+            return None
+
+        try:
+            reason = kept()
+            if reason is None:
+                shutil.rmtree(work)
+        except (ConcurrentEdit, OSError) as error:
+            reason = error
+        if reason is not None:
+            print(f'Work folder left in place: {work}: {reason}', file=sys.stderr)
 
     def _accept(self, artifact, record, accepted, pending):
-        """Save record as the accepted installation, with the tree its replacement moved aside as its backup, and
-        remove the work folders the receipt then no longer names: the replacement's own when it moved nothing
-        aside, and the one holding the backup of the record it replaces. With no replacement, as when a release
-        changes only the intent, the record keeps that backup while its path and image stay, because an account
-        home may still hold that copy."""
+        """Save record as the accepted installation, with the tree its replacement moved aside as its backup and
+        that tree's image, and hand _remove_work the work folders the receipt then no longer names: the
+        replacement's own when it moved nothing aside, and the one holding the backup of the record it replaces.
+        Each is handed over before the record is saved, while the receipt still names it, so a run that stops during a
+        removal leaves the folder named for the next run to finish. With no replacement, as when a release changes
+        only the intent, the record keeps that backup while its path and image stay, because an account home may still
+        hold that copy."""
         if pending and Path(pending['displaced']).exists():
-            record['backup'] = pending['displaced']
+            record['backup'], record['backup_image'] = pending['displaced'], pending['swap_before']
         elif (not pending and accepted and accepted.get('backup') and accepted['path'] == record['path']
               and _same(accepted['image'], record['image'])):
-            record['backup'] = accepted['backup']
-        self._save(artifact, record)
+            record.update({key: accepted[key] for key in ('backup', 'backup_image') if key in accepted})
         if pending and 'backup' not in record:
             self._discard(artifact, pending)
         if accepted and accepted.get('backup') and accepted['backup'] != record.get('backup'):
-            self._remove_work(artifact, Path(accepted['path']), Path(accepted['backup']))
+            self._remove_work(artifact, Path(accepted['path']), Path(accepted['backup']), accepted.get('backup_image'))
+        self._save(artifact, record)
 
     def _prepare_artifact(self, artifact, target, source, data, pristine):
         receipt = self._receipt(artifact)
@@ -774,9 +811,9 @@ class AcceptedInstallations:
             if not (receipt and _same(receipt.get('pending'), prepared.stale) and self._unstarted(artifact, prepared.stale)):
                 raise ConcurrentEdit(f'Pending replacement changed after preparation: {artifact.identity}')
         if _same(self._read(artifact, destination), prepared.target):
-            self._accept(artifact, record, accepted, prepared.pending)
             if prepared.stale:
                 self._discard(artifact, prepared.stale)
+            self._accept(artifact, record, accepted, prepared.pending)
             return
         work = destination.parent / ('.sync-' + destination.name + '-' + uuid.uuid4().hex)
         pending = prepared.pending or {'before': prepared.before, 'before_path': str(prepared.before_path),
@@ -784,9 +821,9 @@ class AcceptedInstallations:
                                        'target': record, 'pristine': prepared.pristine,
                                        'staged': str(work / 'staged'), 'displaced': str(work / 'displaced'),
                                        'swap_before': prepared.destination_before}
-        self._save(artifact, accepted, pending)
         if prepared.stale:
             self._discard(artifact, prepared.stale)
+        self._save(artifact, accepted, pending)
         self._check(prepared)
         actual = self._known_pending(artifact, pending)
         displaced = actual == _ABSENT and Path(pending['displaced']).exists()
@@ -824,9 +861,14 @@ class AcceptedInstallations:
             raise ConcurrentEdit(f'Unowned tree content preserved: {destination}')
         staged.parent.mkdir(parents=True, exist_ok=True)
         if staged.exists():
-            if not _same(image(staged), prepared.target):
-                raise ConcurrentEdit(f'Prepared stage was edited: {staged}')
-        else:
+            found = image(staged)
+            if not _same(found, prepared.target):
+                # A copy or a removal that stopped part-way leaves a stage that holds nothing but entries of its
+                # target. The receipt's path is removed only where this installer makes its stages.
+                if not (staged.name == 'staged' and _own_work(destination, staged) and _remnant(found, prepared.target)):
+                    raise ConcurrentEdit(f'Prepared stage was edited: {staged}')
+                shutil.rmtree(staged)
+        if not staged.exists():
             copy_tree(prepared.source, staged)
         if not _same(image(staged), prepared.target):
             raise ConcurrentEdit(f'Prepared stage failed verification: {staged}')
