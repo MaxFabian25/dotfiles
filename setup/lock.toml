@@ -23,7 +23,7 @@ intent = "sha256:31768ccdb8852caff58d0db5329109e7ed2d4f292e9a3024df2bad725c82f7f
 [cursor-team-kit]
 intent = "sha256:c2127aa0fca72498e46e674a7b407d07ef68d182f994796b1f4fc5d1d439f7c3"
 codex = { version = "1.2.0+upstream.e5136d82418d.codex3.explicit.5d8a4bd8a94bfd1f", tree = "sha256:43ab0a2f31d982c9c8a96571bc0f293d8f6ebbf51323d6c84f22f85c86b34df1" }
-claude = { version = "1.2.0+codex-aligned.a2d176c359d6", tree = "sha256:4933a5ed5fbea34535c4e2746fdc40a7dda98a6ecefa66aa7ed48c022f70006c" }
+claude = { version = "1.2.0+codex-aligned.e6ab3daf2e21", tree = "sha256:db5152cb76a7ff6ca9f01e359fdea69293b143f364d58ab4cd0b5c0aaffab69d" }
 
 [design-control-loop]
 intent = "sha256:75a06d0bbef37a9effc5c201951b333e60bd1dd682601fae10aba4b313f6e016"
