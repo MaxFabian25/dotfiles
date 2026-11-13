@@ -25,7 +25,7 @@ class MiseEnvironmentTests(unittest.TestCase):
             environment = {key: value for key, value in os.environ.items() if not key.startswith('MISE_')}
             environment.update(HOME=home, USERPROFILE=home, MISE_CONFIG_DIR=str(config), MISE_CEILING_PATHS=home,
                                MISE_OFFLINE='1', **{f'MISE_{name}_DIR': str(Path(home) / name.lower())
-                                                    for name in ('DATA', 'STATE', 'CACHE')})
+                                                    for name in ('DATA', 'STATE', 'CACHE', 'SYSTEM_CONFIG')})
             result = subprocess.run([MISE, 'env', '--json'], cwd=home, env=environment, capture_output=True,
                                     text=True, encoding='utf-8', timeout=120)
             self.assertEqual(result.returncode, 0, result.stderr)
