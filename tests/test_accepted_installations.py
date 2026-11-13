@@ -28,6 +28,10 @@ from host_state import (Approved, DeviceRoots, EngineMarketplace, FactKey, FileV
 from sync_files import ConcurrentEdit
 from sync_sources import BuildError, Builder, Sources
 
+# The words after the host name in the warning that a sync prints when it cannot switch a kept-current plugin off
+# after a failed install.
+COULD_NOT_SWITCH = 'could not switch'
+
 
 def setUpModule():
     isolate_git()
@@ -1192,7 +1196,7 @@ class InstallationTest(unittest.TestCase):
     def test_a_codex_install_that_times_out_after_switching_a_kept_current_plugin_on_leaves_it_switched_off(self):
         self.keep_kit_current()
         printed = self.stopped_by(self.past_its_time_limit('codex', 'plugin', 'add'), self.switch_codex_on)
-        self.assertNotIn('could not switch', printed)
+        self.assertNotIn(COULD_NOT_SWITCH, printed)
         self.assertIs(self.switch(), False)
 
     def test_a_codex_install_interrupted_after_switching_a_kept_current_plugin_on_leaves_it_switched_off(self):
@@ -1206,7 +1210,7 @@ class InstallationTest(unittest.TestCase):
 
     def test_a_native_install_that_fails_before_config_toml_lists_a_kept_current_plugin_writes_no_config_toml(self):
         self.keep_kit_current()
-        self.assertNotIn('could not switch', self.stopped_by(RuntimeError('codex plugin add failed: exit 1')))
+        self.assertNotIn(COULD_NOT_SWITCH, self.stopped_by(RuntimeError('codex plugin add failed: exit 1')))
         self.assertFalse((self.roots.codex_home / 'config.toml').exists())
 
     def left_by_a_failed_install(self, text):
@@ -1220,15 +1224,15 @@ class InstallationTest(unittest.TestCase):
 
     def test_a_native_install_that_fails_before_config_toml_lists_a_kept_current_plugin_leaves_config_toml_as_it_was(self):
         printed = self.left_by_a_failed_install(b'[plugins."other@personal"]\nenabled = true\n')
-        self.assertNotIn('could not switch', printed)
+        self.assertNotIn(COULD_NOT_SWITCH, printed)
 
     def test_a_native_install_that_fails_leaving_config_toml_unreadable_stops_with_its_own_error(self):
         printed = self.left_by_a_failed_install(b'[plugins."kit@personal"]\nenabled = tr')
-        self.assertRegex(printed, r'^codex: could not switch kit@personal off .*: TOMLDecodeError: ')
+        self.assertRegex(printed, rf'(?m)^codex: {COULD_NOT_SWITCH} kit@personal off .*: TOMLDecodeError: .*line 2')
 
     def test_a_native_install_that_fails_where_the_switch_cannot_be_written_stops_with_its_own_error(self):
         printed = self.left_by_a_failed_install(b'[plugins]\n"kit@personal" = true\n')
-        self.assertRegex(printed, r'^codex: could not switch kit@personal off .*: TypeError: ')
+        self.assertRegex(printed, rf'(?m)^codex: {COULD_NOT_SWITCH} kit@personal off .*: TypeError: .*item assignment')
 
     def keep_kit_current_on_claude(self):
         from claude_host import ClaudeState
@@ -1256,7 +1260,7 @@ class InstallationTest(unittest.TestCase):
 
         def native(operation, host, *args):
             self.calls.append((host, args))
-            if args[:2] == ('plugin', 'install'):
+            if args[:2] in (('plugin', 'install'), ('plugin', 'update')):
                 release = operation.claude[plugin]
                 destination = self.roots.claude_home / 'plugins/cache/personal-collections/kit' / release.version
                 shutil.copytree(release.root, destination)
@@ -1268,9 +1272,10 @@ class InstallationTest(unittest.TestCase):
             return ''
 
         def build(builder, package, codex, *, verify=True):
-            release = catalog / 'plugins/kit/1.0.0'
+            version = builder.setup.lock['kit'].trees[Host.CLAUDE].version
+            release = catalog / 'plugins/kit' / version
             shutil.copytree(codex.root, release)
-            return {plugin: Built('kit', release, '1.0.0', builder.roots.tree_digest(release))}
+            return {plugin: Built('kit', release, version, builder.roots.tree_digest(release))}
 
         patch('claude_host.run', observe).start()
         patch('sync_hosts.Apply.command', native).start()
@@ -1296,12 +1301,38 @@ class InstallationTest(unittest.TestCase):
     def test_a_claude_code_install_that_times_out_after_switching_a_kept_current_plugin_on_leaves_it_switched_off(self):
         self.keep_kit_current_on_claude()
         printed = self.stopped_by(self.past_its_time_limit('claude', 'plugin', 'install'), self.switch_claude_on)
-        self.assertNotIn('could not switch', printed)
+        self.assertNotIn(COULD_NOT_SWITCH, printed)
         self.assertIs(self.claude_switches()['kit@personal-collections'], False)
 
     def test_a_claude_code_install_that_exits_non_zero_after_switching_a_kept_current_plugin_on_leaves_it_switched_off(self):
         self.keep_kit_current_on_claude()
         self.stopped_by(RuntimeError('claude plugin install failed: exit 1'), self.switch_claude_on)
+        self.assertIs(self.claude_switches()['kit@personal-collections'], False)
+
+    def release_kit_2_on_claude(self):
+        """After a first sync installed kit 1.0.0 on Claude Code, kit 2.0.0 as the next release describes it."""
+        self.assertEqual(self.run_apply().exit_code, 0)
+        (self.source / '.codex-plugin/plugin.json').write_text('{"name":"kit","version":"2.0.0"}')
+        digest = self.roots.tree_digest(self.source)
+        kit = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
+        lock = replace(self.setup.lock['kit'], intent=intent(kit, {}), trees={Host.CLAUDE: LockedTree('2.0.0', digest)})
+        self.setup = replace(self.setup, packages={'kit': kit}, lock={'kit': lock})
+        self.calls.clear()
+
+    def test_a_claude_code_update_of_a_kept_current_plugin_leaves_it_switched_off(self):
+        self.keep_kit_current_on_claude()
+        self.release_kit_2_on_claude()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn(('plugin', 'update'), [args[:2] for _, args in self.calls])
+        self.assertIs(self.claude_switches()['kit@personal-collections'], False)
+
+    def test_a_claude_code_update_that_fails_after_switching_a_kept_current_plugin_on_leaves_it_switched_off(self):
+        self.keep_kit_current_on_claude()
+        self.release_kit_2_on_claude()
+        self.stopped_by(RuntimeError('claude plugin update failed: exit 1'), self.switch_claude_on)
+        commands = [args[:2] for _, args in self.calls]
+        self.assertIn(('plugin', 'update'), commands)
+        self.assertNotIn(('plugin', 'install'), commands)
         self.assertIs(self.claude_switches()['kit@personal-collections'], False)
 
     def test_a_claude_code_install_that_fails_before_switching_a_kept_current_plugin_on_adds_no_switch(self):
@@ -1314,7 +1345,8 @@ class InstallationTest(unittest.TestCase):
         cut_short = b'{"enabledPlugins": {"kit@personal-collections": tr'
         printed = self.stopped_by(RuntimeError('claude plugin install failed: exit 1'),
                                   lambda: self.claude_settings().write_bytes(cut_short))
-        self.assertRegex(printed, r'^claude: could not switch kit@personal-collections off .*: JSONDecodeError: ')
+        self.assertRegex(printed,
+                         rf'(?m)^claude: {COULD_NOT_SWITCH} kit@personal-collections off .*: JSONDecodeError: .*line 1')
         self.assertEqual(self.claude_settings().read_bytes(), cut_short)
 
     def test_outside_home_source_is_staged_and_edited_cache_is_refused(self):

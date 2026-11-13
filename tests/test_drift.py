@@ -311,7 +311,8 @@ class DiffTest(unittest.TestCase):
                                 {d.SkillRoot.CLAUDE: True})
             device.setup = replace(device.setup, loose={'mine': mine})
             result = device.diff()
-        self.assertIn(f'\n  {"mine (private)":<30} stale-lock  its lock is missing or no longer matches the entry; '
+        self.assertIn(f'\n  {"mine (private)":<30} stale-lock  its lock is missing or no longer matches the entry, '
+                      'and skills/mine differs from the tree its entry pins; '
                       'run lock_setup.py --entry mine --refresh-owned --write\n', drift.render(result))
 
     def switched_off(self, device, keep_current, versions=('1.0', '1.0-codex-aligned.x')):

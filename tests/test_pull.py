@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from homes import child_stderr_dropped, isolate_git, recording_sync
+from homes import child_stderr_dropped, isolate_git, keeping_arguments, recording_sync
 import portable
 import pull
 from pull import git as pull_git, install_tools, paired, pull_lock, run, unsigned, update
@@ -244,8 +244,7 @@ class PairedPullTest(unittest.TestCase):
 
     def test_the_sync_gets_the_pulls_mode_notes_private_checkout_and_time_limit(self):
         kept = self.root / 'arguments.json'
-        keep_arguments = f'import json\npathlib.Path({str(kept)!r}).write_text(json.dumps(sys.argv[1:]))\n'
-        candidate = self.commit(self.public_origin, 'sync.py', recording_sync(0, then=keep_arguments))
+        candidate = self.commit(self.public_origin, 'sync.py', recording_sync(0, then=keeping_arguments(kept)))
         self.commit(self.private_origin, 'release.toml', f'public_commit = "{candidate}"\n')
         pinned = self.root / 'home/.config/dotfiles/allowed_signers'
         pinned.parent.mkdir(parents=True)

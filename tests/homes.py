@@ -131,6 +131,13 @@ def recording_sync(status, then=''):
             f'sync_ending.record(ending, {status!r})\n{then}')
 
 
+def keeping_arguments(path=None):
+    """Code for recording_sync's then that saves the sync's arguments as a JSON list to path, or to arguments.json
+    beside the stand-in."""
+    where = f'pathlib.Path({str(path)!r})' if path else "pathlib.Path(__file__).with_name('arguments.json')"
+    return f'import json\n{where}.write_text(json.dumps(sys.argv[1:]))\n'
+
+
 @contextlib.contextmanager
 def child_stderr_dropped():
     sys.stderr.flush()

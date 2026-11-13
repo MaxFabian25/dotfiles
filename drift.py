@@ -140,6 +140,8 @@ def diff(setup: Setup, device: Device, *, observations: Mapping[Host, Observatio
     for name in sorted(stale | edited.keys()):
         reason = ('its lock is missing or no longer matches the entry' if name in stale
                   else f'{edited[name]} changed after its tree was pinned')
+        if name in stale and name in edited:
+            reason += f', and {edited[name]} differs from the tree its entry pins'
         command = f'lock_setup.py --entry {name}' + (' --refresh-owned' if name in edited else '') + ' --write'
         differences.append(Difference(Kind.STALE_LOCK, None, None, None, EntryRef(name, _visibility(setup, name)),
                                       detail=f'{reason}; run {command}'))

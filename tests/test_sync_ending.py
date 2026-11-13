@@ -11,11 +11,9 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from homes import ENGINE, child_stderr_dropped, recording_sync
+from homes import ENGINE, child_stderr_dropped, keeping_arguments, recording_sync
 from sync_ending import run_sync
 
-KEEP_ARGUMENTS = ("import json\n"
-                  "pathlib.Path(__file__).with_name('arguments.json').write_text(json.dumps(sys.argv[1:]))\n")
 PUT_A_FOLDER_IN_THE_RECORDS_PLACE = 'ending.unlink()\nending.mkdir()\n'
 OF_ANOTHER_RELEASE = ('import pathlib, sys\n'
                       "pathlib.Path(sys.argv[sys.argv.index('--ending') + 1]).write_bytes(b'{\"status\": 2}')\n")
@@ -108,7 +106,7 @@ class RunSyncTest(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 30)
 
     def test_the_sync_gets_the_callers_mode_checkouts_and_notes(self):
-        (self.root / 'sync.py').write_text(recording_sync(0, then=KEEP_ARGUMENTS), encoding='utf-8')
+        (self.root / 'sync.py').write_text(recording_sync(0, then=keeping_arguments()), encoding='utf-8')
         private = self.root / 'private'
         run_sync(self.root, private, apply=True, notes=True)
         arguments = json.loads((self.root / 'arguments.json').read_bytes())

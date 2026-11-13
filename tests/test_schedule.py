@@ -13,7 +13,7 @@ from xml.etree import ElementTree
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from homes import child_stderr_dropped, recording_sync
+from homes import child_stderr_dropped, keeping_arguments, recording_sync
 import schedule
 
 
@@ -150,9 +150,7 @@ class WindowsScheduleTest(unittest.TestCase):
                 outcome, written, registered, arguments = install(recording_sync(status))
                 self.assertEqual(outcome, 'Resolve device drift before enabling its automatic pull schedule')
                 self.assertEqual((written, registered), (False, 0))
-        keep_arguments = ("import json\n"
-                          "pathlib.Path(__file__).with_name('arguments.json').write_text(json.dumps(sys.argv[1:]))\n")
-        outcome, written, registered, arguments = install(recording_sync(0, then=keep_arguments))
+        outcome, written, registered, arguments = install(recording_sync(0, then=keeping_arguments()))
         self.assertEqual((outcome, written, registered), (0, True, 1))
         self.assertIn('--check', arguments)
         self.assertNotIn('--apply', arguments)
