@@ -27,12 +27,17 @@ LOCK_POLL = 2
 def git(root, *args):
     try:
         result = run_tree([*GIT, '-C', str(root), *args], timeout=GIT_TIMEOUT, stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE, text=True, encoding='utf-8', env=native_cli_environment())
+                          stderr=subprocess.PIPE, env=native_cli_environment())
     except subprocess.TimeoutExpired as error:
         raise RuntimeError(f'{root.name}: git {args[0]} did not finish within {GIT_TIMEOUT} seconds') from error
     if result.returncode:
-        raise RuntimeError(f'{root.name}: git {args[0]} failed: {result.stderr.strip()}')
-    return result.stdout.strip()
+        stderr = result.stderr.decode('utf-8', 'replace').replace('\r\n', '\n').replace('\r', '\n').strip()
+        raise RuntimeError(f'{root.name}: git {args[0]} failed: {stderr}')
+    try:
+        stdout = result.stdout.decode('utf-8')
+    except UnicodeDecodeError as error:
+        raise RuntimeError(f'{root.name}: git {args[0]} output is not valid UTF-8') from error
+    return stdout.replace('\r\n', '\n').replace('\r', '\n').strip()
 
 
 def fetch(root):

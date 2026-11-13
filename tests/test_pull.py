@@ -351,6 +351,76 @@ class PullLockTest(unittest.TestCase):
         self.assertEqual(errors.getvalue(), '')
 
 
+class GitOutputDecodingTest(unittest.TestCase):
+    def test_success_preserves_text_without_reader_errors(self):
+        cases = [
+            (b'  ok\n', b'warning\xff\n', 'ok'),
+            (b'  caf\xc3\xa9\n', b'notice: caf\xc3\xa9\n', 'caf\u00e9'),
+            (b'  first\r\nsecond\rthird\n', b'', 'first\nsecond\nthird'),
+            (b'', b'', ''),
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            for stdout, stderr, expected in cases:
+                code = f'import os; os.write(1, {stdout!r}); os.write(2, {stderr!r})'
+                with self.subTest(stdout=stdout, stderr=stderr), \
+                        patch.object(pull, 'GIT', [sys.executable, '-I', '-c', code]), \
+                        redirect_stderr(io.StringIO()) as errors:
+                    self.assertEqual(pull_git(Path(temporary), 'status'), expected)
+                    self.assertEqual(errors.getvalue(), '')
+
+    def test_malformed_success_output_stops_without_reader_errors(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for stdout in (b'before\xffafter\n', b'test_\xff.py\0'):
+                code = f'import os; os.write(1, {stdout!r})'
+                with self.subTest(stdout=stdout), \
+                        patch.object(pull, 'GIT', [sys.executable, '-I', '-c', code]), \
+                        redirect_stderr(io.StringIO()) as errors:
+                    with self.assertRaisesRegex(RuntimeError, 'git status output is not valid UTF-8'):
+                        pull_git(root, 'status')
+                    self.assertEqual(errors.getvalue(), '')
+
+    def test_failure_keeps_original_error_and_replaces_malformed_bytes_without_reader_errors(self):
+        cases = [
+            (b'partial\xff\n', b'  fatal: original error\n', 'fatal: original error'),
+            (b'', b'  fatal: before\xffafter\n', 'fatal: before\ufffdafter'),
+            (b'caf\xc3\xa9\n', b'  fatal: caf\xc3\xa9\n', 'fatal: caf\u00e9'),
+            (b'', b'  fatal: first\r\nsecond\rthird\n', 'fatal: first\nsecond\nthird'),
+            (b'', b'', ''),
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for stdout, stderr, expected in cases:
+                code = f'import os; os.write(1, {stdout!r}); os.write(2, {stderr!r}); raise SystemExit(7)'
+                with self.subTest(stdout=stdout, stderr=stderr), \
+                        patch.object(pull, 'GIT', [sys.executable, '-I', '-c', code]), \
+                        redirect_stderr(io.StringIO()) as errors:
+                    with self.assertRaises(RuntimeError) as failure:
+                        pull_git(root, 'status')
+                    self.assertEqual(str(failure.exception), f'{root.name}: git status failed: {expected}')
+                    self.assertEqual(errors.getvalue(), '')
+
+    @unittest.skipIf(os.name == 'nt', 'Windows filenames cannot contain non-UTF-8 bytes')
+    def test_malformed_filename_stops_private_test_discovery_and_review_fingerprinting(self):
+        import release
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            pull_git(root, 'init', '-q', '-b', 'main')
+            pull_git(root, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                     '-c', 'commit.gpgsign=false', 'commit', '-q', '--allow-empty', '-m', 'fixture')
+            pull_git(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+            path = root / os.fsdecode(b'test_\xff.py')
+            for content in (b'raise AssertionError("must not skip")\n', b'raise SystemExit(7)\n'):
+                path.write_bytes(content)
+                checks = [('private tests', lambda: release.test_suite(root, root, root / 'logs' / 'suite.log')),
+                          ('review fingerprint', lambda: release.code_changes(root))]
+                for name, check in checks:
+                    with self.subTest(content=content, check=name), patch.object(release, 'public_suite'):
+                        with self.assertRaisesRegex(RuntimeError, 'output is not valid UTF-8'):
+                            check()
+
+
 class PullEnvironmentTest(unittest.TestCase):
     def test_git_helpers_receive_windows_executable_extensions_when_parent_has_none(self):
         environment = portable.native_cli_environment
