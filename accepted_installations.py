@@ -237,8 +237,15 @@ def _missing(value):
                                 all(not field['present'] for field in value['fields']))
 
 
+def _physical(path):
+    # On Windows, resolve() gives a dangling link's target as the link holds it, so a link in that target stays
+    # unresolved until the target exists (seen with Python 3.14.8 on 13 November 2026). The second resolve() resolves
+    # it, so a path reads the same before and after its target is written.
+    return path.resolve().resolve()
+
+
 def _bindings(paths):
-    return [{'path': str(path), 'physical': str(path.resolve()),
+    return [{'path': str(path), 'physical': str(_physical(path)),
              'links': [{'path': str(part), 'target': str(part.readlink()) if part.is_symlink() else str(part.resolve())}
                        for part in (*reversed(path.parents), path) if _linked(part)]} for path in paths]
 
@@ -381,7 +388,7 @@ class AcceptedInstallations:
                                            (path,), fingerprint, 'role' if key.surface == Surface.AGENT else 'loose', fact.value))
                 elif key.surface == Surface.RULES:
                     alias = self.roots.codex_home / 'AGENTS.md' if key.host == Host.CODEX else self.roots.claude_home / 'CLAUDE.md'
-                    path = alias.resolve()
+                    path = _physical(alias)
                     if path in rules:
                         previous = rules[path]
                         rules[path] = replace(previous, aliases=(*previous.aliases, alias))

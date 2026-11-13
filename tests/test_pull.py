@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -410,8 +410,10 @@ class PullEnvironmentTest(unittest.TestCase):
 
     def test_git_stops_child_processes_at_its_time_limit(self):
         # A loaded machine can use up a short limit before Git reaches the alias, so a run with no marker proves nothing.
-        # Git for Windows' shell gives $! as its own process ID, and /proc/$!/winpid as the one Windows knows.
-        pid = 'cat /proc/$!/winpid' if portable.WINDOWS else 'echo $!'
+        # Git for Windows' shell gives $! as its own process ID, and /proc/$!/winpid as the one Windows knows. Until
+        # exename shows sleep, that is the ID of a fork, which starts sleep.exe under a new ID and ends.
+        pid = ('until case $(cat /proc/$!/exename) in *sleep) ;; *) false; esac; do :; done; cat /proc/$!/winpid'
+               if portable.WINDOWS else 'echo $!')
         for limit in (1, 5, 30):
             with tempfile.TemporaryDirectory() as temporary, patch('pull.GIT_TIMEOUT', limit):
                 marker = Path(temporary) / 'grandchild'
@@ -435,6 +437,14 @@ class PullEnvironmentTest(unittest.TestCase):
                     time.sleep(0.1)
                 self.fail('The child process of git outlived the time limit')
         self.fail('Git never reached its alias within the longest limit')
+
+    def test_the_job_is_ended_when_taskkill_runs_past_its_limit(self):
+        library = MagicMock()
+        with patch.object(pull, 'WINDOWS', True), patch.object(pull, 'kernel32', lambda: library), \
+                patch.object(pull.subprocess, 'run', side_effect=subprocess.TimeoutExpired('taskkill', 30)):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                pull.stop_process_tree(MagicMock(pid=4711), 99)
+        library.TerminateJobObject.assert_called_once_with(99, 1)
 
 
 class WindowsVerifierTest(unittest.TestCase):

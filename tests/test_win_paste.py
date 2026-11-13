@@ -134,6 +134,19 @@ sys.exit(code)
 '''
 
 
+class NativeWindows(unittest.TestCase):
+    def test_on_windows_itself_it_stops_with_a_sentence_before_anything_runs(self):
+        as_windows = f"import runpy, sys; sys.platform = 'win32'; runpy.run_path({str(TOOL)!r}, run_name='__main__')"
+        with tempfile.TemporaryDirectory() as box:
+            done = subprocess.run(
+                [sys.executable, "-I", "-c", as_windows, "--pid", "7", "--window-id", "9", "--x", "40", "--y", "50"],
+                input="text", capture_output=True, text=True, timeout=60,
+                env={**os.environ, "WIN_PASTE_DRIVER": str(Path(box) / "driver"), "WIN_PASTE_HOME": box})
+            self.assertEqual(os.listdir(box), [])
+        self.assertEqual((done.returncode, done.stdout, done.stderr),
+                         (1, "", "win_paste: run this from WSL, not from Windows itself; nothing was changed\n"))
+
+
 @unittest.skipIf(sys.platform == "win32", "win_paste.py runs on WSL and handles signals Windows lacks")
 class WinPaste(unittest.TestCase):
     def setUp(self):

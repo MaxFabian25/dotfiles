@@ -14,6 +14,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import release
 
 
+def setUpModule():
+    if sys.platform == 'win32':
+        raise unittest.SkipTest('releases are made on WSL or Omarchy, never on Windows itself')
+
+
 def git(root, *args):
     return subprocess.check_output(['git', '-C', str(root), *args], stderr=subprocess.DEVNULL).decode().strip()
 

@@ -224,6 +224,8 @@ def main():
 
 
 def run():
+    if sys.platform == "win32":
+        stop("run this from WSL, not from Windows itself; nothing was changed")
     try:
         main()
     except Ended as error:  # it leaves main only from outside the two blocks, before the first write

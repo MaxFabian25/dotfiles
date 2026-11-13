@@ -17,6 +17,8 @@ ONE_SKIP = ONE_TEST + '\n    @unittest.skip("not here")\n    def test_skipped(se
 CLASS_SKIP = ONE_TEST + ('\n\nclass Two(unittest.TestCase):\n    @classmethod\n    def setUpClass(cls):\n'
                          '        raise unittest.SkipTest("not on this machine")\n\n'
                          '    def test_first(self):\n        pass\n\n    def test_second(self):\n        pass\n')
+MODULE_SKIP = ONE_TEST.replace('import unittest\n', 'import unittest\n\n\ndef setUpModule():\n'
+                               '    raise unittest.SkipTest("not on this machine")\n', 1)
 FAILS_AND_SKIPS = ONE_SKIP.replace('        pass', '        self.fail("the broken detail")', 1)
 PRINTS_A_RESULT = ONE_TEST.replace('        pass', '        __import__("sys").stderr.write("OK (skipped=9)\\n")')
 ENDS_WITH_A_NOTE = ONE_TEST.replace('import unittest\n', 'import atexit\nimport sys\nimport unittest\n\n'
@@ -49,6 +51,11 @@ class FullRun(unittest.TestCase):
                            'test_d.py': PRINTS_A_RESULT, 'test_e.py': ENDS_WITH_A_NOTE})
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertRegex(result.stdout, r'\ASkipped tests: test_b\.py 1, test_c\.py 1\nRan 6 tests in \S+\nOK\n\Z')
+
+    def test_a_module_that_skips_itself_passes_and_is_counted(self):
+        result = full_run({'test_a.py': ONE_TEST, 'test_b.py': MODULE_SKIP})
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertRegex(result.stdout, r'\ASkipped tests: test_b\.py 1\nRan 1 test in \S+\nOK\n\Z')
 
     def test_a_failing_module_still_has_its_skips_counted(self):
         result = full_run({'test_a.py': FAILS_AND_SKIPS})

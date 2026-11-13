@@ -129,6 +129,27 @@ class InvocationOverridesTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             module.merge_adaptation('upstream added\n', None, 'new\n', 'x')
 
+    def test_a_crlf_copy_merges_as_text_and_keeps_its_line_ends(self):
+        base = 'one\ntwo\nthree\nfour\nfive\n'
+        adapted = 'one\nTWO\nthree\nfour\nfive\n'
+        self.assertEqual(module.merge_adaptation('one\r\ntwo\r\nthree\r\nfour\r\nfive\r\n', base, adapted, 'x'),
+                         'one\r\nTWO\r\nthree\r\nfour\r\nfive\r\n')
+        self.assertEqual(module.merge_adaptation('one\r\ntwo\r\nthree\r\nfour\r\nFIVE\r\n', base, adapted, 'x'),
+                         'one\r\nTWO\r\nthree\r\nfour\r\nFIVE\r\n')
+        with self.assertRaisesRegex(ValueError, 'conflict'):
+            module.merge_adaptation('one\r\n2\r\nthree\r\nfour\r\nfive\r\n', base, adapted, 'x')
+        self.assertIsNone(module.merge_adaptation('one\r\ntwo\r\nthree\r\nfour\r\nfive\r\n', base, None, 'x'))
+        self.assertEqual(module.merge_adaptation('one\r\ntwo\r\nthree\r\nfour\r\r\nfive\r\n', base, adapted, 'x'),
+                         'one\r\nTWO\r\nthree\r\nfour\r\r\nfive\r\n')
+        self.assertEqual(module.merge_adaptation('one\ntwo\nthree\nfour\nfive\r\n', base, adapted, 'x'),
+                         'one\nTWO\nthree\nfour\nfive\r\n')
+        self.assertEqual(module.merge_adaptation('one', 'one', 'one\ntwo\n', 'x'), 'one\ntwo\n')
+        with self.assertRaisesRegex(ValueError, 'conflict'):
+            module.merge_adaptation('one\r\ntwo\r\n', 'one\ntwo\n', 'one\r\nTWO\n', 'x')
+        script = '#!/bin/sh\r\necho hi\r\n'
+        self.assertEqual(module.merge_adaptation(script, script, script.replace('\r\n', '\n'), 'x'),
+                         '#!/bin/sh\necho hi\n')
+
     def test_harness_gaps_name_skills_that_use_cursor_names_without_the_harness_link(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -218,6 +239,23 @@ class InvocationOverridesTest(unittest.TestCase):
             registry = {'targets': {'Codex': {'plugin@m': []}, 'Claude': {}}}
             writes, _ = module.plan(registry, [('Codex', 'plugin@m', root)], adaptations)
             self.assertEqual(planned(writes, root), {'docs/a.md': 'one\nTWO\nthree\nfour\nFIVE\n'})
+
+    def test_a_crlf_copy_gets_the_adaptation_in_crlf_and_replays_to_nothing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory).resolve()
+            repository, _ = self._adaptation_repository(directory)
+            root = directory / 'cache'
+            (root / 'docs').mkdir(parents=True)
+            (root / 'docs/a.md').write_bytes(b'one\r\ntwo\r\nthree\r\nfour\r\nFIVE\r\n')
+            adaptations = {'plugins': {'plugin': {'repository': str(repository), 'baseRef': 'upstream',
+                                                   'adaptedRef': 'main', 'hosts': ['Codex']}}}
+            registry = {'targets': {'Codex': {'plugin@m': []}, 'Claude': {}}}
+            installs = [('Codex', 'plugin@m', root)]
+            writes, _ = module.plan(registry, installs, adaptations)
+            self.assertEqual(changed(writes, root), {'docs/a.md': 'one\r\nTWO\r\nthree\r\nfour\r\nFIVE\r\n'})
+            for path, _, new, _, _ in writes:
+                path.write_bytes(new.encode('utf-8'))
+            self.assertEqual(changed(module.plan(registry, installs, adaptations)[0], root), {})
 
     def test_adaptation_merges_beside_a_flag_the_policy_export_flipped(self):
         with tempfile.TemporaryDirectory() as directory:

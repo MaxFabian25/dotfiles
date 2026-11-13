@@ -88,6 +88,11 @@ class SessionTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
 
+    def test_a_profile_without_a_lock_asks_for_chromes_pid(self):
+        with self.assertRaises(SystemExit) as stopped:
+            ab_session.chrome_pid(self.root / 'absent')
+        self.assertIn('pass --approve=PID', str(stopped.exception))
+
     @unittest.skipIf(sys.platform == 'win32', 'Chrome on Windows makes no SingletonLock link; --approve is Linux only')
     def test_chrome_is_found_from_its_profile_lock(self):
         lock = self.root / 'SingletonLock'
@@ -97,10 +102,20 @@ class SessionTest(unittest.TestCase):
         ended.wait()
         stale = self.root / 'StaleLock'
         stale.symlink_to(f'Some-Host-{ended.pid}')
-        for gone in (self.root / 'absent', stale):
-            with self.subTest(lock=gone.name), self.assertRaises(SystemExit) as stopped:
-                ab_session.chrome_pid(gone)
-            self.assertIn('pass --approve=PID', str(stopped.exception))
+        with self.assertRaises(SystemExit) as stopped:
+            ab_session.chrome_pid(stale)
+        self.assertIn('pass --approve=PID', str(stopped.exception))
+
+    @unittest.skipIf(os.name == 'nt' or os.geteuid() == 0, 'needs a folder this user cannot search')
+    def test_a_lock_in_a_folder_that_cannot_be_searched_asks_for_chromes_pid(self):
+        profile = self.root / 'profile'
+        profile.mkdir()
+        (profile / 'SingletonLock').symlink_to(f'Some-Host-{os.getpid()}')
+        profile.chmod(0)
+        self.addCleanup(profile.chmod, 0o700)
+        with self.assertRaises(SystemExit) as stopped:
+            ab_session.chrome_pid(profile / 'SingletonLock')
+        self.assertIn('pass --approve=PID', str(stopped.exception))
 
     def test_approve_runs_the_same_attach_under_the_prompt_helper(self):
         command = ab_session.approve_command(4711, 'mine', ['get', 'url'])

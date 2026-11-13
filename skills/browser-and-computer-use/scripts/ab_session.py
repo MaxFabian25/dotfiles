@@ -25,6 +25,7 @@ The flags live in ~/.local/state/agent-browser-sessions/NAME.json. For macOS and
 session with windows-session.ps1 and pass the same flags on every later command.
 """
 
+import contextlib
 import json
 import os
 import pathlib
@@ -72,9 +73,8 @@ def chrome_pid(lock: pathlib.Path) -> int:
     """Chrome's browser process, from the HOST-PID target of its profile folder's SingletonLock link."""
     try:
         pid = int(os.readlink(lock).rsplit("-", 1)[1])
-        os.kill(pid, 0)  # a Chrome that crashed leaves its lock behind
-    except PermissionError:
-        pass
+        with contextlib.suppress(PermissionError):
+            os.kill(pid, 0)
     except (OSError, IndexError, ValueError):
         sys.exit(f"ab_session: no running Chrome found at {lock}; pass --approve=PID")
     return pid

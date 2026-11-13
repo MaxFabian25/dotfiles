@@ -75,7 +75,7 @@ def main(argv):
         os.environ['CLAUDE_CONFIG_DIR'] = str(absent / 'claude')
         os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
         program = unittest.main(module=None, argv=['tests/run.py', 'discover', '-s', str(TESTS), *argv], exit=False)
-    if not program.result.testsRun:
+    if not (program.result.testsRun or program.result.skipped):
         return 5
     return 0 if program.result.wasSuccessful() else 1
 

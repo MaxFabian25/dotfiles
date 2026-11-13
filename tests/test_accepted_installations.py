@@ -2673,12 +2673,9 @@ class InstallationTest(unittest.TestCase):
             self.run_apply(current)
         self.assertEqual(receipt.read_text(), '{not valid json')
 
-    def test_shared_rule_alias_has_one_receipt_and_retargeting_blocks(self):
+    def claude_reads_rules_through(self, alias):
         from claude_host import ClaudeState
         from types import SimpleNamespace
-        self.roots.claude_home.mkdir(parents=True)
-        alias = self.roots.claude_home / 'CLAUDE.md'
-        alias.symlink_to(self.roots.codex_home / 'AGENTS.md')
 
         def observe(request):
             seen = Observer(Host.CLAUDE, self.roots)
@@ -2687,6 +2684,12 @@ class InstallationTest(unittest.TestCase):
             return seen.finish('rules host', set())
         claude = SimpleNamespace(host=Host.CLAUDE, project=lambda setup: ClaudeState.project(None, setup), observe=observe)
         self.device = replace(self.device, hosts=(self.host, claude))
+
+    def test_shared_rule_alias_has_one_receipt_and_retargeting_blocks(self):
+        self.roots.claude_home.mkdir(parents=True)
+        alias = self.roots.claude_home / 'CLAUDE.md'
+        alias.symlink_to(self.roots.codex_home / 'AGENTS.md')
+        self.claude_reads_rules_through(alias)
         self.assertEqual(self.run_apply().exit_code, 0)
         receipts = [json.loads(p.read_bytes()) for p in self.receipt_paths()]
         self.assertEqual(len([r for r in receipts if r['identity'].startswith('rules:')]), 1)
@@ -2699,6 +2702,19 @@ class InstallationTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.run_apply(current)
         self.assertFalse(destination.exists())
+
+    def test_a_rule_alias_whose_missing_target_runs_through_a_linked_folder_applies(self):
+        self.roots.claude_home.mkdir(parents=True)
+        linked = self.root / 'linked-home'
+        linked.symlink_to(self.roots.claude_home.parent, target_is_directory=True)
+        alias = self.roots.claude_home / 'CLAUDE.md'
+        alias.symlink_to(linked / '.codex' / 'AGENTS.md')
+        self.claude_reads_rules_through(alias)
+        self.assertEqual(self.run_apply().exit_code, 0)
+        receipts = [json.loads(p.read_bytes()) for p in self.receipt_paths()]
+        self.assertEqual(len([r for r in receipts if r['identity'].startswith('rules:')]), 1)
+        self.assertEqual(alias.read_bytes(), b'Managed rules.\n')
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
 
     def test_private_models_and_runtime_fields_are_owned_without_touching_other_settings(self):
         private = self.root / 'private'

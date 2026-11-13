@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 from datetime import datetime, timezone
+import functools
 import hashlib
 import json
 from pathlib import Path
@@ -25,9 +26,26 @@ LOCK_WAIT = 300
 LOCK_POLL = 2
 
 
-def stop_process_tree(process):
+@functools.cache
+def kernel32():
+    import ctypes
+    from ctypes import wintypes
+    library = ctypes.WinDLL('kernel32', use_last_error=True)
+    library.CreateJobObjectW.restype = wintypes.HANDLE
+    library.CreateJobObjectW.argtypes = (wintypes.LPVOID, wintypes.LPCWSTR)
+    library.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
+    library.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
+    library.CloseHandle.argtypes = (wintypes.HANDLE,)
+    return library
+
+
+def stop_process_tree(process, job):
     if WINDOWS:
-        subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], capture_output=True, timeout=30)
+        try:
+            subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], capture_output=True, timeout=30)
+        finally:
+            if job:
+                kernel32().TerminateJobObject(job, 1)
     else:
         os.killpg(process.pid, signal.SIGKILL)
 
@@ -35,18 +53,27 @@ def stop_process_tree(process):
 def git(root, *args):
     # subprocess.run's timeout kills only git. On Windows it then waits for the pipes, which git's own children hold
     # open, so a stalled fetch would keep this pull and its lock alive with no limit.
-    process = subprocess.Popen([*GIT, '-C', str(root), *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               text=True, encoding='utf-8', env=native_cli_environment(),
-                               start_new_session=not WINDOWS)
+    # taskkill /T follows Windows parents, and Git's MSYS shell starts a program by fork and then exec, so that
+    # program's parent has exited and only a job still holds it.
+    job = kernel32().CreateJobObjectW(None, None) if WINDOWS else None
     try:
+        process = subprocess.Popen([*GIT, '-C', str(root), *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   text=True, encoding='utf-8', env=native_cli_environment(),
+                                   start_new_session=not WINDOWS)
+        if job and not kernel32().AssignProcessToJobObject(job, process._handle):
+            kernel32().CloseHandle(job)
+            job = None
         stdout, stderr = process.communicate(timeout=GIT_TIMEOUT)
     except subprocess.TimeoutExpired as error:
-        stop_process_tree(process)
+        stop_process_tree(process, job)
         try:
             process.communicate(timeout=5)
         except subprocess.TimeoutExpired:
             pass
         raise RuntimeError(f'{root.name}: git {args[0]} did not finish within {GIT_TIMEOUT} seconds') from error
+    finally:
+        if job:
+            kernel32().CloseHandle(job)
     if process.returncode:
         raise RuntimeError(f'{root.name}: git {args[0]} failed: {stderr.strip()}')
     return stdout.strip()

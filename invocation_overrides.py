@@ -142,6 +142,15 @@ def adapted_here(adaptations, identity, host):
 
 
 def merge_adaptation(current, base, adapted, label):
+    crlf_copy = current and '\r\n' in current and '\n' not in current.replace('\r\n', '')
+    if not crlf_copy or any(part and '\r\n' in part for part in (base, adapted)):
+        return _merge_lf(current, base, adapted, label)
+    text, base, adapted = (None if part is None else part.replace('\r\n', '\n') for part in (current, base, adapted))
+    merged = _merge_lf(text, base, adapted, label)
+    return None if merged is None else merged.replace('\n', '\r\n')
+
+
+def _merge_lf(current, base, adapted, label):
     if current == adapted:
         return current
     if current == base:
