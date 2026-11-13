@@ -1,1 +1,0 @@
-excel.py: ok=False load=None errors=0 unscanned_sheets=0 read_errors=0 office_logs_left=0 error=Excel could not open the workbook in any load mode

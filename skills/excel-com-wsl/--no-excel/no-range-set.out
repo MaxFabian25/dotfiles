@@ -1,1 +1,0 @@
-excel.py: ok=False load=normal errors=0 unscanned_sheets=0 read_errors=0 office_logs_left=0 error=Excel gave no range for the name Fixed, whose text has 2 characters: it has none for a name that refers to no cells, to cells on several sheets, or to more rectangles than it gives as one range, so give each rectangle as a REF of its own

@@ -1,1 +1,0 @@
-excel.py: ok=False load=normal errors=0 unscanned_sheets=0 read_errors=0 office_logs_left=0 error=set target S!A1:A2,C1:C2 is not one cell

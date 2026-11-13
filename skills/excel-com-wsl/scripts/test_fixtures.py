@@ -5,10 +5,13 @@
 
 Prints PASS or FAIL per check and exits 1 on any FAIL. EVIDENCE_DIR must not exist yet, and keeps each job's JSON,
 what it printed (NAME.out) and its stderr (NAME.stderr). --no-excel runs only the cases that start no Excel: the
-stand-in workbooks, the cut of --set REF=VALUE, a job that argparse turns away and the stop of a sleeping process.
+stand-in workbooks, the cut of --set REF=VALUE, a job that argparse turns away, the stop of a sleeping process and
+the crash check's read of Windows' log.
 """
 
+import contextlib
 import importlib.util
+import io
 import json
 import math
 import os
@@ -256,6 +259,51 @@ def windows_temp() -> tuple[pathlib.Path, str]:
 
 def job_folders(temp: pathlib.Path) -> list[str]:
     return sorted(path.name for path in temp.glob("xlcom-*"))
+
+
+def excel_crashes(since_ms: int, log: str = "Application") -> dict[int, str] | None:
+    script = (f"$since = [DateTimeOffset]::FromUnixTimeMilliseconds({since_ms}).LocalDateTime; "
+              f"try {{ $found = @(Get-WinEvent -FilterHashtable @{{ LogName = '{log}'; Id = 1000; ProviderName = 'Application Error'; StartTime = $since }} -ErrorAction Stop) }} "
+              "catch { if ($_.FullyQualifiedErrorId -notmatch 'NoMatchingEventsFound') { throw }; $found = @() }; "
+              "$found | Where-Object { $_.Properties[0].Value -eq 'EXCEL.EXE' } | "
+              "ForEach-Object { 'crash {0} {1}' -f [int]$_.Properties[8].Value, $_.Properties[3].Value }; 'read'")
+    done = subprocess.run(["winps"], input=script, capture_output=True, text=True, timeout=120)
+    if done.stderr:
+        print(done.stderr.rstrip(), file=sys.stderr)
+    return parse_crashes(done.returncode, done.stdout)
+
+
+def parse_crashes(status: int, said: str) -> dict[int, str] | None:
+    lines = said.splitlines()
+    if status != 0 or not lines or lines[-1].strip() != "read":
+        return None
+    return {int(parts[1]): parts[2] for parts in (line.split(" ", 2) for line in lines[:-1]) if len(parts) == 3 and parts[0] == "crash"}
+
+
+def job_excels(evidence: pathlib.Path) -> dict[int, str]:
+    found = {}
+    for path in evidence.glob("*.json"):
+        try:
+            result = json.loads(path.read_text(encoding="utf-8-sig"))
+        except ValueError:
+            continue
+        if not isinstance(result, dict):
+            continue
+        pids = [(result.get("excel") or {}).get("pid")]
+        pids.extend(entry.get("pid") for entry in (result.get("runner") or {}).get("stopped", [])
+                    if entry.get("program") == "EXCEL")
+        for pid in pids:
+            if isinstance(pid, int):
+                found[pid] = path.stem
+    return found
+
+
+def crashed_jobs(crashed: dict[int, str] | None, jobs: dict[int, str]) -> object:
+    if crashed is None:
+        return "the log gave no answer"
+    if not jobs:
+        return "no job recorded its Excel"
+    return {jobs[pid]: crashed[pid] for pid in sorted(set(crashed) & set(jobs))} or None
 
 
 def job_folder(temp: pathlib.Path, known: list[str], book: pathlib.Path) -> tuple[pathlib.Path, int, int]:
@@ -911,17 +959,63 @@ def stand_in_cases(evidence: pathlib.Path, temp: pathlib.Path, temp_win: str) ->
           "name that holds =", cut == cuts, cut)
 
 
+def crash_log_cases(evidence: pathlib.Path) -> None:
+    ahead = excel_crashes(time.time_ns() // 1_000_000 + 3_600_000)
+    check("the crash check reads Windows' log and finds no Excel crash in the time ahead",
+          ahead == {}, ahead)
+    error = io.StringIO()
+    with contextlib.redirect_stderr(error):
+        missing = excel_crashes(0, log="xlcom-no-such-log")
+    check("the crash check fails when Windows' log gives no answer", missing is None)
+    check("the crash check keeps Windows' error", "xlcom-no-such-log" in error.getvalue(), error.getvalue())
+    parsed = [parse_crashes(0, "crash 12 combase.dll\nnote 14 other\ncrash 13 Some Module.dll\nread\n"), parse_crashes(0, "crash 12 combase.dll\n"),
+              parse_crashes(1, "crash 12 combase.dll\nread\n"), parse_crashes(0, "")]
+    check("the crash check takes each crash the log printed, and no answer from a read that did not finish", parsed == [
+        {12: "combase.dll", 13: "Some Module.dll"}, None, None, None], parsed)
+    rejected = subprocess.run([sys.executable, "-I", str(HERE / "test_fixtures.py"), "--no-excel"],
+                              cwd=evidence, env={"PATH": ""}, capture_output=True, text=True, timeout=60)
+    check("a missing evidence directory prints usage and starts no suite",
+          rejected.returncode != 0 and rejected.stderr.startswith(__doc__.strip())
+          and not (evidence / "--no-excel").exists(), rejected.stderr)
+    stand_in = evidence / "crash-check"
+    stand_in.mkdir()
+    (stand_in / "kept.json").write_text(json.dumps({"ok": True, "excel": {"pid": 4242}}), encoding="utf-8-sig")
+    (stand_in / "failed.json").write_text(json.dumps({"ok": False, "excel": {"pid": 4343}, "error": "x"}), encoding="utf-8")
+    (stand_in / "no-excel.json").write_text(json.dumps({"ok": False, "excel": None}), encoding="utf-8")
+    (stand_in / "helper.json").write_text(json.dumps({"bound": True, "excel_pid": 4444}), encoding="utf-8")
+    (stand_in / "list.json").write_text("[1, 2]", encoding="utf-8")
+    (stand_in / "torn.json").write_text('{"excel": {"pid": 45', encoding="utf-8")
+    (stand_in / "text.json").write_text(json.dumps({"excel": {"pid": "4646"}}), encoding="utf-8")
+    (stand_in / "stopped.json").write_text(json.dumps({"runner": {"stopped": [
+        {"program": "EXCEL", "pid": 4545}, {"program": "powershell", "pid": 4646},
+        {"program": "EXCEL", "pid": "4747"}]}}), encoding="utf-8")
+    found = job_excels(stand_in)
+    check("the crash check takes each job result's Excel and nothing else", found == {4242: "kept", 4343: "failed", 4545: "stopped"}, found)
+    check("the crash check catches an Excel recorded only by the runner, without counting PowerShell",
+          crashed_jobs({4545: "combase.dll"}, found) == {"stopped": "combase.dll"}
+          and crashed_jobs({4646: "combase.dll"}, found) is None, found)
+    verdicts = [crashed_jobs(None, found), crashed_jobs({}, {}), crashed_jobs({4343: "combase.dll", 9: "x"}, found),
+                crashed_jobs({9: "combase.dll"}, found), crashed_jobs({}, found)]
+    check("the crash check fails on a crashed job's Excel, on a log with no answer and on no job, and on nothing else",
+          verdicts == ["the log gave no answer", "no job recorded its Excel", {"failed": "combase.dll"}, None, None], verdicts)
+
+
 def main() -> int:
-    if len(sys.argv) not in (2, 3) or sys.argv[2:] not in ([], ["--no-excel"]):
+    if len(sys.argv) not in (2, 3) or sys.argv[2:] not in ([], ["--no-excel"]) or sys.argv[1].startswith("-"):
         sys.exit(__doc__)
     evidence = pathlib.Path(sys.argv[1]).resolve()
     evidence.mkdir(parents=True)
     temp, temp_win = windows_temp()
     before, folders_before = excel_count(), job_folders(temp)
+    started_ms = time.time_ns() // 1_000_000
     if len(sys.argv) == 2:
         excel_cases(evidence, temp, temp_win)
     stand_in_cases(evidence, temp, temp_win)
     office_log_cases(evidence, temp, temp_win)
+    crash_log_cases(evidence)
+    if len(sys.argv) == 2:
+        why = crashed_jobs(excel_crashes(started_ms), job_excels(evidence))
+        check("no job's Excel crashed", why is None, why)
     after, folders_after = excel_count(), job_folders(temp)
     check("no Excel process left behind", before == after, f"before {before}, after {after}")
     check("no job folder left behind", folders_before == folders_after, folders_after)

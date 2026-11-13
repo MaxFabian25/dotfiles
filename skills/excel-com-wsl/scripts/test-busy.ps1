@@ -63,7 +63,7 @@ try {
   }
   # The job saves out.xlsx, which has a lock file while it is open for writing, closes it, reopens it read-only, with
   # no lock file, and closes it again. Only a count that Excel really answered tells an open workbook from none.
-  $closedAfterSave = $false; $reopened = $false
+  $closedAfterSave = $false; $reopened = $false; $emptySince = $null
   while ($report.bound -and (Get-Date) -lt $deadline) {
     if (-not (Get-Process -Id $jobPid -ErrorAction SilentlyContinue)) { $report.ended = 'Excel gone'; break }
     if ((Test-Path -LiteralPath $saved) -and -not (Test-Path -LiteralPath $lock)) { $closedAfterSave = $true }
@@ -71,13 +71,19 @@ try {
     try { $count = $app.Workbooks.Count } catch { }
     if ($closedAfterSave -and $count -is [int] -and $count -ge 1) { $reopened = $true }
     if ($reopened -and $count -is [int] -and $count -eq 0) { $report.ended = 'the job closed the copy it reopened'; break }
+    if ($closedAfterSave -and $count -is [int] -and $count -eq 0) {
+      if (-not $emptySince) { $emptySince = Get-Date }
+      elseif (((Get-Date) - $emptySince).TotalSeconds -ge 1) { $report.ended = 'no workbook open for a second after the job closed the saved copy'; break }
+    } else { $emptySince = $null }
     try { $app.CalculateFullRebuild(); $report.calls++; if ($reopened) { $report.calls_on_saved_copy++ } } catch { $report.refused++ }
     Start-Sleep -Milliseconds 100
   }
 } catch {
   $report.error = $_.Exception.Message
 } finally {
-  foreach ($o in @($app, $wb)) { if ($o) { try { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($o) } catch { } } }
-  $app = $null; $wb = $null; [GC]::Collect(); [GC]::WaitForPendingFinalizers()
+  if ($wb) { try { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($wb) } catch { } }
+  $wb = $null; [GC]::Collect(); [GC]::WaitForPendingFinalizers()
+  if ($app) { try { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($app) } catch { } }
+  $app = $null; [GC]::Collect(); [GC]::WaitForPendingFinalizers()
   $report | ConvertTo-Json | Set-Content -LiteralPath $Log -Encoding UTF8
 }

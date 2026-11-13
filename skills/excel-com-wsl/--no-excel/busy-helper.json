@@ -1,9 +1,0 @@
-{
- "bound": true,
- "excel_pid": 42372,
- "calls": 7,
- "calls_on_saved_copy": 1,
- "refused": 2,
- "ended": "the job closed the copy it reopened",
- "error": null
-}

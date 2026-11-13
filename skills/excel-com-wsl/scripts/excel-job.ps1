@@ -462,8 +462,12 @@ try {
   # Closing and quitting wait for a busy Excel too, but briefly: the stop by process ID below is what ends it.
   [XlCom.BusyFilter]::LimitMs = [Math]::Min([XlCom.BusyFilter]::LimitMs, 10000)
   try { if ($wb) { $wb.Close($false) } } catch { }
+  if ($wb) { try { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($wb) } catch { } }
+  $wb = $null; $opened = $null; $Error.Clear()
+  [GC]::Collect(); [GC]::WaitForPendingFinalizers(); [GC]::Collect(); [GC]::WaitForPendingFinalizers()
   try { if ($xl) { $xl.Quit() } } catch { }
-  foreach ($o in @($wb, $xl)) { if ($o) { try { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($o) } catch { } } }
+  if ($xl) { try { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($xl) } catch { } }
+  $xl = $null
   [GC]::Collect(); [GC]::WaitForPendingFinalizers()
   if ($excelPid) {
     $deadline = (Get-Date).AddSeconds(15)
