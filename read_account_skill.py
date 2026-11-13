@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import deque
 import errno
 import json
 import os
@@ -10,10 +11,53 @@ from queue import Empty, Queue
 import re
 import subprocess
 import sys
+import tempfile
 from threading import Thread
 import time
 
 import portable
+
+EXITED = 'Native app-server exited before replying'
+EXIT_WAIT_SECONDS = 5
+# Ten, because when Codex's npm wrapper fails, Node's report puts the error's line seventh from the end.
+STDERR_LINES = 10
+STDERR_WIDTH = 400
+SEQUENCE = re.compile(r'\x1b[\]P_^X][^\x07\x1b\x9c]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]|\x1b[ -/]+[0-~]')
+CONTROL = re.compile(r'[\x00-\x08\x0a-\x1f\x7f-\x9f]')
+KEY_MARKER = re.compile(r'-----(BEGIN|END) [A-Z ]*-----')
+SECRET_NAME = (r'(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential|authorization'
+               r'|cookie)')
+CREDENTIALS = (
+    re.compile(SECRET_NAME + r'''[\w.-]*["']?\s*[:=]\s*\S''', re.I),
+    re.compile(r'(?<![\w-])(?=[\w-]*[_-])[\w-]*' + SECRET_NAME + r'[\w-]*\s+\S', re.I),
+    re.compile(r'(?<![\w-])[A-Z0-9_]*' + SECRET_NAME.upper() + r'[A-Z0-9_]*\s+\S'),
+    re.compile(r'[a-z][\w+.-]*://[^\s/:@]*:[^\s/@]+@', re.I),
+    re.compile(r'bearer\s+\S', re.I),
+    re.compile(r'(?i:basic)\s+(?=[A-Za-z0-9+/]*[A-Z0-9+/])[A-Za-z0-9+/]{8,}'),
+    re.compile(r'gh[pousr]_[A-Za-z0-9]{8,}|github_pat_\w{8,}'),
+    re.compile(r'(?:AKIA|ASIA)[0-9A-Z]{16}'),
+    re.compile(r'xox[abposr]-[A-Za-z0-9-]+'),
+    re.compile(r'sk-[\w-]{16,}'),
+    re.compile(r'eyJ[\w-]{8,}\.[\w-]{8,}'),
+)
+WITHHELD = '[withheld: the line may hold a credential]'
+
+
+def stderr_lines(file):
+    """The server shares the file's offset, so only a server that has exited is read."""
+    file.seek(0)
+    kept = deque(maxlen=STDERR_LINES)
+    key = False
+    for raw in file:
+        text = CONTROL.sub(' ', SEQUENCE.sub('', raw.decode('utf-8', 'replace'))).strip()
+        if not text:
+            continue
+        markers = KEY_MARKER.findall(text)
+        kept.append((text, key or bool(markers)))
+        if markers:
+            key = markers[-1] == 'BEGIN'
+    return [WITHHELD if in_key or any(pattern.search(text) for pattern in CREDENTIALS)
+            else text[:STDERR_WIDTH] + '...' if len(text) > STDERR_WIDTH else text for text, in_key in kept]
 
 
 def stopped_reading(error):
@@ -27,10 +71,16 @@ class Client:
         if profile is not None:
             env['CODEX_HOME'] = str(profile)
         env.pop('CODEX_SQLITE_HOME', None)
-        self.process = subprocess.Popen([portable.codex_cli(), 'app-server', '--stdio'],
-                                        cwd=Path.home(), env=env, stdin=subprocess.PIPE,
-                                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                        text=True, encoding='utf-8')
+        # A file, because a pipe that nobody reads fills and stalls the server.
+        self.stderr = tempfile.TemporaryFile()
+        try:
+            self.process = subprocess.Popen([portable.codex_cli(), 'app-server', '--stdio'],
+                                            cwd=Path.home(), env=env, stdin=subprocess.PIPE,
+                                            stdout=subprocess.PIPE, stderr=self.stderr,
+                                            text=True, encoding='utf-8')
+        except BaseException:
+            self.stderr.close()
+            raise
         self.queue = Queue()
         self.identifier = 0
         self.reader = Thread(target=self._read, daemon=True)
@@ -55,7 +105,18 @@ class Client:
         except OSError as error:
             if not stopped_reading(error):
                 raise
-            raise RuntimeError('Native app-server exited before replying') from error
+            raise self.exited() from error
+
+    def exited(self):
+        try:
+            self.process.wait(timeout=EXIT_WAIT_SECONDS)
+        except subprocess.TimeoutExpired:
+            return RuntimeError(EXITED)
+        try:
+            lines = stderr_lines(self.stderr)
+        except OSError as error:
+            lines = [f'could not be read: {error}']
+        return RuntimeError('\n'.join([EXITED, *(f'app-server stderr: {line}' for line in lines)]))
 
     def call(self, method, params):
         self.identifier += 1
@@ -67,7 +128,7 @@ class Client:
             except Empty as error:
                 raise RuntimeError(f'Native app-server timed out: {method}') from error
             if line is None:
-                raise RuntimeError('Native app-server exited before replying')
+                raise self.exited()
             message = json.loads(line)
             if message.get('id') != self.identifier:
                 continue
@@ -82,6 +143,7 @@ class Client:
         return [skill for group in listing['data'] for skill in group['skills']]
 
     def close(self):
+        self.stderr.close()
         if self.process.stdin:
             try:
                 self.process.stdin.close()
