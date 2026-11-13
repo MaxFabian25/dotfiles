@@ -4,18 +4,22 @@
     python3 -I excel.py WORKBOOK.xlsx [--read REF]... [--set REF=VALUE]... [--save OUT.xlsx] [--json OUT.json]
                         [--job-timeout 300] [--calc-timeout 120]
 
-REF is a workbook-scoped name or a Sheet!A1 / Sheet!A1:B9 range. A sheet name in single quotes has each apostrophe in
-it doubled, as in 'It''s'!B2, which is how errors and a read's address give it. Excel opens a copy in a hidden
-instance of its own, rebuilds the calculation and reads each REF. With --set it changes those cells, recalculates and
-reads again. It then saves the copy, reopens it and reads once more. Prints the result as JSON, or writes it to --json
-and prints one line. Exits 0 when Excel finished the job, every read gave an answer and the error scan could tell for
-every sheet, and 1 otherwise.
+REF is a workbook-scoped name or a Sheet!A1 / Sheet!A1:B9 range of one rectangle: a read of several, such as
+Sheet!A1,C1:C2, fails, so read each by its own REF. A sheet name needs single quotes unless it holds only letters of
+any script, digits and underscores, and in quotes has each apostrophe in it doubled, as in 'It''s'!B2, which is how
+errors and a read's address give it. --set REF=VALUE is cut at its first =, or at the first = after the quoted sheet
+name the REF opens with, so 'a=b'!A1=5 sets A1 on the sheet a=b, and REF==0.1 writes the formula =0.1. Excel opens a
+copy in a hidden instance of its own, rebuilds the calculation and reads each REF. With --set it changes those cells,
+recalculates and reads again. It then saves the copy, reopens it and reads once more. Prints the result as JSON, or
+writes it to --json and prints one line. Exits 0 when Excel finished the job, every read gave an answer and the error
+scan could tell for every sheet, and 1 otherwise.
 """
 
 import argparse
 import json
 import math
 import pathlib
+import re
 import secrets
 import shutil
 import subprocess
@@ -24,6 +28,8 @@ import time
 
 HERE = pathlib.Path(__file__).resolve().parent
 POWERSHELL = ["powershell.exe", "-NoProfile", "-NonInteractive"]
+# A sheet name in single quotes at the start of a REF, with each apostrophe in it doubled. Excel allows = in one.
+QUOTED_SHEET = re.compile(r"'(?:[^']|'')+'!")
 
 
 def value(text: str):
@@ -33,6 +39,17 @@ def value(text: str):
         except ValueError:
             pass
     return {"true": True, "false": False, "null": None}.get(text.lower(), text)
+
+
+def split_set(item: str) -> tuple[str, str] | None:
+    """The REF and the VALUE of a --set REF=VALUE, or None when it holds no = to cut at.
+
+    The cut is the first = after a quoted sheet name, where the REF opens with one, so that every address a read
+    gives can be set, and the first = otherwise. The = of a formula stays with the VALUE, as in REF==0.1.
+    """
+    quoted = QUOTED_SHEET.match(item)
+    cut = item.find("=", quoted.end() if quoted else 0)
+    return (item[:cut], item[cut + 1:]) if cut >= 0 else None
 
 
 def windows_temp() -> tuple[pathlib.Path, str]:
@@ -178,10 +195,10 @@ def main() -> int:
         parser.error(f"{args.workbook} is not a file")
     sets = []
     for item in args.set:
-        ref, sep, text = item.partition("=")
-        if not sep:
+        cut = split_set(item)
+        if cut is None:
             parser.error(f"--set needs REF=VALUE, not {item}")
-        sets.append({"ref": ref, "value": value(text)})
+        sets.append({"ref": cut[0], "value": value(cut[1])})
     result = run_job(args.workbook.resolve(), args.read, sets, args.save.resolve() if args.save else None,
                      args.job_timeout, args.calc_timeout, args.test_hold)
     if args.json:

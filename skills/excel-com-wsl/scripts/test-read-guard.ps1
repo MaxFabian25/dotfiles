@@ -2,8 +2,9 @@
 Test helper for test_fixtures.py. Runs Read-Refs and Find-Errors from excel-job.ps1 on stand-in workbooks, with no
 Excel: some answer as a healthy Excel does, some hand back $null for one property or throw a rejected call, as
 PowerShell does when a busy Excel refused it and the wait ran out, and some sheets answer the error scan's questions
-with something that is no answer. A stand-in workbook with sheets takes the references that name a sheet in quotes.
-It writes what each made of them to -Log as JSON.
+with something that is no answer. A stand-in range knows how many rectangles it has, and a stand-in name its text.
+A stand-in workbook with sheets takes the references that name a sheet. It writes what each made of them to -Log as
+JSON.
 #>
 param([Parameter(Mandatory = $true)] [string] $JobScript, [Parameter(Mandatory = $true)] [string] $Log)
 $ErrorActionPreference = 'Stop'
@@ -13,9 +14,11 @@ foreach ($function in $ast.FindAll({ param($node) $node -is [Management.Automati
 }
 $errorNames = @{}
 
-function New-Range($count, $value, $formula, $rows, $columns) {
+function New-Range($count, $value, $formula, $rows, $columns, $areas = 1) {
+  # $areas is the count of rectangles, $null for a count that Excel refused, or 'refused' for refused Areas.
   $range = [pscustomobject]@{
     Count = $count; Value2 = $value; Formula2 = $formula; Text = 'text'; HasSpill = $false
+    Areas = $(if ('refused' -ne $areas) { [pscustomobject]@{ Count = $areas } })
     Worksheet = [pscustomobject]@{ Name = 'S' }; Rows = $(if ($rows) { [pscustomobject]@{ Count = $rows } }); Columns = $(if ($columns) { [pscustomobject]@{ Count = $columns } })
   }
   return $range | Add-Member -MemberType ScriptMethod -Name Address -Value { '$A$1' } -PassThru
@@ -33,8 +36,24 @@ $ranges = [ordered]@{
   no_value     = New-Range 1 $null '=A1' 1 1
   no_values    = New-Range 2 $null $null 2 1
   no_rows      = New-Range 2 $twoRows $null $null $null
+  # Two rectangles: Value2 is the first one's, two cells here and one cell there, and Count covers both.
+  two_areas      = New-Range 4 $twoRows $null 2 1 2
+  one_cell_first = New-Range 3 101.0 '101' 1 1 2
+  no_areas       = New-Range 1 5.0 '5' 1 1 'refused'
+  no_area_count  = New-Range 1 5.0 '5' 1 1 $null
+  # Names for which Excel has no range: long_name has a text, as a name of too many rectangles or of no cells has,
+  # and late_range gets its range on the second ask, as after a call that a busy Excel refused.
+  long_name      = $null
+  late_range     = $null
 }
-$names = [pscustomobject]@{ Ranges = $ranges } | Add-Member -MemberType ScriptMethod -Name Item -Value { param($name) [pscustomobject]@{ RefersToRange = $this.Ranges[$name] } } -PassThru
+$texts = @{ long_name = '=' + ('S!$A$1,' * 40); late_range = '=S!$A$1' }
+$later = @{ late_range = New-Range 1 5.0 '5' 1 1 }
+$names = [pscustomobject]@{ Ranges = $ranges; Texts = $texts; Later = $later } | Add-Member -MemberType ScriptMethod -Name Item -Value {
+  param($name)
+  $second = if ($this.Later.ContainsKey($name)) { $this.Later[$name] } else { $this.Ranges[$name] }
+  $entry = [pscustomobject]@{ RefersTo = $this.Texts[$name]; Asked = 0; First = $this.Ranges[$name]; Second = $second }
+  return $entry | Add-Member -MemberType ScriptProperty -Name RefersToRange -Value { $this.Asked++; if ($this.Asked -eq 1) { $this.First } else { $this.Second } } -PassThru
+} -PassThru
 $workbook = [pscustomobject]@{ Names = $names }
 
 # A stand-in sheet knows which of its cells hold an error value and of which kind: 'formula', 'typed' or 'spilled'.
@@ -174,23 +193,50 @@ foreach ($case in $sheets.Keys) {
   } catch { $scans[$case] = [ordered]@{ scan_error = $_.Exception.Message } }
 }
 
-# A stand-in workbook with sheets, for a reference that names its sheet in quotes. Worksheets.Item knows a sheet by
-# its exact name and nothing else, a range gives its address as Excel does, such as $B$2 or $B$2:$C$3, and what
-# is no cell or rectangle, such as a table column, as it was asked, and the workbook has no names. Okonomi is spelt with the letter O with a stroke, built from its code because Windows
-# PowerShell reads a script without a byte-order mark in the ANSI code page. The second round reads the addresses
-# that the first round gave.
+# A stand-in workbook with sheets, for a reference that names its sheet, in quotes or not. Worksheets.Item knows a
+# sheet by its exact name and nothing else, a range gives its address as Excel does, such as $B$2 or $B$2:$C$3, and
+# what is no cell or rectangle, such as a table column, as it was asked. A sheet turns away Elsewhere and Nowhere, as
+# Excel's does a name whose cells lie on another sheet. The workbook has three names, each scoped to the sheet
+# Okonomi: Elsewhere, whose cell lies on the sheet S, FY2024, which is also the address of a cell, and LocalConst,
+# which has a text and no range. Its name lookup keeps what it was asked for. Okonomi is spelt with the letter O with
+# a stroke and Cafe with an accent as a combining mark, built from their codes because Windows PowerShell reads a
+# script without a byte-order mark in the ANSI code page. The second round reads the addresses that the first round
+# gave.
 function New-Cell($sheet, [string] $address) {
-  $cell = [pscustomobject]@{ Count = 1; Value2 = 5.0; Formula2 = '5'; Text = '5'; HasSpill = $false; Worksheet = $sheet; Asked = $address }
+  $cell = [pscustomobject]@{ Count = 1; Value2 = 5.0; Formula2 = '5'; Text = '5'; HasSpill = $false; Worksheet = $sheet; Asked = $address; Areas = [pscustomobject]@{ Count = 1 } }
   return $cell | Add-Member -MemberType ScriptMethod -Name Address -Value { $this.Asked.Replace('$', '') -replace '([A-Z]+)(\d+)', '$$$1$$$2' } -PassThru
 }
-$noNames = [pscustomobject]@{} | Add-Member -MemberType ScriptMethod -Name Item -Value { param($name) throw "the stand-in workbook has no name $name" } -PassThru
-$stroked = [string][char]0xD8 + 'konomi'
-$titled = [pscustomobject]@{ Titles = @("It's", "O'Neil's", 'My sheet', 'S', 'A', $stroked) } | Add-Member -MemberType ScriptMethod -Name Item -Value {
+$stroked = [string][char]0xD8 + 'konomi'; $marked = 'Cafe' + [string][char]0x301
+$known = @{
+  "$stroked!Elsewhere"  = [pscustomobject]@{ RefersTo = '=S!$A$1'; RefersToRange = (New-Cell ([pscustomobject]@{ Name = 'S' }) 'A1') }
+  "$stroked!FY2024"     = [pscustomobject]@{ RefersTo = "=$stroked!`$B`$2"; RefersToRange = (New-Cell ([pscustomobject]@{ Name = $stroked }) 'B2') }
+  "$stroked!LocalConst" = [pscustomobject]@{ RefersTo = '=5'; RefersToRange = $null }
+}
+$scoped = [pscustomobject]@{ Known = $known; Asked = (New-Object Collections.ArrayList) } | Add-Member -MemberType ScriptMethod -Name Item -Value {
+  param($name)
+  [void]$this.Asked.Add($name)
+  if (-not $this.Known.ContainsKey($name)) { throw "the stand-in workbook has no name $name" }
+  return $this.Known[$name]
+} -PassThru
+$titled = [pscustomobject]@{ Titles = @("It's", "O'Neil's", 'My sheet', 'S', 'A', $stroked, 'Data_1', $marked) } | Add-Member -MemberType ScriptMethod -Name Item -Value {
   param($name)
   if ($this.Titles -cnotcontains $name) { throw "the stand-in workbook has no sheet $name" }
-  return [pscustomobject]@{ Name = $name } | Add-Member -MemberType ScriptMethod -Name Range -Value { param($address) New-Cell $this $address } -PassThru
+  return [pscustomobject]@{ Name = $name } | Add-Member -MemberType ScriptMethod -Name Range -Value {
+    param($address)
+    if ($address -in 'Elsewhere', 'Nowhere') { throw "the stand-in sheet $($this.Name) has no range $address" }
+    New-Cell $this $address
+  } -PassThru
 } -PassThru
-$quotedBook = [pscustomobject]@{ Names = $noNames; Worksheets = $titled }
-$quoted = Read-Refs $quotedBook @("'It''s'!B2", "'O''Neil''s'!C7", "'My sheet'!A1", 'S!A1', "'$stroked'!A1", "'My sheet'!T[Owner''s share]", "S!T['#Items]", "$stroked!A1", "'It's'!B2", "'O'Neil''s'!C7", "'It''s!B2", "'A'!B'C'!D1")
+$quotedBook = [pscustomobject]@{ Names = $scoped; Worksheets = $titled }
+$quoted = Read-Refs $quotedBook @("'It''s'!B2", "'O''Neil''s'!C7", "'My sheet'!A1", 'S!A1', "'$stroked'!A1", "'My sheet'!T[Owner''s share]", "S!T['#Items]", "$stroked!B3", 'Data_1!A1', "$marked!A2", "$stroked!Elsewhere", "'$stroked'!Elsewhere", 'S!Elsewhere', "$stroked!FY2024", "'$stroked'!FY2024", "$stroked!LocalConst", 'S!Nowhere', 'My sheet!A1', 'My-sheet!A1', "'It's'!B2", "'O'Neil''s'!C7", "'It''s!B2", "'A'!B'C'!D1")
+$lookups = @($scoped.Asked)
+# Workbooks whose name lookup a busy Excel refused: the call is rejected, hands back $null, or Names itself is $null.
+# The sheet knows FY2024 as a cell, so a read that went on to the sheet would give that cell.
+$rejected = [pscustomobject]@{} | Add-Member -MemberType ScriptMethod -Name Item -Value { param($name) throw [Runtime.InteropServices.COMException]::new('refused', -2147418111) } -PassThru
+$silent = [pscustomobject]@{} | Add-Member -MemberType ScriptMethod -Name Item -Value { param($name) $null } -PassThru
+$refusedLookups = [ordered]@{}
+foreach ($case in @(@('rejected', $rejected), @('no_name', $silent), @('no_names', $null))) {
+  $refusedLookups[$case[0]] = (Read-Refs ([pscustomobject]@{ Names = $case[1]; Worksheets = $titled }) @("$stroked!FY2024"))["$stroked!FY2024"]
+}
 $quotedAgain = Read-Refs $quotedBook @($quoted.Values | Where-Object { $_.Contains('address') } | ForEach-Object { $_.address })
-[ordered]@{ reads = (Read-Refs $workbook @($ranges.Keys)); scans = $scans; quoted = $quoted; quoted_again = $quotedAgain } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Log -Encoding UTF8
+[ordered]@{ reads = (Read-Refs $workbook @($ranges.Keys)); scans = $scans; quoted = $quoted; name_lookups = $lookups; refused_lookups = $refusedLookups; quoted_again = $quotedAgain } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Log -Encoding UTF8

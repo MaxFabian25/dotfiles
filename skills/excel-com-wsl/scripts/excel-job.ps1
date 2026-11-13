@@ -59,19 +59,48 @@ function Convert-Cell($v) {
   return $v
 }
 
+function Get-NameRange($name, [string] $ref) {
+  # The range a name refers to. $name is what Names.Item gave for $ref.
+  $range = $name.RefersToRange
+  if ($null -eq $range) {
+    # Excel has no range, and no error, for a name that refers to no cells, such as a constant or a formula, to cells
+    # on several sheets, or to more rectangles than it gives as one range. It answers for such a name's text, so the
+    # text and a second ask tell that from a call a busy Excel refused, which comes back as $null too.
+    $text = $name.RefersTo
+    $range = $name.RefersToRange
+    if ($null -eq $range -and $text -is [string]) { throw "Excel gave no range for the name $ref, whose text has $($text.Length) characters: it has none for a name that refers to no cells, to cells on several sheets, or to more rectangles than it gives as one range, so give each rectangle as a REF of its own" }
+  }
+  # The comma keeps PowerShell from unrolling a multi-cell range into its cells.
+  return , $range
+}
+
 function Get-Target($wb, [string] $ref) {
   # A sheet name in quotes has each apostrophe in it doubled, as Excel writes it and as errors and a read's address
   # give it. A reference that opens with a quote and is not such a name and a range is refused: no workbook name
   # starts with a quote, and taking 'It's' for the sheet It's would leave 'It''s' meaning two sheets. No range holds
   # an apostrophe before a !, so a quoted name that an undoubled apostrophe before a ! ended early is refused too. A
-  # table column can hold an apostrophe elsewhere, as in T['#Items].
-  if ($ref -match '^(?:''(?<q>(?:[^'']|'''')+)''|(?<s>[A-Za-z0-9_]+))!(?<a>(?:[^'']|''(?!!))+)$') {
-    $sheet = if ($Matches['q']) { $Matches['q'].Replace("''", "'") } else { $Matches['s'] }
-    return , $wb.Worksheets.Item($sheet).Range($Matches['a'])
+  # table column can hold an apostrophe elsewhere, as in T['#Items]. A sheet name without quotes holds letters of
+  # any script with their marks, digits and underscores.
+  if ($ref -match '^(?:''(?<q>(?:[^'']|'''')+)''|(?<s>[\p{L}\p{M}\p{Nd}_]+))!(?<a>(?:[^'']|''(?!!))+)$') {
+    $quoted = $Matches['q']; $unquoted = $Matches['s']; $address = $Matches['a']
+    # Until 13 November 2026 an unquoted sheet name held A to Z, digits and underscores only, and a reference with
+    # any other letter before its ! was looked up as a name, which finds a name scoped to that sheet wherever its
+    # cells lie. Such a reference still goes to the name lookup first, so that what read then reads the same, and
+    # to the sheet when the workbook has no such name. With A to Z alone, a sheet named in Danish never got there.
+    # A lookup that a busy Excel refused ends the read: going on to the sheet would read the cell FY2024 where the
+    # workbook has a name of that spelling.
+    if (-not $quoted -and $unquoted -notmatch '^[A-Za-z0-9_]+$') {
+      $names = $wb.Names; Confirm-Answer $names 'the names'
+      $known = $true
+      try { $name = $names.Item($ref) } catch { if (Test-Refused $_) { throw }; $known = $false }
+      if ($known) { $range = Get-NameRange $name $ref; return , $range }
+    }
+    $sheet = if ($quoted) { $quoted.Replace("''", "'") } else { $unquoted }
+    return , $wb.Worksheets.Item($sheet).Range($address)
   }
   if ($ref.StartsWith("'")) { throw "$ref is no sheet name in single quotes with a range after it: double each apostrophe inside the quotes, as in 'It''s'!B2" }
-  # The comma keeps PowerShell from unrolling a multi-cell range into its cells.
-  return , $wb.Names.Item($ref).RefersToRange
+  $range = Get-NameRange ($wb.Names.Item($ref)) $ref
+  return , $range
 }
 
 function Confirm-Answer($value, [string] $what) {
@@ -86,6 +115,11 @@ function Read-Refs($wb, $refs) {
     try {
       $r = Get-Target $wb $ref
       Confirm-Answer $r 'the range'
+      # Value2 of several rectangles is the first one's values, while Count and Address cover them all, so such a
+      # read would give part of the range under the address of the whole.
+      $areas = $r.Areas; Confirm-Answer $areas 'the rectangles'
+      $areaCount = $areas.Count; Confirm-Answer $areaCount 'the count of rectangles'
+      if ($areaCount -gt 1) { throw "range has $areaCount rectangles; read each rectangle by its own REF" }
       $count = $r.Count; Confirm-Answer $count 'the cell count'
       if ($count -gt 2000) { throw "range has $count cells; the limit is 2000" }
       $sheet = $r.Worksheet.Name; Confirm-Answer $sheet 'the sheet name'
