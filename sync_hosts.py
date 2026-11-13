@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
+import tomllib
 
 import portable
 from accepted_installations import AcceptedInstallations, HeldCache, copy_tree, image
@@ -197,15 +199,34 @@ class Apply:
 
     def _install(self, host, identity):
         existing = self.current.observations[host].facts.get(FactKey(host, Surface.PLUGIN, identity))
-        if host == Host.CODEX:
-            self.command(host, 'plugin', 'add', identity, '--json')
-        else:
-            self.command(host, 'plugin', 'update' if existing else 'install', identity, '--scope', 'user', '--json')
-        # `codex plugin add` and `claude plugin install` switch the plugin on, and a sync can stop before its end.
-        if any(plugin_id(name, install, host) == identity and install.managed and not install.enabled
-               for name, package in self.setup.packages.items() if package.placement(host)
-               for install in package.placement(host).installs):
+        # `codex plugin add` and `claude plugin install` switch the plugin on, possibly before they fail.
+        kept = any(plugin_id(name, install, host) == identity and install.managed and not install.enabled
+                   for name, package in self.setup.packages.items() if package.placement(host)
+                   for install in package.placement(host).installs)
+        try:
+            if host == Host.CODEX:
+                self.command(host, 'plugin', 'add', identity, '--json')
+            else:
+                self.command(host, 'plugin', 'update' if existing else 'install', identity, '--scope', 'user', '--json')
+        except BaseException:
+            if kept:
+                try:
+                    if self._has_switch(host, identity):
+                        self._enabled(host, identity, False)
+                except Exception as failed:
+                    # Printed, so that the sync stops with the native command's error and not with this one.
+                    print(f'{host.value}: could not switch {identity} off after its failed install, so it may still be '
+                          f'on: {type(failed).__name__}: {failed}', file=sys.stderr)
+            raise
+        if kept:
             self._enabled(host, identity, False)
+
+    def _has_switch(self, host, identity):
+        if host == Host.CODEX:
+            path, parse, table = self.roots.codex_home / 'config.toml', tomllib.loads, 'plugins'
+        else:
+            path, parse, table = self.roots.claude_home / 'settings.json', json.loads, 'enabledPlugins'
+        return path.is_file() and identity in parse(portable.read_utf8(path)).get(table, {})
 
     def _plugins(self):
         wanted = {d.key: d.expected for d in self.current.changes if d.key and d.key.surface == Surface.PLUGIN}
