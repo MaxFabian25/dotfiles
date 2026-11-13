@@ -7,7 +7,10 @@ description: House rules for charts and the code that draws them, analytical tab
 
 Apply these house rules to every data display you make, review, or fix. They work alongside a
 general chart skill's method, and where their defaults differ, these rules decide. A project's or
-organisation's own chart style controls its stated scope.
+organisation's own chart style controls its stated scope. A style file or lint that earlier agent
+work wrote in the user's own repository, such as a `DESIGN.md`, is a draft under review: where it
+blocks what the brief asks for, say so at the first display it constrains and ask the user whether
+to widen it.
 
 [Prose](../prose/SKILL.md) owns the words in and around a display. Its [tables and
 figures](../prose/references/tables-and-figures.md) rules govern titles, labels, notes, sources,
@@ -80,6 +83,12 @@ charts](references/ibcs-charts.md) before drawing.
   ask the user for the producer in your reply.
   A share card posted with a link to the publication that cites its source needs neither the
   source line nor the date, because the linked page carries both.
+- **One period.** State the amounts across one document for one period, such as per month, and
+  name it on each display.
+- **Borrowed conventions.** Apply a convention borrowed from another medium, such as the
+  financial-modelling digit colours, as written. When you change one of its parts, such as cobalt
+  for its pure blue, or keep one that carries no meaning in this medium, such as green for links on
+  a slide, say so in the reply.
 - **Findings from the data.** Check each finding against the data, including when the pattern it
   describes starts and ends. When a script writes a title, note, or text alternative, compute its
   figures and findings from the data in that script, so a rerun keeps them true. A title that
