@@ -622,8 +622,14 @@ class InstallationTest(unittest.TestCase):
         for case, mine in (('outside the work folders', self.root / 'elsewhere/mine'),
                            ('under another folder', self.root / 'elsewhere' / name / 'staged'),
                            ('with a short suffix', destination.parent / f'.sync-{destination.name}-abcd/staged'),
-                           ('under another name', destination.parent / name / 'displaced')):
+                           ('under another name', destination.parent / name / 'displaced'),
+                           ('without the prefix', destination.parent / ('ab' * 16) / 'staged'),
+                           ('with a long suffix', destination.parent / (name + 'x') / 'staged'),
+                           ('in a work folder that is a link', destination.parent / name.replace('ab', 'cd') / 'staged')):
             with self.subTest(case):
+                if 'link' in case:
+                    (self.root / 'linked').mkdir()
+                    mine.parent.symlink_to(self.root / 'linked', target_is_directory=True)
                 mine.mkdir(parents=True)
                 (mine / 'ordinary.txt').write_text('first revision\n')
                 receipt = self._pending_claude_receipt()
@@ -753,21 +759,129 @@ class InstallationTest(unittest.TestCase):
         if name == 'displaced':
             held.append(installed)  # so that only the first move waits, and the second is tried once
         self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
-        with self.assertRaises(ConcurrentEdit) as stopped:
+        moved, rename = [], os.rename
+
+        def recorded(source, target, *args, **kwargs):
+            result = rename(source, target, *args, **kwargs)
+            moved.append(Path(target).name)
+            return result
+
+        with patch('os.rename', recorded), self.assertRaises(ConcurrentEdit) as stopped:
             self.run_apply()
         [stage] = installed.parent.glob('.sync-*/staged')
         self.assertEqual(str(stopped.exception), f'Prepared stage was edited: {stage}')
-        self.assertFalse(installed.exists(), 'the old tree was moved aside before the stage was read again')
-        self.assertIn('use the local reader', (stage.parent / 'displaced/skills/one/SKILL.md').read_text())
+        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual([path.name for path in stage.parent.iterdir()], ['staged'])
+        shutil.rmtree(stage)
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
+        return moved
 
-    def test_a_stage_edited_while_windows_holds_the_old_tree_stops_the_replacement(self):
-        self.stage_edited_during_the_wait_for('displaced')
+    def test_a_stage_edited_while_windows_holds_the_old_tree_leaves_the_old_tree_where_it_is(self):
+        self.assertEqual(self.stage_edited_during_the_wait_for('displaced'), [])
 
-    def test_a_stage_edited_while_windows_holds_the_new_tree_stops_the_replacement(self):
-        self.stage_edited_during_the_wait_for('1.0.0')
+    def test_a_stage_edited_while_windows_holds_the_new_tree_puts_the_old_tree_back(self):
+        self.assertEqual(self.stage_edited_during_the_wait_for('1.0.0'), ['displaced', '1.0.0'])
 
-    @unittest.skipIf(sys.platform == 'win32' or getattr(os, 'geteuid', lambda: 1)() == 0, 'needs a file its owner cannot read')
+    def test_a_stage_edited_before_a_first_install_moves_it_into_place_stops_the_install(self):
+        loose = self.roots.codex_home / 'skills/loose'
+        with self.edit_stage_when_the_receipt_is_saved(loose), self.assertRaises(ConcurrentEdit) as stopped:
+            self.run_apply()
+        [stage] = loose.parent.glob('.sync-loose-*/staged')
+        self.assertEqual(str(stopped.exception), f'Prepared stage was edited: {stage}')
+        self.assertFalse(loose.exists())
+
+    def edit_stage_when_the_receipt_is_saved(self, destination):
+        from accepted_installations import AcceptedInstallations
+        save = AcceptedInstallations._save
+
+        def edited(owner, artifact, accepted, pending=None):
+            save(owner, artifact, accepted, pending)
+            if pending and Path(pending['target']['path']) == destination and Path(pending['staged']).is_dir():
+                next(path for path in sorted(Path(pending['staged']).rglob('*')) if path.is_file()).write_text(
+                    'edited while the receipt was saved\n')
+
+        return patch.object(AcceptedInstallations, '_save', edited)
+
+    def test_a_stage_edited_before_the_old_tree_is_moved_aside_moves_nothing(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        installed = self.installed()
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        moved, rename = [], os.rename
+
+        def recorded(source, target, *args, **kwargs):
+            moved.append(Path(target).name)
+            return rename(source, target, *args, **kwargs)
+
+        with self.edit_stage_when_the_receipt_is_saved(installed), patch('os.rename', recorded), \
+                self.assertRaisesRegex(ConcurrentEdit, '^Prepared stage was edited: '):
+            self.run_apply()
+        self.assertNotIn('displaced', moved)
+        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+
+    def test_an_empty_folder_that_appears_where_the_new_tree_goes_stays_and_the_old_tree_stays_aside(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        installed = self.installed()
+        hold_built_trees_once(self, meanwhile=lambda target: target.name != 'displaced' and target.mkdir())
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        with patch('sys.stderr', new_callable=io.StringIO) as stderr, \
+                self.assertRaisesRegex(ConcurrentEdit, f'^Tree changed during replacement: {re.escape(str(installed))}$'):
+            self.run_apply()
+        self.assertEqual(list(installed.iterdir()), [])
+        displaced = Path(json.loads(self.receipt_of('plugin:').read_bytes())['pending']['displaced'])
+        self.assertIn('use the local reader', (displaced / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(stderr.getvalue(), f'Old tree left aside: {displaced}, from {installed}: its place is taken\n')
+
+    def test_an_empty_folder_where_a_stopped_swap_left_a_loose_skill_absent_blocks(self):
+        self.loose_backup()
+        self.revise_loose('A third loose skill.\n')
+        self.stopped_between_the_moves()
+        (self.roots.codex_home / 'skills/loose').mkdir()
+        self.assertEqual([d.detail for d in plan(self.setup, self.device).blocked],
+                         ['codex:LOOSE_SKILL:{codex_home}/skills/loose: Unknown partial installation preserved: '
+                          'codex:LOOSE_SKILL:{codex_home}/skills/loose'])
+
+    def move_into_place_refused(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        installed = self.installed()
+        rename = os.rename
+
+        def refuse(source, target, *args, **kwargs):
+            if Path(source).name == 'staged':
+                raise PermissionError(13, 'Access is denied', str(target))
+            return rename(source, target, *args, **kwargs)
+
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        with patch('os.rename', refuse), self.assertRaises(PermissionError) as stopped:
+            self.run_apply()
+        self.assertEqual(Path(stopped.exception.filename), installed)
+        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+        return installed
+
+    def test_a_new_tree_that_cannot_be_moved_into_place_leaves_the_old_tree_in_place(self):
+        installed = self.move_into_place_refused()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
+
+    def test_a_newer_release_takes_over_a_replacement_whose_old_tree_was_put_back(self):
+        installed = self.move_into_place_refused()
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the newer release'),))
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the newer release', (installed / 'skills/one/SKILL.md').read_text())
+        [work] = installed.parent.glob(f'.sync-{installed.name}-*')
+        self.assertEqual([path.name for path in work.iterdir()], ['displaced'])
+        self.assertIn('use the local reader', (work / 'displaced/skills/one/SKILL.md').read_text())
+
     def test_a_tree_that_cannot_be_read_again_while_windows_holds_it_is_left_where_it_is(self):
+        probe = self.root / 'probe'
+        probe.write_text('')
+        probe.chmod(0)
+        try:
+            probe.read_bytes()
+        except PermissionError:
+            pass
+        else:
+            self.skipTest('needs a file its owner cannot read')
         self.assertEqual(self.run_apply().exit_code, 0)
         installed = self.installed()
         held = hold_built_trees_once(
@@ -1810,6 +1924,206 @@ class InstallationTest(unittest.TestCase):
         self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
         self.assertTrue(lease.exists())
 
+    def stopped_between_the_moves(self):
+        rename = Path.rename
+
+        def crash(path, target):
+            if path.name == 'staged':
+                raise RuntimeError('between the moves')
+            return rename(path, target)
+
+        with patch.object(Path, 'rename', crash), self.assertRaisesRegex(RuntimeError, 'between the moves'):
+            self.run_apply()
+
+    def test_a_change_to_skill_text_alone_that_a_later_run_finishes_keeps_its_leases(self):
+        destination = self._installed_claude()
+        lease = own_lease(destination / '.in_use')
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.stopped_between_the_moves()
+        self.assertFalse(destination.exists())
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
+        self.assertTrue(lease.exists())
+        self.revise_release('revised release bytes\n')
+        self.assert_held(destination)
+
+    def test_a_change_to_skill_text_alone_that_stopped_after_its_moves_keeps_its_leases(self):
+        destination = self._installed_claude()
+        lease = own_lease(destination / '.in_use')
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        rename = Path.rename
+
+        def crash(path, target):
+            result = rename(path, target)
+            if path.name == 'staged':
+                raise RuntimeError('after the moves')
+            return result
+
+        with patch.object(Path, 'rename', crash), self.assertRaisesRegex(RuntimeError, 'after the moves'):
+            self.run_apply()
+        self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
+        self.assertFalse(lease.exists())
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertTrue(lease.exists())
+        self.revise_release('revised release bytes\n')
+        self.assert_held(destination)
+
+    def test_a_new_tree_that_cannot_be_moved_into_place_by_the_run_that_finishes_a_swap_puts_the_old_tree_back(self):
+        destination = self._installed_claude()
+        self.revise_release('revised release bytes\n')
+        self.stopped_between_the_moves()
+        rename = os.rename
+
+        def refuse(source, target, *args, **kwargs):
+            if Path(source).name == 'staged':
+                raise PermissionError(13, 'Access is denied', str(target))
+            return rename(source, target, *args, **kwargs)
+
+        with patch('os.rename', refuse), self.assertRaises(PermissionError):
+            self.run_apply()
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'revised release bytes\n')
+
+    def test_a_run_that_resumes_a_swap_and_cannot_save_its_receipt_puts_the_old_tree_back(self):
+        from accepted_installations import AcceptedInstallations
+        self.assertEqual(self.run_apply().exit_code, 0)
+        installed = self.installed()
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.stopped_between_the_moves()
+        self.assertFalse(installed.exists())
+        save, failed = AcceptedInstallations._save, []
+
+        def fail_once(owner, artifact, accepted, pending=None):
+            if pending is not None and not failed:
+                failed.append(artifact.identity)
+                raise OSError(28, 'No space left on device')
+            return save(owner, artifact, accepted, pending)
+
+        with patch.object(AcceptedInstallations, '_save', fail_once), self.assertRaises(OSError):
+            self.run_apply()
+        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
+
+    def test_an_old_tree_edited_after_it_was_moved_aside_is_not_put_back(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        installed = self.installed()
+        rename = os.rename
+
+        def refuse(source, target, *args, **kwargs):
+            if Path(source).name == 'staged':
+                (Path(source).parent / 'displaced/ordinary.txt').write_text('edited after the move aside\n')
+                raise PermissionError(13, 'Access is denied', str(target))
+            return rename(source, target, *args, **kwargs)
+
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        with patch('os.rename', refuse), patch('sys.stderr', new_callable=io.StringIO) as stderr, \
+                self.assertRaises(PermissionError):
+            self.run_apply()
+        self.assertFalse(installed.exists())
+        displaced = Path(json.loads(self.receipt_of('plugin:').read_bytes())['pending']['displaced'])
+        self.assertEqual((displaced / 'ordinary.txt').read_text(), 'edited after the move aside\n')
+        self.assertEqual(stderr.getvalue(),
+                         f'Old tree left aside: {displaced}, from {installed}: it changed after it was moved aside\n')
+
+    def test_an_old_tree_that_cannot_be_put_back_is_named_and_the_next_run_finishes_the_swap(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        installed = self.installed()
+        rename = os.rename
+
+        def refuse(source, target, *args, **kwargs):
+            if Path(source).name in ('staged', 'displaced'):
+                raise PermissionError(13, 'Access is denied', str(target))
+            return rename(source, target, *args, **kwargs)
+
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        with patch('os.rename', refuse), patch('sys.stderr', new_callable=io.StringIO) as stderr, \
+                self.assertRaises(PermissionError):
+            self.run_apply()
+        self.assertFalse(installed.exists())
+        displaced = Path(json.loads(self.receipt_of('plugin:').read_bytes())['pending']['displaced'])
+        self.assertEqual(stderr.getvalue(), f'Old tree left aside: {displaced}, from {installed}: '
+                                            f'[Errno 13] Access is denied: {str(installed)!r}\n')
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
+
+    def session_started_between_the_moves(self):
+        destination = self._installed_claude()
+        self.revise_release('revised release bytes\n')
+        self.stopped_between_the_moves()
+        destination.mkdir()
+        return destination, own_lease(destination / '.in_use')
+
+    def test_a_marker_a_session_wrote_between_the_moves_goes_into_the_tree_a_later_run_installs(self):
+        destination, lease = self.session_started_between_the_moves()
+        self.assertEqual(self.held(), [])
+        self.assertEqual(plan(self.setup, self.device).blocked, ())
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'revised release bytes\n')
+        self.assertTrue(lease.exists())
+        self.revise_release('revised again\n')
+        self.assert_held(destination)
+
+    def test_a_marker_a_session_wrote_again_between_the_moves_replaces_its_marker_in_the_old_tree(self):
+        destination = self._installed_claude()
+        own_lease(destination / '.in_use', start='1')
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.stopped_between_the_moves()
+        destination.mkdir()
+        lease = own_lease(destination / '.in_use')
+        marker = lease.read_text()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(lease.read_text(), marker)
+
+    def test_a_marker_still_being_written_between_the_moves_stops_the_run_until_it_is_written(self):
+        destination, lease = self.session_started_between_the_moves()
+        writing = destination / f'.in_use/{lease.name}.tmp.0123abcd'
+        writing.write_text(lease.read_text())
+        with self.assertRaisesRegex(ConcurrentEdit, f'^Tree changed before replacement: {re.escape(str(destination))}$'):
+            self.run_apply()
+        self.assertTrue(writing.exists())
+        backup = Path(json.loads(self._pending_claude_receipt().read_bytes())['pending']['displaced'])
+        self.assertEqual((backup / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
+        writing.replace(lease)
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual((destination / 'ordinary.txt').read_text(), 'revised release bytes\n')
+        self.assertTrue(lease.exists())
+
+    def test_a_folder_between_the_moves_that_holds_more_than_markers_blocks(self):
+        destination, _ = self.session_started_between_the_moves()
+        for name, text in (('theirs.txt', 'made between the moves\n'), ('.orphaned_at', '1794063570885')):
+            with self.subTest(name):
+                (destination / name).write_text(text)
+                current = plan(self.setup, self.device)
+                self.assertEqual([d.detail for d in current.blocked],
+                                 ['plugin:claude:kit@personal-collections: Unknown partial installation preserved: '
+                                  'plugin:claude:kit@personal-collections'])
+                (destination / name).unlink()
+
+    def test_a_link_that_appears_where_the_marker_folder_was_keeps_the_markers_it_leads_to(self):
+        from accepted_installations import AcceptedInstallations
+        destination = self._installed_claude()
+        self.revise_release('revised release bytes\n')
+        self.stopped_between_the_moves()
+        other = self.root / 'other-cache'
+        other.mkdir()
+        marker = own_lease(other / '.in_use')
+        tree = AcceptedInstallations._tree
+
+        def linked_first(owner, prepared, pending, accepted, actual):
+            destination.symlink_to(other, target_is_directory=True)
+            return tree(owner, prepared, pending, accepted, actual)
+
+        with patch.object(AcceptedInstallations, '_tree', linked_first), \
+                patch('sys.stderr', new_callable=io.StringIO) as stderr, self.assertRaises(ConcurrentEdit):
+            self.run_apply()
+        displaced = Path(json.loads(self._pending_claude_receipt().read_bytes())['pending']['displaced'])
+        self.assertTrue(marker.exists())
+        self.assertFalse((displaced / '.in_use' / marker.name).exists())
+        self.assertEqual(stderr.getvalue(), f'Old tree left aside: {displaced}, from {destination}: its place is taken\n')
+
     def test_only_markdown_files_under_skills_that_both_caches_hold_count_as_skill_text(self):
         from accepted_installations import _skill_text_only
 
@@ -2198,6 +2512,21 @@ class InstallationTest(unittest.TestCase):
                     self.run_apply(current)
                 self.assertEqual(self.snapshot(), before)
                 ordinary.write_bytes(original)
+
+    def marker_only_folder_is_finished_like_a_missing_cache(self, **kwargs):
+        destination = self._interrupted_claude_install(**kwargs)
+        destination.mkdir()
+        lease = own_lease(destination / '.in_use')
+        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual((destination / 'ordinary.txt').read_text(), (self.source / 'ordinary.txt').read_text())
+        self.assertTrue(lease.exists())
+
+    def test_a_pending_claude_cache_whose_folder_holds_only_a_session_marker_is_finished_like_a_missing_one(self):
+        self.marker_only_folder_is_finished_like_a_missing_cache()
+
+    def test_a_pending_codex_aligned_cache_whose_folder_holds_only_a_session_marker_is_finished_like_a_missing_one(self):
+        self.marker_only_folder_is_finished_like_a_missing_cache(aligned=True)
 
     def test_pending_claude_cache_changed_binding_or_stage_path_blocks(self):
         self._interrupted_claude_install()

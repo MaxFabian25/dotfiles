@@ -331,13 +331,17 @@ class ClaudeState:
                 seen.details[follows] = replace(detail, loaded=loaded)
             if marketplace == ALIGNED_VIA and plugin['enabled']:
                 try:
-                    root.stat()
+                    # A session that starts while a sync has the cache moved aside can leave a folder there that
+                    # holds only its lease markers, and no cache.
+                    missing = {entry.name for entry in root.iterdir()} <= {'.in_use'}
                 except FileNotFoundError:
+                    missing = True
+                except OSError:
+                    missing = False
+                if missing:
                     seen.unread(root, MissingCache(f'cache not on disk: {roots.tokens(root)}'),
                                 {Surface.SKILL}, {plugin['id']}, missing_tree=seen.key(Surface.TREE, plugin['id']))
                     continue
-                except OSError:
-                    pass
                 alignment = root / '.claude-plugin/codex-alignment.json'
                 try:
                     excluded = json.loads(portable.read_utf8(alignment)).get('excludedSkillNames', [])
