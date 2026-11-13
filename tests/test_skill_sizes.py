@@ -5,7 +5,9 @@ points at them. The user's global rules read a file whole only under 600 lines a
 to be read in sections, and a description past 1,024 characters breaks the Agent Skills limit. The private
 repository's setup/test_skill_sizes.py holds its own skills to the same limits."""
 from pathlib import Path
+import tempfile
 import unittest
+from unittest import mock
 
 import yaml
 
@@ -18,10 +20,13 @@ BYTE_LIMIT = 30_000
 # that shrinks the file may leave the number or lower it. Add no entry.
 CEILINGS = {'skills/browser-and-computer-use/SKILL.md': 36_596}
 FIX = 'Move a part that only some tasks reach into its own file behind a one-line pointer, or split the file by branch.'
+# Folders .gitignore leaves out. A checkout that has run a package's own tools holds other projects' Markdown there.
+INSTALLED = {'node_modules', '.venv', '.pytest_cache'}
 
 
 def owned(pattern):
-    return sorted(path for root in ROOTS for path in (REPO / root).rglob(pattern) if path.is_file())
+    return sorted(path for root in ROOTS for path in (REPO / root).rglob(pattern)
+                  if path.is_file() and not INSTALLED.intersection(path.relative_to(REPO).parts))
 
 
 class SkillSizes(unittest.TestCase):
@@ -34,7 +39,7 @@ class SkillSizes(unittest.TestCase):
             with self.subTest(skill=name):
                 self.assertEqual(lines[0], '---', f'{name} needs frontmatter')
                 # As a YAML reader takes it, so a description folded or quoted over several lines counts whole.
-                description = yaml.safe_load('\n'.join(lines[1:lines.index('---', 1)])).get('description')
+                description = (yaml.safe_load('\n'.join(lines[1:lines.index('---', 1)])) or {}).get('description')
                 self.assertIsInstance(description, str, f'{name} needs a `description:` in its frontmatter')
                 self.assertLessEqual(len(description), DESCRIPTION_LIMIT,
                                      f'{name} has a description of {len(description)} characters and the limit is '
@@ -63,6 +68,26 @@ class SkillSizes(unittest.TestCase):
             with self.subTest(file=name):
                 self.assertGreaterEqual((REPO / name).stat().st_size, BYTE_LIMIT,
                                         f'{name} now fits {BYTE_LIMIT} bytes; delete its entry from CEILINGS')
+
+    def test_a_packages_installed_dependencies_are_not_counted(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch(f'{__name__}.REPO', Path(directory)):
+            for name in ('skills/one/SKILL.md', 'packages/kit/node_modules/dep/README.md',
+                         'packages/kit/.venv/lib/dep/README.md', 'packages/kit/.pytest_cache/README.md',
+                         'packages/kit/skills/two/SKILL.md'):
+                (Path(directory) / name).parent.mkdir(parents=True)
+                (Path(directory) / name).write_text('text\n')
+            self.assertEqual([path.relative_to(directory).as_posix() for path in owned('*.md')],
+                             ['packages/kit/skills/two/SKILL.md', 'skills/one/SKILL.md'])
+
+    def test_a_skill_with_empty_frontmatter_is_told_what_it_lacks(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch(f'{__name__}.REPO', Path(directory)):
+            (Path(directory) / 'skills/one').mkdir(parents=True)
+            (Path(directory) / 'skills/one/SKILL.md').write_text('---\n---\nbody\n')
+            result = unittest.TestResult()
+            SkillSizes('test_every_skill_has_a_description_within_the_limit').run(result)
+        self.assertEqual(result.errors, [])
+        [(_, failure)] = result.failures
+        self.assertIn('skills/one/SKILL.md needs a `description:` in its frontmatter', failure)
 
 
 if __name__ == '__main__':
