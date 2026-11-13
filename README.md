@@ -176,7 +176,9 @@ It stops first in each of these cases:
   It asks this before the tests, through a trial merge of the worktree as it stands, and again after the
   commit. A conflict stops it the same way: commit the worktree and rebase it by hand. `setup/lock.toml`,
   and a `setup/skills` or `setup/packages` file in which the branch changed only the pinned `tree`, count
-  for neither stop when `--entry` or `--entry NAME --refresh-owned` writes them anew.
+  for neither stop when `--entry` or `--entry NAME --refresh-owned` writes them anew. On a worktree that is
+  committed, as after such a hand rebase, and holds nothing else uncommitted, `finish` amends what that
+  writes into the branch's newest commit and needs no message for it, unless that commit is a merge or a pair.
 - This device's pull would stop on the pair. It runs the pull's check on the worktrees
   (`sync.py --candidate`), plus two checks a pull otherwise reaches only while applying: the settings
   validation, and the comparison of each rule and configuration file with the copy it last accepted.

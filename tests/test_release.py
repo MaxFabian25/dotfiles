@@ -31,6 +31,31 @@ ALLOWLIST = '/*\n!/.gitignore\n!/content\n!/doc\n!/sync.py\n!/tests/\n!/tests/**
 # finish runs the suite through the real runner, so the fixture's origin carries it.
 RUNNER = (Path(release.__file__).resolve().parent / 'tests/run.py').read_text(encoding='utf-8')
 SEEDED_TESTS = 'tests/run.py\ntests/test_seed.py'
+# A stand-in for lock_setup.py. It writes each setup's lock, as a relock of a changed entry does, with a tree named
+# for the release, so that each release's relock changes the file, and with --refresh-owned the kit entry's pin.
+# In the release named stray its second run, the relock after the closing rebase, also leaves a file of its own,
+# and in the one named moved that run pins the kit anew.
+KIT = 'setup/skills/kit.toml'
+RELOCK_STAND_IN = r'''import re
+import sys
+from pathlib import Path
+argv = sys.argv
+output = Path(argv[argv.index("--output") + 1])
+output.mkdir(parents=True, exist_ok=True)
+runs = len(list(output.glob("run-*")))
+(output / f"run-{runs}").write_text("", encoding="utf-8")
+for option in ("--public", "--private"):
+    setup = Path(argv[argv.index(option) + 1])
+    name = setup.parent.parent.name
+    setup.mkdir(exist_ok=True)
+    (setup / "lock.toml").write_text(f'[kit]\ntree = "{name}"\n', encoding="utf-8")
+    kit = setup / "skills/kit.toml"
+    if "--refresh-owned" in argv and kit.is_file():
+        pin = f"{name}-again" if name == "moved" and runs else name
+        kit.write_text(re.sub(r'tree = "[^"]*"', f'tree = "{pin}"', kit.read_text(encoding="utf-8")), encoding="utf-8")
+    if name == "stray" and runs and option == "--public":
+        (setup / "stray.toml").write_text("made after the commit\n", encoding="utf-8")
+'''
 
 
 class ReleaseTest(unittest.TestCase):
@@ -1426,8 +1451,9 @@ class ReleaseTest(unittest.TestCase):
         self.assertNotIn('Another session', said)
 
     def test_finish_on_an_engine_older_than_the_branch_says_to_pull(self):
-        for origin, canonical, path in ((self.public_origin, self.public, 'content'),
-                                        (self.private_origin, self.private, 'notes')):
+        # finish reads --private through resolve(), and macOS's temp folder is a link, so that path is named resolved.
+        for origin, canonical, path, named in ((self.public_origin, self.public, 'content', self.public),
+                                               (self.private_origin, self.private, 'notes', self.private.resolve())):
             with self.subTest(canonical=canonical.name):
                 self.another_session(origin, path, 'on origin, but not yet pulled here\n')
                 name = f'ahead-{canonical.name}'
@@ -1436,7 +1462,7 @@ class ReleaseTest(unittest.TestCase):
                 said = self.stopped_finish(name)
 
                 self.assertIn('retired: unknown key', said)
-                self.assertIn(f'The engine is older than this branch: {canonical} lacks commits the branch started '
+                self.assertIn(f'The engine is older than this branch: {named} lacks commits the branch started '
                               f'from. Pull this machine with {sys.executable} -B {self.public / "pull.py"} --update '
                               '--apply', said)
                 self.assertNotIn('rebase', said)
@@ -1504,15 +1530,26 @@ class ReleaseTest(unittest.TestCase):
                          ('both', 'mine'))
 
     def test_finish_stops_on_files_a_stash_left_in_a_conflict(self):
-        for side, origin, path in (('public', self.public_origin, 'content'), ('private', self.private_origin, 'notes')):
-            with self.subTest(side=side):
-                name = f'stash-{side}'
+        cases = [(side, origin, path, change) for side, origin, path in (('public', self.public_origin, 'content'),
+                                                                         ('private', self.private_origin, 'notes'))
+                 for change in ('edit', 'delete')]
+        seed = self.clone(self.private_origin, 'notes-seed')
+        (seed / 'notes').write_text('first\n', encoding='utf-8')
+        git(seed, 'add', 'notes')
+        git(seed, 'commit', '-qm', 'Add notes')
+        git(seed, 'push', '-q', 'origin', 'HEAD:main')
+        for side, origin, path, change in cases:
+            with self.subTest(side=side, change=change):
+                name = f'stash-{side}-{change}'
                 release_main(['start', name, *self.options()], self.public)
                 tree = self.worktrees / name / side
-                (tree / path).write_text('mine\n', encoding='utf-8')
-                git(tree, 'add', path)
+                if change == 'edit':
+                    (tree / path).write_text('mine\n', encoding='utf-8')
+                    git(tree, 'add', path)
+                else:  # a delete/modify conflict leaves no markers to take out
+                    git(tree, 'rm', '-q', path)
                 git(tree, 'stash', '-q')
-                self.another_session(origin, path, 'theirs\n')
+                self.another_session(origin, path, f'theirs {change}\n')
                 git(tree, 'fetch', '-q', 'origin')
                 git(tree, 'merge', '-q', '--ff-only', 'origin/main')
                 self.assertNotEqual(subprocess.run(['git', '-C', str(tree), 'stash', 'pop'],
@@ -1520,8 +1557,9 @@ class ReleaseTest(unittest.TestCase):
 
                 said = self.stopped_finish(name, '--overlap-reviewed')
 
-                self.assertIn(f'files in a conflict that is not settled ({side}: {path}); take out the conflict '
-                              'markers and git add each file, then finish again; this run committed nothing', said)
+                self.assertIn(f'files in a conflict that is not settled ({side}: {path}); settle each one: take out '
+                              'its conflict markers and git add it, or, where one side deleted it, git add it to keep '
+                              'it or git rm it to delete it, then finish again; this run committed nothing', said)
 
     def test_finish_stops_on_each_step_that_stopped_part_way(self):
         def rebase(tree):
@@ -1609,6 +1647,277 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual((git(self.private_origin, 'show', 'main:committed'),
                           git(self.private_origin, 'show', 'main:uncommitted')), ('one', 'two'))
 
+    def test_finish_on_a_detached_head_whose_release_branch_is_gone_says_to_make_it(self):
+        release_main(['start', 'gone', *self.options()], self.public)
+        private = self.worktrees / 'gone/private'
+        git(private, 'checkout', '-q', '--detach')
+        (private / 'committed').write_text('one\n', encoding='utf-8')
+        git(private, 'add', 'committed')
+        git(private, 'commit', '-qm', 'Add a file')
+        git(private, 'branch', '-q', '-D', 'gone')
+
+        said = self.stopped_finish('gone')
+        self.assertIn(f'{private} has no release branch gone; git -C {private} log origin/main..HEAD lists the '
+                      'commits HEAD holds that origin/main lacks. Where HEAD holds the release, make the branch there '
+                      f'with git -C {private} switch -c gone, then finish again; this run committed nothing', said)
+        git(private, 'switch', '-q', '-c', 'gone')
+
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(release_main(['finish', 'gone', '--push', *self.options()], self.public), 0)
+        self.assertEqual(git(self.private_origin, 'show', 'main:committed'), 'one')
+
+    def test_finish_stops_where_git_cannot_read_which_branch_head_is_on(self):
+        release_main(['start', 'garbled', *self.options()], self.public)
+        private = self.worktrees / 'garbled/private'
+        (private / 'committed').write_text('one\n', encoding='utf-8')
+        git(private, 'add', 'committed')
+        git(private, 'commit', '-qm', 'Add a file')
+        head = Path(git(private, 'rev-parse', '--path-format=absolute', '--git-path', 'HEAD'))
+        head.write_text('ref: refs/heads/a..b\n', encoding='utf-8')  # git finds the worktree but no branch
+        before = self.origin_heads()
+        with redirect_stderr(io.StringIO()) as error:  # review=False: the helper's review record reads HEAD first
+            self.assertEqual(release_main(['finish', 'garbled', '--push', *self.options()], self.public, review=False),
+                             3)
+        self.assertIn(f'{private}: git symbolic-ref exited 128: fatal: No such ref: HEAD; {head} names no branch git '
+                      f'can read. Point it at the release branch with git -C {private} symbolic-ref HEAD '
+                      'refs/heads/garbled, then finish again; this run committed nothing', error.getvalue())
+        self.assertEqual(self.origin_heads(), before)
+        git(private, 'symbolic-ref', 'HEAD', 'refs/heads/garbled')
+
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(release_main(['finish', 'garbled', '--push', *self.options()], self.public), 0)
+        self.assertEqual(git(self.private_origin, 'show', 'main:committed'), 'one')
+
+    def test_finish_stops_with_gits_words_where_the_release_branch_is_a_broken_ref(self):
+        release_main(['start', 'broken', *self.options()], self.public)
+        private = self.worktrees / 'broken/private'
+        git(private, 'checkout', '-q', '--detach')
+        common = Path(git(private, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
+        (common / 'refs/heads/broken').write_text('not an object id\n', encoding='utf-8')
+
+        said = self.stopped_finish('broken')
+        self.assertIn(f'{private}: git rev-parse --verify refs/heads/broken exited 1: warning: ignoring broken ref '
+                      'refs/heads/broken; this run committed nothing', said)
+        self.assertNotIn('switch -c', said)
+
+    def seed_relock(self):
+        """The relock stand-in on the public origin, a private lock and kit entry the relock changes, and the
+        message options."""
+        seed = self.clone(self.public_origin, 'relock-seed')
+        (seed / 'lock_setup.py').write_text(RELOCK_STAND_IN, encoding='utf-8')
+        (seed / '.gitignore').write_text(ALLOWLIST + '!/lock_setup.py\n!/setup/\n!/setup/**\n', encoding='utf-8')
+        git(seed, 'add', '-A')
+        git(seed, 'commit', '-qm', 'Add a relock stand-in')
+        git(seed, 'push', '-q', 'origin', 'HEAD:main')
+        git(self.public, 'pull', '-q', '--ff-only')
+        private_seed = self.clone(self.private_origin, 'relock-private-seed')
+        (private_seed / 'setup/skills').mkdir(parents=True)
+        (private_seed / 'setup/lock.toml').write_text('[kit]\ntree = "seed"\n', encoding='utf-8')
+        (private_seed / KIT).write_text('[source]\npath = "kit"\ntree = "seed"\n', encoding='utf-8')
+        git(private_seed, 'add', '-A')
+        git(private_seed, 'commit', '-qm', 'Lock the kit')
+        git(private_seed, 'push', '-q', 'origin', 'HEAD:main')
+        git(self.private, 'pull', '-q', '--ff-only')
+        message, private_message = self.root / 'message', self.root / 'private-message'
+        message.write_text('Change the content\n', encoding='utf-8')
+        private_message.write_text('Change the notes\n', encoding='utf-8')
+        return ['--message', str(message), '--private-message', str(private_message)]
+
+    def origin_heads(self):
+        return git(self.public_origin, 'rev-parse', 'main'), git(self.private_origin, 'rev-parse', 'main')
+
+    def assert_relocked(self, name, before, public_commits, private_commits, refreshed=False):
+        """Each origin got these commits since before, newest first, with the relock of release name in the
+        newest commit of the branch's own: the one made by hand when nothing else was uncommitted, and otherwise
+        the one finish made. Refreshed: the private kit entry's pin went into that commit too."""
+        for origin, start, commits in ((self.public_origin, before[0], public_commits),
+                                       (self.private_origin, before[1], private_commits)):
+            self.assertEqual(git(origin, 'log', '--format=%s', f'{start}..main').splitlines(), commits)
+            self.assertEqual(git(origin, 'show', 'main:setup/lock.toml'), f'[kit]\ntree = "{name}"')
+            own = next(number for number, subject in enumerate(commits) if not subject.startswith('Pair '))
+            held = git(origin, 'show', '--name-only', '--format=', f'main~{own}').splitlines()
+            self.assertIn('setup/lock.toml', held)
+            if refreshed and origin == self.private_origin:
+                self.assertIn(KIT, held)
+                self.assertIn(f'tree = "{name}"', git(origin, 'show', f'main:{KIT}'))
+
+    def test_finish_amends_a_relock_into_the_commit_a_branch_already_has(self):
+        messages = self.seed_relock()
+        # By hand: each side committed and clean. Entry edited: the same, and the private commit also changed the
+        # kit entry's file beyond its pin. Uncommitted: neither committed. Relock only: the public side holds
+        # nothing but the relock. Both: committed, then edited again.
+        by_hand = ['Change the content by hand'], ['Pair "Change the content by hand"', 'Change the notes by hand']
+        for case, public_commits, private_commits in (
+                ('by-hand', *by_hand), ('entry-edited', *by_hand),
+                ('uncommitted', ['Change the content'], ['Pair "Change the content"', 'Change the notes']),
+                ('relock-only', ['Change the content'], ['Pair "Change the content"', 'Change the notes']),
+                ('both', ['Change the content', 'Change the content by hand'],
+                 ['Pair "Change the content"', 'Change the notes', 'Change the notes by hand'])):
+            with self.subTest(case=case):
+                name = f'relock-{case}'
+                release_main(['start', name, *self.options()], self.public)
+                public, private = self.worktrees / name / 'public', self.worktrees / name / 'private'
+                content = git(self.public_origin, 'show', 'main:content')
+                for tree, path in ((public, 'content'), (private, 'notes')):
+                    if case == 'relock-only' and tree == public:
+                        continue
+                    (tree / path).write_text(f'{case}\n', encoding='utf-8')
+                    if case == 'entry-edited' and tree == private:
+                        (tree / KIT).write_text((tree / KIT).read_text(encoding='utf-8') + 'note = "mine"\n',
+                                                encoding='utf-8')
+                        git(tree, 'add', KIT)
+                    if case not in ('uncommitted', 'relock-only'):
+                        git(tree, 'add', path)
+                        git(tree, 'commit', '-qm', f'Change the {path} by hand')
+                    if case == 'both':  # an edit on the public side, a new file on the private one
+                        (tree / (path if tree == public else f'{path}-new')).write_text(f'{case} again\n',
+                                                                                         encoding='utf-8')
+                before = self.origin_heads()
+
+                with redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()) as error:
+                    self.assertEqual(release_main(['finish', name, '--entry', 'kit', '--refresh-owned',
+                                                   *([] if case in ('by-hand', 'entry-edited') else messages),
+                                                   '--push', *self.options()], self.public), 0, error.getvalue())
+                if case == 'by-hand':
+                    for tree, path in ((public, 'content'), (private, 'notes')):
+                        self.assertIn(f'{tree}: amended the relock into ', out.getvalue())
+                        self.assertIn(f' Change the {path} by hand\n', out.getvalue())
+
+                self.assert_relocked(name, before, public_commits, private_commits, refreshed=True)
+                self.assertEqual(git(self.public_origin, 'show', 'main:content'),
+                                 {'both': 'both again', 'relock-only': content}.get(case, case))
+                if case == 'entry-edited':
+                    self.assertIn('note = "mine"', git(self.private_origin, 'show', f'main:{KIT}'))
+                self.assertEqual(git(self.private_origin, 'show', 'main:notes'), case)
+                if case == 'both':
+                    self.assertEqual(git(self.private_origin, 'show', 'main:notes-new'), 'both again')
+                release_main(['clean', name, *self.options()], self.public)
+
+    def test_a_finish_after_one_that_stopped_past_its_relock_amends_that_relock(self):
+        self.seed_relock()
+        release_main(['start', 'again', *self.options()], self.public)
+        public, private = self.worktrees / 'again/public', self.worktrees / 'again/private'
+        (public / 'doc').write_text('ONE\ntwo\nthree\nfour\nfive\n', encoding='utf-8')
+        (private / 'notes').write_text('mine\n', encoding='utf-8')
+        for tree, path in ((public, 'doc'), (private, 'notes')):
+            git(tree, 'add', path)
+            git(tree, 'commit', '-qm', f'Change the {path} by hand')
+        self.another_session(self.public_origin, 'doc', 'one\ntwo\nthree\nfour\nFIVE\n')
+        before = self.origin_heads()
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(['finish', 'again', '--entry', 'kit', '--push', *self.options()],
+                                          self.public), 3)
+        self.assertIn('another session changed the same files on origin/main', error.getvalue())
+
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(['finish', 'again', '--entry', 'kit', '--overlap-reviewed', '--push',
+                                           *self.options()], self.public), 0, error.getvalue())
+        self.assert_relocked('again', before, ['Change the doc by hand'],
+                             ['Pair "Change the doc by hand"', 'Change the notes by hand'])
+
+    def test_finish_stops_on_a_file_made_after_the_commit_rather_than_amend_it_with_the_relock(self):
+        self.seed_relock()
+        release_main(['start', 'stray', *self.options()], self.public)
+        public, private = self.worktrees / 'stray/public', self.worktrees / 'stray/private'
+        for tree, path in ((public, 'content'), (private, 'notes')):
+            (tree / path).write_text('stray\n', encoding='utf-8')
+            git(tree, 'add', path)
+            git(tree, 'commit', '-qm', f'Change the {path} by hand')
+        self.another_session(self.public_origin, 'doc', 'theirs\n')  # so the closing rebase relocks again
+        before = self.origin_heads()
+
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(['finish', 'stray', '--entry', 'kit', '--push', *self.options()],
+                                          self.public), 3)
+        self.assertIn(f'{public}: setup/stray.toml changed after the commit, and an amend takes only what the relock '
+                      'writes; commit or remove them, then finish again; nothing was pushed', error.getvalue())
+        self.assertEqual(self.origin_heads(), before)
+
+    def test_finish_commits_what_the_worktree_holds_where_the_index_holds_something_else(self):
+        messages = self.seed_relock()
+        release_main(['start', 'staged', *self.options()], self.public)
+        public, private = self.worktrees / 'staged/public', self.worktrees / 'staged/private'
+        for tree, path in ((public, 'content'), (private, 'notes')):
+            (tree / path).write_text('staged\n', encoding='utf-8')
+            git(tree, 'add', path)
+            git(tree, 'commit', '-qm', f'Change the {path} by hand')
+        (public / 'tests/test_untested.py').write_text('staged only\n', encoding='utf-8')
+        git(public, 'add', 'tests/test_untested.py')
+        (public / 'tests/test_untested.py').unlink()  # the index alone holds it now
+        before = self.origin_heads()
+
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(['finish', 'staged', '--entry', 'kit', '--push', *self.options()],
+                                          self.public), 3)
+        self.assertIn(f'{public}: pass --message with the public commit message; this run committed nothing',
+                      error.getvalue())
+        self.assertEqual(self.origin_heads(), before)
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(['finish', 'staged', '--entry', 'kit', *messages, '--push',
+                                           *self.options()], self.public), 0, error.getvalue())
+        self.assertNotIn('test_untested.py', git(self.public_origin, 'ls-tree', '-r', '--name-only', 'main'))
+        self.assertEqual(git(self.public_origin, 'log', '--format=%s', f'{before[0]}..main').splitlines(),
+                         ['Change the content', 'Change the content by hand'])
+
+    def test_a_relock_after_the_closing_rebase_amends_the_pin_it_writes_again(self):
+        messages = self.seed_relock()
+        release_main(['start', 'moved', *self.options()], self.public)
+        (self.worktrees / 'moved/private/notes').write_text('moved\n', encoding='utf-8')
+        self.another_session(self.private_origin, 'setup/lock.toml', '[kit]\ntree = "theirs"\n')
+
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(['finish', 'moved', '--entry', 'kit', '--refresh-owned', *messages,
+                                           '--push', *self.options()], self.public), 0, error.getvalue())
+        self.assertIn('tree = "moved-again"', git(self.private_origin, 'show', f'main:{KIT}'))
+        self.assertEqual(git(self.private_origin, 'show', 'main:setup/lock.toml'), '[kit]\ntree = "moved"')
+
+    def test_finish_commits_a_mended_entry_file_whose_committed_copy_is_not_toml(self):
+        messages = self.seed_relock()
+        release_main(['start', 'mended', *self.options()], self.public)
+        private = self.worktrees / 'mended/private'
+        (private / 'notes').write_text('mended\n', encoding='utf-8')
+        (private / KIT).write_text('[source\n', encoding='utf-8')
+        git(private, 'add', '-A')
+        git(private, 'commit', '-qm', 'Change the notes by hand')
+        (private / KIT).write_text('[source]\npath = "kit"\ntree = "seed"\n', encoding='utf-8')
+
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(['finish', 'mended', '--entry', 'kit', '--refresh-owned', *messages,
+                                           '--push', *self.options()], self.public), 0, error.getvalue())
+        self.assertEqual(git(self.private_origin, 'show', f'main:{KIT}'), '[source]\npath = "kit"\ntree = "mended"')
+
+    def test_finish_commits_a_relock_apart_from_a_newest_commit_that_is_a_merge_or_a_pair(self):
+        messages = self.seed_relock()
+        release_main(['start', 'merged', *self.options()], self.public)
+        public, private = self.worktrees / 'merged/public', self.worktrees / 'merged/private'
+        for tree, path in ((public, 'content'), (private, 'notes')):
+            (tree / path).write_text('merged\n', encoding='utf-8')
+            git(tree, 'add', path)
+            git(tree, 'commit', '-qm', f'Change the {path} by hand')
+        self.another_session(self.private_origin, 'other', 'theirs\n')
+        git(private, 'fetch', '-q', 'origin')
+        git(private, 'merge', '-q', '--no-edit', 'origin/main')
+        self.another_session(self.private_origin, 'more', 'theirs\n')  # so the rebase drops the merge
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(['finish', 'merged', '--entry', 'kit', *messages, '--push',
+                                           *self.options()], self.public), 0, error.getvalue())
+        self.assertEqual(git(self.private_origin, 'show', 'main:setup/lock.toml'), '[kit]\ntree = "merged"')
+
+        release_main(['start', 'paired', *self.options()], self.public)
+        for tree, path in (('public', 'content'), ('private', 'notes')):
+            (self.worktrees / 'paired' / tree / path).write_text('paired\n', encoding='utf-8')
+        before = self.origin_heads()
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as error:
+            # Without --push first, which leaves the pair as the private branch's newest commit.
+            self.assertEqual(release_main(['finish', 'paired', *messages, *self.options()], self.public), 0,
+                             error.getvalue())
+            self.assertEqual(release_main(['finish', 'paired', '--entry', 'kit', *messages, '--push',
+                                           *self.options()], self.public), 0, error.getvalue())
+        self.assertEqual(git(self.private_origin, 'show', 'main:setup/lock.toml'), '[kit]\ntree = "paired"')
+        for commit in git(self.private_origin, 'rev-list', f'{before[1]}..main').splitlines():
+            if git(self.private_origin, 'log', '-1', '--format=%s', commit).startswith('Pair '):
+                self.assertEqual(git(self.private_origin, 'show', '--name-only', '--format=', commit), 'release.toml')
+
     def test_finish_on_a_detached_head_apart_from_the_branch_is_not_told_to_move_the_branch(self):
         release_main(['start', 'apart', *self.options()], self.public)
         private = self.worktrees / 'apart/private'
@@ -1688,7 +1997,9 @@ class ReleaseTest(unittest.TestCase):
                 package.parent.mkdir(parents=True)
                 package.write_bytes(content)
 
-                self.assertIn(f'Release stopped: {package} is not TOML (', self.stopped_finish(name))
+                said = self.stopped_finish(name)
+                self.assertIn(f'Release stopped: {package} is not TOML (', said)
+                self.assertTrue(said.rstrip().endswith('); this run committed nothing'), said)
 
     def test_finish_stops_on_a_package_file_that_origin_holds_as_no_toml(self):
         seed = self.clone(self.public_origin, 'package-seed')
@@ -1701,7 +2012,10 @@ class ReleaseTest(unittest.TestCase):
         release_main(['start', 'repair', *self.options()], self.public)
         (self.worktrees / 'repair/public' / PACKAGE).write_text('[source]\n', encoding='utf-8')
 
-        self.assertIn(f'Release stopped: {PACKAGE} as origin/main held it at ', self.stopped_finish('repair'))
+        said = self.stopped_finish('repair')
+        self.assertIn(f'Release stopped: {PACKAGE} as origin/main held it at ', said)
+        self.assertIn(f'and git log origin/main -- {PACKAGE} names the commit that did; this run committed nothing',
+                      said)
 
     def test_a_detached_finish_runs_the_same_arguments_as_a_unit_and_result_reads_how_it_ended(self):
         release_main(['start', 'away', *self.options()], self.public)

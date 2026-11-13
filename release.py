@@ -301,10 +301,11 @@ def dropped_stop(public, private):
                                'release needs and delete the rest, then finish again')
 
 
-def unnamed_commit(args, public, private):
-    """Why finish could not commit a worktree that holds changes, or None: it was given no message for it."""
+def unnamed_commit(args, public, private, written):
+    """Why finish could not commit a worktree that holds changes, or None: it was given no message for it, and
+    they are not a relock that it amends into the branch's own commit."""
     for tree, message, option in ((public, args.message, '--message'), (private, args.private_message, '--private-message')):
-        if dirty(tree) and not message:
+        if dirty(tree) and not message and not relock_only(tree, written[tree]):
             return f'{tree}: pass {option} with the {tree.name} commit message'
     return None
 
@@ -413,13 +414,48 @@ def take_origin(root, regenerated):
     return subprocess.run([*GIT, '-C', str(root), 'diff', '--cached', '--quiet'], timeout=60).returncode != 0
 
 
-def amend(root):
-    """Fold the files a relock rewrote into the branch's own release commit."""
-    if not dirty(root):
+def uncommitted(tree):
+    """The files that differ from HEAD in the worktree or in the index, new ones included. The index counts on its
+    own, because an amend commits all of it, and a change staged and then taken back is in it alone."""
+    listings = (git(tree, 'diff', '--name-only', '--no-renames', '-z', 'HEAD'),
+                git(tree, 'diff', '--cached', '--name-only', '--no-renames', '-z', 'HEAD'),
+                git(tree, 'ls-files', '--others', '--exclude-standard', '-z'))
+    return {name for listing in listings for name in listing.split('\0') if name}
+
+
+def relock_writes(tree, regenerated, repinned):
+    """The files a relock writes that an amend may take: those regenerated names, and a named entry's file whose
+    change from HEAD is only the tree its source pins, which covers one the branch itself changed or added."""
+    return regenerated | pin_only(tree, repinned, 'HEAD') if regenerated else frozenset()
+
+
+def amend(root, written, then=''):
+    """Fold the files a relock rewrote into the branch's own release commit. Only those: a file that appeared after
+    the commit and the check that it holds what was tested is no part of the release."""
+    if not (changed := uncommitted(root)):
         return
     if not ahead(root):
         raise RuntimeError(f'{root}: relocking changed files on a branch without its own commit; commit them, then finish again')
-    git(root, 'commit', '-q', '-a', '--amend', '--no-edit')
+    if other := sorted(changed - written):
+        raise RuntimeError(f'{root}: {", ".join(other)} changed after the commit, and an amend takes only what the '
+                           f'relock writes; commit or remove them, then finish again{then}')
+    git(root, 'add', '-A', '--', *sorted(changed))  # as commit() does, for a file the relock wrote for the first time
+    git(root, 'commit', '-q', '--amend', '--no-edit')
+    print(f'{root}: amended the relock into {git(root, "log", "-1", "--format=%h %s")}', flush=True)
+
+
+def relock_only(tree, written):
+    """Whether every uncommitted file is one the relock writes, on a branch whose newest commit is its own and can
+    take them by an amend. It looks at what is uncommitted rather than at when, because a finish that stops after
+    its relock leaves those files for the next one. A merge is not such a commit, because rebase() drops it and what
+    was amended into it, and nor is a pair, which changes release.toml alone."""
+    if not written or not dirty(tree) or not ahead(tree):
+        return False
+    if len(git(tree, 'rev-list', '--parents', '-n', '1', 'HEAD').split()) != 2:
+        return False
+    if git(tree, 'diff-tree', '--no-commit-id', '--name-only', '--no-renames', '-r', 'HEAD') == 'release.toml':
+        return False
+    return uncommitted(tree) <= written
 
 
 def rewrite(path, pattern, replacement):
@@ -454,21 +490,22 @@ def overlap(root, regenerated=frozenset()):
     return sorted((theirs & set(changed_files(root))) - PAIRING_FILES - regenerated)
 
 
-def pin_only(root, entries):
+def pin_only(root, entries, at=None):
     """The setup files of the named entries in which this branch changed nothing beyond the tree its source pins:
     no other value, such as a tree key of another table, and no other byte, such as a comment, a line ending or
     the final newline, which origin's copy would lose. A file the branch left as it was counts too, and cannot conflict. Locking with
-    --refresh-owned writes that pin anew, so origin's copy of such a file loses nothing."""
+    --refresh-owned writes that pin anew, so origin's copy of such a file loses nothing. At a commit, such as HEAD,
+    it compares with that commit instead of with where the branch started."""
     def unpinned_text(description):
         return {**description, 'source': {key: value for key, value in description.get('source', {}).items()
                                           if key != 'tree'}}
 
     def unpinned_bytes(content):
         return TREE_VALUE.sub(rb'\1""', content)
-    fork = git(root, 'merge-base', 'HEAD', 'origin/main')
+    fork = at or git(root, 'merge-base', 'HEAD', 'origin/main')
     found = set()
     for path in (f'setup/{kind}/{entry}.toml' for kind in ('skills', 'packages') for entry in entries):
-        before, after = started(root, path), current(root, path)
+        before, after = started(root, path, at), current(root, path)
         if (before and after and unpinned_text(before) == unpinned_text(after)
                 and unpinned_bytes(git_bytes(root, 'show', f'{fork}:{path}'))
                 == unpinned_bytes((root / path).read_bytes())):
@@ -585,11 +622,17 @@ def origin_stop(public, private, regenerated, overlap_reviewed):
     return None
 
 
-def started(root, path):
-    """A TOML file as this branch found it on origin/main, or {} where it was absent."""
-    fork = git(root, 'merge-base', 'HEAD', 'origin/main')
+def started(root, path, at=None):
+    """A TOML file as this branch found it on origin/main, or as the commit given holds it, or {} where it was
+    absent. A copy at the commit given that is not TOML is None."""
+    fork = at or git(root, 'merge-base', 'HEAD', 'origin/main')
     if not git(root, 'ls-tree', fork, path):
         return {}
+    if at:
+        try:
+            return tomllib.loads(git(root, 'show', f'{fork}:{path}'))
+        except (tomllib.TOMLDecodeError, UnicodeDecodeError):
+            return None  # so pin_only() counts it as changed beyond the pin, and the commit takes it as before
     return toml(lambda: git(root, 'show', f'{fork}:{path}'), f'{path} as origin/main held it at {fork[:7]}',
                 f'; no finish should have let it go there, and git log origin/main -- {path} names the commit that did')
 
@@ -599,11 +642,12 @@ def current(root, path):
 
 
 def toml(read, name, then=''):
-    """The parsed file, or a stop that names it, where the error itself would end a detached finish as a crash."""
+    """The parsed file, or a stop that names it, where the error itself would end a detached finish as a crash.
+    Each caller reads before finish commits anything."""
     try:
         return tomllib.loads(read())
     except (tomllib.TOMLDecodeError, UnicodeDecodeError) as error:
-        raise RuntimeError(f'{name} is not TOML ({error}){then}') from error
+        raise RuntimeError(f'{name} is not TOML ({error}){then}; this run committed nothing') from error
 
 
 def reused_release_names(public, private):
@@ -1011,9 +1055,21 @@ def unfinished(tree, name):
     head = subprocess.run([*GIT, '-C', str(tree), 'symbolic-ref', '-q', 'HEAD'], capture_output=True, text=True,
                           timeout=60)
     if head.returncode not in (0, 1):  # 1 is a detached HEAD
-        raise RuntimeError(f'{tree}: git symbolic-ref exited {head.returncode}: {head.stderr.strip()}')
+        named = git(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'HEAD')
+        raise RuntimeError(f'{tree}: git symbolic-ref exited {head.returncode}: {head.stderr.strip()}; {named} names '
+                           f'no branch git can read. Point it at the release branch with git -C {tree} symbolic-ref '
+                           f'HEAD refs/heads/{name}, then finish again; this run committed nothing')
     if head.stdout.strip() == f'refs/heads/{name}':  # --short would print heads/stash beside a stash
         return None
+    branch = subprocess.run([*GIT, '-C', str(tree), 'rev-parse', '-q', '--verify', f'refs/heads/{name}'],
+                            capture_output=True, text=True, timeout=60)
+    if branch.returncode not in (0, 1) or branch.stderr.strip():  # a broken ref file warns and exits 1 too
+        raise RuntimeError(f'{tree}: git rev-parse --verify refs/heads/{name} exited {branch.returncode}: '
+                           f'{branch.stderr.strip()}; this run committed nothing')
+    if branch.returncode:
+        return (f'{tree} has no release branch {name}; git -C {tree} log origin/main..HEAD lists the commits HEAD '
+                f'holds that origin/main lacks. Where HEAD holds the release, make the branch there with git -C {tree} '
+                f'switch -c {name}, then finish again')
     if not head.stdout.strip() and holds(tree, f'refs/heads/{name}'):
         return (f'{tree} is on a detached HEAD that holds its release branch {name} and may hold commits of its '
                 f'own; move the branch there with git -C {tree} switch -C {name}, then finish again')
@@ -1042,8 +1098,9 @@ def finish(args, public_repo, private_repo):
                 if (files := git(tree, 'diff', '--name-only', '--diff-filter=U').splitlines())]
     if unmerged:
         # git add -A would mark them settled and commit their conflict markers.
-        raise RuntimeError(f'files in a conflict that is not settled ({"; ".join(unmerged)}); take out the conflict '
-                           'markers and git add each file, then finish again; this run committed nothing')
+        raise RuntimeError(f'files in a conflict that is not settled ({"; ".join(unmerged)}); settle each one: take '
+                           'out its conflict markers and git add it, or, where one side deleted it, git add it to keep '
+                           'it or git rm it to delete it, then finish again; this run committed nothing')
     for tree in (public, private):
         # A worktree with no work of its own holds nothing a rebase could lose or the overlap check could name, so
         # it moves to where a pull brought origin/main; otherwise the engine that pull brought may not read it.
@@ -1087,11 +1144,15 @@ def finish(args, public_repo, private_repo):
         raise RuntimeError(f'{", ".join(hits[:20])} in {public} hold a string that the private {DENYLIST} names; '
                            'take it out of the public side, then finish again; this run committed nothing')
     repinned = args.entry if args.refresh_owned else []
+    # What a relock after a rebase may write and the amend that follows it takes: the lock and the named entries.
+    relocked = frozenset({LOCK, *(f'setup/{kind}/{entry}.toml' for kind in ('skills', 'packages')
+                                  for entry in repinned)})
     regenerated = {tree: (frozenset({LOCK}) | pin_only(tree, repinned)) if args.entry else frozenset()
                    for tree in (public, private)}
     if stop := origin_stop(public, private, regenerated, args.overlap_reviewed):
         raise RuntimeError(f'{stop}; this run committed nothing')
-    if stop := unnamed_commit(args, public, private):  # here, not after the tests and the wait for the lock
+    if stop := unnamed_commit(args, public, private, {tree: relock_writes(tree, regenerated[tree], repinned)
+                                                      for tree in (public, private)}):  # here, not after the tests and the wait for the lock
         raise RuntimeError(f'{stop}; this run committed nothing')
     passed = tested(public, private, base)
     # The lock is held from the commit to the pull and no longer through the tests: on 12 November 2026 two
@@ -1102,11 +1163,20 @@ def finish(args, public_repo, private_repo):
         raise Restart('because a pull changed the engine while this finish ran its checks or waited')
     with held:
         dropped_stop(public, private)  # again, for a file made during the wait
-        if dirty(public):
+        # A branch committed by hand, as the stop for a setup the engine cannot load says to do, takes the relock
+        # into that commit. On 12 November 2026 private df80c1f held only a relock, under the subject of the commit
+        # before it.
+        # Both before either commit, which a stop of toml() in it would otherwise follow.
+        written = {tree: relock_writes(tree, regenerated[tree], repinned) for tree in (public, private)}
+        if relock_only(public, written[public]):
+            amend(public, written[public])
+        elif dirty(public):
             if not args.message:
                 raise RuntimeError(f'{public}: pass --message with the public commit message')
             commit(public, args.message)
-        if dirty(private):
+        if relock_only(private, written[private]):
+            amend(private, written[private])
+        elif dirty(private):
             if not args.private_message:
                 raise RuntimeError(f'{private}: pass --private-message with the private commit message')
             commit(private, args.private_message)
@@ -1123,11 +1193,11 @@ def finish(args, public_repo, private_repo):
         for attempt in range(1, ATTEMPTS + 1):
             if rebase(public, regenerated[public]) and args.entry:
                 run(lock, public)
-                amend(public)
+                amend(public, relocked, f'; {push_state(base)}')
             if rebase(private, regenerated[private]) == 'regenerate':
                 run(lock, public)
-                amend(public)
-                amend(private)
+                amend(public, relocked, f'; {push_state(base)}')
+                amend(private, relocked, f'; {push_state(base)}')
             before = git(private, 'rev-parse', 'HEAD')
             if paired:
                 pair(public, private, args.pair_message)
