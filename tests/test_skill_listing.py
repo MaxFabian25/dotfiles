@@ -27,7 +27,6 @@ class VerdictTest(unittest.TestCase):
         self.assertEqual(skill_listing.verdict('')[0], 2)
 
 
-
 @unittest.skipIf(os.name == 'nt', 'the stand-in claude is a script with a shebang')
 class SessionTest(unittest.TestCase):
     def test_it_reads_the_debug_log_of_a_session_started_without_the_callers_claude_code_variables(self):

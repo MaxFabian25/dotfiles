@@ -162,7 +162,6 @@ class WinPaste(unittest.TestCase):
         while not (log.exists() and f'["{tool}"' in log.read_text()):
             self.assertLess(time.monotonic(), limit, f"no {tool} call within 30 seconds")
             time.sleep(0.05)
-        time.sleep(0.3)  # the stand-in saves the late paste's due time just after it logs the call
 
     def end(self, child, note):
         out, err = child.communicate(note, timeout=60)
@@ -376,6 +375,11 @@ class WinPaste(unittest.TestCase):
             child.stdin.close()
             self.assertEqual(child.stdout.readline(), "clipboard holds the text\n")
             self.wait_for_call("run_steps")  # a fixed pause was too short on a busy machine on 12 November 2026
+            # The signal ends the stand-in too, so it must have saved the late paste's due time first.
+            limit = time.monotonic() + 30
+            while not json.loads((self.box / "state.json").read_text() or "{}").get("due"):
+                self.assertLess(time.monotonic(), limit, "the stand-in never saved the late paste's due time")
+                time.sleep(0.05)
             child.send_signal(number)
             self.assertEqual(child.wait(timeout=30), 1, reason)
             out, err = child.stdout.read(), child.stderr.read()

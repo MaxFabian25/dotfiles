@@ -5,7 +5,6 @@ import argparse
 from dataclasses import replace
 from pathlib import Path
 import subprocess
-import sys
 import traceback
 
 from description import AlignedInstall, EngineInstall, Roots
@@ -32,8 +31,7 @@ def main():
     setup = load(Roots(args.public, args.private))
     if setup.stale():
         parser.error('stale locks: ' + ', '.join(sorted(setup.stale())))
-    platform = Platform(args.platform) if args.platform else Platform.WINDOWS if sys.platform == 'win32' else Platform.MACOS if sys.platform == 'darwin' else Platform.LINUX
-    setup = setup.for_platform(platform)
+    setup = setup.for_platform(Platform(args.platform) if args.platform else Platform.native())
     roots = replace(DeviceRoots.current(), engine=output)
     sources = Sources(output / '.sync/sources', seeds=seeds)
     builder = Builder(setup, roots, output, sources=sources)

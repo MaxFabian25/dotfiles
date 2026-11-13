@@ -93,7 +93,6 @@ class SourceSelectionTest(unittest.TestCase):
             errors.close()
 
 
-
 @unittest.skipIf(os.name == 'nt', 'the stand-in app-server is a script with a shebang')
 class ClientTest(unittest.TestCase):
     def test_the_app_server_runs_on_the_profile_without_an_inherited_sqlite_home_and_lists_its_skills(self):

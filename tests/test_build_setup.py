@@ -118,8 +118,9 @@ class UnmanagedBuild(unittest.TestCase):
         trees = {host: LockedTree(*line.split()[-2:]) for host, line in ((Host.CODEX, codex), (Host.CLAUDE, claude))}
         self.package = replace(self.kit(None, CodexPlacement((EngineInstall(True),)), ClaudePlacement((EngineInstall(True),))),
                                platforms=frozenset({Platform.MACOS}))
-        for platform, built in (('darwin', ['verified kit: Codex tree, 1 Claude tree(s), 0 role(s)']), ('linux', [])):
-            with self.subTest(platform=platform), mock.patch('build_setup.sys.platform', platform):
+        for platform, built in ((Platform.MACOS, ['verified kit: Codex tree, 1 Claude tree(s), 0 role(s)']),
+                                (Platform.LINUX, [])):
+            with self.subTest(platform=platform), mock.patch.object(Platform, 'native', return_value=platform):
                 self.assertEqual(self.run_build(f'native-{platform}', trees=trees, platform=None),
                                  (0, built + [f'{len(built)} packages rebuilt and verified; 0 failed. '
                                               'No host configuration or installed cache changed.']))

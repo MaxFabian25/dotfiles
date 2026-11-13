@@ -301,7 +301,18 @@ class DiffTest(unittest.TestCase):
                                         (K.CHANGED, 'codex', 'kit:weekly-review')])
         self.assertEqual(stale.exit_code, 2)
         self.assertIn('host-absent claude  host is not installed here', drift.render(absent))
-        self.assertIn(f'\n  {"kit":<30} stale-lock  the entry changed after its lock was written\n', drift.render(stale))
+        self.assertIn(f'\n  {"kit":<30} stale-lock  its lock is missing or no longer matches the entry; '
+                      'run lock_setup.py --entry kit --write\n', drift.render(stale))
+
+    def test_a_new_owned_skill_is_told_to_accept_its_tree(self):
+        with Device() as device:
+            device.write(device.roots.home / 'private/skills/mine/SKILL.md', '---\nname: mine\n---\nNew\n')
+            mine = d.LooseSkill('mine', d.Visibility.PRIVATE, '', d.LocalSource('skills/mine', 'sha256:' + '0' * 64),
+                                {d.SkillRoot.CLAUDE: True})
+            device.setup = replace(device.setup, loose={'mine': mine})
+            result = device.diff()
+        self.assertIn(f'\n  {"mine (private)":<30} stale-lock  its lock is missing or no longer matches the entry; '
+                      'run lock_setup.py --entry mine --refresh-owned --write\n', drift.render(result))
 
     def switched_off(self, device, keep_current, versions=('1.0', '1.0-codex-aligned.x')):
         """kit described off in both hosts and installed off, with its lock at `versions` for Codex and Claude."""

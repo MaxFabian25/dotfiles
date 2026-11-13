@@ -72,7 +72,6 @@ def candidate_sync(result, code=1, rows=''):
     return f'import sys\nsys.stderr.write({rows!r})\nprint({result!r})\nraise SystemExit({code})\n'
 
 
-
 class DeviceCheckTest(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()

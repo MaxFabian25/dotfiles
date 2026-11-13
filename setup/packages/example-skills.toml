@@ -1,3 +1,6 @@
+# Switching an install on fails the build with "No plugin manifest": upstream defines example-skills only in its
+# .claude-plugin/marketplace.json, with "strict": false and no plugin.json, and the engine builds only from a
+# plugin.json. Checked on 2026-11-13 at the pinned commit.
 public = true
 
 [source]

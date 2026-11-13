@@ -148,7 +148,5 @@ class RuntimeDependencies(unittest.TestCase):
             self.assertEqual(list(package.files(root)), ['scripts/tool.py'])
 
 
-
-
 if __name__ == '__main__':
     unittest.main()

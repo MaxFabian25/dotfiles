@@ -1,32 +1,16 @@
 """Build Codex course plugins from the recorded public Git repositories."""
-import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
-import subprocess
 
 import yaml
 
 from description import BuildSource, CourseRecipe
-from portable import GIT, extract_tar, read_utf8, replace, require_readable, staging_directory, write_utf8
-
-
-def sha(data):
-    return hashlib.sha256(data).hexdigest()
-
-
-def files(root):
-    require_readable(root)
-    return {p.relative_to(root).as_posix(): sha(p.read_bytes())
-            for p in sorted(root.rglob('*'), key=lambda path: path.parts) if p.is_file()}
-
-
-def git(repository, *args):
-    return subprocess.check_output([*GIT, '-C', str(repository), *args])
+from package import files, git, require_clean
+from portable import extract_tar, posix, read_utf8, replace, staging_directory, write_utf8
 
 
 def build(name: str, recipe: CourseRecipe, source: BuildSource, checkout: Path, *, output_root: Path):
-    from package import require_clean
     require_clean(checkout)
     extras = source.metadata.get('skillMetadata', {})
     selected = [{'sourcePath': path, 'sourceName': PurePosixPath(path).name, 'installedName': installed,
@@ -51,7 +35,7 @@ def build(name: str, recipe: CourseRecipe, source: BuildSource, checkout: Path, 
                 raise RuntimeError(f'Missing selected upstream skill: {selection["sourcePath"]}')
             original_files = files(original)
             source_hashes[selection['installedName']] = original_files
-            for relative in original_files:
+            for relative in sorted(posix(p.relative_to(original)) for p in original.rglob('*') if p.is_file()):
                 source_file = original/relative
                 destination = target/relative
                 destination.parent.mkdir(parents=True, exist_ok=True)

@@ -406,7 +406,6 @@ class Setup:
         return (self.packages.get(name) or self.loose[name]).visibility
 
 
-
 def _complete(entry: Package | LooseSkill, lock: Lock) -> bool:
     if isinstance(entry, LooseSkill):
         return set(entry.place) <= set(lock.placements)
@@ -426,8 +425,6 @@ class DescriptionError(ValueError):
     def __init__(self, problems: list[str]):
         super().__init__('\n'.join(problems))
         self.problems = problems
-
-
 
 
 HOST_TOGGLES = {host: EntryName(f'hosts/{host.value}.toml') for host in Host}

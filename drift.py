@@ -57,7 +57,7 @@ class Difference:
     entry: EntryRef | None
     follows: FactKey | None = None   # render folds it under the difference it follows
     host: Host | None = None         # the host a difference without a key is about
-    detail: str = ''                 # the source an INCOMPLETE fact needed, and why it was not read
+    detail: str = ''                 # why a STALE_LOCK is stale and its command; for INCOMPLETE, the source and why unread
     cause: Unknown | None = None
 
 
@@ -136,13 +136,13 @@ def diff(setup: Setup, device: Device, *, observations: Mapping[Host, Observatio
     projected = setup.for_platform(device.platform)
     differences: list[Difference] = []
     notes: list[Note] = []
-    for name in sorted(stale):
-        differences.append(Difference(Kind.STALE_LOCK, None, None, None, EntryRef(name, _visibility(setup, name))))
-    for name, path in sorted(edited_owned(setup, device.roots).items()):
-        if name not in stale:
-            differences.append(Difference(Kind.STALE_LOCK, None, None, None, EntryRef(name, _visibility(setup, name)),
-                                          detail=f'{path} changed after its tree was pinned; '
-                                                 f'run lock_setup.py --entry {name} --refresh-owned --write'))
+    edited = edited_owned(setup, device.roots)
+    for name in sorted(stale | edited.keys()):
+        reason = ('its lock is missing or no longer matches the entry' if name in stale
+                  else f'{edited[name]} changed after its tree was pinned')
+        command = f'lock_setup.py --entry {name}' + (' --refresh-owned' if name in edited else '') + ' --write'
+        differences.append(Difference(Kind.STALE_LOCK, None, None, None, EntryRef(name, _visibility(setup, name)),
+                                      detail=f'{reason}; run {command}'))
     for host in device.absent:
         if _targets(setup, host):
             differences.append(Difference(Kind.HOST_ABSENT, None, None, None, None, host=host))
@@ -300,7 +300,7 @@ def render(diff: Diff, *, full: bool = False, notes: bool = False) -> str:
                     case Kind.HOST_ABSENT:
                         what = f'{difference.host.value}  host is not installed here'
                     case Kind.STALE_LOCK:
-                        what = difference.detail or 'the entry changed after its lock was written'
+                        what = difference.detail
                     case _:
                         what = f'{difference.host.value if difference.host else ""}  {difference.detail}'
                 lines.append(f'  {label:<30} {difference.kind.value:<11} {what}')

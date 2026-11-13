@@ -52,6 +52,31 @@ class BuildBytesTests(unittest.TestCase):
                 policy = yaml.safe_load((release / 'skills' / name / 'agents/openai.yaml').read_text())
                 self.assertIs(policy['policy']['allow_implicit_invocation'], allowed)
 
+    def test_a_course_keeps_tracked_dependency_files_but_hashes_and_compares_without_them(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'source'
+            for name, data in (('SKILL.md', b'---\nname: example\ndescription: Example.\n---\nBody.\n'),
+                               ('node_modules/dep/README.md', b'tracked dependency\n')):
+                (source / 'skills/example' / name).parent.mkdir(parents=True, exist_ok=True)
+                (source / 'skills/example' / name).write_bytes(data)
+            for arguments in (('init', '-q'), ('add', '.'),
+                              ('-c', 'user.name=Build Test', '-c', 'user.email=build@example.invalid',
+                               'commit', '-qm', 'Fixture')):
+                subprocess.run([*GIT, '-C', str(source), *arguments], check=True, capture_output=True)
+            recipe = CourseRecipe('https://example.invalid/course.git', head(source), ('skills/example',), '')
+            course = BuildSource(recipe, 1, 'Example', metadata={
+                'repository': 'example/course', 'collection': 'example', 'branch': 'main',
+                'description': 'Example.', 'url': 'https://example.invalid/course',
+                'skillMetadata': {'example': {'normalizations': []}}})
+            release, receipt = course_package.build('example', recipe, course, source, output_root=root / 'output')
+            self.assertEqual((release / 'skills/example/node_modules/dep/README.md').read_bytes(), b'tracked dependency\n')
+            self.assertEqual(list(receipt['upstreamFileHashes']['example']), ['SKILL.md'])
+            (release / 'skills/example/__pycache__').mkdir()
+            (release / 'skills/example/__pycache__/tool.cpython-314.pyc').write_bytes(b'written at run time')
+            self.assertEqual(course_package.build('example', recipe, course, source, output_root=root / 'output')[0],
+                             release)
+
     def test_receipt_bytes_do_not_depend_on_native_path_ordering(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

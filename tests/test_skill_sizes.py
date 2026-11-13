@@ -17,11 +17,12 @@ DESCRIPTION_LIMIT = 1024
 LINE_LIMIT = 600
 BYTE_LIMIT = 30_000
 # Bytes on 2026-11-12 of the one file that was already past BYTE_LIMIT. The number is a cap on that file. An edit
-# that shrinks the file may leave the number or lower it. Add no entry.
+# that shrinks the file may leave the number or lower it, and one that brings it under BYTE_LIMIT deletes its entry.
+# Add no entry.
 CEILINGS = {'skills/browser-and-computer-use/SKILL.md': 36_596}
 FIX = 'Move a part that only some tasks reach into its own file behind a one-line pointer, or split the file by branch.'
 # Folders .gitignore leaves out. A checkout that has run a package's own tools holds other projects' Markdown there.
-INSTALLED = {'node_modules', '.venv', '.pytest_cache'}
+INSTALLED = {'node_modules', '.venv', '.pytest_cache', 'dist', 'build'}
 
 
 def owned(pattern):
@@ -39,7 +40,9 @@ class SkillSizes(unittest.TestCase):
             with self.subTest(skill=name):
                 self.assertEqual(lines[0], '---', f'{name} needs frontmatter')
                 # As a YAML reader takes it, so a description folded or quoted over several lines counts whole.
-                description = (yaml.safe_load('\n'.join(lines[1:lines.index('---', 1)])) or {}).get('description')
+                loaded = yaml.safe_load('\n'.join(lines[1:lines.index('---', 1)])) or {}
+                self.assertIsInstance(loaded, dict, f'{name} needs frontmatter that is a YAML mapping')
+                description = loaded.get('description')
                 self.assertIsInstance(description, str, f'{name} needs a `description:` in its frontmatter')
                 self.assertLessEqual(len(description), DESCRIPTION_LIMIT,
                                      f'{name} has a description of {len(description)} characters and the limit is '
@@ -70,14 +73,30 @@ class SkillSizes(unittest.TestCase):
                                         f'{name} now fits {BYTE_LIMIT} bytes; delete its entry from CEILINGS')
 
     def test_a_packages_installed_dependencies_are_not_counted(self):
-        with tempfile.TemporaryDirectory() as directory, mock.patch(f'{__name__}.REPO', Path(directory)):
-            for name in ('skills/one/SKILL.md', 'packages/kit/node_modules/dep/README.md',
-                         'packages/kit/.venv/lib/dep/README.md', 'packages/kit/.pytest_cache/README.md',
-                         'packages/kit/skills/two/SKILL.md'):
-                (Path(directory) / name).parent.mkdir(parents=True)
-                (Path(directory) / name).write_text('text\n')
-            self.assertEqual([path.relative_to(directory).as_posix() for path in owned('*.md')],
-                             ['packages/kit/skills/two/SKILL.md', 'skills/one/SKILL.md'])
+        with tempfile.TemporaryDirectory() as directory:
+            # Under a folder named node_modules, so a filter that reads the whole path instead of the path inside
+            # the repository counts nothing.
+            root = Path(directory, 'node_modules', 'checkout')
+            with mock.patch(f'{__name__}.REPO', root):
+                for name in ('skills/one/SKILL.md', 'packages/kit/node_modules/dep/README.md',
+                             'packages/kit/.venv/lib/dep/README.md', 'packages/kit/.pytest_cache/README.md',
+                             'packages/kit/dist/guide.md', 'packages/kit/build/guide.md',
+                             'packages/kit/eval/node_modules/dep/README.md', 'packages/kit/skills/two/SKILL.md'):
+                    (root / name).parent.mkdir(parents=True, exist_ok=True)
+                    (root / name).write_text('text\n')
+                self.assertEqual([path.relative_to(root).as_posix() for path in owned('*.md')],
+                                 ['packages/kit/skills/two/SKILL.md', 'skills/one/SKILL.md'])
+
+    def test_a_skill_whose_frontmatter_is_no_mapping_is_told_so(self):
+        for text in ('---\njust a line\n---\nbody\n', '---\n- one\n- two\n---\nbody\n'):
+            with tempfile.TemporaryDirectory() as directory, mock.patch(f'{__name__}.REPO', Path(directory)):
+                (Path(directory) / 'skills/one').mkdir(parents=True)
+                (Path(directory) / 'skills/one/SKILL.md').write_text(text)
+                result = unittest.TestResult()
+                SkillSizes('test_every_skill_has_a_description_within_the_limit').run(result)
+            self.assertEqual(result.errors, [], text)
+            [(_, failure)] = result.failures
+            self.assertIn('skills/one/SKILL.md needs frontmatter that is a YAML mapping', failure)
 
     def test_a_skill_with_empty_frontmatter_is_told_what_it_lacks(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch(f'{__name__}.REPO', Path(directory)):

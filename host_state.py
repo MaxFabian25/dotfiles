@@ -12,6 +12,7 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
+import sys
 from typing import TYPE_CHECKING, Mapping, NewType, Protocol
 
 import portable
@@ -82,6 +83,10 @@ class Platform(enum.StrEnum):
     MACOS = 'macos'
     LINUX = 'linux'          # WSL included
     WINDOWS = 'windows'
+
+    @classmethod
+    def native(cls) -> Platform:
+        return cls.WINDOWS if portable.WINDOWS else cls.MACOS if sys.platform == 'darwin' else cls.LINUX
 
 
 def _matches(relative: str, pattern: str) -> bool:

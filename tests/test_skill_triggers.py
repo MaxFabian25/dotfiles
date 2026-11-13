@@ -60,7 +60,6 @@ class SessionModelTest(unittest.TestCase):
                     settings.write_text(text, encoding='utf-8')
                     self.assertEqual(skill_triggers.session_model(), expected, text)
 
-
     def test_a_measurement_counts_hits_on_should_trigger_queries_apart_from_near_miss_triggers(self):
         items = [{'query': 'Proofread this', 'target': 'prose', 'should_trigger': True},
                  {'query': 'Write a poem', 'target': 'prose', 'should_trigger': False},

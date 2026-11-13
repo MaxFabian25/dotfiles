@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import sys
 
 from claude_host import ClaudeState
 from codex_host import CodexState
@@ -26,8 +25,7 @@ class Device:
                 hosts.append(state(roots, locate()))
             except FileNotFoundError:
                 absent.append(host)
-        platform = Platform.WINDOWS if portable.WINDOWS else Platform.MACOS if sys.platform == 'darwin' else Platform.LINUX
-        return cls(platform, roots, tuple(hosts), tuple(absent))
+        return cls(Platform.native(), roots, tuple(hosts), tuple(absent))
 
     def host(self, host: Host) -> HostState:
         return next(state for state in self.hosts if state.host == host)

@@ -72,6 +72,5 @@ class ClaudePublicationTests(unittest.TestCase):
         self.assertNotIn('explicitInvocationPoliciesSet', cp.read(Path(packages[0]['release']) / '.claude-plugin/upstream.json'))
 
 
-
 if __name__ == '__main__':
     unittest.main()
