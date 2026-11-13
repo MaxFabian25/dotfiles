@@ -4,6 +4,7 @@ import contextlib
 from dataclasses import dataclass, replace
 import hashlib
 import json
+import opencode
 from pathlib import Path, PurePosixPath
 import re
 import shutil
@@ -302,6 +303,12 @@ class AcceptedInstallations:
         self.configurations = desired(setup.roots.public.parent if setup.roots.public else None,
                                       setup.roots.private.parent if setup.roots.private else None,
                                       self.roots, device.platform) if configurations else ()
+        self.opencode = None
+        if configurations:
+            receipt = _Artifact('configuration:opencode', None, None, Path(), Path(), (), '', 'fields')
+            self.opencode = opencode.plan(setup, self.roots, device.platform, adopted=self._path(receipt).is_file())
+            if self.opencode is not None:
+                self.configurations += self.opencode.configurations
         self._prepared = {}
         self.staging = contextlib.ExitStack()   # holds the trees prepare stages; leaving it removes them
 
@@ -396,6 +403,10 @@ class AcceptedInstallations:
                         rules[path] = _Artifact('rules:' + str(path), key, entry, path, path, (alias,),
                                                 str(self.setup.rules.digest), 'file', fact.value, self.setup.rules.text)
         units.extend(rules.values())
+        if self.opencode is not None:
+            destination = self.opencode.destination
+            units.append(_Artifact('opencode:projection', None, None, destination, destination,
+                                   (destination,), str(self.opencode.intent), 'opencode'))
         for config in self.configurations:
             if isinstance(config, BlockedConfiguration):
                 continue
@@ -585,6 +596,11 @@ class AcceptedInstallations:
                             else:
                                 path.parent.mkdir(parents=True, exist_ok=True)
                                 path.write_bytes(after.encode('utf-8'))
+            elif artifact.kind == 'opencode':
+                scratch = self.roots.engine / '.sync/accepted-images'
+                scratch.mkdir(parents=True, exist_ok=True)
+                source = Path(self.staging.enter_context(staging_directory(prefix='opencode-', dir=scratch))) / 'tree'
+                opencode.materialise(self.opencode, builder, source)
             elif artifact.kind == 'role':
                 data = roles[artifact.key.subject]
                 if bytes_digest(self.roots.neutral(data)) != artifact.expected.digest:
