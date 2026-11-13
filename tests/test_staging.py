@@ -76,9 +76,10 @@ class StagingGuardTest(unittest.TestCase):
 
     def test_engine_modules_stage_through_portable(self):
         # A folder tempfile makes under a release root is owner-only on Windows, and the tree renamed out of it
-        # stays closed to a non-elevated run. Only portable.py may call tempfile that way, on other systems.
+        # stays closed to a non-elevated run. sync_ending keeps a private record, never a tree renamed into place.
         root = Path(__file__).resolve().parents[1]
-        direct = [f'{module.name}:{line}' for module in sorted(root.glob('*.py')) if module.name != 'portable.py'
+        direct = [f'{module.name}:{line}' for module in sorted(root.glob('*.py'))
+                  if module.name not in {'portable.py', 'sync_ending.py'}
                   for line in folders_made_under_a_parent(module.read_text(encoding='utf-8'))]
         self.assertEqual(direct, [], 'make these folders with portable.staging_directory or portable.staging_folder')
 
