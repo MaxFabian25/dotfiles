@@ -425,6 +425,23 @@ class ReleaseTest(unittest.TestCase):
                          f'config/other/test_other.py\n{release.DENYLIST}\nconfig/tool/helper.py\n'
                          'config/tool/test_more.py\nconfig/tool/test_tool.py')
 
+    def test_the_private_tests_pass_in_a_session_that_forces_colour(self):
+        release_main(['start', 'coloured', *self.options()], self.public)
+        # The file runs with -I, which ignores PYTHON_COLORS, but the Python run it starts does not use -I.
+        (self.worktrees / 'coloured/private/test_tool.py').write_text(
+            'import subprocess\nimport sys\nimport unittest\n\n\nclass Seed(unittest.TestCase):\n'
+            '    def test_a_child_writes_no_colour(self):\n'
+            '        child = subprocess.run([sys.executable, "-c", "1/0"], capture_output=True, text=True)\n'
+            '        self.assertNotIn("\\x1b[", child.stderr)\n' + RUN_ALONE, encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Add a private test\n', encoding='utf-8')
+        os.environ.update(FORCE_COLOR='1', PYTHON_COLORS='1')
+        os.environ.pop('NO_COLOR', None)
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(release_main(['finish', 'coloured', '--private-message', str(message), *self.options()],
+                                          self.public), 0)
+        self.assertIn('Ran 1 private tests in 1 folders: OK', output.getvalue())
+
     def test_finish_runs_a_private_test_file_in_a_folder_whose_name_is_not_ascii(self):
         release_main(['start', 'named', *self.options()], self.public)
         folder = self.worktrees / 'named/private/config/straße'
@@ -1002,17 +1019,17 @@ class ReleaseTest(unittest.TestCase):
             self.addCleanup(holder.join)
             self.addCleanup(freed.set)
             self.assertTrue(held.wait(60))
-            suite = release.test_suite
 
-            def free_the_lock_after_the_suite(*arguments, suite=suite, freed=freed):
-                suite(*arguments)
-                threading.Timer(0.5, freed.set).start()
+            def free_the_lock(seconds, freed=freed, holder=holder):
+                freed.set()
+                holder.join()
 
-            with self.subTest(name), patch.object(release, 'test_suite', free_the_lock_after_the_suite), \
+            with self.subTest(name), patch.object(release, 'lock_pause', free_the_lock), \
                     redirect_stderr(io.StringIO()) as error, redirect_stdout(io.StringIO()):
                 self.assertEqual(release_main(['finish', name, '--message', str(message), '--push', '--timeout', '60',
                                                *self.options()], self.public), 0)
                 self.assertEqual('Waiting for release PID' in error.getvalue(), record)
+                self.assertTrue(freed.is_set(), 'the finish never paused for the lock')
             self.assertEqual(git(self.public_origin, 'show', 'main:content'), name)
         release_main(['start', 'late', *self.options()], self.public)
         (self.worktrees / 'late/public/content').write_text('late\n', encoding='utf-8')

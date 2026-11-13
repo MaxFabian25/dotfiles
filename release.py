@@ -107,6 +107,12 @@ def running(names=None):
             for name, path in machine_locks().items() if (names is None or name in names) and (holder := lock_holder(path))]
 
 
+def lock_pause(seconds):
+    """A function of its own so that a test can patch this pause alone, because patching time.sleep would also
+    catch subprocess, which sleeps while it waits for a child."""
+    time.sleep(seconds)
+
+
 def wait(names, timeout):
     """Block until no run holds the named locks: True once they are free, False after timeout seconds."""
     deadline, shown = time.monotonic() + timeout, None
@@ -116,7 +122,7 @@ def wait(names, timeout):
             shown = busy
         if time.monotonic() >= deadline:
             return False
-        time.sleep(2)
+        lock_pause(2)
     return True
 
 
@@ -161,7 +167,7 @@ def hold(path, timeout, stale):
             raise RuntimeError(f'another release, pull or sync still runs here after {timeout:g} seconds ({who}); '
                                'finish again, which does not run the tests that passed a second time; this run '
                                'committed nothing')
-        time.sleep(1)
+        lock_pause(1)
 
 
 def finish_lock(base):
@@ -985,8 +991,11 @@ def test_suite(public, private, log):
         return
     private_log = log.with_name('private-tests.log')
     absent = log.parent / 'absent-config'
-    environment = {**os.environ, 'CODEX_HOME': str(absent / 'codex'), 'CLAUDE_CONFIG_DIR': str(absent / 'claude'),
-                   'PYTHONDONTWRITEBYTECODE': '1'}
+    # Without colour, because with FORCE_COLOR set unittest colours the verdict that UNITTEST_END reads. The files
+    # run with -I, but the Python runs they start read PYTHON_COLORS before NO_COLOR.
+    environment = {name: value for name, value in os.environ.items() if name != 'PYTHON_COLORS'} | {
+        'CODEX_HOME': str(absent / 'codex'), 'CLAUDE_CONFIG_DIR': str(absent / 'claude'),
+        'PYTHONDONTWRITEBYTECODE': '1', 'NO_COLOR': '1'}
     total = 0
     keep(private_log)
     with private_log.open('w', encoding='utf-8') as output:

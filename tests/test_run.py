@@ -1,8 +1,10 @@
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 RUNNER = Path(__file__).resolve().with_name('run.py').read_text(encoding='utf-8')
 ONE_TEST = 'import unittest\n\n\nclass One(unittest.TestCase):\n    def test_passes(self):\n        pass\n'
@@ -53,6 +55,13 @@ class FullRun(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertRegex(result.stdout,
                          r'(?m)^Skipped tests: test_a\.py 1\nRan 2 tests in \S+\nFAILED \(test_a\.py\)\n\Z')
+
+    def test_a_run_counts_skips_in_a_session_that_forces_colour(self):
+        with patch.dict(os.environ, {'FORCE_COLOR': '1', 'PYTHON_COLORS': '1'}):
+            os.environ.pop('NO_COLOR', None)
+            result = full_run({'test_a.py': ONE_SKIP})
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertRegex(result.stdout, r'\ASkipped tests: test_a\.py 1\nRan 2 tests in \S+\nOK\n\Z')
 
     def test_a_failing_module_fails_the_run_and_shows_its_output(self):
         result = full_run({'test_a.py': ONE_TEST, 'test_b.py': FAILING})

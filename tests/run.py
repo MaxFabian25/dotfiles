@@ -27,9 +27,13 @@ MODULE_TIMEOUT_SECONDS = 900
 
 
 def run_module(path):
+    # Without colour, because with FORCE_COLOR set unittest colours the verdict that RESULT reads. Python reads
+    # PYTHON_COLORS before NO_COLOR, and the -I runs that some tests start read only NO_COLOR.
+    environment = {name: value for name, value in os.environ.items() if name != 'PYTHON_COLORS'} | {'NO_COLOR': '1'}
     try:
         return subprocess.run([sys.executable, '-B', str(Path(__file__).resolve()), '-p', path.name], capture_output=True,
-                              text=True, encoding='utf-8', errors='replace', timeout=MODULE_TIMEOUT_SECONDS)
+                              text=True, encoding='utf-8', errors='replace', timeout=MODULE_TIMEOUT_SECONDS,
+                              env=environment)
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(path.name, 1, '', f'{path.name} ran past the {MODULE_TIMEOUT_SECONDS} s limit')
 
