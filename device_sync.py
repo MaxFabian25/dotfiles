@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, replace
-from pathlib import Path
-from typing import Mapping
+from typing import TYPE_CHECKING, Mapping
 
 import codex_host
 import codex_runtime
@@ -12,6 +11,9 @@ from description import Setup
 from device import Device
 from drift import Diff, Difference, Kind, Verdict, diff
 from host_state import FactKey, Host, Note, NoteKind, Observation, Platform, Request, Surface
+
+if TYPE_CHECKING:
+    from accepted_installations import HeldCache, HeldMove
 
 
 @dataclass(frozen=True)
@@ -24,7 +26,7 @@ class Plan:
     configurations: bool = True
     expected: tuple[Difference, ...] = ()   # unmanaged, and named in this platform's device list
     profile_mirrors: tuple[profile_plugins.Mirror, ...] = ()
-    held: tuple[tuple[Path, tuple[int, ...]], ...] = ()   # after apply: the Claude caches left for running sessions
+    held: tuple[HeldCache | HeldMove, ...] = ()
 
     @property
     def exit_code(self):
@@ -137,6 +139,5 @@ def apply(setup: Setup, device: Device, current: Plan, *, builder=None, configur
         with operation.owner.staging:
             operation.prepare()
             operation.run()
-        after = replace(plan(setup, device, configurations=configurations),
-                        held=tuple((held.path, held.holders) for held in operation.held))
+        after = replace(plan(setup, device, configurations=configurations), held=tuple(operation.held))
         return after, operation.files.backup if operation.files.backup.exists() else None

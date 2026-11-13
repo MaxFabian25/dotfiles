@@ -22,7 +22,7 @@ from description import (AlignedInstall, LocalSource, RepoSource, SkillRoot, Sna
                          plugin_id)
 from drift import Difference, EntryRef, Kind
 from host_state import FactKey, Host, InstallDetail, Released, Surface, Unpinned, bytes_digest
-from portable import WINDOWS, process_running, staging_directory, replace as replace_path, while_held
+from portable import WINDOWS, StillHeld, process_running, staging_directory, replace as replace_path, while_held
 from sync_files import ConcurrentEdit, contents
 from sync_sources import BuildError
 
@@ -160,6 +160,24 @@ class HeldCache(ConcurrentEdit):
     def __init__(self, path, holders):
         super().__init__(f'running Claude processes {", ".join(map(str, holders))} hold {path}')
         self.path, self.holders = path, holders
+
+    @property
+    def line(self):
+        return (f'Claude lease: {self.path}, held by running Claude processes {", ".join(map(str, self.holders))}, '
+                'stays as it is; the first pull after they exit replaces it')
+
+
+class HeldMove(ConcurrentEdit):
+    def __init__(self, path, refusal: StillHeld):
+        super().__init__(f'{path}: {refusal}')
+        self.path, self.refusal = path, refusal
+
+    @property
+    def line(self):
+        return (f'Move refused: {self.path}: Windows refused the move on each of {self.refusal.attempts} tries over '
+                f'{self.refusal.waited:g} seconds ({self.refusal}), as it does while a program holds a file in the '
+                'folder being moved open, or while access rules forbid the move; this replacement waits as a pending '
+                'one, and the next pull tries it again')
 
 
 def _claude_cache_image(path, *, replacing=False):
@@ -340,6 +358,7 @@ class AcceptedInstallations:
                 self.configurations += self.opencode.configurations
         self._prepared = {}
         self.staging = contextlib.ExitStack()   # holds the trees prepare stages; leaving it removes them
+        self._refused_move = None
 
     def _path(self, artifact):
         return self.directory / (hashlib.sha256(artifact.identity.encode()).hexdigest() + '.json')
@@ -986,12 +1005,25 @@ class AcceptedInstallations:
                     if not _same(read, actual):
                         raise ConcurrentEdit(f'Content changed before write: {artifact.identity}')
                     files.write(destination, data, expected=before)
-        except (ConcurrentEdit, OSError):
+        except (ConcurrentEdit, OSError) as error:
             self._try_put_back(artifact, pending)
+            if error is self._refused_move and self._pending_unchanged(artifact, pending, prepared.target):
+                raise HeldMove(destination, error) from error
             raise
         if not _same(self._read(artifact, destination), prepared.target):
             raise ConcurrentEdit(f'Effective output failed verification: {artifact.identity}')
         self._accept(artifact, record, accepted, pending)
+
+    def _pending_unchanged(self, artifact, pending, target):
+        try:
+            receipt = self._receipt(artifact)
+            if not receipt or not _same(receipt.get('pending'), pending):
+                return False
+            self._known_pending(artifact, pending)
+            return (self._stopped(artifact, pending) is _Stop.UNSTARTED
+                    and _same(image(Path(pending['staged'])), target))
+        except (ConcurrentEdit, OSError, ValueError, KeyError, TypeError, AttributeError):
+            return False
 
     def _settle(self, artifact, stale):
         receipt = self._receipt(artifact)
@@ -1087,9 +1119,16 @@ class AcceptedInstallations:
             if displaced.exists():
                 raise ConcurrentEdit(f'Displaced tree already exists: {displaced}')
             stage_intact()
-            while_held(lambda: destination.rename(displaced), before_retry=movable)
+            self._move(lambda: destination.rename(displaced), movable)
         ready()
-        while_held(lambda: staged.rename(destination), before_retry=ready)
+        self._move(lambda: staged.rename(destination), ready)
+
+    def _move(self, move, before_retry):
+        try:
+            while_held(move, before_retry=before_retry)
+        except StillHeld as refusal:
+            self._refused_move = refusal
+            raise
 
     def expand(self, value):
         for token in ('home', 'codex_home', 'claude_home', 'agents_home', 'engine'):

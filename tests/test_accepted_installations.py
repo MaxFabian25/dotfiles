@@ -1,4 +1,6 @@
+import contextlib
 from dataclasses import replace
+import inspect
 import io
 import json
 import os
@@ -25,12 +27,15 @@ from homes import hold_built_trees_once, isolate_git
 from host_observation import Observer, Unread
 from host_state import (Approved, DeviceRoots, EngineMarketplace, FactKey, FileValue, Host, InstallDetail, Pinned,
                         Platform, PluginValue, Released, SkillMode, Surface, TreeValue, Unknown, bytes_digest)
+import portable
 from sync_files import ConcurrentEdit
 from sync_sources import BuildError, Builder, Sources
 
 # The words after the host name in the warning that a sync prints when it cannot switch a kept-current plugin off
 # after a failed install.
 COULD_NOT_SWITCH = 'could not switch'
+ATTEMPTS = inspect.signature(portable.while_held).parameters['attempts'].default
+WAITED = inspect.signature(portable.while_held).parameters['delay'].default * (ATTEMPTS - 1)
 
 
 def setUpModule():
@@ -67,6 +72,14 @@ class DiskHost:
         if rules.is_file():
             seen.add(Surface.RULES, 'AGENTS.md', FileValue(bytes_digest(rules.read_bytes())))
         return seen.finish('disk test host', set(self.installed))
+
+
+def moving_aside(tree):
+    return lambda source, target: source == tree and target.name == 'displaced'
+
+
+def moving_into_place(tree):
+    return lambda source, target: source.name == 'staged' and target == tree
 
 
 def own_lease(directory, start=None):
@@ -186,6 +199,57 @@ class InstallationTest(unittest.TestCase):
         with patch('sys.stderr', new_callable=io.StringIO) as stderr:
             self.assertEqual(self.run_apply().exit_code, 0)
         return stderr.getvalue()
+
+    @contextlib.contextmanager
+    def refusing(self, moves=lambda source, target: False, replaces=lambda source, target: False,
+                 at_last_attempt=None):
+        refusals = []
+
+        def refused(operation, check):
+            def attempt(source, target, *args, **kwargs):
+                if not check(Path(source), Path(target)):
+                    return operation(source, target, *args, **kwargs)
+                refusals.append(PermissionError(13, 'Access is denied', str(source), None, str(target)))
+                if at_last_attempt and len(refusals) % ATTEMPTS == 0:
+                    at_last_attempt()
+                raise refusals[-1]
+            return attempt
+
+        with patch.object(portable, 'RETRIES_REFUSALS', True), patch.object(portable.time, 'sleep'), \
+                patch('os.rename', refused(os.rename, moves)), patch('os.replace', refused(os.replace, replaces)):
+            yield refusals
+
+    def release_a_setting_written_after_the_plugins(self):
+        config = self.public / 'config/npm/npmrc.toml'
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text('min-release-age = 3\n')
+        return self.roots.home / '.npmrc'
+
+    def release_in_place(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.revise_loose('A second loose skill.\n')
+        return self.installed(), self.release_a_setting_written_after_the_plugins()
+
+    def move_refused(self, installed, refusal):
+        return (f'Move refused: {installed}: Windows refused the move on each of {ATTEMPTS} tries over {WAITED:g} '
+                f'seconds ({refusal}), as it does while a program holds a file in the folder being moved open, or '
+                'while access rules forbid the move; this replacement waits as a pending one, and the next pull tries '
+                'it again')
+
+    def assert_move_waits(self, result, installed, npmrc, refusals):
+        self.assertEqual(result.exit_code, 1)
+        self.assertEqual(result.blocked, ())
+        self.assertEqual([d.detail for d in result.changes],
+                         ['plugin:codex:kit@personal: Finish a verified pending replacement'])
+        [held] = result.held
+        self.assertEqual((type(held), held.path, held.line),
+                         (accepted_installations.HeldMove, installed, self.move_refused(installed, refusals[-1])))
+        self.assertIs(held.refusal.__cause__, refusals[-1])
+        self.assertEqual(len(refusals), ATTEMPTS)
+        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((self.roots.codex_home / 'skills/loose/SKILL.md').read_text(), 'A second loose skill.\n')
+        self.assertEqual(npmrc.read_text(), 'min-release-age=3\n')
 
     def test_a_sync_removes_the_plugin_trees_it_staged(self):
         self.assertEqual(self.run_apply().exit_code, 0)
@@ -947,7 +1011,8 @@ class InstallationTest(unittest.TestCase):
             return rename(source, target, *args, **kwargs)
 
         self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
-        with patch('os.rename', refuse), self.assertRaises(PermissionError) as stopped:
+        with patch.object(portable, 'RETRIES_REFUSALS', False), patch('os.rename', refuse), \
+                self.assertRaises(PermissionError) as stopped:
             self.run_apply()
         self.assertEqual(Path(stopped.exception.filename), installed)
         self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
@@ -1003,6 +1068,246 @@ class InstallationTest(unittest.TestCase):
             self.run_apply()
         self.assertEqual(str(stopped.exception), f'Tree changed during replacement: {held[-1]}')
         self.assertEqual([path.name for path in held[-1].iterdir()], ['theirs.txt'])
+
+    def test_an_old_tree_windows_refuses_to_move_aside_waits_and_the_rest_of_the_release_applies(self):
+        installed, npmrc = self.release_in_place()
+        with self.refusing(moves=moving_aside(installed)) as refusals, \
+                patch('sys.stderr', new_callable=io.StringIO) as stderr:
+            result = self.run_apply()
+        self.assert_move_waits(result, installed, npmrc, refusals)
+        self.assertEqual(stderr.getvalue(), '')
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
+
+    def test_a_new_tree_windows_refuses_to_move_into_place_waits_with_the_old_tree_put_back(self):
+        installed, npmrc = self.release_in_place()
+        with self.refusing(moves=moving_into_place(installed)) as refusals, \
+                patch('sys.stderr', new_callable=io.StringIO) as stderr:
+            result = self.run_apply()
+        self.assert_move_waits(result, installed, npmrc, refusals)
+        self.assertEqual(stderr.getvalue(), '')
+        pending = json.loads(self.receipt_of('plugin:').read_bytes())['pending']
+        self.assertEqual([path.name for path in Path(pending['staged']).parent.iterdir()], ['staged'])
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
+
+    def test_a_newer_release_takes_over_a_replacement_waiting_on_a_refused_move(self):
+        installed, npmrc = self.release_in_place()
+        with self.refusing(moves=moving_aside(installed)) as refusals:
+            self.assert_move_waits(self.run_apply(), installed, npmrc, refusals)
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the newer release'),))
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the newer release', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(self.unnamed_work_folders(), [])
+
+    def stage_edited_during_the_last_refused_attempt(self, refused):
+        installed, npmrc = self.release_in_place()
+
+        def edit():
+            [stage] = installed.parent.glob('.sync-*/staged')
+            (stage / 'ordinary.txt').write_text('edited during the last attempt\n')
+
+        with self.refusing(moves=refused(installed), at_last_attempt=edit) as refusals, \
+                self.assertRaises(portable.StillHeld) as stopped:
+            self.run_apply()
+        self.assertIs(stopped.exception.__cause__, refusals[-1])
+        self.assertFalse(npmrc.exists())
+        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+        [stage] = installed.parent.glob('.sync-*/staged')
+        self.assertEqual((stage / 'ordinary.txt').read_text(), 'edited during the last attempt\n')
+        with self.assertRaisesRegex(ConcurrentEdit, f'^Prepared stage was edited: {re.escape(str(stage))}$'):
+            self.run_apply()
+        self.assertEqual((stage / 'ordinary.txt').read_text(), 'edited during the last attempt\n')
+
+    def test_a_stage_edited_during_the_last_refused_move_aside_stops_the_sync_and_keeps_the_edit(self):
+        self.stage_edited_during_the_last_refused_attempt(moving_aside)
+
+    def test_a_stage_edited_during_the_last_refused_move_into_place_stops_the_sync_and_keeps_the_edit(self):
+        self.stage_edited_during_the_last_refused_attempt(moving_into_place)
+
+    def test_an_old_tree_windows_refuses_to_put_back_after_a_refused_move_into_place_stops_the_sync(self):
+        installed, npmrc = self.release_in_place()
+        with self.refusing(moves=lambda source, target: target == installed) as refusals, \
+                patch('sys.stderr', new_callable=io.StringIO) as stderr, self.assertRaises(portable.StillHeld) as stopped:
+            self.run_apply()
+        displaced = Path(json.loads(self.receipt_of('plugin:').read_bytes())['pending']['displaced'])
+        self.assertIs(stopped.exception.__cause__, refusals[ATTEMPTS - 1])
+        self.assertEqual(stderr.getvalue(), f'Old tree left aside: {displaced}, from {installed}: {refusals[-1]}\n')
+        self.assertFalse(installed.exists())
+        self.assertFalse(npmrc.exists())
+
+    def test_a_codex_version_bump_whose_installed_tree_windows_refuses_to_move_aside_stops_the_sync(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        old = self.installed()
+        (self.source / '.codex-plugin/plugin.json').write_text('{"name":"kit","version":"1.1.0"}')
+        digest = self.roots.tree_digest(self.source)
+        package = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
+        lock = replace(self.setup.lock['kit'], intent=intent(package, {}), trees={Host.CODEX: LockedTree('1.1.0', digest)})
+        self.setup = replace(self.setup, packages={'kit': package}, lock={**self.setup.lock, 'kit': lock})
+        npmrc = self.release_a_setting_written_after_the_plugins()
+        def plugin_add_removes_the_other_versions(installed):
+            shutil.rmtree(old)
+
+        self.interrupt = plugin_add_removes_the_other_versions
+        new = old.parent / '1.1.0'
+        with self.refusing(moves=moving_aside(new)) as refusals, \
+                self.assertRaises(portable.StillHeld) as stopped:
+            self.run_apply()
+        self.assertIs(stopped.exception.__cause__, refusals[-1])
+        self.assertEqual([args[:2] for _, args in self.calls][-1:], [('plugin', 'add')])
+        self.assertFalse(old.exists())
+        self.assertFalse(npmrc.exists())
+
+    def receipt_save_refused(self, saves_allowed):
+        installed, npmrc = self.release_in_place()
+        receipt, saves = self.receipt_of('plugin:'), []
+
+        def refused(source, target):
+            if target != receipt:
+                return False
+            saves.append(source)
+            return len(saves) > saves_allowed
+
+        with self.refusing(replaces=refused) as refusals, self.assertRaises(portable.StillHeld) as stopped:
+            self.run_apply()
+        self.assertIs(stopped.exception.__cause__, refusals[-1])
+        self.assertEqual(len(refusals), ATTEMPTS)
+        self.assertFalse(npmrc.exists())
+        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(npmrc.read_text(), 'min-release-age=3\n')
+
+    def test_a_pending_replacement_whose_first_save_windows_refuses_stops_the_sync_and_the_next_sync_finishes(self):
+        self.receipt_save_refused(0)
+
+    def test_a_save_before_the_folder_moves_that_windows_refuses_stops_the_sync_and_the_next_sync_finishes(self):
+        self.receipt_save_refused(1)
+
+    def test_a_settings_write_windows_refuses_stops_the_sync(self):
+        installed, npmrc = self.release_in_place()
+        with self.refusing(replaces=lambda source, target: target == npmrc) as refusals, \
+                self.assertRaises(portable.StillHeld) as stopped:
+            self.run_apply()
+        self.assertIs(stopped.exception.__cause__, refusals[-1])
+        self.assertFalse(npmrc.exists())
+
+    def receipt_changed_during_the_last_refused_move(self, change):
+        installed, npmrc = self.release_in_place()
+        receipt = self.receipt_of('plugin:')
+        with self.refusing(moves=moving_aside(installed), at_last_attempt=lambda: change(receipt)) as refusals, \
+                self.assertRaises(portable.StillHeld) as stopped:
+            self.run_apply()
+        self.assertIs(stopped.exception.__cause__, refusals[-1])
+        self.assertFalse(npmrc.exists())
+        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+
+    def test_a_receipt_removed_during_the_last_refused_move_stops_the_sync(self):
+        self.receipt_changed_during_the_last_refused_move(Path.unlink)
+
+    def test_a_receipt_changed_during_the_last_refused_move_stops_the_sync(self):
+        def changed(receipt):
+            value = json.loads(receipt.read_bytes())
+            value['pending']['destination_before'] = {'kind': 'absent'}
+            receipt.write_text(json.dumps(value))
+
+        self.receipt_changed_during_the_last_refused_move(changed)
+
+    def test_a_receipt_that_cannot_be_read_after_the_last_refused_move_stops_the_sync_with_the_refusal(self):
+        self.receipt_changed_during_the_last_refused_move(lambda receipt: receipt.write_text('not a receipt'))
+
+    def test_a_malformed_receipt_after_the_last_refused_move_preserves_the_stop_message(self):
+        installed, npmrc = self.release_in_place()
+        receipt = self.receipt_of('plugin:')
+        saved = receipt.read_bytes()
+        malformed = json.loads(saved)
+        del malformed['accepted']['bindings'][0]['path']
+        missing_path = json.dumps(malformed)
+        malformed['accepted']['bindings'] = None
+        for changed in ('[]', missing_path, json.dumps(malformed)):
+            with self.subTest(receipt=changed):
+                receipt.write_bytes(saved)
+                with self.refusing(moves=moving_aside(installed),
+                                   at_last_attempt=lambda: receipt.write_text(changed)) as refusals:
+                    self.assertEqual(self.sync_main(), (3, f'Sync stopped: {refusals[-1]}\n'))
+                self.assertEqual(receipt.read_text(), changed)
+                self.assertFalse(npmrc.exists())
+
+    def precached_codex_update(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        old = self.installed()
+        (self.source / '.codex-plugin/plugin.json').write_text('{"name":"kit","version":"1.1.0"}')
+        digest = self.roots.tree_digest(self.source)
+        package = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
+        lock = replace(self.setup.lock['kit'], intent=intent(package, {}), trees={Host.CODEX: LockedTree('1.1.0', digest)})
+        self.setup = replace(self.setup, packages={'kit': package}, lock={**self.setup.lock, 'kit': lock})
+        new = old.parent / '1.1.0'
+        shutil.copytree(self.source, new)
+        return old, new, self.release_a_setting_written_after_the_plugins()
+
+    def test_a_precached_update_with_a_changed_previous_tree_stops_before_other_writes(self):
+        old, new, npmrc = self.precached_codex_update()
+        edited = old / 'ordinary.txt'
+        with self.refusing(moves=moving_aside(new),
+                           at_last_attempt=lambda: edited.write_text('concurrent edit\n')) as refusals:
+            self.assertEqual(self.sync_main(), (3, f'Sync stopped: {refusals[-1]}\n'))
+        self.assertEqual(edited.read_text(), 'concurrent edit\n')
+        self.assertFalse(npmrc.exists())
+        self.assertTrue(json.loads(self.receipt_of('plugin:').read_bytes())['pending'])
+
+    def test_a_precached_update_waits_and_finishes_after_the_previous_version_is_removed(self):
+        old, new, npmrc = self.precached_codex_update()
+        with self.refusing(moves=moving_aside(new)) as refusals:
+            self.assertEqual(self.sync_main(), (1, self.move_refused(new, refusals[-1]) + '\n'))
+        self.assertEqual(npmrc.read_text(), 'min-release-age=3\n')
+        shutil.rmtree(old)
+        self.assertEqual(self.sync_main(), (0, ''))
+        self.assertIn('use the local reader', (new / 'skills/one/SKILL.md').read_text())
+        self.assertIsNone(json.loads(self.receipt_of('plugin:').read_bytes())['pending'])
+
+    def sync_main(self):
+        import sync
+        with patch('sync.load', return_value=self.setup), patch('sync.Device.current', return_value=self.device), \
+                patch('sys.stdout', new_callable=io.StringIO), patch('sys.stderr', new_callable=io.StringIO) as stderr:
+            code = sync.main(['--apply'])
+        return code, ''.join(line for line in stderr.getvalue().splitlines(keepends=True)
+                             if not line.startswith('Backups: '))
+
+    def test_a_sync_names_the_move_windows_refused_and_exits_1(self):
+        installed, npmrc = self.release_in_place()
+        with self.refusing(moves=moving_aside(installed)) as refusals:
+            self.assertEqual(self.sync_main(), (1, self.move_refused(installed, refusals[-1]) + '\n'))
+        self.assertEqual(npmrc.read_text(), 'min-release-age=3\n')
+
+    def test_a_sync_stopped_by_a_refused_move_that_cannot_wait_prints_the_refusal_alone(self):
+        installed, npmrc = self.release_in_place()
+        receipt = self.receipt_of('plugin:')
+        with self.refusing(moves=moving_aside(installed), at_last_attempt=receipt.unlink) as refusals:
+            self.assertEqual(self.sync_main(), (3, f'Sync stopped: {refusals[-1]}\n'))
+
+    def test_a_sync_stopped_by_a_refused_receipt_save_prints_the_refusal_alone(self):
+        installed, npmrc = self.release_in_place()
+        receipt = self.receipt_of('plugin:')
+        with self.refusing(replaces=lambda source, target: target == receipt) as refusals:
+            self.assertEqual(self.sync_main(), (3, f'Sync stopped: {refusals[-1]}\n'))
+
+    @unittest.skipUnless(portable.WINDOWS, 'Windows refuses to move a folder that holds a file a program has open')
+    def test_a_tree_holding_a_file_a_program_has_open_waits_and_the_rest_of_the_release_applies(self):
+        installed, npmrc = self.release_in_place()
+        with (installed / 'ordinary.txt').open('rb'):
+            result = self.run_apply()
+        self.assertEqual(result.exit_code, 1)
+        [held] = result.held
+        refusal = held.refusal
+        self.assertEqual((type(held), held.path, type(refusal), refusal.winerror, Path(refusal.filename),
+                          Path(refusal.filename2).name, str(refusal)),
+                         (accepted_installations.HeldMove, installed, portable.StillHeld, 5, installed, 'displaced',
+                          str(refusal.__cause__)))
+        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((self.roots.codex_home / 'skills/loose/SKILL.md').read_text(), 'A second loose skill.\n')
+        self.assertEqual(npmrc.read_text(), 'min-release-age=3\n')
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
 
     def test_install_then_strict_noop_and_complete_manifest(self):
         after = self.run_apply()
@@ -1953,7 +2258,10 @@ class InstallationTest(unittest.TestCase):
         waits as it was for a later pull."""
         result = self.run_apply()
         self.assertEqual(result.exit_code, 1)
-        self.assertEqual(result.held, ((destination, (os.getpid(),)),))
+        self.assertEqual([(type(held), held.path, held.holders, held.line) for held in result.held],
+                         [(accepted_installations.HeldCache, destination, (os.getpid(),),
+                           f'Claude lease: {destination}, held by running Claude processes {os.getpid()}, stays as '
+                           'it is; the first pull after they exit replaces it')])
         return result
 
     def revise_release(self, text):
@@ -2047,6 +2355,40 @@ class InstallationTest(unittest.TestCase):
         self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
         self.assertTrue(lease.exists())
 
+    def test_a_skill_text_change_whose_cache_windows_refuses_to_move_while_a_session_runs_waits_at_each_sync(self):
+        destination = self._installed_claude()
+        lease = own_lease(destination / '.in_use')
+        marker = lease.read_text()
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        for _ in range(2):
+            with self.refusing(moves=moving_aside(destination)):
+                result = self.run_apply()
+            self.assertEqual((result.exit_code, [(type(held), held.path) for held in result.held]),
+                             (1, [(accepted_installations.HeldMove, destination)]))
+            self.assertEqual(self.held(), [])
+            self.assertEqual(lease.read_text(), marker)
+            self.assertIn('use the local reader', (destination / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(lease.read_text(), marker)
+        self.assertEqual(self.calls, [])
+
+    def test_a_claude_version_bump_whose_new_tree_windows_refuses_to_move_into_place_stops_the_sync(self):
+        old = self._installed_claude()
+        (self.source / 'ordinary.txt').write_text('release 2.0.0\n')
+        digest = self.roots.tree_digest(self.source)
+        package = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
+        lock = replace(self.setup.lock['kit'], intent=intent(package, {}), trees={Host.CLAUDE: LockedTree('2.0.0', digest)})
+        self.setup = replace(self.setup, packages={'kit': package}, lock={'kit': lock})
+        npmrc = self.release_a_setting_written_after_the_plugins()
+        new = old.parent / '2.0.0'
+        with self.refusing(moves=moving_into_place(new)) as refusals, self.assertRaises(portable.StillHeld) as stopped:
+            self.run_apply()
+        self.assertIs(stopped.exception.__cause__, refusals[-1])
+        self.assertEqual([args[:2] for _, args in self.calls][-1], ('plugin', 'update'))
+        self.assertEqual((new / 'ordinary.txt').read_text(), 'release 2.0.0\n')
+        self.assertFalse(npmrc.exists())
+
     def stopped_between_the_moves(self):
         rename = Path.rename
 
@@ -2102,7 +2444,8 @@ class InstallationTest(unittest.TestCase):
                 raise PermissionError(13, 'Access is denied', str(target))
             return rename(source, target, *args, **kwargs)
 
-        with patch('os.rename', refuse), self.assertRaises(PermissionError):
+        with patch.object(portable, 'RETRIES_REFUSALS', False), patch('os.rename', refuse), \
+                self.assertRaises(PermissionError):
             self.run_apply()
         self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
         self.assertEqual(self.run_apply().exit_code, 0)

@@ -157,28 +157,50 @@ class PortableTest(unittest.TestCase):
 
     def test_a_replace_a_windows_lock_refuses_is_retried_and_elsewhere_fails_at_once(self):
         refused = PermissionError(13, 'Access is denied')
-        with patch.object(portable, 'WINDOWS', False), patch.object(portable.os, 'replace', side_effect=refused), \
+        with patch.object(portable, 'RETRIES_REFUSALS', False), patch.object(portable.os, 'replace', side_effect=refused), \
                 patch.object(portable.time, 'sleep') as sleep:
-            with self.assertRaises(PermissionError):
+            with self.assertRaises(PermissionError) as raised:
                 portable.replace('a', 'b')
+        self.assertIs(type(raised.exception), PermissionError)
+        self.assertIs(raised.exception, refused)
         sleep.assert_not_called()
-        with patch.object(portable, 'WINDOWS', True), patch.object(portable.os, 'replace', side_effect=[refused, None]) as move, \
+        with patch.object(portable, 'RETRIES_REFUSALS', True), \
+                patch.object(portable.os, 'replace', side_effect=[refused, None]) as move, \
                 patch.object(portable.time, 'sleep') as sleep:
             portable.replace('a', 'b')
         self.assertEqual((move.call_count, sleep.call_count), (2, 1))
 
-    def test_a_move_windows_never_frees_raises_its_last_refusal_after_the_attempts_it_was_given(self):
-        refused = PermissionError(13, 'Access is denied')
-        with patch.object(portable, 'WINDOWS', True), patch.object(portable.os, 'replace', side_effect=refused) as move, \
+    def test_a_move_windows_never_frees_raises_its_last_refusal_as_still_held_after_the_attempts_it_was_given(self):
+        refusals = [PermissionError(13, 'Access is denied', f'a{attempt}', None, 'b') for attempt in range(3)]
+        last = refusals[-1]
+        last.winerror = 5
+        with patch.object(portable, 'RETRIES_REFUSALS', True), \
+                patch.object(portable.os, 'replace', side_effect=refusals) as move, \
                 patch.object(portable.time, 'sleep') as sleep:
-            with self.assertRaises(PermissionError) as raised:
+            with self.assertRaises(portable.StillHeld) as raised:
                 portable.replace('a', 'b', attempts=3, delay=7)
-        self.assertIs(raised.exception, refused)
+        held = raised.exception
+        self.assertEqual([str(held), held.errno, held.strerror, held.filename, held.filename2, held.winerror],
+                         [str(last), 13, 'Access is denied', 'a2', 'b', 5])
+        self.assertIsInstance(held, PermissionError)
+        self.assertIs(held.__cause__, last)
+        self.assertEqual((held.attempts, held.waited), (3, 14))
         self.assertEqual((move.call_count, sleep.call_args_list), (3, [unittest.mock.call(7)] * 2))
+
+    def test_a_refusal_still_held_reads_as_the_refusal_whatever_fields_it_has(self):
+        fields = ('errno', 'strerror', 'filename', 'filename2', 'winerror')
+        for refusal in (PermissionError(13, 'Access is denied', 'a'), PermissionError(13, 'Access is denied'),
+                        PermissionError('the move was refused')):
+            with self.subTest(refusal=str(refusal)), patch.object(portable, 'RETRIES_REFUSALS', True), \
+                    patch.object(portable.time, 'sleep'):
+                with self.assertRaises(portable.StillHeld) as raised:
+                    portable.while_held(unittest.mock.Mock(side_effect=refusal), attempts=2)
+                self.assertEqual([str(raised.exception)] + [getattr(raised.exception, name, None) for name in fields],
+                                 [str(refusal)] + [getattr(refusal, name, None) for name in fields])
 
     def test_only_a_refusal_is_retried_and_the_check_before_each_retry_can_stop_it(self):
         missing, refused, changed = FileNotFoundError(2, 'gone'), PermissionError(13, 'Access is denied'), RuntimeError('changed')
-        with patch.object(portable, 'WINDOWS', True), patch.object(portable.time, 'sleep') as sleep:
+        with patch.object(portable, 'RETRIES_REFUSALS', True), patch.object(portable.time, 'sleep') as sleep:
             move = unittest.mock.Mock(side_effect=missing)
             with self.assertRaises(FileNotFoundError):
                 portable.while_held(move)

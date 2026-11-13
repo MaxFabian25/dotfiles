@@ -23,6 +23,7 @@ import tempfile
 import time
 
 WINDOWS = os.name == 'nt'
+RETRIES_REFUSALS = WINDOWS
 # Git as the engine runs it: no line-ending conversion, so archives and blobs keep upstream's bytes.
 GIT = ('git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf')
 # The Codex CLI shipped inside the desktop app; preferring it keeps plugin state in step with the app.
@@ -153,18 +154,31 @@ def posix(path):
     return PurePath(path).as_posix()
 
 
+class StillHeld(PermissionError):
+    def __init__(self, refusal, attempts, waited):
+        super().__init__(*refusal.args)
+        for name in ('errno', 'strerror', 'filename', 'filename2', 'winerror'):
+            setattr(self, name, getattr(refusal, name, None))
+        self.last_refusal, self.attempts, self.waited = refusal, attempts, waited
+
+    def __str__(self):
+        return str(self.last_refusal)
+
+
 def while_held(move, attempts=20, delay=0.25, before_retry=None):
     """Run move, and run it again while Windows refuses it. Windows refuses to replace a file or move a folder that
     another process holds open: Codex or Claude may be reading it, or a scanner may have opened a folder that has
-    just appeared. The last refusal is raised. before_retry runs before each further attempt, for a caller whose
+    just appeared. The last refusal is raised, as a StillHeld after retries. before_retry runs before each further attempt, for a caller whose
     check before the move has to hold at the moment of the move, not seconds earlier. Whatever it raises ends the
     attempts, a refused read included, because a check that could not be made has not passed."""
     for attempt in range(attempts):
         try:
             return move()
-        except PermissionError:
-            if not WINDOWS or attempt == attempts - 1:
+        except PermissionError as refusal:
+            if not RETRIES_REFUSALS:
                 raise
+            if attempt == attempts - 1:
+                raise StillHeld(refusal, attempts, delay * attempt) from refusal
             time.sleep(delay)
             if before_retry:
                 before_retry()

@@ -48,8 +48,8 @@ def hold_built_trees_once(case, meanwhile=None):
     the way Windows refuses it while another process holds the folder. Returns the targets refused so far.
     meanwhile, given the refused target, does what another process does during the wait before the next attempt."""
     import portable
-    refused, waiting, device, sleep = [], [], portable.WINDOWS, portable.time.sleep
-    case.addCleanup(setattr, portable, 'WINDOWS', device)
+    refused, waiting, retries, sleep = [], [], portable.RETRIES_REFUSALS, portable.time.sleep
+    case.addCleanup(setattr, portable, 'RETRIES_REFUSALS', retries)
 
     def held_once(move):
         def attempt(source, target, *args, **kwargs):
@@ -58,9 +58,7 @@ def hold_built_trees_once(case, meanwhile=None):
                     target.parent.name.startswith('.') and source.parent == target.parent.parent):
                 if target not in refused:
                     refused.append(target)
-                    # portable.while_held retries only on Windows, so the device is Windows from the refusal until
-                    # the wait that follows it.
-                    portable.WINDOWS = True
+                    portable.RETRIES_REFUSALS = True
                     waiting.append(target)
                     raise PermissionError(13, 'Access is denied', str(target))
             return move(source, target, *args, **kwargs)
@@ -69,7 +67,7 @@ def hold_built_trees_once(case, meanwhile=None):
     def wait(seconds):
         if not waiting:
             return sleep(seconds)  # a wait of some other code's
-        portable.WINDOWS = device
+        portable.RETRIES_REFUSALS = retries
         target = waiting.pop()
         if meanwhile:
             meanwhile(target)

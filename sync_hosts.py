@@ -6,7 +6,7 @@ import sys
 import tomllib
 
 import portable
-from accepted_installations import AcceptedInstallations, HeldCache, copy_tree, image
+from accepted_installations import AcceptedInstallations, HeldCache, HeldMove, copy_tree, image
 from claude_host import native_marketplace
 import codex_runtime
 import profile_plugins
@@ -46,8 +46,7 @@ class Apply:
         for artifact in self.prepared.artifacts:
             try:
                 self.owner.apply(artifact, self.files, native=self._install)
-            except HeldCache as held:
-                # Its replacement stays pending with the cache as it was, so the rest of the release applies now.
+            except (HeldCache, HeldMove) as held:
                 self.held.append(held)
         self._plugins()
         self._skills()

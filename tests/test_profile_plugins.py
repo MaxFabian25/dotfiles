@@ -37,14 +37,14 @@ def hold_moves_into_the_backup_once(case, backup, meanwhile=None):
     """hold_built_trees_once for the moves of a home's copies into backup, which its rule does not match: the first
     move of each copy is refused the way Windows refuses it while another process holds the folder. Returns the
     copies refused so far. meanwhile, given the refused copy, does what another process does during the wait."""
-    refused, waiting, device, sleep, rename = [], [], portable.WINDOWS, portable.time.sleep, os.rename
-    case.addCleanup(setattr, portable, 'WINDOWS', device)
+    refused, waiting, retries, sleep, rename = [], [], portable.RETRIES_REFUSALS, portable.time.sleep, os.rename
+    case.addCleanup(setattr, portable, 'RETRIES_REFUSALS', retries)
 
     def attempt(source, target):
         source = Path(source)
         if Path(target).is_relative_to(backup) and source not in refused:
             refused.append(source)
-            portable.WINDOWS = True
+            portable.RETRIES_REFUSALS = True
             waiting.append(source)
             raise PermissionError(errno.EACCES, 'Access is denied', str(source))
         return rename(source, target)
@@ -52,7 +52,7 @@ def hold_moves_into_the_backup_once(case, backup, meanwhile=None):
     def wait(seconds):
         if not waiting:
             return sleep(seconds)
-        portable.WINDOWS = device
+        portable.RETRIES_REFUSALS = retries
         source = waiting.pop()
         if meanwhile:
             meanwhile(source)
@@ -519,7 +519,7 @@ class ProfilePluginsTest(unittest.TestCase):
                 meanwhile(waiting.pop())
 
         stack = contextlib.ExitStack()
-        for patcher in (patch.object(portable, 'WINDOWS', True), patch.object(portable.time, 'sleep', wait),
+        for patcher in (patch.object(portable, 'RETRIES_REFUSALS', True), patch.object(portable.time, 'sleep', wait),
                         patch('os.rename', attempt)):
             stack.enter_context(patcher)
         return stack
@@ -618,7 +618,7 @@ class ProfilePluginsTest(unittest.TestCase):
                 def interrupt(seconds):
                     raise KeyboardInterrupt
 
-                with (patch.object(portable, 'WINDOWS', True), patch.object(portable.time, 'sleep', interrupt),
+                with (patch.object(portable, 'RETRIES_REFUSALS', True), patch.object(portable.time, 'sleep', interrupt),
                       patch('os.rename', attempt), self.assertRaises(KeyboardInterrupt)):
                     kit.apply(mirrors)
                 self.assertEqual(sorted(path.name for path in saved.parent.iterdir()), [left.name, 'moved.json'])
@@ -659,7 +659,7 @@ class ProfilePluginsTest(unittest.TestCase):
             before = image(old)
             mirrors, _, _ = kit.inspect()
             refused = []
-            with (patch.object(portable, 'WINDOWS', False), self.assertRaises(PermissionError),
+            with (patch.object(portable, 'RETRIES_REFUSALS', False), self.assertRaises(PermissionError),
                   refuse_moves_into(home.roots.home / 'backup', errno.EACCES, refused)):
                 kit.apply(mirrors)
             self.assertEqual(refused, [old])
