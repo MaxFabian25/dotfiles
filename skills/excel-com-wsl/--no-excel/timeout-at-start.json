@@ -1,0 +1,62 @@
+{
+ "ok": false,
+ "error": "Excel could not open the workbook in any load mode",
+ "error_line": 427,
+ "busy_retries": 0,
+ "excel": {
+  "version": "16.0",
+  "build": 20527,
+  "os": "Windows (64-bit) NT 10.00",
+  "pid": 50896,
+  "session": "56C38DC5-3927-4BFC-A31F-3DC7E4C8E040",
+  "session_reason": null
+ },
+ "open": {
+  "load": null,
+  "failed_loads": {
+   "normal": "The remote procedure call failed. (Exception from HRESULT: 0x800706BE)",
+   "repair": "You cannot call a method on a null-valued expression.",
+   "extract data": "You cannot call a method on a null-valued expression."
+  }
+ },
+ "settings": null,
+ "base": null,
+ "errors": null,
+ "errors_unscanned": null,
+ "after": null,
+ "reopened": null,
+ "timings_ms": {
+  "start": 3564,
+  "end": 4363
+ },
+ "office_logs": {
+  "session": "56C38DC5-3927-4BFC-A31F-3DC7E4C8E040",
+  "removed": 4,
+  "bytes": 83886080,
+  "left": 0,
+  "reason": null
+ },
+ "runner": {
+  "job_timeout_s": 1,
+  "timed_out": true,
+  "stopped": [
+   {
+    "pid": 50896,
+    "program": "EXCEL",
+    "outcome": "stopped"
+   },
+   {
+    "pid": 42524,
+    "program": "powershell",
+    "outcome": "gone"
+   }
+  ],
+  "office_logs": {
+   "session": "56C38DC5-3927-4BFC-A31F-3DC7E4C8E040",
+   "removed": 0,
+   "bytes": 0,
+   "left": 0,
+   "reason": "no log file of the session was found"
+  }
+ }
+}

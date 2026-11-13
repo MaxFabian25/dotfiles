@@ -1,0 +1,1 @@
+excel.py: ok=False load=normal errors=1 unscanned_sheets=1 read_errors=0 office_logs_left=0 error=the error scan could not list the error cells of 1 sheet; the first is Scattered: its error values are spread over too many cells to list: the scan reads at most 2000000 cells of one sheet

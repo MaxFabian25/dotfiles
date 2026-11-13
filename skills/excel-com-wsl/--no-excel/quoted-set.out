@@ -1,0 +1,1 @@
+excel.py: ok=False load=normal errors=7 unscanned_sheets=0 read_errors=0 office_logs_left=0 error='It's'!A1 is no sheet name in single quotes with a range after it: double each apostrophe inside the quotes, as in 'It''s'!B2

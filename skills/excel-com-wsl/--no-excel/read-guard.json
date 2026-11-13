@@ -1,0 +1,687 @@
+{
+ "reads": {
+  "healthy_cell": {
+   "address": "'S'!$A$1",
+   "value": 5,
+   "text": "text",
+   "formula": "5",
+   "has_spill": false
+  },
+  "empty_cell": {
+   "address": "'S'!$A$1",
+   "value": null,
+   "text": "text",
+   "formula": "",
+   "has_spill": false
+  },
+  "healthy_rows": {
+   "address": "'S'!$A$1",
+   "values": [
+    [
+     1
+    ],
+    [
+     2
+    ]
+   ]
+  },
+  "no_range": {
+   "read_error": "Excel gave no answer for the range"
+  },
+  "no_count": {
+   "read_error": "Excel gave no answer for the cell count"
+  },
+  "no_formula": {
+   "read_error": "Excel gave no answer for the formula"
+  },
+  "no_value": {
+   "read_error": "Excel gave no answer for the value"
+  },
+  "no_values": {
+   "read_error": "Excel gave no answer for the values"
+  },
+  "no_rows": {
+   "address": "'S'!$A$1",
+   "values": [
+    [
+     1
+    ],
+    [
+     2
+    ]
+   ]
+  },
+  "two_areas": {
+   "read_error": "range has 2 rectangles; read each rectangle by its own REF"
+  },
+  "one_cell_first": {
+   "read_error": "range has 2 rectangles; read each rectangle by its own REF"
+  },
+  "no_areas": {
+   "read_error": "Excel gave no answer for the rectangles"
+  },
+  "no_area_count": {
+   "read_error": "Excel gave no answer for the count of rectangles"
+  },
+  "long_name": {
+   "read_error": "Excel gave no range for the name long_name, whose text has 281 characters: it has none for a name that refers to no cells, to cells on several sheets, or to more rectangles than it gives as one range, so give each rectangle as a REF of its own"
+  },
+  "late_range": {
+   "address": "'S'!$A$1",
+   "value": 5,
+   "text": "text",
+   "formula": "5",
+   "has_spill": false
+  },
+  "cut_to_one": {
+   "read_error": "range has 40 rectangles; read each rectangle by its own REF"
+  },
+  "cut_short": {
+   "read_error": "range has 40 rectangles; read each rectangle by its own REF"
+  },
+  "no_text": {
+   "read_error": "Excel gave no answer for the text of the name no_text"
+  },
+  "in_quotes": {
+   "address": "'S'!$A$1",
+   "value": 5,
+   "text": "text",
+   "formula": "5",
+   "has_spill": false
+  },
+  "doubled_in_quotes": {
+   "address": "'S'!$A$1",
+   "value": 5,
+   "text": "text",
+   "formula": "5",
+   "has_spill": false
+  },
+  "in_parentheses": {
+   "address": "'S'!$A$1",
+   "value": 5,
+   "text": "text",
+   "formula": "5",
+   "has_spill": false
+  },
+  "in_string": {
+   "address": "'S'!$A$1",
+   "value": 5,
+   "text": "text",
+   "formula": "5",
+   "has_spill": false
+  },
+  "nested_columns": {
+   "address": "'S'!$A$1",
+   "value": 5,
+   "text": "text",
+   "formula": "5",
+   "has_spill": false
+  },
+  "escaped_column": {
+   "address": "'S'!$A$1",
+   "value": 5,
+   "text": "text",
+   "formula": "5",
+   "has_spill": false
+  },
+  "parenthesis_in_quotes": {
+   "read_error": "range has 2 rectangles; read each rectangle by its own REF"
+  },
+  "apostrophe_in_column": {
+   "read_error": "range has 2 rectangles; read each rectangle by its own REF"
+  },
+  "after_parentheses": {
+   "read_error": "range has 2 rectangles; read each rectangle by its own REF"
+  }
+ },
+ "scans": {
+  "finds_cells": {
+   "found": [
+    "'S'!A1:A2"
+   ],
+   "unscanned": [],
+   "asked": [
+    2
+   ]
+  },
+  "no_error_cells": {
+   "found": [],
+   "unscanned": [],
+   "asked": [
+    1
+   ]
+  },
+  "typed_only": {
+   "found": [],
+   "unscanned": [],
+   "asked": [
+    4
+   ]
+  },
+  "several_sheets": {
+   "found": [
+    "'Open'!A1:A2",
+    "'Other'!A1"
+   ],
+   "unscanned": [],
+   "asked": [
+    2,
+    1,
+    2
+   ]
+  },
+  "spilled": {
+   "found": [
+    "'Spill'!C1,A2:A3"
+   ],
+   "unscanned": [],
+   "asked": [
+    12
+   ]
+  },
+  "spilled_only": {
+   "found": [
+    "'Spill'!B4:B5"
+   ],
+   "unscanned": [],
+   "asked": [
+    4
+   ]
+  },
+  "typed_beside_spilled": {
+   "found": [
+    "'Mix'!A2,A4,C7:C9"
+   ],
+   "unscanned": [],
+   "asked": [
+    24
+   ]
+  },
+  "long_list": {
+   "found": [
+    "'Many'!C2,E4,G6,I8,K10,M12,A14,C16,E18,G20,I22,K24,M26,A28,C30,E32,G34,I36,K38,M40,A42,C44,E46,G48,I50,K52,M54,A56,C58,E60,G62,I64,K66,M68,A70,C72,E74,G76,I78,K80,M82,A84,C86,E88,G90,I92,K94,M96,A98,C100,E102,G104,I106,K108,M110,A112,C114,E116,G118,I120,K122,M124,A126,C128,E130,G132,I134,K136,M138,A140,C142,E144,G146,I148,K150,M152,A154,C156,E158,G160,I162,K164,M166,A168,C170,E172,G174,I176,K178,M180,A182,C184,E186,G188,I190,K192,M194,A196,C198,E200,G202,I204,K206,M208,A210,C212,E214,G216,I218,K220,M222,A224,C226,E228,G230,I232,K234,M236,A238,C240,E242,G244,I246,K248,M250,A252,C254,E256,G258,I260,K262,M264,A266,C268,E270,G272,I274,K276,M278,A280,C282,E284,G286,I288,K290,M292,A294,C296,E298,G300"
+   ],
+   "unscanned": [],
+   "asked": [
+    2
+   ]
+  },
+  "reading_order": {
+   "found": [
+    "'Block'!B2:D4,F2:F4,B6"
+   ],
+   "unscanned": [],
+   "asked": [
+    2
+   ]
+  },
+  "apostrophe": {
+   "found": [
+    "'It''s'!B2"
+   ],
+   "unscanned": [],
+   "asked": [
+    2
+   ]
+  },
+  "far_apart": {
+   "found": [
+    "'Far'!A1,ZZ900000"
+   ],
+   "unscanned": [],
+   "asked": [
+    101
+   ]
+  },
+  "column_of_errors": {
+   "found": [
+    "'Column'!C1:C40000"
+   ],
+   "unscanned": [],
+   "asked": [
+    31
+   ]
+  },
+  "row_of_errors": {
+   "found": [
+    "'Row'!A20001:KN20001"
+   ],
+   "unscanned": [],
+   "asked": [
+    32
+   ]
+  },
+  "over_the_limit": {
+   "found": [
+    "'Small'!A1"
+   ],
+   "unscanned": [
+    {
+     "sheet": "Wide",
+     "reason": "its error values are spread over too many cells to list: the scan reads at most 30000 cells of one sheet"
+    }
+   ],
+   "asked": [
+    19,
+    2
+   ]
+  },
+  "any_is_an_error": {
+   "found": [],
+   "unscanned": [
+    {
+     "sheet": "Old",
+     "reason": "Excel could not say whether A1:B3 holds an error value: ISERROR(SUM(A1:B3)) came back as code 2029"
+    }
+   ],
+   "asked": [
+    1
+   ]
+  },
+  "any_is_no_boolean": {
+   "found": [],
+   "unscanned": [
+    {
+     "sheet": "Odd",
+     "reason": "Excel could not say whether A1:B3 holds an error value: ISERROR(SUM(A1:B3)) came back as 1"
+    }
+   ],
+   "asked": [
+    1
+   ]
+  },
+  "any_throws": {
+   "found": [],
+   "unscanned": [
+    {
+     "sheet": "Odd",
+     "reason": "Excel could not say whether A1:B3 holds an error value: Exception calling \"Evaluate\" with \"1\" argument(s): \"You cannot use this command on a protected sheet.\""
+    }
+   ],
+   "asked": [
+    1
+   ]
+  },
+  "cells_are_an_error": {
+   "found": [],
+   "unscanned": [
+    {
+     "sheet": "Old",
+     "reason": "Excel could not say which cells of A1:B3 hold error values: ISERROR(A1:B3)*(1+ISFORMULA(A1:B3)) came back as code 2029"
+    }
+   ],
+   "asked": [
+    2
+   ]
+  },
+  "cells_throw": {
+   "found": [],
+   "unscanned": [
+    {
+     "sheet": "Odd",
+     "reason": "Excel could not say which cells of A1:B3 hold error values: Exception calling \"Evaluate\" with \"1\" argument(s): \"You cannot use this command on a protected sheet.\""
+    }
+   ],
+   "asked": [
+    2
+   ]
+  },
+  "too_few_cells": {
+   "found": [],
+   "unscanned": [
+    {
+     "sheet": "Odd",
+     "reason": "Excel could not say which cells of A1:B3 hold error values: 3 answers for 6 cells"
+    }
+   ],
+   "asked": [
+    2
+   ]
+  },
+  "one_cell_is_odd": {
+   "found": [],
+   "unscanned": [
+    {
+     "sheet": "Odd",
+     "reason": "Excel could not say which cells of A1:B3 hold error values: one answer is '3'"
+    }
+   ],
+   "asked": [
+    2
+   ]
+  },
+  "one_cell_is_an_error": {
+   "found": [],
+   "unscanned": [
+    {
+     "sheet": "Odd",
+     "reason": "Excel could not say which cells of A1:B3 hold error values: one answer is '-2146826259'"
+    }
+   ],
+   "asked": [
+    2
+   ]
+  },
+  "one_cell_is_missing": {
+   "found": [],
+   "unscanned": [
+    {
+     "sheet": "Odd",
+     "reason": "Excel could not say which cells of A1:B3 hold error values: one answer is ''"
+    }
+   ],
+   "asked": [
+    2
+   ]
+  },
+  "spill_is_odd": {
+   "found": [],
+   "unscanned": [
+    {
+     "sheet": "Odd",
+     "reason": "Excel could not say whether A2 is spilled"
+    }
+   ],
+   "asked": [
+    4
+   ]
+  },
+  "no_sheets": {
+   "scan_error": "Excel gave no answer for the sheets"
+  },
+  "no_name": {
+   "scan_error": "Excel gave no answer for the sheet name"
+  },
+  "no_used_range": {
+   "scan_error": "Excel gave no answer for the used range of a sheet"
+  },
+  "no_first_row": {
+   "scan_error": "Excel gave no answer for the row of the used range"
+  },
+  "no_rows": {
+   "scan_error": "Excel gave no answer for the rows of the used range"
+  },
+  "no_columns": {
+   "scan_error": "Excel gave no answer for the columns of the used range"
+  },
+  "no_row_count": {
+   "scan_error": "Excel gave no answer for the rows of the used range"
+  },
+  "no_column_count": {
+   "scan_error": "Excel gave no answer for the columns of the used range"
+  },
+  "no_any": {
+   "scan_error": "Excel gave no answer for the formula ISERROR(SUM(A1:B3))"
+  },
+  "refused_any": {
+   "scan_error": "Exception calling \"Evaluate\" with \"1\" argument(s): \"refused\""
+  },
+  "no_cells": {
+   "scan_error": "Excel gave no answer for the formula ISERROR(A1:B3)*(1+ISFORMULA(A1:B3))"
+  },
+  "refused_cells": {
+   "scan_error": "Exception calling \"Evaluate\" with \"1\" argument(s): \"refused\""
+  },
+  "no_range": {
+   "scan_error": "Excel gave no answer for the range A2"
+  },
+  "refused_range": {
+   "scan_error": "Exception calling \"Range\" with \"1\" argument(s): \"refused\""
+  },
+  "no_spill": {
+   "scan_error": "Excel gave no answer for whether A2 is spilled"
+  }
+ },
+ "quoted": {
+  "'It''s'!B2": {
+   "address": "'It''s'!$B$2",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "'O''Neil''s'!C7": {
+   "address": "'O''Neil''s'!$C$7",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "'My sheet'!A1": {
+   "address": "'My sheet'!$A$1",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "S!A1": {
+   "address": "'S'!$A$1",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "'\u00d8konomi'!A1": {
+   "address": "'\u00d8konomi'!$A$1",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "'My sheet'!T[Owner''s share]": {
+   "address": "'My sheet'!T[Owner''s share]",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "S!T['#Items]": {
+   "address": "'S'!T['#Items]",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "\u00d8konomi!B3": {
+   "address": "'\u00d8konomi'!$B$3",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "Data_1!A1": {
+   "address": "'Data_1'!$A$1",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "Cafe\u0301!A2": {
+   "address": "'Cafe\u0301'!$A$2",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "\u00d8konomi!Elsewhere": {
+   "address": "'S'!$A$1",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "'\u00d8konomi'!Elsewhere": {
+   "read_error": "Exception calling \"Range\" with \"1\" argument(s): \"the stand-in sheet \u00d8konomi has no range Elsewhere\""
+  },
+  "S!Elsewhere": {
+   "read_error": "Exception calling \"Range\" with \"1\" argument(s): \"the stand-in sheet S has no range Elsewhere\""
+  },
+  "\u00d8konomi!FY2024": {
+   "address": "'\u00d8konomi'!$B$2",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "'\u00d8konomi'!FY2024": {
+   "address": "'\u00d8konomi'!$FY$2024",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "\u00d8konomi!LocalConst": {
+   "read_error": "Excel gave no range for the name \u00d8konomi!LocalConst, whose text has 2 characters: it has none for a name that refers to no cells, to cells on several sheets, or to more rectangles than it gives as one range, so give each rectangle as a REF of its own"
+  },
+  "\u00d8konomi!Cut": {
+   "read_error": "range has 2 rectangles; read each rectangle by its own REF"
+  },
+  "S!Nowhere": {
+   "read_error": "Exception calling \"Range\" with \"1\" argument(s): \"the stand-in sheet S has no range Nowhere\""
+  },
+  "My sheet!A1": {
+   "read_error": "Exception calling \"Item\" with \"1\" argument(s): \"the stand-in workbook has no name My sheet!A1\""
+  },
+  "My-sheet!A1": {
+   "read_error": "Exception calling \"Item\" with \"1\" argument(s): \"the stand-in workbook has no name My-sheet!A1\""
+  },
+  "'It's'!B2": {
+   "read_error": "'It's'!B2 is no sheet name in single quotes with a range after it: double each apostrophe inside the quotes, as in 'It''s'!B2"
+  },
+  "'O'Neil''s'!C7": {
+   "read_error": "'O'Neil''s'!C7 is no sheet name in single quotes with a range after it: double each apostrophe inside the quotes, as in 'It''s'!B2"
+  },
+  "'It''s!B2": {
+   "read_error": "'It''s!B2 is no sheet name in single quotes with a range after it: double each apostrophe inside the quotes, as in 'It''s'!B2"
+  },
+  "'A'!B'C'!D1": {
+   "read_error": "'A'!B'C'!D1 is no sheet name in single quotes with a range after it: double each apostrophe inside the quotes, as in 'It''s'!B2"
+  }
+ },
+ "name_lookups": [
+  "\u00d8konomi!B3",
+  "Cafe\u0301!A2",
+  "\u00d8konomi!Elsewhere",
+  "\u00d8konomi!FY2024",
+  "\u00d8konomi!LocalConst",
+  "\u00d8konomi!Cut",
+  "My sheet!A1",
+  "My-sheet!A1"
+ ],
+ "refused_lookups": {
+  "rejected": {
+   "read_error": "Exception calling \"Item\" with \"1\" argument(s): \"refused\""
+  },
+  "no_name": {
+   "read_error": "Excel gave no answer for the range"
+  },
+  "no_names": {
+   "read_error": "Excel gave no answer for the names"
+  }
+ },
+ "failed_lookups": {
+  "0x800AC472": {
+   "read_error": "Exception calling \"Item\" with \"1\" argument(s): \"the stand-in lookup failed with 0x800AC472\""
+  },
+  "0x800706BA": {
+   "read_error": "Exception calling \"Item\" with \"1\" argument(s): \"the stand-in lookup failed with 0x800706BA\""
+  },
+  "0x80010105": {
+   "read_error": "Exception calling \"Item\" with \"1\" argument(s): \"the stand-in lookup failed with 0x80010105\""
+  },
+  "other": {
+   "read_error": "Exception calling \"Item\" with \"1\" argument(s): \"the stand-in lookup broke\""
+  }
+ },
+ "sets": {
+  "healthy_cell": "cells: 1",
+  "cut_to_one": "set target cut_to_one is not one cell",
+  "two_areas": "set target two_areas is not one cell"
+ },
+ "quoted_again": {
+  "'It''s'!$B$2": {
+   "address": "'It''s'!$B$2",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "'O''Neil''s'!$C$7": {
+   "address": "'O''Neil''s'!$C$7",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "'My sheet'!$A$1": {
+   "address": "'My sheet'!$A$1",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "'S'!$A$1": {
+   "address": "'S'!$A$1",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "'\u00d8konomi'!$A$1": {
+   "address": "'\u00d8konomi'!$A$1",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "'My sheet'!T[Owner''s share]": {
+   "address": "'My sheet'!T[Owner''s share]",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "'S'!T['#Items]": {
+   "address": "'S'!T['#Items]",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "'\u00d8konomi'!$B$3": {
+   "address": "'\u00d8konomi'!$B$3",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "'Data_1'!$A$1": {
+   "address": "'Data_1'!$A$1",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "'Cafe\u0301'!$A$2": {
+   "address": "'Cafe\u0301'!$A$2",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "'\u00d8konomi'!$B$2": {
+   "address": "'\u00d8konomi'!$B$2",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  },
+  "'\u00d8konomi'!$FY$2024": {
+   "address": "'\u00d8konomi'!$FY$2024",
+   "value": 5,
+   "text": "5",
+   "formula": "5",
+   "has_spill": false
+  }
+ }
+}

@@ -1,0 +1,22 @@
+{
+ "ok": false,
+ "error": "the job ended without a result: PowerShell printed no error",
+ "runner": {
+  "job_timeout_s": 300,
+  "timed_out": false,
+  "stopped": [
+   {
+    "pid": 45368,
+    "program": "EXCEL",
+    "outcome": "stopped"
+   }
+  ],
+  "office_logs": {
+   "session": "D0DEA5B1-50AA-4A38-9E55-49119D20A1C9",
+   "removed": 4,
+   "bytes": 83886080,
+   "left": 0,
+   "reason": null
+  }
+ }
+}

@@ -1,0 +1,87 @@
+{
+ "ok": false,
+ "error": "2 of 4 reads failed; the first is NoSuchName at open: Exception from HRESULT: 0x800A03EC",
+ "error_line": null,
+ "busy_retries": 0,
+ "excel": {
+  "version": "16.0",
+  "build": 20527,
+  "os": "Windows (64-bit) NT 10.00",
+  "pid": 49984,
+  "session": "1FD8FF89-4253-4AF4-BE48-EC3BCAF3919F",
+  "session_reason": null
+ },
+ "open": {
+  "load": "normal",
+  "failed_loads": {},
+  "repaired": false,
+  "external_links": null,
+  "file_format": 51
+ },
+ "settings": {
+  "calculation_as_opened": -4105,
+  "iteration": false,
+  "max_iterations": 100,
+  "max_change": 0.001,
+  "force_full_calculation": false,
+  "calculation_state": "done"
+ },
+ "base": {
+  "NoSuchName": {
+   "read_error": "Exception from HRESULT: 0x800A03EC"
+  },
+  "Result": {
+   "address": "'Model'!$B$4",
+   "value": 110.25,
+   "text": "110.25",
+   "formula": "=B3*(1+Growth)",
+   "has_spill": false
+  }
+ },
+ "errors": [],
+ "errors_unscanned": [],
+ "after": null,
+ "reopened": {
+  "open": {
+   "load": "normal",
+   "failed_loads": {},
+   "repaired": false,
+   "external_links": null,
+   "file_format": 51
+  },
+  "values": {
+   "NoSuchName": {
+    "read_error": "Exception from HRESULT: 0x800A03EC"
+   },
+   "Result": {
+    "address": "'Model'!$B$4",
+    "value": 110.25,
+    "text": "110.25",
+    "formula": "=B3*(1+Growth)",
+    "has_spill": false
+   }
+  }
+ },
+ "timings_ms": {
+  "start": 4058,
+  "open": 5056,
+  "rebuild": 5270,
+  "read": 5932,
+  "scan": 6188,
+  "reopen": 6685,
+  "end": 10189
+ },
+ "office_logs": {
+  "session": "1FD8FF89-4253-4AF4-BE48-EC3BCAF3919F",
+  "removed": 4,
+  "bytes": 1928808,
+  "left": 0,
+  "reason": null
+ },
+ "saved": "/home/maxfa/worktrees/excel-ref-history/public/skills/excel-com-wsl/--no-excel/unread-saved.xlsx",
+ "runner": {
+  "job_timeout_s": 300,
+  "timed_out": false,
+  "stopped": []
+ }
+}

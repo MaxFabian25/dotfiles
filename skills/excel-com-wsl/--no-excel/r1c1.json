@@ -1,0 +1,83 @@
+{
+ "ok": true,
+ "error": null,
+ "error_line": null,
+ "busy_retries": 0,
+ "excel": {
+  "version": "16.0",
+  "build": 20527,
+  "os": "Windows (64-bit) NT 10.00",
+  "pid": 46224,
+  "session": "D9291F70-6715-4F74-B4EF-185C55DAD286",
+  "session_reason": null
+ },
+ "open": {
+  "load": "normal",
+  "failed_loads": {},
+  "repaired": false,
+  "external_links": null,
+  "file_format": 51
+ },
+ "settings": {
+  "calculation_as_opened": -4105,
+  "iteration": false,
+  "max_iterations": 100,
+  "max_change": 0.001,
+  "force_full_calculation": false,
+  "calculation_state": "done"
+ },
+ "base": {
+  "Clean!B2": {
+   "address": "'Clean'!$B$2",
+   "value": 10,
+   "text": "10",
+   "formula": "=A1*2",
+   "has_spill": false
+  }
+ },
+ "errors": [
+  "'Column'!C10:C12"
+ ],
+ "errors_unscanned": [],
+ "after": null,
+ "reopened": {
+  "open": {
+   "load": "normal",
+   "failed_loads": {},
+   "repaired": false,
+   "external_links": null,
+   "file_format": 51
+  },
+  "values": {
+   "Clean!B2": {
+    "address": "'Clean'!$B$2",
+    "value": 10,
+    "text": "10",
+    "formula": "=A1*2",
+    "has_spill": false
+   }
+  }
+ },
+ "timings_ms": {
+  "start": 5379,
+  "open": 6373,
+  "rebuild": 6527,
+  "read": 7305,
+  "scan": 7741,
+  "reopen": 8207,
+  "end": 11258
+ },
+ "office_logs": {
+  "session": "D9291F70-6715-4F74-B4EF-185C55DAD286",
+  "removed": 4,
+  "bytes": 2090663,
+  "left": 0,
+  "reason": null
+ },
+ "saved": "/home/maxfa/worktrees/excel-ref-history/public/skills/excel-com-wsl/--no-excel/r1c1-saved.xlsx",
+ "runner": {
+  "job_timeout_s": 300,
+  "timed_out": false,
+  "stopped": []
+ }
+}

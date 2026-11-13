@@ -1,0 +1,1 @@
+excel.py: ok=False load=normal errors=0 unscanned_sheets=0 read_errors=12 office_logs_left=0 error=12 of 16 reads failed; the first is S!A1:A2,C1:C2 at open: range has 2 rectangles; read each rectangle by its own REF

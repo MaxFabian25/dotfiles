@@ -1,0 +1,89 @@
+{
+ "ok": true,
+ "error": null,
+ "error_line": null,
+ "busy_retries": 0,
+ "excel": {
+  "version": "16.0",
+  "build": 20527,
+  "os": "Windows (64-bit) NT 10.00",
+  "pid": 49416,
+  "session": "6C5A155F-65C4-4E21-8A1C-E431B7BB9DB6",
+  "session_reason": null
+ },
+ "open": {
+  "load": "normal",
+  "failed_loads": {},
+  "repaired": false,
+  "external_links": null,
+  "file_format": 51
+ },
+ "settings": {
+  "calculation_as_opened": -4105,
+  "iteration": false,
+  "max_iterations": 100,
+  "max_change": 0.001,
+  "force_full_calculation": false,
+  "calculation_state": "done"
+ },
+ "base": {
+  "Result": {
+   "address": "'Model'!$B$4",
+   "value": 110.25,
+   "text": "110.25",
+   "formula": "=B3*(1+Growth)",
+   "has_spill": false
+  }
+ },
+ "errors": [],
+ "errors_unscanned": [],
+ "after": {
+  "Result": {
+   "address": "'Model'!$B$4",
+   "value": 242.00000000000006,
+   "text": "242",
+   "formula": "=B3*(1+Growth)",
+   "has_spill": false
+  }
+ },
+ "reopened": {
+  "open": {
+   "load": "normal",
+   "failed_loads": {},
+   "repaired": false,
+   "external_links": null,
+   "file_format": 51
+  },
+  "values": {
+   "Result": {
+    "address": "'Model'!$B$4",
+    "value": 242.00000000000006,
+    "text": "242",
+    "formula": "=B3*(1+Growth)",
+    "has_spill": false
+   }
+  }
+ },
+ "timings_ms": {
+  "start": 3763,
+  "open": 5223,
+  "rebuild": 5441,
+  "read": 6002,
+  "scan": 6225,
+  "after": 6911,
+  "reopen": 7560,
+  "end": 11158
+ },
+ "office_logs": {
+  "session": "6C5A155F-65C4-4E21-8A1C-E431B7BB9DB6",
+  "removed": 4,
+  "bytes": 1919218,
+  "left": 0,
+  "reason": null
+ },
+ "runner": {
+  "job_timeout_s": 300,
+  "timed_out": false,
+  "stopped": []
+ }
+}

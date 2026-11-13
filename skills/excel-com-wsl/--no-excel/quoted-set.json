@@ -1,0 +1,70 @@
+{
+ "ok": false,
+ "error": "'It's'!A1 is no sheet name in single quotes with a range after it: double each apostrophe inside the quotes, as in 'It''s'!B2",
+ "error_line": 127,
+ "busy_retries": 0,
+ "excel": {
+  "version": "16.0",
+  "build": 20527,
+  "os": "Windows (64-bit) NT 10.00",
+  "pid": 34804,
+  "session": "00284933-B836-44DD-83D8-14726F1494AD",
+  "session_reason": null
+ },
+ "open": {
+  "load": "normal",
+  "failed_loads": {},
+  "repaired": false,
+  "external_links": null,
+  "file_format": 51
+ },
+ "settings": {
+  "calculation_as_opened": -4105,
+  "iteration": false,
+  "max_iterations": 100,
+  "max_change": 0.001,
+  "force_full_calculation": false,
+  "calculation_state": "done"
+ },
+ "base": {
+  "'It''s'!C3": {
+   "address": "'It''s'!$C$3",
+   "value": 6,
+   "text": "6",
+   "formula": "=A1*3",
+   "has_spill": false
+  }
+ },
+ "errors": [
+  "'Spill'!C1,A2",
+  "'SpillOnly'!B4:B5",
+  "'Merged'!D3",
+  "'Joined'!A1",
+  "'Many'!C2,E4,G6,I8,K10,M12,A14,C16,E18,G20,I22,K24,M26,A28,C30,E32,G34,I36,K38,M40,A42,C44,E46,G48,I50,K52,M54,A56,C58,E60,G62,I64,K66,M68,A70,C72,E74,G76,I78,K80,M82,A84,C86,E88,G90,I92,K94,M96,A98,C100,E102,G104,I106,K108,M110,A112,C114,E116,G118,I120,K122,M124,A126,C128,E130,G132,I134,K136,M138,A140,C142,E144,G146,I148,K150,M152,A154,C156,E158,G160,I162,K164,M166,A168,C170,E172,G174,I176,K178,M180,A182,C184,E186,G188,I190,K192,M194,A196,C198,E200,G202,I204,K206,M208,A210,C212,E214,G216,I218,K220,M222,A224,C226,E228,G230,I232,K234,M236,A238,C240,E242,G244,I246,K248,M250,A252,C254,E256,G258,I260,K262,M264,A266,C268,E270,G272,I274,K276,M278,A280,C282,E284,G286,I288,K290,M292,A294,C296,E298,G300",
+  "'It''s'!B2",
+  "'Far'!A1,ZZ900000"
+ ],
+ "errors_unscanned": [],
+ "after": null,
+ "reopened": null,
+ "timings_ms": {
+  "start": 4041,
+  "open": 4914,
+  "rebuild": 5069,
+  "read": 5667,
+  "scan": 6664,
+  "end": 9763
+ },
+ "office_logs": {
+  "session": "00284933-B836-44DD-83D8-14726F1494AD",
+  "removed": 4,
+  "bytes": 1857337,
+  "left": 0,
+  "reason": null
+ },
+ "runner": {
+  "job_timeout_s": 300,
+  "timed_out": false,
+  "stopped": []
+ }
+}

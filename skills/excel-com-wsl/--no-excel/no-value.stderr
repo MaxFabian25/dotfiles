@@ -1,0 +1,5 @@
+usage: excel.py [-h] [--read REF] [--set REF=VALUE] [--save SAVE]
+                [--json JSON] [--job-timeout JOB_TIMEOUT]
+                [--calc-timeout CALC_TIMEOUT]
+                workbook
+excel.py: error: --set needs REF=VALUE, not Growth

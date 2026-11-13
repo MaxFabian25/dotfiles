@@ -1,0 +1,1 @@
+excel.py: ok=False load=normal errors=0 unscanned_sheets=0 read_errors=2 office_logs_left=0 error=2 of 4 reads failed; the first is NoSuchName at open: Exception from HRESULT: 0x800A03EC

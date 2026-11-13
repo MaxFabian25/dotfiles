@@ -1,0 +1,62 @@
+{
+ "ok": false,
+ "error": "Excel gave no range for the name Fixed, whose text has 2 characters: it has none for a name that refers to no cells, to cells on several sheets, or to more rectangles than it gives as one range, so give each rectangle as a REF of its own",
+ "error_line": 94,
+ "busy_retries": 0,
+ "excel": {
+  "version": "16.0",
+  "build": 20527,
+  "os": "Windows (64-bit) NT 10.00",
+  "pid": 46472,
+  "session": "163D2E72-C180-4499-88C7-F59BD6DE9DCF",
+  "session_reason": null
+ },
+ "open": {
+  "load": "normal",
+  "failed_loads": {},
+  "repaired": false,
+  "external_links": null,
+  "file_format": 51
+ },
+ "settings": {
+  "calculation_as_opened": -4105,
+  "iteration": false,
+  "max_iterations": 100,
+  "max_change": 0.001,
+  "force_full_calculation": false,
+  "calculation_state": "done"
+ },
+ "base": {
+  "S!A1": {
+   "address": "'S'!$A$1",
+   "value": 101,
+   "text": "101",
+   "formula": "101",
+   "has_spill": false
+  }
+ },
+ "errors": [],
+ "errors_unscanned": [],
+ "after": null,
+ "reopened": null,
+ "timings_ms": {
+  "start": 3795,
+  "open": 5066,
+  "rebuild": 5372,
+  "read": 6358,
+  "scan": 6786,
+  "end": 10038
+ },
+ "office_logs": {
+  "session": "163D2E72-C180-4499-88C7-F59BD6DE9DCF",
+  "removed": 2,
+  "bytes": 1838156,
+  "left": 0,
+  "reason": null
+ },
+ "runner": {
+  "job_timeout_s": 300,
+  "timed_out": false,
+  "stopped": []
+ }
+}

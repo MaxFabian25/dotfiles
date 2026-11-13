@@ -1,0 +1,153 @@
+{
+ "ok": true,
+ "error": null,
+ "error_line": null,
+ "busy_retries": 0,
+ "excel": {
+  "version": "16.0",
+  "build": 20527,
+  "os": "Windows (64-bit) NT 10.00",
+  "pid": 36800,
+  "session": "21115746-F8B1-4FAE-A484-6C8A9379596F",
+  "session_reason": null
+ },
+ "open": {
+  "load": "normal",
+  "failed_loads": {},
+  "repaired": false,
+  "external_links": null,
+  "file_format": 51
+ },
+ "settings": {
+  "calculation_as_opened": -4105,
+  "iteration": false,
+  "max_iterations": 100,
+  "max_change": 0.001,
+  "force_full_calculation": false,
+  "calculation_state": "done"
+ },
+ "base": {
+  "Growth": {
+   "address": "'Model'!$B$1",
+   "value": 0.05,
+   "text": "0.05",
+   "formula": "0.05",
+   "has_spill": false
+  },
+  "Result": {
+   "address": "'Model'!$B$4",
+   "value": 110.25,
+   "text": "110.25",
+   "formula": "=B3*(1+Growth)",
+   "has_spill": false
+  },
+  "Model!B2:B4": {
+   "address": "'Model'!$B$2:$B$4",
+   "values": [
+    [
+     100
+    ],
+    [
+     105
+    ],
+    [
+     110.25
+    ]
+   ]
+  }
+ },
+ "errors": [],
+ "errors_unscanned": [],
+ "after": {
+  "Growth": {
+   "address": "'Model'!$B$1",
+   "value": 0.1,
+   "text": "0.1",
+   "formula": "0.1",
+   "has_spill": false
+  },
+  "Result": {
+   "address": "'Model'!$B$4",
+   "value": 121.00000000000003,
+   "text": "121",
+   "formula": "=B3*(1+Growth)",
+   "has_spill": false
+  },
+  "Model!B2:B4": {
+   "address": "'Model'!$B$2:$B$4",
+   "values": [
+    [
+     100
+    ],
+    [
+     110.00000000000001
+    ],
+    [
+     121.00000000000003
+    ]
+   ]
+  }
+ },
+ "reopened": {
+  "open": {
+   "load": "normal",
+   "failed_loads": {},
+   "repaired": false,
+   "external_links": null,
+   "file_format": 51
+  },
+  "values": {
+   "Growth": {
+    "address": "'Model'!$B$1",
+    "value": 0.1,
+    "text": "0.1",
+    "formula": "0.1",
+    "has_spill": false
+   },
+   "Result": {
+    "address": "'Model'!$B$4",
+    "value": 121.00000000000003,
+    "text": "121",
+    "formula": "=B3*(1+Growth)",
+    "has_spill": false
+   },
+   "Model!B2:B4": {
+    "address": "'Model'!$B$2:$B$4",
+    "values": [
+     [
+      100
+     ],
+     [
+      110.00000000000001
+     ],
+     [
+      121.00000000000003
+     ]
+    ]
+   }
+  }
+ },
+ "timings_ms": {
+  "start": 3015,
+  "open": 3881,
+  "rebuild": 4129,
+  "read": 5156,
+  "scan": 5438,
+  "after": 6085,
+  "reopen": 6573,
+  "end": 9738
+ },
+ "office_logs": {
+  "session": "21115746-F8B1-4FAE-A484-6C8A9379596F",
+  "removed": 4,
+  "bytes": 1957073,
+  "left": 0,
+  "reason": null
+ },
+ "saved": "/home/maxfa/worktrees/excel-ref-history/public/skills/excel-com-wsl/--no-excel/tiny-saved.xlsx",
+ "runner": {
+  "job_timeout_s": 300,
+  "timed_out": false,
+  "stopped": []
+ }
+}

@@ -1,0 +1,140 @@
+{
+ "ok": true,
+ "error": null,
+ "error_line": null,
+ "busy_retries": 0,
+ "excel": {
+  "version": "16.0",
+  "build": 20527,
+  "os": "Windows (64-bit) NT 10.00",
+  "pid": 30488,
+  "session": "B6DA5138-EA65-42E6-B9B6-4954DEEF561E",
+  "session_reason": null
+ },
+ "open": {
+  "load": "normal",
+  "failed_loads": {},
+  "repaired": false,
+  "external_links": null,
+  "file_format": 51
+ },
+ "settings": {
+  "calculation_as_opened": -4105,
+  "iteration": false,
+  "max_iterations": 100,
+  "max_change": 0.001,
+  "force_full_calculation": false,
+  "calculation_state": "done"
+ },
+ "base": {
+  "S!A1": {
+   "address": "'S'!$A$1",
+   "value": {
+    "error": "#DIV/0!"
+   },
+   "text": "#DIV/0!",
+   "formula": "=1/0",
+   "has_spill": false
+  },
+  "S!A2": {
+   "address": "'S'!$A$2",
+   "value": {
+    "error": "#N/A"
+   },
+   "text": "#N/A",
+   "formula": "=NA()",
+   "has_spill": false
+  },
+  "S!A1:A3": {
+   "address": "'S'!$A$1:$A$3",
+   "values": [
+    [
+     {
+      "error": "#DIV/0!"
+     }
+    ],
+    [
+     {
+      "error": "#N/A"
+     }
+    ],
+    [
+     5
+    ]
+   ]
+  }
+ },
+ "errors": [
+  "'S'!A1:A2"
+ ],
+ "errors_unscanned": [],
+ "after": null,
+ "reopened": {
+  "open": {
+   "load": "normal",
+   "failed_loads": {},
+   "repaired": false,
+   "external_links": null,
+   "file_format": 51
+  },
+  "values": {
+   "S!A1": {
+    "address": "'S'!$A$1",
+    "value": {
+     "error": "#DIV/0!"
+    },
+    "text": "#DIV/0!",
+    "formula": "=1/0",
+    "has_spill": false
+   },
+   "S!A2": {
+    "address": "'S'!$A$2",
+    "value": {
+     "error": "#N/A"
+    },
+    "text": "#N/A",
+    "formula": "=NA()",
+    "has_spill": false
+   },
+   "S!A1:A3": {
+    "address": "'S'!$A$1:$A$3",
+    "values": [
+     [
+      {
+       "error": "#DIV/0!"
+      }
+     ],
+     [
+      {
+       "error": "#N/A"
+      }
+     ],
+     [
+      5
+     ]
+    ]
+   }
+  }
+ },
+ "timings_ms": {
+  "start": 3681,
+  "open": 4534,
+  "rebuild": 4720,
+  "read": 5486,
+  "scan": 5817,
+  "reopen": 6591,
+  "end": 19820
+ },
+ "office_logs": {
+  "session": "B6DA5138-EA65-42E6-B9B6-4954DEEF561E",
+  "removed": 4,
+  "bytes": 1981945,
+  "left": 0,
+  "reason": null
+ },
+ "runner": {
+  "job_timeout_s": 300,
+  "timed_out": false,
+  "stopped": []
+ }
+}

@@ -1,0 +1,91 @@
+{
+ "ok": false,
+ "error": "the error scan could not list the error cells of 1 sheet; the first is Scattered: its error values are spread over too many cells to list: the scan reads at most 2000000 cells of one sheet",
+ "error_line": null,
+ "busy_retries": 0,
+ "excel": {
+  "version": "16.0",
+  "build": 20527,
+  "os": "Windows (64-bit) NT 10.00",
+  "pid": 28640,
+  "session": "D9539474-4B70-4120-A73A-E2E9D83AD286",
+  "session_reason": null
+ },
+ "open": {
+  "load": "normal",
+  "failed_loads": {},
+  "repaired": false,
+  "external_links": null,
+  "file_format": 51
+ },
+ "settings": {
+  "calculation_as_opened": -4105,
+  "iteration": false,
+  "max_iterations": 100,
+  "max_change": 0.001,
+  "force_full_calculation": false,
+  "calculation_state": "done"
+ },
+ "base": {
+  "Small!A1": {
+   "address": "'Small'!$A$1",
+   "value": {
+    "error": "#N/A"
+   },
+   "text": "#N/A",
+   "formula": "=NA()",
+   "has_spill": false
+  }
+ },
+ "errors": [
+  "'Small'!A1"
+ ],
+ "errors_unscanned": [
+  {
+   "sheet": "Scattered",
+   "reason": "its error values are spread over too many cells to list: the scan reads at most 2000000 cells of one sheet"
+  }
+ ],
+ "after": null,
+ "reopened": {
+  "open": {
+   "load": "normal",
+   "failed_loads": {},
+   "repaired": false,
+   "external_links": null,
+   "file_format": 51
+  },
+  "values": {
+   "Small!A1": {
+    "address": "'Small'!$A$1",
+    "value": {
+     "error": "#N/A"
+    },
+    "text": "#N/A",
+    "formula": "=NA()",
+    "has_spill": false
+   }
+  }
+ },
+ "timings_ms": {
+  "start": 4359,
+  "open": 5102,
+  "rebuild": 5309,
+  "read": 6063,
+  "scan": 12794,
+  "reopen": 13362,
+  "end": 16551
+ },
+ "office_logs": {
+  "session": "D9539474-4B70-4120-A73A-E2E9D83AD286",
+  "removed": 2,
+  "bytes": 2376711,
+  "left": 0,
+  "reason": null
+ },
+ "runner": {
+  "job_timeout_s": 300,
+  "timed_out": false,
+  "stopped": []
+ }
+}
