@@ -53,7 +53,8 @@ def stand_in_app_server(script):
     with tempfile.TemporaryDirectory() as temporary:
         home = Path(temporary)
         (home / 'app-server').write_text(script, encoding='utf-8', newline='\n')
-        with patch('read_account_skill.portable.codex_cli', return_value=sys.executable), \
+        # Windows' venv launcher keeps stdout open after the stand-in closes its copy.
+        with patch('read_account_skill.portable.codex_cli', return_value=sys._base_executable), \
                 patch.object(Path, 'home', return_value=home):
             yield home
 
