@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path, PurePosixPath
+import stat
 import subprocess
 
 from description import (AlignedInstall, BuildSource, CourseRecipe, EngineInstall, GenericRecipe, Hooks, MarketplaceInstall,
@@ -10,22 +12,82 @@ from host_state import ANTHROPIC_SKILLS, CATALOGS, PRIMARY_RUNTIME, Host, SkillM
 import portable
 
 
-def _worktree(path: Path) -> Path:
-    existing = next(parent for parent in (path, *path.parents) if parent.exists())
+class _PlacementDiscoveryError(Exception):
+    pass
+
+
+def _worktree(path: Path) -> Path | None:
     try:
-        top = subprocess.run([*portable.GIT, '-C', str(existing), 'rev-parse', '--show-toplevel'],
-                             capture_output=True, text=True, check=True).stdout.strip()
-        return Path(top).resolve()
-    except (OSError, subprocess.CalledProcessError):
-        return path.resolve()
+        resolved = path.resolve()
+        for existing in (resolved, *resolved.parents):
+            try:
+                mode = existing.stat().st_mode
+            except FileNotFoundError:
+                continue
+            if not stat.S_ISDIR(mode):
+                raise NotADirectoryError(f'{existing} is not a directory')
+            break
+        else:
+            raise FileNotFoundError(f'{path} has no existing ancestor')
+        environment = os.environ.copy()
+        for name in ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_CEILING_DIRECTORIES',
+                     'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT'):
+            environment.pop(name, None)
+        environment.update(LC_ALL='C', LANGUAGE='C', GIT_DISCOVERY_ACROSS_FILESYSTEM='1')
+        result = subprocess.run([*portable.GIT, '-C', str(existing), 'rev-parse', '--show-toplevel'],
+                                capture_output=True, check=False, timeout=30, env=environment)
+        if result.returncode == 0:
+            invalid = f'git returned an invalid worktree path: {result.stdout!r}'
+            if not result.stdout.endswith(b'\n'):
+                raise ValueError(invalid)
+            top = result.stdout[:-2] if os.name == 'nt' and result.stdout.endswith(b'\r\n') else result.stdout[:-1]
+            if not top or b'\0' in top:
+                raise ValueError(invalid)
+            tree = Path(os.fsdecode(top))
+            if not tree.is_absolute():
+                raise ValueError(invalid)
+            tree = tree.resolve(strict=True)
+            if not stat.S_ISDIR(tree.stat().st_mode) or not existing.is_relative_to(tree):
+                raise ValueError(invalid)
+            return tree
+        detail = f'git exited {result.returncode}: {result.stderr.decode("utf-8", "backslashreplace").rstrip() or "no diagnostic"}'
+        if result.stdout:
+            detail += f'; stdout={result.stdout.decode("utf-8", "backslashreplace")!r}'
+        absent = b'fatal: not a git repository (or any of the parent directories): .git\n'
+        if (result.returncode == 128 and not result.stdout
+                and result.stderr in (absent, absent.replace(b'\n', b'\r\n') if os.name == 'nt' else absent)):
+            for ancestor in (existing, *existing.parents):
+                marker = ancestor / '.git'
+                try:
+                    marker.lstat()
+                except FileNotFoundError:
+                    continue
+                raise _PlacementDiscoveryError(f'{path}:: cannot discover Git worktree: {detail}; found Git metadata at {marker}')
+            return None
+        raise _PlacementDiscoveryError(f'{path}:: cannot discover Git worktree: {detail}')
+    except subprocess.TimeoutExpired as error:
+        output = (error.stdout or b'').decode('utf-8', 'backslashreplace')
+        diagnostic = (error.stderr or b'').decode('utf-8', 'backslashreplace')
+        raise _PlacementDiscoveryError(f'{path}:: cannot discover Git worktree: git timed out after {error.timeout}s; '
+                                       f'stdout={output!r}; stderr={diagnostic!r}') from error
+    except (OSError, RuntimeError, ValueError) as error:
+        raise _PlacementDiscoveryError(f'{path}:: cannot discover Git worktree: {error}') from error
 
 
 def check_placement(roots: Roots) -> list[str]:
     """Neither root may sit inside the other's git worktree."""
     if roots.private is None:
         return []
-    public_tree, private_tree = _worktree(roots.public), _worktree(roots.private)
-    if roots.private.resolve().is_relative_to(public_tree) or roots.public.resolve().is_relative_to(private_tree):
+    try:
+        public_path, private_path = roots.public.resolve(), roots.private.resolve()
+        public_tree, private_tree = _worktree(roots.public), _worktree(roots.private)
+    except _PlacementDiscoveryError as error:
+        return [str(error)]
+    except (OSError, RuntimeError, ValueError) as error:
+        return [f'{roots.public}, {roots.private}:: cannot resolve placement roots: {error}']
+    public_boundary = public_tree if public_tree is not None else public_path
+    private_boundary = private_tree if private_tree is not None else private_path
+    if private_path.is_relative_to(public_boundary) or public_path.is_relative_to(private_boundary):
         return [f'{roots.private}:: the private root may not sit inside the public root\'s worktree, or the reverse']
     return []
 

@@ -1,9 +1,12 @@
+import errno
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ENGINE = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).resolve().parent / 'fixtures/setup'
@@ -12,6 +15,7 @@ sys.path.insert(0, str(ENGINE))
 
 import host_state
 import description
+import description_checks
 import description_toml
 import runtime_pin
 H, M = host_state.Host, host_state.SkillMode
@@ -314,6 +318,294 @@ description = "Snapshot skills."
             self.assertEqual(sorted(description_toml.render_root(copy, description.Visibility.PRIVATE, None)),
                              ['hosts/codex.toml', 'lock.toml', 'packages/example-connector.toml', 'packages/example-course.toml',
                               'repos/example-skills.toml', 'skills/example-skill.toml'])
+
+
+class PlacementTest(unittest.TestCase):
+    def setUp(self):
+        environment = {name: value for name, value in os.environ.items() if not name.startswith('GIT_')}
+        environment.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull, LC_ALL='C', LANGUAGE='C')
+        self.enterContext(mock.patch.dict(os.environ, environment, clear=True))
+
+    def git(self, *arguments):
+        return subprocess.run([*description_checks.portable.GIT, *map(str, arguments)],
+                              check=True, capture_output=True, timeout=30)
+
+    def assert_problem(self, roots, *fragments):
+        problems = description_checks.check_placement(roots)
+        self.assertTrue(problems)
+        for fragment in fragments:
+            self.assertIn(fragment, '\n'.join(problems))
+
+    def test_ownership_refusal_stops_loading_before_private_content(self):
+        for refused in ('public', 'private'):
+            with self.subTest(refused=refused), Roots() as roots:
+                for root in (roots.public, roots.private):
+                    subprocess.run(['git', 'init', '-q', str(root.parent)], check=True, capture_output=True, timeout=30)
+                allowed = roots.private if refused == 'public' else roots.public
+                command = (*description_checks.portable.GIT, '-c', 'safe.directory=',
+                           '-c', f'safe.directory={allowed.parent.resolve().as_posix()}')
+                with mock.patch.object(description_checks.portable, 'GIT', command), \
+                        mock.patch.dict(os.environ, {'GIT_TEST_ASSUME_DIFFERENT_OWNER': '1'}):
+                    result = subprocess.run([*command, '-C', str(getattr(roots, refused)), 'rev-parse', '--show-toplevel'],
+                                            capture_output=True, timeout=30)
+                    self.assertEqual(result.returncode, 128)
+                    self.assertIn(b'dubious ownership', result.stderr)
+                    with mock.patch.object(description_toml.portable, 'read_utf8',
+                                           wraps=description_toml.portable.read_utf8) as reads:
+                        with self.assertRaises(description.DescriptionError) as caught:
+                            description_toml.load(roots.roots())
+                problem = '\n'.join(caught.exception.problems)
+                self.assertIn('dubious ownership', problem)
+                self.assertIn(str(getattr(roots, refused)), problem)
+                paths_read = [Path(call.args[0]).resolve() for call in reads.call_args_list]
+                self.assertTrue(any(path.is_relative_to(roots.public.resolve()) for path in paths_read))
+                self.assertFalse(any(path.is_relative_to(roots.private.resolve()) for path in paths_read))
+
+    def test_public_only_does_not_start_git(self):
+        with Roots() as roots, mock.patch.object(description_checks.subprocess, 'run') as run:
+            self.assertEqual(description_checks.check_placement(roots.roots(private=False)), [])
+            self.assertTrue(description_toml.load(roots.roots(private=False)).packages)
+        run.assert_not_called()
+
+    def test_plain_siblings_and_missing_leaves_are_supported(self):
+        with Roots() as roots:
+            for public, private in ((roots.public, roots.private),
+                                    (roots.public / 'missing', roots.private / 'missing'),
+                                    (roots.public / 'missing/a', roots.public / 'missing/b')):
+                with self.subTest(public=public, private=private):
+                    self.assertEqual(description_checks.check_placement(description.Roots(public, private)), [])
+
+    def test_nested_plain_roots_fail_in_either_direction(self):
+        with Roots() as roots:
+            nested = roots.public / 'nested'
+            nested.mkdir()
+            for outer, inner in ((roots.public, nested), (nested / 'missing', nested / 'missing/inside')):
+                for public, private in ((outer, inner), (inner, outer)):
+                    with self.subTest(public=public, private=private):
+                        self.assert_problem(description.Roots(public, private), 'may not sit inside')
+
+    def test_launch_failures_and_timeouts_are_description_errors(self):
+        cases = (
+            (FileNotFoundError('git executable is missing'), 'git executable is missing'),
+            (PermissionError('git executable is denied'), 'git executable is denied'),
+            (subprocess.TimeoutExpired(['git'], 30, output=b'partial output', stderr=b'blocked\xff'), 'timed out'),
+            (subprocess.TimeoutExpired(['git'], 30), 'timed out'),
+        )
+        for failure, diagnostic in cases:
+            with self.subTest(failure=failure), Roots() as roots, \
+                    mock.patch.object(description_checks.subprocess, 'run', side_effect=failure) as run:
+                with self.assertRaises(description.DescriptionError) as caught:
+                    description_toml.load(roots.roots())
+                problem = '\n'.join(caught.exception.problems)
+                self.assertIn(str(roots.public), problem)
+                self.assertIn(diagnostic, problem)
+                self.assertEqual(run.call_args.kwargs['timeout'], 30)
+                if isinstance(failure, subprocess.TimeoutExpired) and failure.stdout:
+                    self.assertIn('partial output', problem)
+                    self.assertIn('blocked', problem)
+                    self.assertIn('xff', problem)
+
+    def test_unrecognised_git_errors_never_mean_no_repository(self):
+        absent = b'fatal: not a git repository (or any of the parent directories): .git\n'
+        cases = (
+            (1, b'', absent, 'git exited 1'),
+            (128, b'', b'fatal: permission denied\n', 'permission denied'),
+            (128, b'', b'\xffbad diagnostic\n', '\\xffbad diagnostic'),
+            (128, b'', b'', 'no diagnostic'),
+            (128, b'', absent + b'extra\n', 'extra'),
+            (128, b'', absent[:-1], 'git exited 128'),
+            (128, b'unexpected output', absent, 'unexpected output'),
+        )
+        with Roots() as roots:
+            for status, output, diagnostic, expected in cases:
+                result = subprocess.CompletedProcess(['git'], status, output, diagnostic)
+                with self.subTest(status=status, output=output, diagnostic=diagnostic), \
+                        mock.patch.object(description_checks.subprocess, 'run', return_value=result):
+                    self.assert_problem(roots.roots(), str(roots.public), expected)
+
+    def test_successful_git_output_must_name_an_existing_containing_directory(self):
+        with Roots() as roots:
+            encoded = os.fsencode(roots.public.parent.resolve())
+            cases = [b'', b'\n', b'relative\n', encoded, encoded + b'X', encoded + b'\nextra\n', encoded + b'\0\n',
+                     os.fsencode(roots.public / 'missing') + b'\n',
+                     os.fsencode(roots.public / 'setup.toml') + b'\n',
+                     os.fsencode(roots.private.resolve()) + b'\n']
+            if roots.public.resolve().anchor == Path.cwd().anchor:
+                cases.append(os.fsencode(os.path.relpath(roots.public.parent.resolve())) + b'\n')
+            private = subprocess.CompletedProcess(['git'], 0, os.fsencode(roots.private.parent.resolve()) + b'\n', b'')
+            for output in cases:
+                result = subprocess.CompletedProcess(['git'], 0, output, b'')
+                with self.subTest(output=output), \
+                        mock.patch.object(description_checks.subprocess, 'run', side_effect=[result, private]):
+                    self.assert_problem(roots.roots(), str(roots.public), 'cannot discover Git worktree')
+
+    def test_native_git_line_endings(self):
+        with Roots() as roots:
+            for ending in (b'\n', b'\r\n'):
+                for status in (0, 128):
+                    results = [subprocess.CompletedProcess(
+                        ['git'], status, os.fsencode(root.parent.resolve()) + ending if status == 0 else b'',
+                        b'fatal: not a git repository (or any of the parent directories): .git' + ending if status else b'')
+                        for root in (roots.public, roots.private)]
+                    with self.subTest(ending=ending, status=status), \
+                            mock.patch.object(description_checks.subprocess, 'run', side_effect=results):
+                        if ending == b'\r\n' and os.name != 'nt':
+                            self.assert_problem(roots.roots(), 'cannot discover Git worktree')
+                        else:
+                            self.assertEqual(description_checks.check_placement(roots.roots()), [])
+
+    def test_existing_file_is_not_a_discovery_directory(self):
+        with Roots() as roots:
+            file = roots.public / 'setup.toml'
+            self.assert_problem(description.Roots(file, roots.private), str(file), 'not a directory')
+
+    def test_unreadable_discovery_directory_fails(self):
+        with Roots() as roots:
+            directory = roots.public.resolve()
+            original = Path.stat
+
+            def stat(path, *args, **kwargs):
+                if path == directory:
+                    raise PermissionError('discovery directory is unreadable')
+                return original(path, *args, **kwargs)
+
+            with mock.patch.object(Path, 'stat', stat):
+                self.assert_problem(roots.roots(), str(roots.public), 'discovery directory is unreadable')
+
+    def test_unreadable_git_marker_fails(self):
+        with Roots() as roots:
+            marker = roots.public.parent.resolve() / '.git'
+            original = Path.lstat
+
+            def lstat(path, *args, **kwargs):
+                if path == marker:
+                    raise PermissionError(f'cannot inspect {marker}')
+                return original(path, *args, **kwargs)
+
+            with mock.patch.object(Path, 'lstat', lstat):
+                self.assert_problem(roots.roots(), str(roots.public), f'cannot inspect {marker}')
+
+    def test_root_resolution_failure_is_a_placement_error(self):
+        with Roots() as roots, mock.patch.object(Path, 'resolve', side_effect=RuntimeError('symlink loop')):
+            self.assert_problem(roots.roots(), str(roots.public), 'symlink loop')
+
+    def test_damaged_git_metadata_never_means_no_repository(self):
+        for damaged in ('public', 'private'):
+            for damage in ('empty directory', 'missing HEAD', 'invalid HEAD'):
+                with self.subTest(damaged=damaged, damage=damage), Roots() as roots:
+                    root = getattr(roots, damaged)
+                    marker = root.parent / '.git'
+                    if damage == 'empty directory':
+                        marker.mkdir()
+                    else:
+                        self.git('init', '-q', root.parent)
+                        if damage == 'missing HEAD':
+                            (marker / 'HEAD').unlink()
+                        else:
+                            (marker / 'HEAD').write_bytes(b'not a valid HEAD\n')
+                    self.assert_problem(roots.roots(), str(root), str(marker.resolve()), 'found Git metadata')
+
+    @unittest.skipIf(os.name == 'nt', 'creating symbolic links requires a Windows privilege')
+    def test_broken_git_symlink_never_means_no_repository(self):
+        with Roots() as roots:
+            marker = roots.public.parent.resolve() / '.git'
+            marker.symlink_to(marker.parent / 'missing-metadata', target_is_directory=True)
+            self.assert_problem(roots.roots(), str(marker), 'found Git metadata')
+
+    def test_invalid_gitdir_and_bare_repositories_fail(self):
+        for kind in ('invalid gitdir', 'bare repository'):
+            with self.subTest(kind=kind), Roots() as roots:
+                if kind == 'invalid gitdir':
+                    (roots.public.parent / '.git').write_bytes(b'gitdir: missing\n')
+                else:
+                    self.git('init', '--bare', '-q', roots.public)
+                self.assert_problem(roots.roots(), str(roots.public), 'git exited 128')
+
+    def test_discovery_overrides_cannot_hide_or_redirect_a_containing_worktree(self):
+        with Roots() as roots:
+            repository = roots.public.parent.resolve()
+            inside = repository / 'private/setup'
+            inside.mkdir(parents=True)
+            self.git('init', '-q', repository)
+            self.git('init', '-q', roots.private.parent)
+            elsewhere = roots.private.parent.resolve()
+            cases = (
+                {'GIT_CEILING_DIRECTORIES': str(repository)},
+                {'GIT_DIR': str(elsewhere / '.git')},
+                {'GIT_WORK_TREE': str(elsewhere)},
+                {'GIT_COMMON_DIR': str(elsewhere / '.git')},
+                {'GIT_CONFIG_PARAMETERS': "'core.bare=true'"},
+                {'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': 'core.bare', 'GIT_CONFIG_VALUE_0': 'true'},
+                {'GIT_DISCOVERY_ACROSS_FILESYSTEM': '0', 'LC_ALL': 'fr_FR.UTF-8', 'LANGUAGE': 'fr'},
+            )
+            for overrides in cases:
+                with self.subTest(overrides=overrides), mock.patch.dict(os.environ, overrides), \
+                        mock.patch.object(description_checks.subprocess, 'run', wraps=subprocess.run) as run:
+                    self.assert_problem(description.Roots(roots.public, inside), 'may not sit inside')
+                    environment = run.call_args.kwargs['env']
+                    for name, value in overrides.items():
+                        self.assertEqual(os.environ[name], value)
+                        if name in ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_CEILING_DIRECTORIES',
+                                    'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT'):
+                            self.assertNotIn(name, environment)
+                    self.assertEqual(environment['GIT_DISCOVERY_ACROSS_FILESYSTEM'], '1')
+                    self.assertEqual(environment['LC_ALL'], 'C')
+                    self.assertEqual(environment['LANGUAGE'], 'C')
+
+    def test_linked_worktrees_use_their_own_containment_boundaries(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder).resolve()
+            main, linked = base / 'main', base / 'linked'
+            self.git('init', '-q', main)
+            self.git('-C', main, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                     'commit', '--allow-empty', '-qm', 'Initial fixture')
+            self.git('-C', main, 'worktree', 'add', '--detach', '-q', linked)
+            public, private = main / 'setup', linked / 'setup'
+            public.mkdir()
+            private.mkdir()
+            self.assertEqual(description_checks.check_placement(description.Roots(public, private)), [])
+            nested = linked / 'private/setup'
+            nested.mkdir(parents=True)
+            self.assert_problem(description.Roots(private, nested), 'may not sit inside')
+
+    def assert_named_worktree_containment(self, name):
+        with tempfile.TemporaryDirectory() as folder:
+            repository = Path(folder).resolve() / name
+            repository.mkdir()
+            self.git('init', '-q', repository)
+            public, private = repository / 'public/setup', repository / 'private/setup'
+            public.mkdir(parents=True)
+            private.mkdir(parents=True)
+            self.assert_problem(description.Roots(public, private), 'may not sit inside')
+
+    def test_non_ascii_worktree_paths_preserve_containment(self):
+        self.assert_named_worktree_containment('r\u00e9pertoire-\u6771')
+
+    @unittest.skipIf(os.name == 'nt', 'Windows does not preserve ordinary trailing-space directory names')
+    def test_trailing_spaces_in_worktree_paths_preserve_containment(self):
+        self.assert_named_worktree_containment('repository  ')
+
+    @unittest.skipIf(os.name == 'nt', 'Windows does not permit newlines in ordinary directory names')
+    def test_newline_worktree_paths_preserve_loading_and_containment(self):
+        for name in ('repository\nextra', 'repository\n', 'repository\r\n'):
+            with self.subTest(name=name), Roots() as roots:
+                repository = roots.public.parent / name
+                repository.mkdir()
+                self.git('init', '-q', repository)
+                roots.public = Path(shutil.move(roots.public, repository / 'setup'))
+                self.assertTrue(description_toml.load(roots.roots()).packages)
+                nested = repository / 'private/setup'
+                nested.mkdir(parents=True)
+                self.assert_problem(description.Roots(roots.public, nested), 'may not sit inside')
+
+    @unittest.skipIf(os.name == 'nt', 'raw undecodable filename bytes are a POSIX filesystem feature')
+    def test_raw_posix_worktree_paths_preserve_containment(self):
+        try:
+            self.assert_named_worktree_containment(os.fsdecode(b'repository-\xff'))
+        except OSError as error:
+            if error.errno in (errno.EILSEQ, errno.EINVAL):
+                self.skipTest(f'the filesystem does not support raw pathname bytes: {error}')
+            raise
 
 
 class LeakTest(unittest.TestCase):
