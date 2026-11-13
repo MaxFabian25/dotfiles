@@ -43,8 +43,10 @@ def refresh(setup, builder, names, *, owned=False):
             if entry.source is not None and any(p and any(i.managed for i in p.installs) for p in (entry.codex, entry.claude)):
                 built = builder.codex(entry, verify=False)
                 trees[Host.CODEX] = LockedTree(built.version, built.digest)
-                for built_claude in builder.claude(entry, built, verify=False).values():
+                claude = builder.claude(entry, built, verify=False)
+                for built_claude in claude.values():
                     trees[Host.CLAUDE] = LockedTree(built_claude.version, built_claude.digest)
+                builder.check_overlays(entry, built, claude)
                 if entry.codex and any(i.enabled for i in entry.codex.installs):
                     from host_state import bytes_digest
                     roles = {n: bytes_digest(builder.roots.neutral(data))

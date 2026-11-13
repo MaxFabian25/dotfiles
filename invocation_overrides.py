@@ -55,7 +55,9 @@ def transform_skill(text, qualified, registry, selected=True, explicit=False):
         if 'disable-model-invocation' in metadata:
             header = replace_field(header, 'disable-model-invocation', True)
         else:
-            header += '\ndisable-model-invocation: true'
+            appended = header + '\ndisable-model-invocation: true'
+            header = (appended if yaml.safe_load(appended) == {**metadata, 'disable-model-invocation': True}
+                      else 'disable-model-invocation: true\n' + header)
         expected['disable-model-invocation'] = True
     elif selected and not explicit and metadata.get('disable-model-invocation') is True:
         header = replace_field(header, 'disable-model-invocation', False)

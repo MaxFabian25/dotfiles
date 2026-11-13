@@ -12,7 +12,7 @@ import tempfile
 from description import (AlignedInstall, BuildSource, CourseRecipe, EngineInstall,
                          GeneratedRoles, GenericRecipe, LocalSource, Package, PluginRoles, PublicEmilRecipe,
                          RepoRoles, RepoSource, Setup, SnapshotRecipe, ToolNotes, plugin_id, via)
-from host_state import DeviceRoots, Digest, Host, SkillMode, bytes_digest, clone_url, parse_commit
+from host_state import DeviceRoots, Digest, Host, Platform, SkillMode, bytes_digest, clone_url, parse_commit
 from portable import GIT, WINDOWS, extract_tar, read_utf8, replace, staging_directory, staging_folder
 
 
@@ -228,7 +228,7 @@ class Builder:
             raise BuildError(f'{package.name}: missing snapshot build metadata; migrate its recipe first')
         return build_snapshot(package.name, recipe, source, snapshot, output_root=self.directory)[0]
 
-    def overlay(self, package: Package, host: Host, identity: str, root: Path):
+    def overlay(self, package: Package, host: Host, identity: str, root: Path, *, windows: bool | None = None):
         from invocation_overrides import plan, read_text, skill_paths, windows_overlay
         import yaml
 
@@ -278,11 +278,22 @@ class Builder:
         if host == Host.CODEX and package.codex and package.codex.replace:
             adaptations['replace'] = {package.name: [(r.path, r.find, r.replace) for r in package.codex.replace]}
         placement = package.placement(host)
-        if placement and WINDOWS:
+        if placement and (WINDOWS if windows is None else windows):
             command = placement.windows_hook_command if host == Host.CODEX else None
-            if windows := windows_overlay(command, placement.windows_replace):
-                adaptations['windows'] = {package.name: windows}
+            if edits := windows_overlay(command, placement.windows_replace):
+                adaptations['windows'] = {package.name: edits}
         return plan(registry, [(label, identity, root)], adaptations=adaptations)[0]
+
+    def check_overlays(self, package: Package, codex: Built, claude: dict[str, Built]) -> None:
+        for host in Host:
+            placement = package.placement(host)
+            for install in placement.installs if placement else ():
+                if not install.managed or isinstance(install, AlignedInstall):
+                    continue
+                identity = plugin_id(package.name, install, host)
+                root = codex.root if host == Host.CODEX else claude[identity].root
+                for windows in {platform == Platform.WINDOWS for platform in package.platforms or Platform}:
+                    self.overlay(package, host, identity, root, windows=windows)
 
     def effective(self, package: Package, built: Built) -> Path:
         placement = next((i for i in package.codex.installs if i.managed), None) if package.codex else None
@@ -294,7 +305,8 @@ class Builder:
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(built.root, destination)
         for path, before, after, _, _ in self.overlay(package, Host.CODEX,
-                                                     plugin_id(package.name, placement, Host.CODEX), destination):
+                                                     plugin_id(package.name, placement, Host.CODEX), destination,
+                                                     windows=False):
             if before != after:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 if after is None:

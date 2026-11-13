@@ -55,6 +55,7 @@ def main():
                 for identity, tree in (('codex', codex), *sorted(claude.items())):
                     print(f'built unmanaged {name} {identity}: {tree.version} {tree.digest}', flush=True)
                 continue
+            builder.check_overlays(package, codex, claude)
             roles = builder.roles(package, codex) if package.codex and any(i.enabled for i in package.codex.installs) else {}
             built += 1
             print(f'verified {name}: Codex tree, {len(claude)} Claude tree(s), {len(roles)} role(s)', flush=True)

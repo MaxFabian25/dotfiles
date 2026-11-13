@@ -380,6 +380,17 @@ class InvocationOverridesTest(unittest.TestCase):
         self.assertEqual(result, original.replace('disable-model-invocation: false', 'disable-model-invocation: true'))
         self.assertEqual(module.transform_skill(result, 'p:sample', {}, selected=False, explicit=True), result)
 
+    def test_explicit_flag_ends_the_header_unless_a_block_scalar_does(self):
+        plain = '---\nname: sample\ndescription: A task.\n---\nBody\n'
+        self.assertEqual(module.transform_skill(plain, 'p:sample', {}, selected=False, explicit=True),
+                         plain.replace('A task.\n', 'A task.\ndisable-model-invocation: true\n'))
+        block = '---\nname: sample\ndescription: |\n  First line.\n  Second line.\n---\nBody\n'
+        result = module.transform_skill(block, 'p:sample', {}, selected=False, explicit=True)
+        self.assertEqual(module.frontmatter(result)[1], {'name': 'sample', 'description': 'First line.\nSecond line.',
+                                                         'disable-model-invocation': True})
+        self.assertTrue(result.endswith('\n---\nBody\n'))
+        self.assertEqual(module.transform_skill(result, 'p:sample', {}, selected=False, explicit=True), result)
+
     def test_sidecar_can_be_made_explicit_preserving_other_fields(self):
         source = 'interface:\n  display_name: Sample\npolicy:\n  allow_implicit_invocation: true # upstream\n'
         self.assertEqual(module.transform_policy(source, allow=False), source.replace('true #', 'false #'))
