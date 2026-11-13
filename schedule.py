@@ -14,6 +14,7 @@ from xml.sax.saxutils import escape
 from pull import paired, signers
 from sync_files import Files, backup_directory, contents
 from host_state import DeviceRoots
+from sync_ending import run_sync
 
 
 LABEL = 'dev.dotfiles.pull'
@@ -76,9 +77,7 @@ def main():
     if not signers().is_file():
         raise RuntimeError(f'{signers()}: pin trusted release signers before enabling automatic pulls')
     paired(root, private)
-    check = subprocess.run([sys.executable, str(root / 'sync.py'), '--public', str(root / 'setup'),
-                            '--private', str(private / 'setup'), '--check'], cwd=root)
-    if check.returncode:
+    if run_sync(root, private, apply=False):
         raise RuntimeError('Resolve device drift before enabling its automatic pull schedule')
     files = render(sys.platform, Path.home(), argv)
     state = Path.home() / '.local/state/dotfiles'

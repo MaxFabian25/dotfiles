@@ -1,6 +1,7 @@
 from contextlib import redirect_stdout
 from datetime import datetime, timezone
 import io
+import json
 from pathlib import Path
 from types import SimpleNamespace
 import subprocess
@@ -11,6 +12,8 @@ from unittest.mock import patch
 from xml.etree import ElementTree
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from homes import child_stderr_dropped, recording_sync
 import schedule
 
 
@@ -68,6 +71,7 @@ class WindowsScheduleTest(unittest.TestCase):
             with patch.object(sys, 'argv', argv), patch.object(sys, 'platform', 'win32'), \
                     patch('schedule.Path.home', return_value=home), \
                     patch('schedule.command', return_value=['python.exe', 'pull.py']), patch('schedule.paired'), \
+                    patch('schedule.run_sync', return_value=0), \
                     patch('schedule.subprocess.run', side_effect=refuse_the_task), \
                     patch('schedule.DeviceRoots.current'), patch('schedule.backup_directory'), patch('schedule.Files'), \
                     redirect_stdout(io.StringIO()) as output, self.assertRaises(subprocess.CalledProcessError):
@@ -83,14 +87,15 @@ class WindowsScheduleTest(unittest.TestCase):
             with patch('schedule.datetime') as clock:
                 clock.now.return_value = datetime(2026, 10, 15, 19, 0, tzinfo=timezone.utc)
 
-                def finish(command, **kwargs):
+                def finish(*args, **kwargs):
                     clock.now.return_value = datetime(2026, 10, 15, 19, 5, tzinfo=timezone.utc)
-                    return SimpleNamespace(returncode=0)
+                    return 0
 
                 with patch.object(sys, 'argv', argv), patch.object(sys, 'platform', 'win32'), \
                         patch('schedule.Path.home', return_value=home), \
                         patch('schedule.command', return_value=['python.exe', 'pull.py']), \
-                        patch('schedule.paired') as paired, patch('schedule.subprocess.run', side_effect=finish), \
+                        patch('schedule.paired') as paired, patch('schedule.run_sync', side_effect=finish), \
+                        patch('schedule.subprocess.run'), \
                         patch('schedule.DeviceRoots.current'), patch('schedule.backup_directory'), \
                         patch('schedule.Files') as writer, redirect_stdout(io.StringIO()) as output:
                     self.assertEqual(schedule.main(), 0)
@@ -101,6 +106,57 @@ class WindowsScheduleTest(unittest.TestCase):
             self.assertEqual(task.findtext('t:Triggers/t:TimeTrigger/t:StartBoundary', namespaces=NS),
                              '2026-10-15T19:06:00+00:00')
 
+    def test_install_goes_on_only_after_a_sync_check_that_recorded_no_drift(self):
+        real_run = subprocess.run
+
+        def install(sync):
+            registered = []
+
+            def register(command, **kwargs):
+                if command[0] != 'schtasks.exe':
+                    return real_run(command, **kwargs)
+                registered.append(command)
+                return subprocess.CompletedProcess(command, 0)
+
+            with tempfile.TemporaryDirectory() as directory:
+                home = Path(directory).resolve()
+                (home / '.config/dotfiles').mkdir(parents=True)
+                (home / '.config/dotfiles/allowed_signers').write_text('')
+                (home / 'repo').mkdir()
+                (home / 'repo/sync.py').write_text(sync, encoding='utf-8')
+                argv = ['schedule.py', '--root', str(home / 'repo'), '--private', str(home / 'private'), '--install']
+                with patch.object(sys, 'argv', argv), patch.object(sys, 'platform', 'win32'), \
+                        patch('schedule.Path.home', return_value=home), \
+                        patch('schedule.command', return_value=['python.exe', 'pull.py']), patch('schedule.paired'), \
+                        patch('schedule.DeviceRoots.current'), \
+                        patch('schedule.backup_directory', return_value=home / 'backups'), \
+                        patch('schedule.subprocess.run', register), redirect_stdout(io.StringIO()), \
+                        child_stderr_dropped():
+                    try:
+                        outcome = schedule.main()
+                    except RuntimeError as error:
+                        outcome = str(error)
+                written = (home / '.local/state/dotfiles/pull-task.xml').exists()
+                arguments = home / 'repo/arguments.json'
+                return (outcome, written, len(registered),
+                        json.loads(arguments.read_bytes()) if arguments.exists() else [])
+
+        outcome, written, registered, arguments = install("raise KeyError('a stand-in sync that crashes')\n")
+        self.assertTrue(outcome.startswith('sync.py exited 1 without recording how it ended, as after a crash'),
+                        outcome)
+        self.assertEqual((written, registered), (False, 0))
+        for status in (1, 2, 3):
+            with self.subTest(status=status):
+                outcome, written, registered, arguments = install(recording_sync(status))
+                self.assertEqual(outcome, 'Resolve device drift before enabling its automatic pull schedule')
+                self.assertEqual((written, registered), (False, 0))
+        keep_arguments = ("import json\n"
+                          "pathlib.Path(__file__).with_name('arguments.json').write_text(json.dumps(sys.argv[1:]))\n")
+        outcome, written, registered, arguments = install(recording_sync(0, then=keep_arguments))
+        self.assertEqual((outcome, written, registered), (0, True, 1))
+        self.assertIn('--check', arguments)
+        self.assertNotIn('--apply', arguments)
+        self.assertEqual(Path(arguments[arguments.index('--private') + 1]).parts[-2:], ('private', 'setup'))
 
 
 class CommandTest(unittest.TestCase):

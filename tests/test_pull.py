@@ -2,6 +2,7 @@ import argparse
 from contextlib import redirect_stderr
 import contextlib
 import io
+import json
 from pathlib import Path
 import os
 import shutil
@@ -15,7 +16,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from homes import isolate_git
+from homes import child_stderr_dropped, isolate_git, recording_sync
 import portable
 import pull
 from pull import git as pull_git, install_tools, paired, pull_lock, run, unsigned, update
@@ -167,7 +168,7 @@ class PairedPullTest(unittest.TestCase):
             paired(self.public, self.private)
 
     def test_repeated_success_does_not_rewrite_release_receipt(self):
-        candidate = self.commit(self.public_origin, 'sync.py', 'raise SystemExit(0)\n')
+        candidate = self.commit(self.public_origin, 'sync.py', recording_sync(0))
         self.commit(self.private_origin, 'release.toml', f'public_commit = "{candidate}"\n')
         args = SimpleNamespace(root=self.public, private=self.private, update=True, apply=True, notes=False, wait=0)
         pinned = self.root / 'home/.config/dotfiles/allowed_signers'
@@ -187,7 +188,7 @@ class PairedPullTest(unittest.TestCase):
         receipt = self.root / 'home/.local/state/dotfiles/last-applied.json'
         calls = []
         for code, apply in ((0, False), (1, False), (2, True), (3, True), (1, True), (0, True)):
-            candidate = self.commit(self.public_origin, 'sync.py', f'raise SystemExit({code})\n')
+            candidate = self.commit(self.public_origin, 'sync.py', recording_sync(code))
             self.commit(self.private_origin, 'release.toml', f'public_commit = "{candidate}"\n')
             args = SimpleNamespace(root=self.public, private=self.private, update=True, apply=apply, notes=False, wait=0)
             with patch('pull.Path.home', return_value=self.root / 'home'), redirect_stderr(io.StringIO()) as errors, \
@@ -197,6 +198,77 @@ class PairedPullTest(unittest.TestCase):
             # Changes that remain after applying leave the pair unrecorded, so only the last pull writes a receipt.
             self.assertEqual(receipt.exists(), (code, apply) == (0, True))
         self.assertEqual(calls, [(1, True), (0, True)])
+
+    def test_a_sync_that_does_not_end_by_recording_its_status_stops_the_pull_and_changes_nothing(self):
+        pinned = self.root / 'home/.config/dotfiles/allowed_signers'
+        pinned.parent.mkdir(parents=True)
+        shutil.copyfile(self.signers, pinned)
+        receipt = self.root / 'home/.local/state/dotfiles/last-applied.json'
+        tool, source = self.root / 'home/.local/bin/tool', 'config/agent-env/home/.local/bin/tool'
+        (self.private_origin / source).parent.mkdir(parents=True)
+        argv = ['pull.py', '--root', str(self.public), '--private', str(self.private), '--update', '--apply',
+                '--wait', '0']
+        installs = []
+
+        def release(sync, number):
+            candidate = self.commit(self.public_origin, 'sync.py', sync)
+            self.commit(self.private_origin, source, f'tool {number}\n')
+            self.commit(self.private_origin, 'release.toml', f'public_commit = "{candidate}"\n')
+            with patch('pull.Path.home', return_value=self.root / 'home'), patch.object(pull.sys, 'platform', 'linux'), \
+                    patch.object(sys, 'argv', argv), \
+                    patch('pull.install_tools', lambda home, state: installs.append(number)), \
+                    contextlib.redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as errors, \
+                    child_stderr_dropped():
+                return pull.main(), errors.getvalue()
+
+        self.assertEqual(release(recording_sync(0), 0), (0, ''))
+        before = receipt.read_bytes()
+        crashed = 'sync.py exited 1 without recording how it ended, as after a crash or a kill; '
+        for number, (sync, stop) in enumerate((
+                ("raise KeyError('a stand-in sync that crashes')\n", crashed),
+                ('def a stand-in sync with a syntax error\n', crashed),
+                ('import a_module_no_stand_in_sync_can_find\n', crashed),
+                ('raise SystemExit(1)\n', crashed),
+                ('raise SystemExit(0)\n', 'sync.py exited 0 without recording how it ended; '),
+                (recording_sync(1, then='raise SystemExit(1)\n'), 'sync.py recorded status 1 and then exited 1; '),
+                (recording_sync(0, then="ending.write_text('{')\n"),
+                 'sync.py exited 0, and its record of how it ended cannot be read: ')), 1):
+            with self.subTest(sync=sync.splitlines()[-1]):
+                status, said = release(sync, number)
+                self.assertEqual(status, 3)
+                self.assertTrue(said.startswith(f'Dotfiles pull stopped: {stop}'), said)
+                self.assertNotIn('managed changes remain', said)
+                self.assertEqual(receipt.read_bytes(), before)
+                self.assertEqual(tool.read_text(encoding='utf-8'), 'tool 0\n')
+        self.assertEqual(installs, [0])
+
+    def test_the_sync_gets_the_pulls_mode_notes_private_checkout_and_time_limit(self):
+        kept = self.root / 'arguments.json'
+        keep_arguments = f'import json\npathlib.Path({str(kept)!r}).write_text(json.dumps(sys.argv[1:]))\n'
+        candidate = self.commit(self.public_origin, 'sync.py', recording_sync(0, then=keep_arguments))
+        self.commit(self.private_origin, 'release.toml', f'public_commit = "{candidate}"\n')
+        pinned = self.root / 'home/.config/dotfiles/allowed_signers'
+        pinned.parent.mkdir(parents=True)
+        shutil.copyfile(self.signers, pinned)
+        limits = []
+        run_sync = pull.run_sync
+
+        def noting_the_limit(*args, timeout, **options):
+            limits.append(timeout)
+            return run_sync(*args, timeout=timeout, **options)
+
+        for apply, notes in ((False, False), (True, True)):
+            with self.subTest(apply=apply, notes=notes):
+                args = SimpleNamespace(root=self.public, private=self.private, update=True, apply=apply, notes=notes,
+                                       wait=0)
+                with patch('pull.Path.home', return_value=self.root / 'home'), patch('pull.install_tools'), \
+                        patch('pull.run_sync', noting_the_limit):
+                    self.assertEqual(run(args), 0)
+                arguments = json.loads(kept.read_bytes())
+                self.assertEqual([flag in arguments for flag in ('--apply', '--check', '--notes')],
+                                 [apply, not apply, notes])
+                self.assertEqual(arguments[arguments.index('--private') + 1], str(self.private.resolve() / 'setup'))
+        self.assertEqual(limits, [1200, 1200])
 
 
 class PullLockTest(unittest.TestCase):

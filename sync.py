@@ -2,6 +2,7 @@
 """Synchronize this device from the pinned public and private descriptions. The default only checks."""
 import argparse
 from pathlib import Path
+import subprocess
 import sys
 
 from candidate_result import CandidateResult, HeldCache, dump
@@ -10,6 +11,7 @@ from description_toml import load
 from device import Device
 from device_sync import apply, plan
 from drift import render, to_json
+import sync_ending
 
 
 def main(argv=None):
@@ -24,7 +26,16 @@ def main(argv=None):
     parser.add_argument('--json', action='store_true',
                         help='print the plan as JSON; with --candidate, only the result release.py reads')
     parser.add_argument('--notes', action='store_true', help='list each note in full instead of counting them')
+    parser.add_argument(sync_ending.FLAG, dest='ending', type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    status = run(args)
+    if args.ending is None:
+        return status
+    sync_ending.record(args.ending, status)
+    return 0
+
+
+def run(args):
     try:
         setup = load(Roots.resolve(args.public, args.private))
         device = Device.current()
@@ -70,7 +81,7 @@ def main(argv=None):
             print(f'Managed changes: {len(current.changes)}; blocking issues: {len(current.blocked)}; '
                   f'unmanaged differences left untouched: {len(current.unmanaged)}{expected}.')
         return current.exit_code
-    except (DescriptionError, RuntimeError, ValueError, OSError) as error:
+    except (DescriptionError, RuntimeError, ValueError, OSError, subprocess.SubprocessError) as error:
         print(f'Sync stopped: {error}', file=sys.stderr)
         return 3
 

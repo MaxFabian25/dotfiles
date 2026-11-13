@@ -11,6 +11,8 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from homes import recording_sync
 import home_files
 import pull
 from home_files import EDITED, deliver
@@ -243,7 +245,7 @@ class HomeFilesTest(unittest.TestCase):
 
 
 class PullDeliversHomeFilesTest(unittest.TestCase):
-    """pull.run with a stand-in sync.py that exits with the status the test gives."""
+    """pull.run with a stand-in sync.py that records the status the test gives."""
 
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
@@ -256,7 +258,7 @@ class PullDeliversHomeFilesTest(unittest.TestCase):
         self.receipt = self.home / '.local/state/dotfiles/last-applied.json'
 
     def pull(self, status=0, apply=True, platform='linux'):
-        (self.public / 'sync.py').write_text(f'raise SystemExit({status})\n')
+        (self.public / 'sync.py').write_text(recording_sync(status), encoding='utf-8')
         args = SimpleNamespace(root=self.public, private=self.private, update=False, apply=apply, notes=False, wait=0)
         out, err = io.StringIO(), io.StringIO()
         with patch('pull.Path.home', return_value=self.home), patch('home_files.Path.home', return_value=self.home), \
@@ -306,7 +308,7 @@ class PullDeliversHomeFilesTest(unittest.TestCase):
         self.assertEqual((self.home / '.local/bin/tool').read_text(), 'tool 1\n')
 
     def test_a_failed_tool_install_holds_back_no_home_file(self):
-        (self.public / 'sync.py').write_text('raise SystemExit(0)\n')
+        (self.public / 'sync.py').write_text(recording_sync(0), encoding='utf-8')
         args = SimpleNamespace(root=self.public, private=self.private, update=False, apply=True, notes=False, wait=0)
         with patch('pull.Path.home', return_value=self.home), patch('pull.paired'), patch('pull.git', return_value='0' * 40), \
                 patch('pull.install_tools', side_effect=RuntimeError('mise install exited 1')), \
@@ -316,7 +318,7 @@ class PullDeliversHomeFilesTest(unittest.TestCase):
         self.assertEqual((self.home / '.local/bin/tool').read_text(), 'tool 1\n')
 
     def test_a_pull_without_a_private_checkout_delivers_nothing(self):
-        (self.public / 'sync.py').write_text('raise SystemExit(0)\n')
+        (self.public / 'sync.py').write_text(recording_sync(0), encoding='utf-8')
         args = SimpleNamespace(root=self.public, private=None, update=False, apply=True, notes=False, wait=0)
         with patch('pull.Path.home', return_value=self.home), patch('pull.paired'), patch('pull.install_tools'), \
                 patch('pull.git', return_value='0' * 40), patch.object(pull.sys, 'platform', 'linux'):

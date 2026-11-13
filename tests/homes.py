@@ -1,4 +1,5 @@
 """Synthetic device homes for the host tests: config files, caches and a CLI that replays recorded JSON."""
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -122,3 +123,22 @@ class Home:
         self.write(Path(root) / 'skills' / name / 'SKILL.md', f'---\nname: {name}\ndescription: {name}\n{extra}---\n{body}')
         if explicit_sidecar:
             self.write(Path(root) / 'skills' / name / 'agents/openai.yaml', 'policy:\n  allow_implicit_invocation: false\n')
+
+
+def recording_sync(status, then=''):
+    return (f'import pathlib, sys\nsys.path.insert(0, {str(ENGINE)!r})\nimport sync_ending\n'
+            f'ending = pathlib.Path(sys.argv[sys.argv.index(sync_ending.FLAG) + 1])\n'
+            f'sync_ending.record(ending, {status!r})\n{then}')
+
+
+@contextlib.contextmanager
+def child_stderr_dropped():
+    sys.stderr.flush()
+    kept = os.dup(2)
+    with open(os.devnull, 'w') as nowhere:
+        os.dup2(nowhere.fileno(), 2)
+    try:
+        yield
+    finally:
+        os.dup2(kept, 2)
+        os.close(kept)

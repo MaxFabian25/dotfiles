@@ -16,6 +16,7 @@ import time
 import tomllib
 
 from portable import GIT, WINDOWS, exclusive_lock, lock_holder, native_cli_environment
+from sync_ending import run_sync
 
 GIT_TIMEOUT = 180
 # Seconds a pull waits for another pull on this machine, whether a person, an agent or the schedule started it.
@@ -215,23 +216,17 @@ def run(args):
         if args.update:
             update(root, private, signers())
         paired(root, private)
-        command = [sys.executable, str(root / 'sync.py'), '--public', str(root / 'setup'),
-                   '--apply' if args.apply else '--check']
-        if private:
-            command += ['--private', str(private / 'setup')]
-        if args.notes:
-            command.append('--notes')
-        result = subprocess.run(command, cwd=root, timeout=1200)
+        status = run_sync(root, private, apply=args.apply, notes=args.notes, timeout=1200)
         # 1 after --apply: sync wrote what it could and nothing blocked it, but some managed changes did not take.
         # The pair is not applied, so it gets no receipt, but the mise config was written, so its tools still install.
         # Before the tools, so that a failed install holds back no home file. It stops nothing itself, so the
         # receipt and the tools follow whatever it finds.
-        left = home_files(private, state, args.apply) if result.returncode in (0, 1) else False
-        if result.returncode == 1 and args.apply:
+        left = home_files(private, state, args.apply) if status in (0, 1) else False
+        if status == 1 and args.apply:
             print('Dotfiles pull: managed changes remain after applying, listed above under drift; the pair is not '
                   'recorded as applied, and the next pull retries them', file=sys.stderr)
             install_tools(Path.home(), state)
-        if result.returncode == 0 and args.apply:
+        if status == 0 and args.apply:
             from sync_files import Files, contents
             receipt = state / 'last-applied.json'
             commits = {'public': git(root, 'rev-parse', 'HEAD'),
@@ -243,7 +238,7 @@ def run(args):
                 Files(state / 'receipt-backups').write(receipt, (json.dumps(data, indent=2) + '\n').encode(), expected=before)
             install_tools(Path.home(), state)
         # 1 from a pair that is applied and recorded says that a home file still differs from it.
-        return result.returncode or int(left)
+        return status or int(left)
 
 
 def main():

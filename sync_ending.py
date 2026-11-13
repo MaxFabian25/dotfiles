@@ -1,0 +1,63 @@
+"""How `sync.py` tells the program that started it how it ended.
+
+A sync that crashes exits 1, as one that leaves managed changes does, so its caller cannot tell the two apart by the
+exit status. The caller passes FLAG with a path in a folder made for that one run. sync.py writes its status there as
+its last act and then exits 0. The caller believes a status only when the sync exited 0 and the file holds a whole
+number. Anything else, such as a traceback, a kill, a refused flag or a file that cannot be read, is a stop. Without
+the flag, sync.py exits with its status.
+
+pull.py imports this module when it starts, and passes the flag to the sync.py of the release it then fast-forwards
+to. A release that renames the flag or the record's `status` key therefore makes that one pull stop with 3, and the
+pull after it, which runs the new code, works."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+FLAG = '--ending'
+_LOOK = 'its own output above, if any, says why'
+
+
+def record(path: Path, status: int) -> None:
+    path.write_text(json.dumps({'status': status}), encoding='utf-8')
+
+
+def run_sync(root: Path, private: Path | None, *, apply: bool, notes: bool = False,
+             timeout: float | None = None) -> int:
+    """Run root's sync.py with the caller's own stdout and stderr and return the status it recorded: 0 in step,
+    1 managed changes remain, 2 blocked, 3 stopped or incomplete. RuntimeError when it did not end by recording one,
+    subprocess.TimeoutExpired when it ran past timeout."""
+    command = [sys.executable, str(root / 'sync.py'), '--public', str(root / 'setup'),
+               '--apply' if apply else '--check']
+    if private:
+        command += ['--private', str(private / 'setup')]
+    if notes:
+        command.append('--notes')
+    # A folder that Windows will not yet let go of must not turn a sync that ended well into a stop.
+    with tempfile.TemporaryDirectory(prefix='dotfiles-sync-', ignore_cleanup_errors=True) as folder:
+        ending = Path(folder) / 'ending.json'
+        code = subprocess.run([*command, FLAG, str(ending)], cwd=root, timeout=timeout).returncode
+        try:
+            status = _status(ending.read_text(encoding='utf-8'))
+        except FileNotFoundError:
+            status = None
+        except (OSError, ValueError) as error:
+            raise RuntimeError(f"sync.py exited {code}, and its record of how it ended cannot be read: {error}; "
+                               f'{_LOOK}') from error
+    if status is None:
+        crash = ', as after a crash or a kill' if code else ''
+        raise RuntimeError(f'sync.py exited {code} without recording how it ended{crash}; {_LOOK}')
+    if code:
+        raise RuntimeError(f'sync.py recorded status {status} and then exited {code}; {_LOOK}')
+    return status
+
+
+def _status(text):
+    data = json.loads(text)
+    status = data.get('status') if isinstance(data, dict) else None
+    if type(status) is not int:  # also refuses a bool, which isinstance counts as an int
+        raise ValueError(f'{text!r} holds no whole number as its status')
+    return status

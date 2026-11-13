@@ -710,6 +710,65 @@ class SyncMainTest(unittest.TestCase):
                 self.assertEqual(sync.main(['--apply']), code)
                 self.assertEqual(stdout.getvalue(), printed)
 
+    def test_with_ending_the_sync_prints_as_without_it_then_records_its_status_and_exits_0(self):
+        from unittest import mock
+        import sync
+
+        class Output(io.StringIO):
+            def __init__(self, ending):
+                super().__init__()
+                self.ending, self.after_the_record = ending, []
+
+            def write(self, text):
+                self.after_the_record.append(self.ending.exists())
+                return super().write(text)
+
+        device = mock.Mock()
+        device.roots.installed_engine.return_value = None
+        with tempfile.TemporaryDirectory() as temp:
+            ending = Path(temp) / 'ending'
+            for code, stop in ((0, None), (1, None), (2, None), (3, RuntimeError('a description that cannot be read'))):
+                current = SimpleNamespace(blocked=(), changes=('a',) * code, unmanaged=(), expected=(), result='plan',
+                                          exit_code=code)
+                printed = []
+                for flags, returned in (([], code), (['--ending', str(ending)], 0)):
+                    stdout, stderr = Output(ending), Output(ending)
+                    with self.subTest(code=code, flags=flags), mock.patch('sync.load', side_effect=stop), \
+                            mock.patch('sync.Device.current', return_value=device), \
+                            mock.patch('sync.plan', return_value=current), \
+                            mock.patch('sync.render', return_value='rows\n'), \
+                            redirect_stdout(stdout), redirect_stderr(stderr):
+                        self.assertEqual(sync.main(['--check', *flags]), returned)
+                    printed.append((stdout.getvalue(), stderr.getvalue()))
+                    self.assertNotIn(True, stdout.after_the_record + stderr.after_the_record)
+                self.assertEqual(printed[0], printed[1])
+                self.assertIn('Sync stopped: ' if stop else 'Managed changes: ', ''.join(printed[0]))
+                self.assertEqual(json.loads(ending.read_bytes()), {'status': code})
+                ending.unlink()
+
+    def test_with_ending_a_sync_that_crashes_records_nothing(self):
+        from unittest import mock
+        import sync
+        import sync_ending
+        with tempfile.TemporaryDirectory() as temp:
+            ending = Path(temp) / 'ending'
+            with mock.patch('sync.load', side_effect=KeyError('a step that crashes')), self.assertRaises(KeyError):
+                sync.main(['--check', sync_ending.FLAG, str(ending)])
+            self.assertFalse(ending.exists())
+
+    def test_a_native_command_past_its_time_limit_stops_the_sync_with_3(self):
+        from unittest import mock
+        import sync
+        device = mock.Mock()
+        device.roots.installed_engine.return_value = None
+        late = subprocess.TimeoutExpired(['codex', 'plugin', 'add'], 180)
+        with mock.patch('sync.load'), mock.patch('sync.Device.current', return_value=device), \
+                mock.patch('sync.plan', return_value=SimpleNamespace(blocked=(), changes=('a',), result='plan')), \
+                mock.patch('sync.apply', side_effect=late), redirect_stdout(io.StringIO()), \
+                redirect_stderr(io.StringIO()) as stderr:
+            self.assertEqual(sync.main(['--apply']), 3)
+        self.assertEqual(stderr.getvalue(), f'Sync stopped: {late}\n')
+
 
 if __name__ == '__main__':
     unittest.main()
