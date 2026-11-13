@@ -27,6 +27,7 @@ def sync_with_changes(*held):
 SYNC_WITH_CHANGES = sync_with_changes()
 PASSING_TEST = 'import unittest\n\n\nclass Seed(unittest.TestCase):\n    def test_passes(self):\n        pass\n'
 FAILING_TEST = PASSING_TEST.replace('        pass', '        self.fail("broken")')
+RUN_ALONE = '\n\nif __name__ == "__main__":\n    unittest.main()\n'
 ALLOWLIST = '/*\n!/.gitignore\n!/content\n!/doc\n!/sync.py\n!/tests/\n!/tests/**\n__pycache__/\n.sync/\n'
 # finish runs the suite through the real runner, so the fixture's origin carries it.
 RUNNER = (Path(release.__file__).resolve().parent / 'tests/run.py').read_text(encoding='utf-8')
@@ -74,7 +75,7 @@ class ReleaseTest(unittest.TestCase):
         restart = patch.object(release.os, 'execv', side_effect=AssertionError('a finish started again'))
         restart.start()
         self.addCleanup(restart.stop)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()  # as finish names its paths; macOS's temp folder is a link
         self.key = self.root / 'release'
         subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'release', '-f', str(self.key)], check=True)
         # The release's device check runs the worktree's sync.py, which exits 1 when it has changes to apply.
@@ -380,32 +381,78 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(release_main(['finish', 'isolated', '--message', str(message), '--push', *self.options()],
                                       self.public), 0)
 
-    def test_finish_runs_the_private_tests_and_stops_on_a_failure(self):
+    def test_finish_runs_each_private_test_file_by_itself_and_stops_on_a_failure(self):
         release_main(['start', 'private', *self.options()], self.public)
         folder = self.worktrees / 'private/private/config/tool'
         folder.mkdir(parents=True)
         (folder / 'helper.py').write_text('VALUE = 1\n', encoding='utf-8')
-        (folder / 'test_tool.py').write_text(FAILING_TEST, encoding='utf-8')
         message = self.root / 'message'
         message.write_text('Add a private tool\n', encoding='utf-8')
         finish = ['finish', 'private', '--private-message', str(message), '--push', *self.options()]
-        with redirect_stderr(io.StringIO()) as error:
-            self.assertEqual(release_main(finish, self.public), 3)
-        self.assertIn('the private tests in config/tool failed', error.getvalue())
-        self.assertIn('broken', (self.worktrees / 'private/build/private-tests.log').read_text(encoding='utf-8'))
-        self.assertEqual(git(self.private_origin, 'log', '--format=%s', 'main'), 'seed')
-        # Each folder is its own top level, as its tests run alone, so a test imports the helpers beside it.
+        log = self.worktrees / 'private/build/private-tests.log'
+        imports = ('import os\nfrom pathlib import Path\nimport sys\nimport unittest\n\n{path}import helper\n\n\n'
+                   'class Tool(unittest.TestCase):\n'
+                   '    def test_imports_its_helper_against_missing_config_roots(self):\n'
+                   '        self.assertEqual(helper.VALUE, 1)\n'
+                   '        for variable in ("CODEX_HOME", "CLAUDE_CONFIG_DIR"):\n'
+                   '            self.assertFalse(Path(os.environ[variable]).exists())\n' + RUN_ALONE)
+        for text, stop, logged in (
+                (FAILING_TEST + RUN_ALONE, 'the private tests in config/tool/test_tool.py failed', 'broken'),
+                (FAILING_TEST + RUN_ALONE.replace('main()', 'main(exit=False)'),
+                 'the private tests in config/tool/test_tool.py failed', 'FAILED (failures=1)'),
+                (FAILING_TEST.replace('self.fail', 'import sys; sys.stderr.buffer.write(b"caf\\xe9\\n"); self.fail')
+                 + RUN_ALONE, 'the private tests in config/tool/test_tool.py failed', 'caf\ufffd\n'),
+                (PASSING_TEST, f'config/tool/test_tool.py, by its output in {log}; end it with unittest.main()',
+                 '== config/tool/test_tool.py\n'),
+                (imports.format(path=''), 'the private tests in config/tool/test_tool.py failed',
+                 "ModuleNotFoundError: No module named 'helper'")):
+            with self.subTest(stop=stop, logged=logged):
+                (folder / 'test_tool.py').write_text(text, encoding='utf-8')
+                with redirect_stderr(io.StringIO()) as error:
+                    self.assertEqual(release_main(finish, self.public), 3)
+                self.assertIn(stop, error.getvalue())
+                self.assertIn(logged, log.read_text(encoding='utf-8'))
+                self.assertEqual(git(self.private_origin, 'log', '--format=%s', 'main'), 'seed')
         (folder / 'test_tool.py').write_text(
-            'import os\nfrom pathlib import Path\nimport unittest\n\nimport helper\n\n\nclass Tool(unittest.TestCase):\n'
-            '    def test_imports_its_helper_against_missing_config_roots(self):\n'
-            '        self.assertEqual(helper.VALUE, 1)\n'
-            '        for variable in ("CODEX_HOME", "CLAUDE_CONFIG_DIR"):\n'
-            '            self.assertFalse(Path(os.environ[variable]).exists())\n', encoding='utf-8')
+            imports.format(path='sys.path.insert(0, str(Path(__file__).resolve().parent))\n'), encoding='utf-8')
+        (folder / 'test_more.py').write_text(PASSING_TEST + RUN_ALONE, encoding='utf-8')
+        (folder.parent / 'other').mkdir()
+        (folder.parent / 'other/test_other.py').write_text(PASSING_TEST + RUN_ALONE, encoding='utf-8')
         with redirect_stdout(io.StringIO()) as output:
             self.assertEqual(release_main(finish, self.public), 0)
-        self.assertIn('Ran 1 private tests in 1 folders: OK', output.getvalue())
+        self.assertIn('Ran 3 private tests in 2 folders: OK', output.getvalue())
         self.assertEqual(git(self.private_origin, 'ls-tree', '-r', '--name-only', 'main', 'config/'),
-                         f'{release.DENYLIST}\nconfig/tool/helper.py\nconfig/tool/test_tool.py')
+                         f'config/other/test_other.py\n{release.DENYLIST}\nconfig/tool/helper.py\n'
+                         'config/tool/test_more.py\nconfig/tool/test_tool.py')
+
+    def test_finish_runs_a_private_test_file_in_a_folder_whose_name_is_not_ascii(self):
+        release_main(['start', 'named', *self.options()], self.public)
+        folder = self.worktrees / 'named/private/config/straße'
+        folder.mkdir(parents=True)
+        (folder / 'test_tool.py').write_text(FAILING_TEST + RUN_ALONE, encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Add a private tool\n', encoding='utf-8')
+        with redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(['finish', 'named', '--private-message', str(message), *self.options()],
+                                          self.public), 3)
+        self.assertIn('the private tests in config/straße/test_tool.py failed', error.getvalue())
+
+    def test_finish_does_not_run_a_private_test_file_the_release_deletes(self):
+        seed = self.clone(self.private_origin, 'private-seed')
+        for name in ('test_kept.py', 'test_gone.py'):
+            (seed / name).write_text(PASSING_TEST + RUN_ALONE, encoding='utf-8')
+        git(seed, 'add', '-A')
+        git(seed, 'commit', '-qm', 'Two tests')
+        git(seed, 'push', '-q', 'origin', 'HEAD:main')
+        release_main(['start', 'fewer', *self.options()], self.public)
+        (self.worktrees / 'fewer/private/test_gone.py').unlink()
+        message = self.root / 'message'
+        message.write_text('Delete a test\n', encoding='utf-8')
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(release_main(['finish', 'fewer', '--private-message', str(message), '--push',
+                                           *self.options()], self.public), 0)
+        self.assertIn('Ran 1 private tests in 1 folders: OK', output.getvalue())
+        self.assertEqual(git(self.private_origin, 'ls-tree', '--name-only', 'main', 'test_gone.py'), '')
 
     def test_finish_stops_on_a_public_line_the_private_denylist_names(self):
         release_main(['start', 'leak', *self.options()], self.public)
@@ -449,6 +496,58 @@ class ReleaseTest(unittest.TestCase):
                 self.assertEqual(git(tree, 'rev-parse', 'HEAD'), git(self.public_origin, 'rev-parse', 'main'))
                 self.assertEqual(git(private, 'rev-parse', 'HEAD'), git(self.private_origin, 'rev-parse', 'main'))
 
+    def test_finish_reads_a_denylist_string_behind_a_byte_order_mark_or_before_a_comment(self):
+        message = self.root / 'message'
+        message.write_text('Change the content\n', encoding='utf-8')
+        for name, text, stop in (('marked', '\ufeffseeded-host\n', 'content:1 in '),
+                                 ('joined', '# hosts\n\ufeffseeded-host\n', 'content:1 in '),
+                                 ('noted', 'seeded-host # the host\n', 'content:1 in '),
+                                 ('tabbed', 'seeded-host\t#the host\n', 'content:1 in '),
+                                 ('marked-comments', '\ufeff# hosts\n  # seeded-host\n', 'lists no strings')):
+            with self.subTest(name):
+                release_main(['start', name, *self.options()], self.public)
+                tree, private = self.worktrees / name / 'public', self.worktrees / name / 'private'
+                (private / release.DENYLIST).write_text(text, encoding='utf-8')
+                (tree / 'content').write_text('reach seeded-host over ssh\n', encoding='utf-8')
+                finish = ['finish', name, '--message', str(message), '--private-message', str(message), *self.options()]
+                with redirect_stderr(io.StringIO()) as error:
+                    self.assertEqual(release_main(finish, self.public), 3)
+                self.assertIn(stop, error.getvalue())
+                self.assertEqual(git(tree, 'rev-parse', 'HEAD'), git(self.public_origin, 'rev-parse', 'main'))
+
+    def test_a_denylist_keeps_a_number_sign_inside_a_string(self):
+        release_main(['start', 'sharp', *self.options()], self.public)
+        tree, private = self.worktrees / 'sharp/public', self.worktrees / 'sharp/private'
+        (private / release.DENYLIST).write_text('team#seeded\n', encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Change the content\n', encoding='utf-8')
+        finish = ['finish', 'sharp', '--message', str(message), '--private-message', str(message), *self.options()]
+        (tree / 'content').write_text('the team works\n', encoding='utf-8')
+        self.assertEqual(release_main(finish, self.public), 0)
+        (tree / 'content').write_text('ask team#seeded\n', encoding='utf-8')
+        with redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(finish, self.public), 3)
+        self.assertIn('content:1 in ', error.getvalue())
+
+    def test_finish_stops_on_a_denylist_that_is_not_utf_8(self):
+        message = self.root / 'message'
+        message.write_text('Change the content\n', encoding='utf-8')
+        for name, encoding, fault in (
+                ('wide', 'utf-16', "'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"),
+                ('unmarked', 'utf-16-le', 'it holds a NUL byte, as a UTF-16 file does')):
+            with self.subTest(name):
+                release_main(['start', name, *self.options()], self.public)
+                tree, private = self.worktrees / name / 'public', self.worktrees / name / 'private'
+                (private / release.DENYLIST).write_text('seeded-host\n', encoding=encoding)
+                (tree / 'content').write_text('reach seeded-host over ssh\n', encoding='utf-8')
+                finish = ['finish', name, '--message', str(message), '--private-message', str(message), *self.options()]
+                with redirect_stderr(io.StringIO()) as error:
+                    self.assertEqual(release_main(finish, self.public), 3)
+                self.assertIn(f'{private / release.DENYLIST} is not UTF-8 ({fault}), so nothing checks',
+                              error.getvalue())
+                self.assertIn('save it as UTF-8, then finish again; this run committed nothing', error.getvalue())
+                self.assertEqual(git(tree, 'rev-parse', 'HEAD'), git(self.public_origin, 'rev-parse', 'main'))
+
     def test_a_denylist_stop_after_an_earlier_finish_committed_does_not_say_nothing_was_committed(self):
         release_main(['start', 'again', *self.options()], self.public)
         tree, private = self.worktrees / 'again/public', self.worktrees / 'again/private'
@@ -463,6 +562,7 @@ class ReleaseTest(unittest.TestCase):
             with redirect_stderr(io.StringIO()) as error:
                 self.assertEqual(release_main(finish, self.public), 3)
             self.assertNotIn('nothing was committed', error.getvalue())
+            self.assertIn('this run committed nothing', error.getvalue())
             return error.getvalue()
 
         (tree / 'content').write_text('reach seeded-host over ssh\n', encoding='utf-8')
@@ -586,6 +686,21 @@ class ReleaseTest(unittest.TestCase):
                                           self.public), 3)
         self.assertIn('the test suite wrote into', error.getvalue())
         self.assertEqual(git(self.public_origin, 'ls-tree', '--name-only', 'main', 'tests/'), SEEDED_TESTS)
+
+    def test_finish_stops_on_a_blocked_pull_whose_words_are_not_utf_8(self):
+        release_main(['start', 'coded', *self.options()], self.public)
+        (self.worktrees / 'coded/public/sync.py').write_text(
+            'import sys\nsys.stdout.buffer.write(b"plan \\xb7 one row\\n")\n'
+            'sys.stderr.buffer.write(b"Sync stopped: caf\\xe9 \\xb7 blocked\\n")\nraise SystemExit(3)\n',
+            encoding='utf-8')
+        message = self.root / 'message'
+        message.write_text('Block the pull\n', encoding='utf-8')
+        with redirect_stderr(io.StringIO()) as error:
+            self.assertEqual(release_main(['finish', 'coded', '--message', str(message), '--push', *self.options()],
+                                          self.public), 3)
+        self.assertIn('plan \ufffd one row\nSync stopped: caf\ufffd \ufffd blocked\n', error.getvalue())
+        self.assertIn('the pull on this device would stop on this release (sync exited 3)', error.getvalue())
+        self.assertEqual(git(self.public_origin, 'show', 'main:sync.py'), SYNC_WITH_CHANGES.strip())
 
     def test_finish_stops_when_the_device_check_crashes(self):
         release_main(['start', 'crash', *self.options()], self.public)
@@ -1045,7 +1160,7 @@ class ReleaseTest(unittest.TestCase):
         folder = self.worktrees / 'logs/private/config/tool'
         folder.mkdir(parents=True)
         module = folder / 'test_tool.py'
-        module.write_text(FAILING_TEST, encoding='utf-8')
+        module.write_text(FAILING_TEST + RUN_ALONE, encoding='utf-8')
         message = self.root / 'message'
         message.write_text('Add tests\n', encoding='utf-8')
         finish = ['finish', 'logs', '--message', str(message), '--private-message', str(message), '--push',
@@ -1055,7 +1170,7 @@ class ReleaseTest(unittest.TestCase):
             self.assertEqual(release_main(finish, self.public), 3)
         self.assertIn('broken', (build / 'private-tests.log').read_text(encoding='utf-8'))
         self.assertEqual(sorted(path.name for path in build.glob('*.log')), ['private-tests.log', 'tests.log'])
-        module.write_text(PASSING_TEST, encoding='utf-8')
+        module.write_text(PASSING_TEST + RUN_ALONE, encoding='utf-8')
         with redirect_stdout(io.StringIO()):
             self.assertEqual(release_main(finish, self.public), 0)
         self.assertNotIn('broken', (build / 'private-tests.log').read_text(encoding='utf-8'))
@@ -1321,6 +1436,24 @@ class ReleaseTest(unittest.TestCase):
     def test_a_tree_without_a_setup_description_has_no_owned_sources(self):
         self.assertEqual(release.edited_owned(self.public, self.private, self.private), {})
 
+    def test_an_owned_source_edited_after_its_pin_is_named(self):
+        import description as d
+        import description_toml
+        from host_state import DeviceRoots
+        (self.public / release.SETUP).parent.mkdir()
+        (self.public / release.SETUP).write_text('schema = 1\n', encoding='utf-8')
+        skill = self.public / 'skills/mine/SKILL.md'
+        skill.parent.mkdir(parents=True)
+        skill.write_text('Pinned\n', encoding='utf-8')
+        mine = d.LooseSkill('mine', d.Visibility.PUBLIC, '',
+                            d.LocalSource('skills/mine', DeviceRoots.current().tree_digest(skill.parent)), {})
+        setup = d.Setup(roots=d.Roots(self.public / 'setup', None), packages={}, repos={}, loose={'mine': mine},
+                        host_skills={}, rules=None, note_rules=(), public_repositories=frozenset(), lock={})
+        with patch.object(description_toml, 'load', return_value=setup):
+            self.assertEqual(release.edited_owned(self.public, self.private, self.private), {})
+            skill.write_text('Edited\n', encoding='utf-8')
+            self.assertEqual(release.edited_owned(self.public, self.private, self.private), {'mine': 'skills/mine'})
+
     def unloadable_setup(self, name):
         """Start a release whose public setup this engine cannot load, as an engine that retired a build cannot load
         a setup that still names it, and return its two worktrees."""
@@ -1451,9 +1584,8 @@ class ReleaseTest(unittest.TestCase):
         self.assertNotIn('Another session', said)
 
     def test_finish_on_an_engine_older_than_the_branch_says_to_pull(self):
-        # finish reads --private through resolve(), and macOS's temp folder is a link, so that path is named resolved.
-        for origin, canonical, path, named in ((self.public_origin, self.public, 'content', self.public),
-                                               (self.private_origin, self.private, 'notes', self.private.resolve())):
+        for origin, canonical, path in ((self.public_origin, self.public, 'content'),
+                                        (self.private_origin, self.private, 'notes')):
             with self.subTest(canonical=canonical.name):
                 self.another_session(origin, path, 'on origin, but not yet pulled here\n')
                 name = f'ahead-{canonical.name}'
@@ -1462,7 +1594,7 @@ class ReleaseTest(unittest.TestCase):
                 said = self.stopped_finish(name)
 
                 self.assertIn('retired: unknown key', said)
-                self.assertIn(f'The engine is older than this branch: {named} lacks commits the branch started '
+                self.assertIn(f'The engine is older than this branch: {canonical} lacks commits the branch started '
                               f'from. Pull this machine with {sys.executable} -B {self.public / "pull.py"} --update '
                               '--apply', said)
                 self.assertNotIn('rebase', said)

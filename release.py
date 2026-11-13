@@ -3,7 +3,7 @@
 Run it with the engine's own Python from the canonical public checkout. `start NAME` makes a worktree of
 each repository at origin/main on branch NAME. Edit there. `finish NAME` locks and builds the named
 entries, stops on a changed plugin whose Codex hooks are trusted until --hooks-reapproved, runs the public
-test suite unless the release changes no code, runs the private folders' tests, takes this machine's release
+test suite unless the release changes no code, runs each private test file by itself, takes this machine's release
 lock once no other release, pull or sync runs here, stops on new files the .gitignore allowlist would leave out,
 commits both worktrees, stops if the commits hold other files than the tests ran on, stops if
 origin/main changed the same files meanwhile, rebases them onto it, pairs the private release.toml with the
@@ -80,6 +80,7 @@ ALLOWLIST_BASE = '/*'
 # Strings the public tree must never hold, such as host and account names. The list is private, because a public
 # list would publish them.
 DENYLIST = 'config/privacy/public-denylist.txt'
+DENYLIST_COMMENT = re.compile(r'(?:^|\s)#')
 # What finish wants reviewed: a changed file with one of these suffixes or names, one in these folders, or one
 # that starts with #!.
 CODE_SUFFIXES = ('.py', '.ps1', '.psm1', '.sh', '.bash', '.zsh', '.cmd', '.bat', '.js', '.mjs', '.cjs', '.ts',
@@ -90,6 +91,9 @@ CODE_FOLDERS = ('.github/workflows/',)
 # finish asks for no review of them; the standards file tells the reviewer to read a newly stored copy.
 STORED_COPIES = ('setup/snapshots/',)
 STANDARDS = 'docs/agents/coding-standards.md'
+
+ISOLATED_RUN = ('-I', '-B')
+UNITTEST_END = re.compile(r'^Ran (\d+) tests? in [^\n]*\n\n(OK|FAILED)', re.MULTILINE)
 
 
 def machine_locks():
@@ -312,13 +316,21 @@ def unnamed_commit(args, public, private, written):
 
 def leaks(public, private, message=None):
     """Where the public tree, as a commit would take it, or its commit message holds a string the private
-    denylist names. One string per line, matched without regard to case; # starts a comment."""
+    denylist names. One string per line, matched without regard to case; # starts a comment, at the start of a line
+    or after white space."""
     listed = private / DENYLIST
     if not listed.is_file():
         raise RuntimeError(f'{listed} is missing, so nothing checks the public side for the strings it names; '
                            'restore it, then finish again; this run committed nothing')
-    patterns = [line.strip() for line in listed.read_text(encoding='utf-8').splitlines()
-                if line.strip() and not line.strip().startswith('#')]
+    try:
+        text = listed.read_text(encoding='utf-8')
+        if '\0' in text:
+            raise ValueError('it holds a NUL byte, as a UTF-16 file does')
+    except ValueError as error:
+        raise RuntimeError(f'{listed} is not UTF-8 ({error}), so nothing checks the public side for the strings it '
+                           'names; save it as UTF-8, then finish again; this run committed nothing') from error
+    lines = text.replace('\ufeff', '').splitlines()
+    patterns = [pattern for line in lines if (pattern := DENYLIST_COMMENT.split(line, maxsplit=1)[0].strip())]
     if not patterns:
         raise RuntimeError(f'{listed} lists no strings, so nothing checks the public side; restore its strings, '
                            'then finish again; this run committed nothing')
@@ -672,14 +684,14 @@ def edited_owned(public, private, private_repo):
         return {}
     from description import DescriptionError, Roots
     from description_toml import load
-    from drift import _edited_owned
+    import drift
     from host_state import DeviceRoots
     private_setup = private / 'setup'
     try:
         setup = load(Roots(public / 'setup', private_setup if private_setup.is_dir() else None))
     except DescriptionError as error:
         raise RuntimeError(unloadable({public: ENGINE, private: private_repo}, error)) from error
-    return _edited_owned(setup, DeviceRoots.current())
+    return drift.edited_owned(setup, DeviceRoots.current())
 
 
 def holds(tree, commit):
@@ -965,9 +977,11 @@ def test_suite(public, private, log):
         public_suite(public, log)
     else:
         print('The public test suite did not run because the release changes no code', flush=True)
-    folders = sorted({str(Path(name).parent) for name in git(private, 'ls-files', '-co', '--exclude-standard').splitlines()
-                      if Path(name).name.startswith('test_') and name.endswith('.py')})
-    if not folders:
+    # -z, because git otherwise quotes a name that is not ASCII, and such a file would not be run. A file the
+    # release deletes is still listed until the commit.
+    files = sorted(name for name in git(private, 'ls-files', '-co', '--exclude-standard', '-z').split('\0')
+                   if Path(name).name.startswith('test_') and name.endswith('.py') and (private / name).is_file())
+    if not files:
         return
     private_log = log.with_name('private-tests.log')
     absent = log.parent / 'absent-config'
@@ -976,14 +990,20 @@ def test_suite(public, private, log):
     total = 0
     keep(private_log)
     with private_log.open('w', encoding='utf-8') as output:
-        for folder in folders:
-            result = subprocess.run([sys.executable, '-B', '-m', 'unittest', 'discover', '-s', folder, '-t', folder],
-                                    cwd=private, env=environment, capture_output=True, text=True, timeout=1800)
-            output.write(f'== {folder}\n{result.stdout}{result.stderr}')
-            if result.returncode:
-                raise RuntimeError(f'the private tests in {folder} failed; read {private_log}')
-            total += next((int(line.split()[1]) for line in reversed(result.stderr.splitlines())
-                           if line.startswith('Ran ')), 0)
+        for name in files:
+            result = subprocess.run([sys.executable, *ISOLATED_RUN, name], cwd=private, env=environment,
+                                    capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=1800)
+            output.write(f'== {name}\n{result.stdout}{result.stderr}')
+            ends = UNITTEST_END.findall(result.stderr)
+            # unittest.main(exit=False) exits 0 on a failed test.
+            if result.returncode or (ends and ends[-1][1] != 'OK'):
+                raise RuntimeError(f'the private tests in {name} failed; read {private_log}')
+            if not ends:
+                raise RuntimeError(f'{name} ran no tests as {Path(sys.executable).name} {" ".join(ISOLATED_RUN)} '
+                                   f'{name}, by its output in {private_log}; end it with unittest.main() under '
+                                   'if __name__ == "__main__", so that it runs by itself')
+            total += int(ends[-1][0])
+    folders = {str(Path(name).parent) for name in files}
     print(f'Ran {total} private tests in {len(folders)} folders: OK; log {private_log}', flush=True)
 
 
@@ -994,7 +1014,8 @@ def device_check(public, private, state):
     Markdown text changes, and otherwise applies the rest of the release and replaces it once they exit."""
     result = subprocess.run([sys.executable, '-B', str(public / 'sync.py'), '--candidate', '--json', '--public',
                              str(public / 'setup'), '--private', str(private / 'setup')],
-                            cwd=public, capture_output=True, text=True, encoding='utf-8', timeout=1800)
+                            cwd=public, capture_output=True, text=True, encoding='utf-8', errors='replace',
+                            timeout=1800)
     stopped = f'sync exited {result.returncode}'
     try:
         candidate = candidate_result.read(result.stdout)
@@ -1003,7 +1024,7 @@ def device_check(public, private, state):
         if result.returncode in (0, 1):
             stopped += f'; {error}' if result.stdout.strip() else ' and printed no result'
     if result.returncode not in (0, 1) or candidate is None or candidate.blocking:
-        sys.stderr.write(('' if candidate else result.stdout) + result.stderr)
+        sys.stderr.write((result.stdout if candidate is None else '') + result.stderr)
         raise RuntimeError(f'the pull on this device would stop on this release ({stopped}); {state}')
     for held in candidate.held:
         print(f'{held.lease}; the pull here swaps it at once if only skill text changes, and otherwise applies the '

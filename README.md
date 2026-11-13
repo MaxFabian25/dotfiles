@@ -166,7 +166,9 @@ It stops first in each of these cases:
   files as they are then.
 - A test fails, or the suite writes into the worktree's `.sync/`, the engine cache that real pulls use
   in the canonical checkout. It runs the whole public suite, in about 75 seconds, with the output in the
-  release's `build/tests.log`, and the private folders' tests, with theirs in `build/private-tests.log`.
+  release's `build/tests.log`, and each private test file by itself, as `python -I -B FILE`, which is how
+  an agent runs one, with their output in `build/private-tests.log`. A private test file therefore needs
+  its own `sys.path` line for a module beside it, and `unittest.main()` at its end.
   Each run moves the logs of the run before aside as `tests.DATE-TIME.log` and `private-tests.DATE-TIME.log`,
   named for when they were written, and `finish --detach` does the same with `finish.log`, so a failed
   attempt can still be read after a retry. `CODEX_HOME` and `CLAUDE_CONFIG_DIR` point at a missing folder, as

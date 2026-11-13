@@ -138,7 +138,7 @@ def diff(setup: Setup, device: Device, *, observations: Mapping[Host, Observatio
     notes: list[Note] = []
     for name in sorted(stale):
         differences.append(Difference(Kind.STALE_LOCK, None, None, None, EntryRef(name, _visibility(setup, name))))
-    for name, path in sorted(_edited_owned(setup, device.roots).items()):
+    for name, path in sorted(edited_owned(setup, device.roots).items()):
         if name not in stale:
             differences.append(Difference(Kind.STALE_LOCK, None, None, None, EntryRef(name, _visibility(setup, name)),
                                           detail=f'{path} changed after its tree was pinned; '
@@ -196,7 +196,7 @@ def diff(setup: Setup, device: Device, *, observations: Mapping[Host, Observatio
                 versions, {v: entries.get(v, 0) for v in Visibility}, compared, trees, tuple(differences), tuple(notes))
 
 
-def _edited_owned(setup: Setup, roots: DeviceRoots) -> dict[EntryName, str]:
+def edited_owned(setup: Setup, roots: DeviceRoots) -> dict[EntryName, str]:
     """Owned sources whose files differ from the tree their entry pins. Sync compares a device with the pin, so
     an edit committed without refreshing the pin would otherwise reach no device and raise no difference."""
     edited = {}
