@@ -93,6 +93,25 @@ def stop(pid_file: pathlib.Path, program: str) -> dict | None:
     return {"pid": pid, "program": program, "outcome": outcome or "the stop printed nothing"}
 
 
+def office_logs(work: pathlib.Path, work_win: str) -> dict:
+    """Delete the Office log files of the session of the job's Excel, which the job did not get to delete itself."""
+    try:
+        done = subprocess.run([*POWERSHELL, "-ExecutionPolicy", "Bypass", "-File", f"{work_win}\\office-logs.ps1", "-Dir", work_win],
+                              capture_output=True, text=True, timeout=120, cwd=work)
+    except subprocess.TimeoutExpired:
+        return {"reason": "the deletion did not answer"}
+    try:
+        return json.loads(done.stdout)
+    except ValueError:
+        return {"reason": "the deletion printed no result: " + (done.stderr.strip()[-300:] or "and no error")}
+
+
+def left_logs(result: dict) -> object:
+    """How many Office log files of the job's Excel stayed, or unknown when the deletion found no session or failed."""
+    logs = result.get("office_logs") or result["runner"].get("office_logs") or {}
+    return "unknown" if logs.get("reason") and not logs.get("left") else logs.get("left")
+
+
 def unanswered(result: dict) -> tuple[int, list[str]]:
     """How many reads failed, and a sentence for each kind of answer the result lacks: a read, or a sheet's error scan."""
     # A REF that fails at every stage counts once for each, because each stage's value is missing.
@@ -130,7 +149,8 @@ def run_job(book: pathlib.Path, read: list[str], sets: list[dict], save: pathlib
     work.mkdir()
     runner: dict = {"job_timeout_s": job_timeout, "timed_out": False, "stopped": []}
     try:
-        shutil.copyfile(HERE / "excel-job.ps1", work / "excel-job.ps1")
+        for script in ("excel-job.ps1", "office-logs.ps1"):
+            shutil.copyfile(HERE / script, work / script)
         shutil.copyfile(book, work / "in.xlsx")
         spec = {"workbook": f"{work_win}\\in.xlsx", "out": f"{work_win}\\out.xlsx", "read": read, "set": sets,
                 "calc_timeout_s": calc_timeout, "hold_s": hold}
@@ -156,6 +176,8 @@ def run_job(book: pathlib.Path, read: list[str], sets: list[dict], save: pathlib
                 outcome = stop(work / pid_file, program)
                 if outcome:
                     runner["stopped"].append(outcome)
+            if recorded(work / "excel.pid") is not None:
+                runner["office_logs"] = office_logs(work, work_win)
         if driver.poll() is None:
             driver.kill()
             driver.communicate()
@@ -205,7 +227,8 @@ def main() -> int:
         args.json.write_text(json.dumps(result, indent=1), encoding="utf-8")
         load = (result.get("open") or {}).get("load")
         print(f"excel.py: ok={result.get('ok')} load={load} errors={len(result.get('errors') or [])} "
-              f"unscanned_sheets={len(result.get('errors_unscanned') or [])} read_errors={unanswered(result)[0]} error={result.get('error')}")
+              f"unscanned_sheets={len(result.get('errors_unscanned') or [])} read_errors={unanswered(result)[0]} "
+              f"office_logs_left={left_logs(result)} error={result.get('error')}")
     else:
         print(json.dumps(result, indent=1))
     return 0 if result.get("ok") else 1

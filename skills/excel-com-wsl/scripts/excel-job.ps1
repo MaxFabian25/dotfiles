@@ -3,7 +3,8 @@ Runs one fixed Excel job. excel.py writes job.json and calls this with Windows P
 job names: it opens the given workbook copy in a new, hidden Excel
 instance with macros, link updates and alerts off, rebuilds the calculation, reads and sets the given references,
 saves a copy, reopens that copy, and quits. It writes result.json beside job.json, and excel.pid and ps.pid first,
-so excel.py can stop this instance, and only this instance, after a timeout. A call that Excel turns away because it
+so excel.py can stop this instance, and only this instance, after a timeout. Once that Excel has ended, it deletes the
+Office log files of that Excel's session through office-logs.ps1. A call that Excel turns away because it
 is busy waits and goes again, for up to the calculation timeout. ok here says that Excel finished the job; excel.py
 turns it to false when a read failed or the error scan could not tell for a sheet.
 #>
@@ -415,9 +416,11 @@ try {
   $xl = New-Object -ComObject Excel.Application
   $p = [uint32]0; [void][XlCom.Win]::GetWindowThreadProcessId([IntPtr]$xl.Hwnd, [ref]$p); $excelPid = [int]$p
   Set-Content -LiteralPath (Join-Path $dir 'excel.pid') -Value $excelPid
+  # The job goes on without a session rather than fail over its logs.
+  try { $session = & (Join-Path $dir 'office-logs.ps1') -Dir $dir -Record | ConvertFrom-Json } catch { $session = [pscustomobject]@{ session = $null; reason = $_.Exception.Message } }
   $xl.Visible = $false; $xl.DisplayAlerts = $false; $xl.ScreenUpdating = $false; $xl.AskToUpdateLinks = $false
   $xl.EnableEvents = $false; $xl.AutomationSecurity = 3
-  $result.excel = [ordered]@{ version = $xl.Version; build = $xl.Build; os = $xl.OperatingSystem; pid = $excelPid }
+  $result.excel = [ordered]@{ version = $xl.Version; build = $xl.Build; os = $xl.OperatingSystem; pid = $excelPid; session = $session.session; session_reason = $session.reason }
   $result.timings_ms.start = $sw.ElapsedMilliseconds
 
   $opened = Open-Book $xl $spec.workbook $false; $wb = $opened[0]; $result.open = $opened[1]
@@ -466,7 +469,9 @@ try {
     $deadline = (Get-Date).AddSeconds(15)
     while ((Get-Process -Id $excelPid -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 300 }
     $left = Get-Process -Id $excelPid -ErrorAction SilentlyContinue
-    if ($left -and $left.ProcessName -eq 'EXCEL') { Stop-Process -Id $excelPid -Force; $result.killed_after_quit = $true }
+    if ($left -and $left.ProcessName -eq 'EXCEL') { try { Stop-Process -Id $excelPid -Force } catch { }; $result.killed_after_quit = $true; [void]$left.WaitForExit(60000) }
+    # A job that Excel finished keeps its result whatever happens to the logs.
+    try { $result.office_logs = & (Join-Path $dir 'office-logs.ps1') -Dir $dir | ConvertFrom-Json } catch { $result.office_logs = [ordered]@{ reason = $_.Exception.Message } }
   }
   $result.timings_ms.end = $sw.ElapsedMilliseconds
   $result.busy_retries = [XlCom.BusyFilter]::Retries

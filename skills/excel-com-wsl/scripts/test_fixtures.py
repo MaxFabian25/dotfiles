@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 import zipfile
 
 import openpyxl
@@ -474,7 +475,9 @@ def excel_cases(evidence: pathlib.Path, temp: pathlib.Path, temp_win: str) -> No
     check("force full calculation doesn't time out", code == 0 and near(result["after"]["Result"], 121), result.get("error"))
     check("force full calculation is reported", (result.get("settings") or {}).get("force_full_calculation") is True, result.get("settings"))
 
-    result, code = job("timeout", "tiny.xlsx", "--read", "Result", "--job-timeout", "10", "--test-hold", "60")
+    # The limit has to fall in the hold, after the open: on 13 November 2026 a job's start mark came at up to 7.9 s,
+    # and one job with a limit of 10 s was still opening the workbook when it fell.
+    result, code = job("timeout", "tiny.xlsx", "--read", "Result", "--job-timeout", "20", "--test-hold", "60")
     programs = [(entry["program"], entry["outcome"]) for entry in result["runner"]["stopped"]]
     check("a job past its limit is stopped", code == 1 and result["runner"]["timed_out"] is True
           and ("EXCEL", "stopped") in programs and ("powershell", "stopped") in programs, result.get("runner"))
@@ -537,11 +540,190 @@ def excel_cases(evidence: pathlib.Path, temp: pathlib.Path, temp_win: str) -> No
     check("an Excel whose job died is stopped", code == 1 and stopped and not left, result.get("runner"))
     check("a job that died says why", "ended without a result: " in (result.get("error") or ""), result.get("error"))
 
+    # Office writes four log files of up to 20 MiB for each Excel session to Diagnostics\EXCEL in the temp folder and
+    # leaves them there. Each job deletes its own Excel's, by the session GUID that the files are named after, and
+    # excel.py deletes them for a job it had to stop.
+    sessions = {}
+    for path in sorted(evidence.glob("*.json")):
+        found = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(found, dict) or "runner" not in found:
+            continue
+        logs = found.get("office_logs") or found["runner"].get("office_logs")
+        if found.get("excel") or logs:
+            sessions[path.stem] = ((found.get("excel") or {}).get("session") or (logs or {}).get("session"), logs)
+    unrecorded = sorted(name for name, (session, _) in sessions.items() if not session)
+    check("each job whose Excel started records that Excel's Office session", "tiny" in sessions and not unrecorded, unrecorded)
+    for name, what in (("tiny", "a job deletes its Excel's Office logs"), ("timeout", "excel.py deletes the Office logs of an Excel it stopped past the job's limit"),
+                       ("driver-died", "excel.py deletes the Office logs of an Excel it stopped because the job's PowerShell died")):
+        found = json.loads((evidence / f"{name}.json").read_text(encoding="utf-8"))
+        logs = (found.get("office_logs") if name == "tiny" else found["runner"].get("office_logs")) or {}
+        if name == "timeout" and not logs.get("removed"):
+            # On a slow start the limit falls in the open, killing Excel ends the job's call, and the job deletes the
+            # logs itself before excel.py gets to them, as in one run on 13 November 2026.
+            logs = found.get("office_logs") or logs
+        check(what, logs.get("removed", 0) > 0 and logs.get("left") == 0 and not logs.get("reason"), logs)
+    said = (evidence / "tiny.out").read_text(encoding="utf-8")
+    check("excel.py's one-line summary counts the Office logs a job left", " office_logs_left=0 " in said, said.strip())
+    folder = temp / "Diagnostics" / "EXCEL"
+    kept = sorted(path.name for session, _ in sessions.values() if session for path in folder.rglob(f"*_{session}.log"))
+    check("no Office log of a job's Excel is left", not kept, kept)
+
     # A job that ends without a result says why on stderr only. These jobs usually write nothing there, so the check is
     # that each one's file is there beside what it printed; the no-value job of stand_in_cases shows what reaches it.
     jobs = sorted(path.stem for path in evidence.glob("*.out"))
     lost = [name for name in jobs if not (evidence / f"{name}.stderr").is_file()]
     check("each job through real Excel keeps its stderr in the evidence folder", "tiny" in jobs and "driver-died" in jobs and not lost, lost or jobs)
+
+
+def office_log_cases(evidence: pathlib.Path, temp: pathlib.Path, temp_win: str) -> None:
+    """office-logs.ps1 on stand-in log files and stand-in session entries, in a temp folder and a registry key of its
+    own, with no Excel: which session it finds, which files it deletes, and what it says when it finds or deletes
+    none."""
+    helper = temp / f"xlbusy-{secrets.token_hex(4)}"
+    win = f"{temp_win}\\{helper.name}"
+    sessions = f"HKCU:\\Software\\xlcom-test-{helper.name}"
+    guid = {name: str(uuid.uuid4()).upper() for name in ("own", "other", "held", "found", "empty", "stale", "late", "other_id", "unlistable", "no_files", "no_folder", "late_value")}
+    logs = helper / "tmp" / "Diagnostics" / "EXCEL"
+    (logs / "Additional").mkdir(parents=True)
+    for name, session in guid.items():
+        if name in ("no_files", "no_folder", "late_value"):
+            continue
+        folder = helper / "tmp2" / "Diagnostics" / "EXCEL" if name == "unlistable" else logs
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / f"Primary1_{session}.log").write_bytes(b"\0" * 1000)
+    (logs / "Additional" / f"Additional2_{guid['own']}.log").write_bytes(b"\0" * 1000)
+    began = int(time.time()) - 100  # When each stand-in job wrote ps.pid; it wrote excel.pid 10 s later.
+
+    def entry(process: int, name: str, offset: int) -> dict:
+        """A session entry as Office writes it, stamped `offset` seconds after ps.pid, as a FILETIME."""
+        return {"ProcessId": process, "SessionId": "{" + guid[name] + "}", "SessionInitTime": str((began + offset + 11644473600) * 10**7)}
+
+    entries = {1001: entry(1001, "found", 5), 1002: entry(1002, "stale", -5), 1003: entry(1003, "late", 15),
+               1004: entry(9999, "other_id", 5), 1005: entry(1005, "empty", 5)}
+    # Each stand-in job: the process ID in its excel.pid (4 is the System process, never an Excel, and has no entry),
+    # what its excel.session holds, if it has one, and how office-logs.ps1 runs for it.
+    jobs = {"own": (4, guid["own"], ""), "held": (4, guid["held"], ""), "not_a_guid": (4, "not-a-guid", ""), "unrecorded": (4, None, ""),
+            "found": (1001, None, ""), "empty_file": (1005, "", ""), "stale": (1002, None, ""), "late": (1003, None, ""),
+            "other_id": (1004, None, ""), "record": (1001, None, "-Record"), "record_none": (4, None, "-Record"),
+            "no_ps_pid": (1001, None, "-Record"), "unlistable": (4, guid["unlistable"], ""), "no_files": (4, guid["no_files"], ""),
+            "no_folder": (4, guid["no_folder"], "")}
+    # Office makes an entry before it writes its value: the late_value job's entry gets its value 3 s after -Record
+    # starts, so -Record finds it only by trying again after a read that failed.
+    for job, (process, session, _) in (jobs | {"late_value": (1006, None, "-Record")}).items():
+        (helper / job).mkdir()
+        for file, offset in (("ps.pid", 0), ("excel.pid", 10)):
+            if job != "no_ps_pid" or file != "ps.pid":
+                (helper / job / file).write_text(str(process), encoding="utf-8")
+                os.utime(helper / job / file, (began + offset, began + offset))
+        if session is not None:
+            (helper / job / "excel.session").write_text(session, encoding="utf-8")
+    shutil.copyfile(HERE / "office-logs.ps1", helper / "office-logs.ps1")
+    (helper / "entries.json").write_text(json.dumps({str(key): json.dumps(value) for key, value in entries.items()} | {"1006": ""}), encoding="utf-8")
+    (helper / "entries.ps1").write_text(
+        "param([string] $Key, [string] $From)\n"
+        "New-Item -Path $Key -Force | Out-Null\n"
+        "$list = Get-Content -LiteralPath $From -Raw | ConvertFrom-Json\n"
+        "foreach ($p in $list.PSObject.Properties) { New-Item -Path (Join-Path $Key $p.Name) -Force | Out-Null; if ($p.Value) { "
+        "New-ItemProperty -LiteralPath (Join-Path $Key $p.Name) -Name '4' -PropertyType Binary -Value ([Text.Encoding]::UTF8.GetBytes($p.Value)) | Out-Null } }\n",
+        encoding="utf-8")
+    unlistable = f"{win}\\tmp2\\Diagnostics\\EXCEL"
+    holder = subprocess.Popen([*POWERSHELL, f"$f = [IO.File]::Open('{win}\\tmp\\Diagnostics\\EXCEL\\Primary1_{guid['held']}.log', 'Open', 'Read', 'None'); "
+                               f"Set-Content -LiteralPath '{win}\\held.ready' -Value 1; Start-Sleep -Seconds 120"],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=helper)
+    said, kept, summaries = {}, {}, []
+    real = temp / "Diagnostics" / "EXCEL"
+    before = {path.name for path in real.rglob("*.log")} if real.exists() else set()
+    try:
+        subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", f"{win}\\entries.ps1",
+                        "-Key", sessions, "-From", f"{win}\\entries.json"], capture_output=True, timeout=120, cwd=helper, check=True)
+        deadline = time.monotonic() + 60
+        while not (helper / "held.ready").exists() and time.monotonic() < deadline:
+            time.sleep(0.2)
+        for job, (_, _, mode) in jobs.items():
+            run = f"& '{win}\\office-logs.ps1' -Dir '{win}\\{job}' -Sessions '{sessions}' {mode}"
+            if job == "unlistable":
+                run = (f"$env:TMP = '{win}\\tmp2'; $env:TEMP = $env:TMP; $env:LOCALAPPDATA = $env:TMP; $env:USERPROFILE = $env:TMP; icacls '{unlistable}' /deny \"$($env:USERNAME):(RD)\" | Out-Null; "
+                       f"try {{ {run} }} finally {{ icacls '{unlistable}' /remove:d $env:USERNAME | Out-Null }}")
+            else:
+                run = f"$env:TMP = '{win}\\{'tmp3' if job == 'no_folder' else 'tmp'}'; $env:TEMP = $env:TMP; $env:LOCALAPPDATA = $env:TMP; $env:USERPROFILE = $env:TMP; {run}"
+            done = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", run],
+                                  capture_output=True, text=True, timeout=120, cwd=helper)
+            try:
+                said[job] = json.loads(done.stdout)
+            except ValueError:
+                said[job] = {"stdout": done.stdout[-300:], "stderr": done.stderr[-300:]}
+        recording = subprocess.Popen(["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
+                                      f"& '{win}\\office-logs.ps1' -Dir '{win}\\late_value' -Sessions '{sessions}' -Record"],
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=helper)
+        time.sleep(3)  # A slower start of -Record finds the value at once, which passes too; only no second try fails.
+        value = json.dumps(entry(1006, "late_value", 5))
+        subprocess.run([*POWERSHELL, f"New-ItemProperty -LiteralPath '{sessions}\\1006' -Name '4' -PropertyType Binary "
+                        f"-Value ([Text.Encoding]::UTF8.GetBytes('{value}')) | Out-Null"], capture_output=True, timeout=60, check=True)
+        try:
+            said["late_value"] = json.loads(recording.communicate(timeout=60)[0])
+        except ValueError:
+            said["late_value"] = {"error": "-Record printed no JSON"}
+        kept = {name: (logs / f"Primary1_{session}.log").exists() for name, session in guid.items() if name not in ("unlistable", "no_files", "no_folder", "late_value")}
+        kept["unlistable"] = (helper / "tmp2" / "Diagnostics" / "EXCEL" / f"Primary1_{guid['unlistable']}.log").exists()
+        kept["own_additional"] = (logs / "Additional" / f"Additional2_{guid['own']}.log").exists()
+        recorded_file = (helper / "record" / "excel.session").read_text(encoding="utf-8-sig").strip() if (helper / "record" / "excel.session").exists() else None
+        spec = importlib.util.spec_from_file_location("excel", EXCEL)
+        excel = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(excel)
+        (helper / "no_script").mkdir()
+        said["no_script"] = excel.office_logs(helper / "no_script", f"{win}\\no_script")
+        summaries = [excel.left_logs(result) for result in ({"office_logs": {"left": 0, "reason": None}, "runner": {}},
+                                                             {"office_logs": {"left": 1, "reason": "1 left: in use"}, "runner": {}},
+                                                             {"runner": {"office_logs": said["no_script"]}})]
+    finally:
+        holder.kill()
+        holder.wait()
+        subprocess.run([*POWERSHELL, f"Remove-Item -LiteralPath '{sessions}' -Recurse -Force -ErrorAction SilentlyContinue"], capture_output=True, timeout=60)
+        for _ in range(20):  # The killed holder can keep its file open for a moment longer.
+            shutil.rmtree(helper, ignore_errors=True)
+            if not helper.exists():
+                break
+            time.sleep(0.5)
+    (evidence / "office-logs.json").write_text(json.dumps({"said": said, "kept": kept}, indent=1), encoding="utf-8")
+    gone = subprocess.run([*POWERSHELL, f"Test-Path -LiteralPath '{sessions}'"], capture_output=True, text=True, timeout=60).stdout.strip()
+    check("the stand-in cases leave no registry key behind", gone == "False", gone)
+    vanished = sorted(before - ({path.name for path in real.rglob("*.log")} if real.exists() else set()))
+    check("the stand-in cases delete none of the real Office logs", not vanished, vanished)
+    nothing = {"session": None, "removed": 0, "bytes": 0, "left": 0, "reason": "no Office session was recorded for the job's Excel"}
+    check("office-logs.ps1 deletes the recorded session's stand-in log files, here and in Additional, and no other session's",
+          said.get("own") == {"session": guid["own"], "removed": 2, "bytes": 2000, "left": 0, "reason": None}
+          and not kept.get("own") and not kept.get("own_additional") and kept.get("other"), {"said": said.get("own"), "kept": kept})
+    held = said.get("held") or {}
+    check("office-logs.ps1 leaves a stand-in log file that another process holds, and says why",
+          {key: held.get(key) for key in ("session", "removed", "left")} == {"session": guid["held"], "removed": 0, "left": 1}
+          and (held.get("reason") or "").startswith("1 left: ") and "another process" in held["reason"] and kept.get("held"), held)
+    check("office-logs.ps1 deletes nothing for a recorded session that is no GUID, or for a job that recorded none and whose process ID Office has no session for",
+          said.get("not_a_guid") == nothing and said.get("unrecorded") == nothing, {job: said.get(job) for job in ("not_a_guid", "unrecorded")})
+    check("office-logs.ps1 takes the session from Office's entry for a job that recorded none, or recorded an empty one",
+          said.get("found") == {"session": guid["found"], "removed": 1, "bytes": 1000, "left": 0, "reason": None}
+          and said.get("empty_file") == {"session": guid["empty"], "removed": 1, "bytes": 1000, "left": 0, "reason": None}, {job: said.get(job) for job in ("found", "empty_file")})
+    check("office-logs.ps1 refuses an entry stamped before ps.pid or after excel.pid, or for another process, and keeps its files",
+          all(said.get(job) == nothing for job in ("stale", "late", "other_id")) and all(kept.get(job) for job in ("stale", "late", "other_id")),
+          {job: said.get(job) for job in ("stale", "late", "other_id")} | {"kept": kept})
+    check("office-logs.ps1 -Record writes the session of Office's entry to excel.session, or says why it found none",
+          said.get("record") == {"session": guid["found"], "reason": None} and recorded_file == guid["found"]
+          and said.get("record_none") == {"session": None, "reason": "Office recorded no session for this Excel within 10 s"}
+          and (said.get("no_ps_pid") or {}).get("session") is None and "ps.pid" in ((said.get("no_ps_pid") or {}).get("reason") or ""),
+          {job: said.get(job) for job in ("record", "record_none", "no_ps_pid")} | {"excel.session": recorded_file})
+    check("office-logs.ps1 -Record tries again after a read that failed, and finds an entry whose value Office writes later",
+          said.get("late_value") == {"session": guid["late_value"], "reason": None}, said.get("late_value"))
+    check("office-logs.ps1 says so when the recorded session has no log file, or Office wrote no log folder",
+          said.get("no_files") == {"session": guid["no_files"], "removed": 0, "bytes": 0, "left": 0, "reason": "no log file of the session was found"}
+          and said.get("no_folder") == {"session": guid["no_folder"], "removed": 0, "bytes": 0, "left": 0, "reason": "Office wrote no log folder"},
+          {job: said.get(job) for job in ("no_files", "no_folder")})
+    unlisted = said.get("unlistable") or {}
+    check("office-logs.ps1 says why when it cannot list the log folder, and deletes nothing",
+          unlisted.get("removed") == 0 and "denied" in (unlisted.get("reason") or "") and kept.get("unlistable"), unlisted)
+    check("excel.py's summary counts the Office logs left, and says unknown when the deletion found no session or failed",
+          summaries == [0, 1, "unknown"], summaries)
+    check("excel.py reports a deletion that printed no result, with PowerShell's error",
+          said.get("no_script", {}).get("reason", "").startswith("the deletion printed no result: ") and "office-logs.ps1" in said["no_script"]["reason"],
+          said.get("no_script"))
 
 
 def stand_in_cases(evidence: pathlib.Path, temp: pathlib.Path, temp_win: str) -> None:
@@ -739,6 +921,7 @@ def main() -> int:
     if len(sys.argv) == 2:
         excel_cases(evidence, temp, temp_win)
     stand_in_cases(evidence, temp, temp_win)
+    office_log_cases(evidence, temp, temp_win)
     after, folders_after = excel_count(), job_folders(temp)
     check("no Excel process left behind", before == after, f"before {before}, after {after}")
     check("no job folder left behind", folders_before == folders_after, folders_after)
