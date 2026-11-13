@@ -14,16 +14,18 @@ from release_case import skip_on_windows as setUpModule  # noqa: E402, F401
 
 
 class BranchesTest(ReleaseCase):
+    def setUp(self):
+        super().setUp()
+        self.seed_parser()
+
     def unloadable_setup(self, name):
-        """Start a release whose public setup this engine cannot load, as an engine that retired a build cannot load
-        a setup that still names it, and return its two worktrees."""
         release_main(['start', name, *self.options()], self.public)
         public, private = self.worktrees / name / 'public', self.worktrees / name / 'private'
         (public / release.SETUP).parent.mkdir(parents=True)
         (public / release.SETUP).write_text('[retired]\nbuild = "academic"\n', encoding='utf-8')
         return public, private
 
-    def test_finish_on_a_setup_an_engine_newer_than_both_worktrees_cannot_load_says_to_commit_and_rebase(self):
+    def test_invalid_setup_on_older_worktrees_preserves_commit_and_rebase_advice(self):
         public, private = self.unloadable_setup('stale')
         (public / 'content').write_text('mine\n', encoding='utf-8')
         (private / 'notes').write_text('mine\n', encoding='utf-8')
@@ -124,7 +126,7 @@ class BranchesTest(ReleaseCase):
         self.assertNotIn(f'git -C {public} rebase', said)
         self.assertNotIn('Another session', said)
 
-    def test_finish_on_an_engine_older_than_the_branch_says_to_pull(self):
+    def test_invalid_setup_is_not_blamed_on_an_older_canonical_checkout(self):
         for origin, canonical, path in ((self.public_origin, self.public, 'content'),
                                         (self.private_origin, self.private, 'notes')):
             with self.subTest(canonical=canonical.name):
@@ -135,11 +137,13 @@ class BranchesTest(ReleaseCase):
                 said = self.stopped_finish(name)
 
                 self.assertIn('retired: unknown key', said)
-                self.assertIn(f'The engine is older than this branch: {canonical} lacks commits the branch started '
-                              f'from. Pull this machine with {sys.executable} -B {self.public / "pull.py"} --update '
-                              '--apply', said)
+                self.assertIn('Fix it, then finish again; this run committed nothing', said)
+                self.assertNotIn('Pull this machine', said)
                 self.assertNotIn('rebase', said)
                 git(canonical, 'pull', '-q', '--ff-only')
+                after_pull = self.stopped_finish(name)
+                self.assertIn('retired: unknown key', after_pull)
+                self.assertIn('Fix it, then finish again', after_pull)
 
     def test_a_worktree_without_work_of_its_own_is_brought_up_before_the_setup_is_read(self):
         public, private = self.unloadable_setup('level')

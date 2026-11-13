@@ -3,6 +3,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -21,6 +22,13 @@ def skip_on_windows():
 
 def git(root, *args):
     return subprocess.check_output(['git', '-C', str(root), *args], stderr=subprocess.DEVNULL).decode().strip()
+
+
+def parser_into(root):
+    sources = sorted(path for path in Path(__file__).resolve().parents[1].glob('*.py') if path.name != 'sync.py')
+    for source in sources:
+        shutil.copyfile(source, root / source.name)
+    return [source.name for source in sources]
 
 
 def sync_with_changes(*held):
@@ -124,6 +132,11 @@ class ReleaseCase(unittest.TestCase):
 
     def options(self):
         return ['--worktrees', str(self.worktrees), '--private', str(self.private)]
+
+    def seed_parser(self):
+        git(self.public, 'add', '-f', *parser_into(self.public))
+        git(self.public, 'commit', '-qm', 'Seed the setup parser')
+        git(self.public, 'push', '-q', 'origin', 'HEAD:main')
 
     def push_from_another_session(self, origin, name, files):
         other = self.clone(origin, name)

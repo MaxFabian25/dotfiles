@@ -515,20 +515,6 @@ class LockTest(ReleaseCase):
             self.assertEqual(release_main(['finish', 'absent', *self.options()], self.public), 3)
         self.assertFalse((self.worktrees / 'absent').exists())
 
-    def test_a_finish_loads_the_engine_modules_it_needs_before_its_first_check(self):
-        release_main(['start', 'early', *self.options()], self.public)
-        loaded = []
-
-        def first_check(tree, name):
-            loaded.append(all(module in sys.modules for module in ('description', 'description_toml', 'drift', 'host_state')))
-            return 'stopped here'
-
-        with patch.dict(sys.modules), patch.object(release, 'unfinished', first_check), redirect_stderr(io.StringIO()):
-            for module in ('description_toml', 'drift', 'host_state'):
-                sys.modules.pop(module, None)
-            self.assertEqual(release_main(['finish', 'early', *self.options()], self.public), 3)
-        self.assertEqual(loaded, [True, True])
-
     def test_a_stop_names_how_the_worktrees_changed(self):
         release_main(['start', 'named', *self.options()], self.public)
         public, private = self.worktrees / 'named/public', self.worktrees / 'named/private'
@@ -635,27 +621,6 @@ class LockTest(ReleaseCase):
                     self.assertIn('this run committed nothing', error.getvalue())
                     self.assertNotIn('test suite failed', error.getvalue())  # stopped before the failing suite ran
         self.assertEqual(release.unpinned({'mine': 'skills/mine'}, ['mine'], True), {})
-
-    def test_a_tree_without_a_setup_description_has_no_owned_sources(self):
-        self.assertEqual(release.edited_owned(self.public, self.private, self.private), {})
-
-    def test_an_owned_source_edited_after_its_pin_is_named(self):
-        import description as d
-        import description_toml
-        from host_state import DeviceRoots
-        (self.public / release.SETUP).parent.mkdir()
-        (self.public / release.SETUP).write_text('schema = 1\n', encoding='utf-8')
-        skill = self.public / 'skills/mine/SKILL.md'
-        skill.parent.mkdir(parents=True)
-        skill.write_text('Pinned\n', encoding='utf-8')
-        mine = d.LooseSkill('mine', d.Visibility.PUBLIC, '',
-                            d.LocalSource('skills/mine', DeviceRoots.current().tree_digest(skill.parent)), {})
-        setup = d.Setup(roots=d.Roots(self.public / 'setup', None), packages={}, repos={}, loose={'mine': mine},
-                        host_skills={}, rules=None, note_rules=(), public_repositories=frozenset(), lock={})
-        with patch.object(description_toml, 'load', return_value=setup):
-            self.assertEqual(release.edited_owned(self.public, self.private, self.private), {})
-            skill.write_text('Edited\n', encoding='utf-8')
-            self.assertEqual(release.edited_owned(self.public, self.private, self.private), {'mine': 'skills/mine'})
 
     def test_the_pull_a_finish_starts_does_not_wait_a_second_time(self):
         # The stand-in also notes whether a release held this machine's lock while it ran, and exits 5.

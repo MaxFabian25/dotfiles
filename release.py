@@ -837,21 +837,65 @@ def reused_release_names(public, private):
     return reused
 
 
+# An installed engine queries other tree revisions through these names. Switch callers in an earlier
+# release before removing an old API name.
+OWNED_EDITS = '''from dataclasses import replace
+import json
+from pathlib import Path
+import sys
+
+public, private, engine = map(Path, sys.argv[1:])
+sys.path.insert(0, str(public))
+from description import DescriptionError, Roots
+from description_toml import load
+import drift
+from host_state import DeviceRoots
+
+private_setup = private / 'setup'
+try:
+    setup = load(Roots(public / 'setup', private_setup if private_setup.is_dir() else None))
+except DescriptionError as error:
+    result = {'description_error': str(error)}
+else:
+    result = {'edited': drift.edited_owned(setup, replace(DeviceRoots.current(), engine=engine))}
+print(json.dumps(result))
+'''
+
+
 def edited_owned(public, private, private_repo):
-    """Owned sources whose files differ from the tree their entry pins, as entry name to source path. The device
-    check finds the same thing, but only after the suites have run. Empty for a tree without a setup description."""
     if not (public / SETUP).is_file():
         return {}
-    from description import DescriptionError, Roots
-    from description_toml import load
-    import drift
-    from host_state import DeviceRoots
-    private_setup = private / 'setup'
+    tree = public.resolve()
     try:
-        setup = load(Roots(public / 'setup', private_setup if private_setup.is_dir() else None))
-    except DescriptionError as error:
-        raise RuntimeError(unloadable({public: ENGINE, private: private_repo}, error)) from error
-    return drift.edited_owned(setup, DeviceRoots.current())
+        result = subprocess.run([sys.executable, *ISOLATED_RUN, '-c', OWNED_EDITS, str(tree), str(private.resolve()),
+                                 str(ENGINE.resolve())], cwd=tree, stdin=subprocess.DEVNULL, capture_output=True,
+                                text=True, encoding='utf-8', errors='replace', timeout=1800)
+    except subprocess.TimeoutExpired as error:
+        stderr = error.stderr or ''
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode('utf-8', errors='replace')
+        raise RuntimeError(f'{tree}: owned-source parser timed out after {error.timeout:g} seconds\n{stderr}') from error
+    except OSError as error:
+        raise RuntimeError(f'{tree}: could not start owned-source parser: {error}') from error
+    diagnostic = f'{tree}: owned-source parser exited {result.returncode}'
+    if result.returncode:
+        raise RuntimeError(f'{diagnostic}\n{result.stderr}')
+    try:
+        reply = json.loads(result.stdout)
+    except ValueError as error:
+        raise RuntimeError(f'{diagnostic} with invalid JSON: {error}\n{result.stderr}') from error
+    if not isinstance(reply, dict):
+        raise RuntimeError(f'{diagnostic} with an invalid reply shape\n{result.stderr}')
+    if set(reply) == {'edited'} and isinstance(reply['edited'], dict) and all(
+            isinstance(name, str) and isinstance(path, str) for name, path in reply['edited'].items()):
+        if result.stderr:
+            print(result.stderr, end='', file=sys.stderr)
+        return reply['edited']
+    if set(reply) == {'description_error'} and isinstance(reply['description_error'], str):
+        if result.stderr:
+            print(result.stderr, end='', file=sys.stderr)
+        raise RuntimeError(unloadable({public: ENGINE, private: private_repo}, reply['description_error']))
+    raise RuntimeError(f'{diagnostic} with an invalid reply shape\n{result.stderr}')
 
 
 def holds(tree, commit, target='HEAD'):
@@ -864,24 +908,14 @@ def holds(tree, commit, target='HEAD'):
 
 
 def unloadable(checkouts, error):
-    """Why finish stops on a setup that this engine cannot load, given each worktree's canonical checkout. The
-    engine runs from those checkouts, which a pull moves on while a worktree stays where it started: on 12 November
-    2026 a finish that had waited for another release ran an engine that had retired a build the worktree's older
-    setup still named. finish does not rebase here, because a rebase before the overlap check would hide from it the
-    files another session changed meanwhile."""
+    """Rebasing here would hide upstream changes from the overlap check."""
     problem = f'the setup does not load:\n{error}\n'
     try:
-        older = [canonical for tree, canonical in checkouts.items()
-                 if not holds(canonical, git(tree, 'merge-base', 'HEAD', 'origin/main'))]
         behind = [tree for tree, canonical in checkouts.items() if not holds(tree, git(canonical, 'rev-parse', 'HEAD'))]
         shared = [f'{tree.name}: {", ".join(files)}' for tree in behind if (files := overlap(tree))]
     except RuntimeError as failure:
         return (f'{problem}finish could not tell whether the worktrees are older than the engine: {failure}\n'
                 'Fix the setup or bring the worktrees up to date, then finish again')
-    if older:
-        return (f'{problem}The engine is older than this branch: {", ".join(map(str, older))} lacks commits the '
-                f'branch started from. Pull this machine with {sys.executable} -B {ENGINE / "pull.py"} --update '
-                '--apply, then finish again')
     if not behind:
         return f'{problem}Fix it, then finish again'
     first = (('Another session changed the same files on origin/main since this branch started ('
@@ -1408,7 +1442,6 @@ def finish(args, public_repo, private_repo, *, rounds=ATTEMPTS):
                 if not wait(('pull', 'sync'), args.timeout):
                     raise RuntimeError(f'another pull or sync still runs here after {args.timeout:g} seconds')
                 raise Restart('after the wait', remaining)
-            import description, description_toml, drift, host_state  # noqa: F401
             if stops := [stop for tree in (public, private) if (stop := unfinished(tree, args.name))]:
                 raise RuntimeError('; '.join(stops))
             if began is None:
