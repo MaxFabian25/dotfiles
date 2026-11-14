@@ -1,8 +1,8 @@
 # skills/example-skill.toml
-note = "Shared skill from the user's skills repo; linked on macOS, copied where links need privileges."
+note = "A personal skill; linked on macOS, copied where links need privileges."
 [source]
-repo = "example-skills"              # repos/example-skills.toml pins the skills repo
-path = "example-skill"
+# One stored snapshot per place: snapshots/<hex> in the private root.
+snapshot = { claude = "sha256:1111111111111111111111111111111111111111111111111111111111111111", agents = "sha256:1111111111111111111111111111111111111111111111111111111111111111" }
 [place]
 claude = true                        # {claude_home}/skills/example-skill, on
 agents = true                        # {agents_home}/skills/example-skill, which Codex reads

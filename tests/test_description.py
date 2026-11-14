@@ -283,7 +283,8 @@ rename = {{ one = "first", two = "second" }}
 frozen = {{ since = "2026-01-01", upstream = "{'b' * 40}", reason = "Upstream changed its licence." }}
 ''')
         self.assertEqual(written(description.SnapshotRecipe('sha256:' + 'c' * 64, {
-            'one': None, 'two': description.Origin('example/two', 'skills/two', commit)}),
+            'one': description.Origin('example/one', 'skills/one', None),
+            'two': description.Origin('example/two', 'skills/two', commit)}),
                                  metadata={'description': 'Snapshot skills.'}), f'''\
 [source]
 build = "snapshot"
@@ -292,7 +293,7 @@ packaging = 2
 display_name = "Kit"
 
 [source.origins]
-one = {{}}
+one = {{ repository = "example/one", path = "skills/one" }}
 two = {{ repository = "example/two", path = "skills/two", commit = "{commit}" }}
 
 [source.metadata]
@@ -685,7 +686,8 @@ class LeakTest(unittest.TestCase):
             (roots.public / 'skills/x.toml').write_text(f'public = true\n[source]\nsnapshot = {{ claude = "{snapshot}" }}\n[place]\nclaude = true\n')
             (roots.public / 'packages/y.toml').write_text(
                 f'public = true\n[source]\nbuild = "snapshot"\nsnapshot = "{snapshot}"\npackaging = 1\ndisplay_name = "Y"\n'
-                '[source.origins]\ny = {}\n[codex]\ninstall = [{ via = "personal", enabled = true }]\n')
+                '[source.origins]\ny = { repository = "https://github.com/example/y.git", path = "y" }\n'
+                '[codex]\ninstall = [{ via = "personal", enabled = true }]\n')
             shutil.copytree(roots.private / 'hosts', roots.public / 'hosts')
             (roots.public / 'rules').mkdir()
             (roots.public / 'rules/AGENTS.md').write_text('')
@@ -695,6 +697,36 @@ class LeakTest(unittest.TestCase):
                             f'{roots.public / "hosts/codex.toml"}:: host toggles are private',
                             f'{roots.public / "rules/AGENTS.md"}:: shared rules are private'):
                 self.assertIn(problem, problems)
+
+    def test_a_loose_skill_takes_a_snapshot_or_a_local_source_and_nothing_else(self):
+        for source, extra in (('repo = "example-skills"\npath = "example-skill"\n', 'source.repo: unknown key'), ('', None)):
+            with self.subTest(source=source), Roots() as roots:
+                path = roots.private / 'skills/example-skill.toml'
+                path.write_text(f'[source]\n{source}[place]\nclaude = true\n')
+                problems = roots.problems()
+                self.assertIn(f'{path}:source: expected snapshot or local', problems)
+                if extra:
+                    self.assertIn(f'{path}:{extra}', problems)
+
+    def test_without_flags_the_private_root_is_the_sibling_dotfiles_private_checkout_and_nothing_else(self):
+        with tempfile.TemporaryDirectory() as folder, mock.patch.object(description, 'ENGINE', Path(folder) / 'dotfiles'), \
+                mock.patch.dict(os.environ):
+            for name in ('AGENT_SETUP_PUBLIC', 'AGENT_SETUP_PRIVATE'):
+                os.environ.pop(name, None)
+            base = Path(folder)
+            (base / 'setup-private/setup').mkdir(parents=True)
+            self.assertIsNone(description.Roots.resolve().private)
+            (base / 'dotfiles-private/setup').mkdir(parents=True)
+            self.assertEqual(description.Roots.resolve().private, base / 'dotfiles-private/setup')
+
+    def test_every_snapshot_origin_names_its_repository_and_path(self):
+        with Roots() as roots:
+            path = roots.private / 'packages/y.toml'
+            path.write_text(f'[source]\nbuild = "snapshot"\nsnapshot = "sha256:{"a" * 64}"\npackaging = 1\ndisplay_name = "Y"\n'
+                            '[source.origins]\ny = {}\n[codex]\ninstall = [{ via = "personal", enabled = true }]\n')
+            problems = roots.problems()
+        self.assertIn(f'{path}:source.origins.y.repository: missing', problems)
+        self.assertIn(f'{path}:source.origins.y.path: missing', problems)
 
     def test_a_device_list_loads_from_the_private_root_only(self):
         with Roots() as roots:

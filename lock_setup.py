@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from description import LocalSource, Lock, LockedTree, Package, Roots, SnapshotSource, Visibility, intent
+from description import LocalSource, Lock, LockedTree, Package, Roots, Visibility, intent
 from description_toml import load, render_root
 from host_state import DeviceRoots, Host
 from portable import read_utf8
@@ -61,13 +61,8 @@ def refresh(setup, builder, names, *, owned=False):
                 source = entry.source
                 if isinstance(source, LocalSource):
                     tree = builder.local(entry.visibility, source, place)
-                elif isinstance(source, SnapshotSource):
-                    tree = setup.roots.private / 'snapshots' / str(source.snapshots[place]).removeprefix('sha256:')
                 else:
-                    repo = setup.repos[source.repo]
-                    tree = builder.directory / '.sync/loose' / name / repo.commit
-                    if not tree.exists():
-                        builder.sources.tree(repo.url, repo.commit, tree, source.path)
+                    tree = setup.roots.private / 'snapshots' / str(source.snapshots[place]).removeprefix('sha256:')
                 placements[place] = builder.roots.tree_digest(tree)
             locks[name] = Lock(intent(entry, setup.repos), placements=placements)
     return replace(setup, packages=packages, loose=loose, lock=locks)

@@ -162,9 +162,6 @@ def check_references(setup: Setup, visibility: Visibility, errors: list[str]) ->
                                   f'{name}; set platforms to keep it off {runtime.platform.value}, or pin a runtime that has it')
                 elif isinstance(source, (BuildSource, LocalSource)) and install.enabled:
                     errors.append(f'{path}:{key}: a build installs through the engine, not {install.marketplace}')
-    for name, skill in setup.loose.items():
-        if skill.visibility == visibility and isinstance(skill.source, RepoSource) and skill.source.repo not in repos:
-            errors.append(f'{entry_path(root, "skills", name)}:source.repo: unknown repo {skill.source.repo}')
 
 
 def check_invariants(setup: Setup, errors: list[str]) -> None:
@@ -239,8 +236,6 @@ def check_invariants(setup: Setup, errors: list[str]) -> None:
             if owner:
                 errors.append(f'{path}:skills.{key}: {owner}')
     for name, skill in setup.loose.items():
-        if isinstance(skill.source, RepoSource) and skill.source.imports:
-            errors.append(f'{entry_path(roots.of(skill.visibility), "skills", name)}:source.imports: only packages import skills')
         if isinstance(skill.source, LocalSource) and skill.source.variants and set(skill.source.variants) != set(skill.place):
             errors.append(f'{entry_path(roots.of(skill.visibility), "skills", name)}:source.variants: '
                           'names a path for each placement, and only those')

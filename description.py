@@ -33,13 +33,11 @@ class Roots:
 
     @classmethod
     def resolve(cls, public: Path | None = None, private: Path | None = None, *, create: bool = False) -> Roots:
-        """Flags, then AGENT_SETUP_PUBLIC / AGENT_SETUP_PRIVATE, then <engine>/setup and a sibling checkout,
-        which counts only where it exists unless the caller is about to create it."""
+        """Flags, then AGENT_SETUP_PUBLIC / AGENT_SETUP_PRIVATE, then <engine>/setup and the sibling checkout's
+        dotfiles-private/setup, which counts only where it exists unless the caller is about to create it."""
         public = public or os.environ.get('AGENT_SETUP_PUBLIC') or ENGINE / 'setup'
         private = private or os.environ.get('AGENT_SETUP_PRIVATE')
         sibling = ENGINE.parent / 'dotfiles-private/setup'
-        if not sibling.is_dir() and (ENGINE.parent / 'setup-private/setup').is_dir():
-            sibling = ENGINE.parent / 'setup-private/setup'
         if private is None and (create or sibling.is_dir()):
             private = sibling
         return cls(Path(public), Path(private) if private else None)
@@ -94,7 +92,7 @@ class Origin:
 @dataclass(frozen=True)
 class SnapshotRecipe:                # standalone_package.py
     snapshot: Digest                 # the content address the snapshot store already uses
-    origins: Mapping[str, Origin | None]   # skill -> where it came from; None for personal skills
+    origins: Mapping[str, Origin]    # skill -> where it came from
 
     def skills(self) -> tuple[str, ...]:
         return tuple(self.origins)
@@ -320,7 +318,7 @@ class LooseSkill:
     name: EntryName
     visibility: Visibility
     note: str
-    source: RepoSource | SnapshotSource | LocalSource
+    source: SnapshotSource | LocalSource
     place: Mapping[SkillRoot, bool]  # placed under that root -> on there
 
 

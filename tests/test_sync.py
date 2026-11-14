@@ -297,6 +297,29 @@ class PinnedBuildTest(unittest.TestCase):
         self.assertEqual(updated.lock['drive'], Lock(intent(package, {})))
         builder.codex.assert_not_called()
 
+    def test_locking_a_snapshot_loose_skill_records_the_tree_stored_for_each_place(self):
+        from description import LooseSkill, Roots, Setup, SkillRoot, SnapshotSource, Visibility
+        from host_state import DeviceRoots
+        from lock_setup import refresh
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as folder:
+            roots = DeviceRoots.current(Path(folder))
+            private = Path(folder) / 'private/setup'
+            snapshots, trees = {}, {}
+            for place in (SkillRoot.CLAUDE, SkillRoot.AGENTS):
+                staged = Path(folder) / place.value
+                staged.mkdir()
+                (staged / 'SKILL.md').write_text(f'---\nname: notes\ndescription: The {place.value} copy.\n---\n')
+                snapshots[place] = roots.tree_digest(staged)
+                trees[place] = private / 'snapshots' / snapshots[place].removeprefix('sha256:')
+                trees[place].parent.mkdir(parents=True, exist_ok=True)
+                staged.rename(trees[place])
+            skill = LooseSkill('notes', Visibility.PRIVATE, '', SnapshotSource(snapshots), {place: True for place in snapshots})
+            setup = Setup(Roots(Path(folder) / 'setup', private), {}, {}, {'notes': skill}, {}, None, (), frozenset(), {})
+            builder = Mock(roots=roots)
+            self.assertEqual(refresh(setup, builder, ['notes']).lock['notes'].placements, snapshots)
+            self.assertNotEqual(snapshots[SkillRoot.CLAUDE], snapshots[SkillRoot.AGENTS])
+
     def kept_and_dormant(self):
         from dataclasses import replace
         from description import (BuildSource, CodexPlacement, EngineInstall, GenericRecipe, Lock, LockedTree, Package, Roots,

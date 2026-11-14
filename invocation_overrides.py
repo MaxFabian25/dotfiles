@@ -47,7 +47,7 @@ def replace_field(header, key, value):
     return replaced
 
 
-def transform_skill(text, qualified, registry, selected=True, explicit=False):
+def transform_skill(text, qualified, selected=True, explicit=False):
     match, metadata = frontmatter(text)
     header = match[1]
     expected = dict(metadata)
@@ -62,26 +62,9 @@ def transform_skill(text, qualified, registry, selected=True, explicit=False):
     elif selected and not explicit and metadata.get('disable-model-invocation') is True:
         header = replace_field(header, 'disable-model-invocation', False)
         expected['disable-model-invocation'] = False
-    rule = registry.get('descriptionReplacements', {}).get(qualified)
-    if rule:
-        description = metadata.get('description')
-        if description == rule['from']:
-            header = replace_field(header, 'description', rule['to'])
-            expected['description'] = rule['to']
-        elif description != rule['to'] and re.search(r'explicit|by name', description or '', re.I):
-            raise ValueError(f'Review changed invocation description: {qualified}')
-        # A new upstream task-based description supersedes the old exact patch.
     if yaml.safe_load(header) != expected:
         raise ValueError(f'Unexpected metadata change: {qualified}')
-    output = text[:match.start(1)] + header + text[match.end(1):]
-    for rule in registry.get('textReplacements', {}).get(qualified, []):
-        if rule['from'] in output:
-            if output.count(rule['from']) != 1:
-                raise ValueError(f'Ambiguous text replacement: {qualified}')
-            output = output.replace(rule['from'], rule['to'], 1)
-        elif rule['to'] not in output:
-            raise ValueError(f'Review changed companion wording: {qualified}')
-    return output
+    return text[:match.start(1)] + header + text[match.end(1):]
 
 
 def transform_policy(text, allow=True):
@@ -205,10 +188,9 @@ def harness_gaps(root, harness):
 
 
 def noted_here(adaptations, identity):
-    # Tool notes apply to every host's install of a listed plugin, except copies built from a noted cache.
+    # Tool notes apply to every host's install of a listed plugin.
     notes = adaptations.get('toolNotes')
-    name, marketplace = identity.split('@', 1)
-    if notes and name in notes['plugins'] and marketplace not in notes.get('inheritingMarketplaces', []):
+    if notes and identity.split('@', 1)[0] in notes['plugins']:
         return notes['rules']
     return None
 
@@ -340,14 +322,13 @@ def exported_policies(root):
             folder = paths[name].parent.relative_to(root.resolve())
             policies[(folder / 'agents/openai.yaml').as_posix()] = lambda text, allow=allow: transform_policy(text, allow)
             if allow:
-                policies[(folder / 'SKILL.md').as_posix()] = lambda text, name=name: transform_skill(text, name, {})
+                policies[(folder / 'SKILL.md').as_posix()] = lambda text, name=name: transform_skill(text, name)
     return policies
 
 
 def plan(registry, installs, adaptations=None):
     adaptations = adaptations or {'plugins': {}}
     writes = []
-    counts = {'Codex': 0, 'Claude': 0}
     for host, identity, root in installs:
         plugin = identity.split('@')[0]
         staged = {}
@@ -385,20 +366,17 @@ def plan(registry, installs, adaptations=None):
         explicit = set(registry.get('explicitTargets', {}).get(host, {}).get(identity, []))
         if selected & explicit:
             raise ValueError(f'Skills listed as both implicit and explicit-only in {identity}: {sorted(selected & explicit)}')
-        companions = {key.split(':', 1)[1] for key in registry.get('textReplacements', {}) if key.startswith(plugin + ':')}
-        missing = (selected | explicit | companions) - available.keys()
+        missing = (selected | explicit) - available.keys()
         if missing:
             raise ValueError(f'Review missing selected skills in {identity}: {sorted(missing)}')
-        for name in sorted(selected | explicit | companions):
+        for name in sorted(selected | explicit):
             path = available[name]
             qualified = plugin + ':' + name
             stage(path, lambda text, qualified=qualified, chosen=name in selected, forced=name in explicit:
-                  transform_skill(text, qualified, registry, selected=chosen, explicit=forced))
-            if name in selected or name in explicit:
-                counts[host] += 1
-                policy = path.parent / 'agents/openai.yaml'
-                if host == 'Codex' or policy.exists():
-                    stage(policy, lambda text, allow=name in selected: transform_policy(text, allow))
+                  transform_skill(text, qualified, selected=chosen, explicit=forced))
+            policy = path.parent / 'agents/openai.yaml'
+            if host == 'Codex' or policy.exists():
+                stage(policy, lambda text, allow=name in selected: transform_policy(text, allow))
         for path in available.values():
             text = staged[path.resolve()][1] if path.resolve() in staged else read_text(path)
             relinked = relink_skills(text, path, available)
@@ -406,5 +384,5 @@ def plan(registry, installs, adaptations=None):
                 stage(path, lambda _, relinked=relinked: relinked)
             check_skill_links(identity, root, path, relinked)
         writes.extend((path, old, new, host, identity) for path, (old, new) in staged.items())
-    return writes, counts
+    return writes
 

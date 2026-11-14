@@ -20,7 +20,8 @@ from codex_host import CodexState
 from configuration import desired
 from description import (Adaptation, AlignedInstall, ClaudePlacement, CodexPlacement, EngineInstall, Hooks, HostMarketplace,
                          LocalSource, Lock, LockedTree, LooseSkill, MarketplaceInstall, MarketplaceMode, NoteRule, Package,
-                         PluginRoles, Repo, RepoSource, Roots, Rules, Setup, SkillRoot, ToolNotes, Visibility, intent)
+                         PluginRoles, Repo, RepoSource, Roots, Rules, Setup, SkillRoot, SnapshotSource, ToolNotes,
+                         Visibility, intent)
 from device import Device
 from device_sync import apply, plan
 from homes import hold_built_trees_once, isolate_git
@@ -3894,6 +3895,22 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual(self.run_apply().exit_code, 0)
         self.assertEqual((loose / 'SKILL.md').read_text(), 'An updated loose skill.\n')
         self.assertFalse((loose / '__pycache__').exists())
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
+    def test_a_loose_skill_from_a_snapshot_installs_the_tree_stored_under_its_digest(self):
+        stored = self.root / 'stored'
+        stored.mkdir()
+        (stored / 'SKILL.md').write_text('A snapshot loose skill.\n')
+        digest = self.roots.tree_digest(stored)
+        private = self.root / 'private/setup'
+        (private / 'snapshots').mkdir(parents=True)
+        stored.rename(private / 'snapshots' / digest.removeprefix('sha256:'))
+        skill = replace(self.setup.loose['loose'], visibility=Visibility.PRIVATE,
+                        source=SnapshotSource({SkillRoot.CODEX: digest}))
+        self.setup = replace(self.setup, roots=Roots(self.public / 'setup', private), loose={'loose': skill},
+                             lock={**self.setup.lock, 'loose': Lock(intent(skill, {}), placements={SkillRoot.CODEX: digest})})
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual((self.roots.codex_home / 'skills/loose/SKILL.md').read_text(), 'A snapshot loose skill.\n')
         self.assertEqual(plan(self.setup, self.device).exit_code, 0)
 
     def test_a_linked_python_cache_still_blocks(self):

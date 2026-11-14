@@ -34,7 +34,7 @@ def policy_writes(package, root):
         if name in implicit:
             skill = paths[name]
             before = read_text(skill)
-            after = transform_skill(before, f'{package.name}:{name}', {})
+            after = transform_skill(before, f'{package.name}:{name}')
             if before != after:
                 changes.append((skill, before, after, name))
     return tuple(changes)

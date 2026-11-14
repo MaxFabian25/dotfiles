@@ -12,8 +12,7 @@ import tomllib
 import yaml
 
 from configuration import BlockedConfiguration, Configuration, FileConfiguration, JsonConfiguration, read_fields
-from description import (EngineInstall, LooseSkill, Package, Setup, SkillRoot, SnapshotSource,
-                         LocalSource, _canonical)
+from description import EngineInstall, LooseSkill, Package, Setup, SkillRoot, LocalSource, _canonical
 from host_state import DeviceRoots, Digest, EntryName, Host, Platform, SkillMode, bytes_digest
 from invocation_overrides import collect_skills, frontmatter, skill_paths
 from sync_sources import Builder, BuildError, child
@@ -22,9 +21,7 @@ from sync_sources import Builder, BuildError, child
 @dataclass(frozen=True)
 class SkillExport:
     package: EntryName
-    source_host: Host
     source_skill: str
-    opencode_id: str
     mode: SkillMode | None
 
 
@@ -104,7 +101,7 @@ def plan(setup: Setup, roots: DeviceRoots, platform: Platform, *, adopted: bool 
         packages.append(package)
         for skill, mode in sorted(modes.items()):
             identity = _id(name + '-' + skill)
-            exports.append(SkillExport(name, Host.CODEX, skill, identity, mode))
+            exports.append(SkillExport(name, skill, mode))
             if mode == SkillMode.OFF:
                 denied.add(identity)
     loose = []
@@ -296,13 +293,8 @@ def materialise(plan: OpenCodePlan, builder: Builder, destination: Path) -> Path
         source = skill.source
         if isinstance(source, LocalSource):
             tree = builder.local(skill.visibility, source, root)
-        elif isinstance(source, SnapshotSource):
-            tree = child(builder.setup.roots.private / 'snapshots', str(source.snapshots[root]).removeprefix('sha256:'))
         else:
-            repo = builder.setup.repos[source.repo]
-            tree = builder.directory / '.sync/opencode-loose' / skill.name / repo.commit
-            if not tree.exists():
-                builder.sources.tree(repo.url, repo.commit, tree, source.path)
+            tree = child(builder.setup.roots.private / 'snapshots', str(source.snapshots[root]).removeprefix('sha256:'))
         if builder.roots.tree_digest(tree) != export.digest:
             raise BuildError(f'{skill.name}: OpenCode loose skill source differs from its lock')
         _, implicit = _metadata(tree / 'SKILL.md', export.mode)

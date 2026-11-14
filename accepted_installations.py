@@ -18,7 +18,7 @@ import uuid
 
 from configuration import (BlockedConfiguration, FileConfiguration, JsonConfiguration, NpmrcConfiguration,
                            desired, patch_fields, read_fields, validate_runtime)
-from description import (AlignedInstall, LocalSource, RepoSource, SkillRoot, SnapshotSource, ToolNotes, _canonical,
+from description import (AlignedInstall, LocalSource, RepoSource, SkillRoot, ToolNotes, _canonical,
                          plugin_id)
 from drift import Difference, EntryRef, Kind
 from host_state import FactKey, Host, InstallDetail, Released, Surface, Unpinned, bytes_digest
@@ -750,15 +750,10 @@ class AcceptedInstallations:
                 root_name = next(root for root in SkillRoot if self._skill_root(root) / skill.name == artifact.destination)
                 if isinstance(skill.source, LocalSource):
                     source = builder.local(skill.visibility, skill.source, root_name)
-                elif isinstance(skill.source, SnapshotSource):
+                else:
                     if self.setup.roots.private is None:
                         raise BuildError(f'{skill.name}: its snapshot requires the private repository')
                     source = self.setup.roots.private / 'snapshots' / str(skill.source.snapshots[root_name]).removeprefix('sha256:')
-                else:
-                    repo = self.setup.repos[skill.source.repo]
-                    source = self.roots.engine / '.sync/loose' / skill.name / repo.commit
-                    if not source.exists():
-                        builder.sources.tree(repo.url, repo.commit, source, skill.source.path)
                 if self.roots.tree_digest(source) != artifact.expected.digest:
                     raise BuildError(f'{skill.name}: source bytes do not match the locked loose skill')
             prepared.append(self._prepare_artifact(artifact, self._target(artifact, source, data), source, data, pristine))

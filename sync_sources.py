@@ -282,7 +282,7 @@ class Builder:
             command = placement.windows_hook_command if host == Host.CODEX else None
             if edits := windows_overlay(command, placement.windows_replace):
                 adaptations['windows'] = {package.name: edits}
-        return plan(registry, [(label, identity, root)], adaptations=adaptations)[0]
+        return plan(registry, [(label, identity, root)], adaptations=adaptations)
 
     def check_overlays(self, package: Package, codex: Built, claude: dict[str, Built]) -> None:
         for host in Host:

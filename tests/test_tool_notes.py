@@ -19,8 +19,7 @@ RULES = [
     {'match': r'\bWebSearch\b', 'note': " (Codex: the web tool's `search_query`)"},
     {'match': r'\bWebFetch\b', 'note': " (Codex: the web tool's `open`)"},
 ]
-ADAPTATIONS = {'plugins': {}, 'toolNotes': {'plugins': ['example-tools'],
-                                         'inheritingMarketplaces': ['codex-aligned'], 'rules': RULES}}
+ADAPTATIONS = {'plugins': {}, 'toolNotes': {'plugins': ['example-tools'], 'rules': RULES}}
 
 
 class ToolNotesTest(unittest.TestCase):
@@ -45,11 +44,11 @@ class ToolNotesTest(unittest.TestCase):
         text = 'A general-purpose module, a Composer component, an asyncio Task(coro) and a task tool belt.\n'
         self.assertEqual(module.add_tool_notes(text, RULES), text)
 
-    def test_listed_plugins_are_noted_in_both_hosts_except_inheriting_copies(self):
+    def test_listed_plugins_are_noted_in_every_marketplace_and_unlisted_ones_nowhere(self):
         self.assertEqual(module.noted_here(ADAPTATIONS, 'example-tools@personal'), RULES)
         self.assertEqual(module.noted_here(ADAPTATIONS, 'example-tools@example-marketplace'), RULES)
-        self.assertIsNone(module.noted_here(ADAPTATIONS, 'example-tools@codex-aligned'))
         self.assertIsNone(module.noted_here(ADAPTATIONS, 'unlisted@personal'))
+        self.assertIsNone(module.noted_here({'plugins': {}}, 'example-tools@personal'))
 
     def test_plan_notes_reference_files_and_replays_to_nothing(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -63,14 +62,14 @@ class ToolNotesTest(unittest.TestCase):
             (skill / 'references/process.md').write_text(original, newline='\n')
             registry = {'targets': {'Codex': {}, 'Claude': {}}, 'explicitTargets': {'Codex': {}, 'Claude': {}}}
             installs = [('Codex', 'example-tools@personal', root)]
-            writes, _ = module.plan(registry, installs, ADAPTATIONS)
+            writes = module.plan(registry, installs, ADAPTATIONS)
             noted = {path.relative_to(root).as_posix(): new for path, old, new, _, _ in writes if old != new}
             self.assertEqual(noted, {'skills/example/SKILL.md': '---\nname: example\ndescription: Research.\n---\n'
                                                                 'Track with TodoWrite (Codex: `update_plan`).\n',
                                      'skills/example/references/process.md': "Use WebFetch (Codex: the web tool's `open`) to read it.\n"})
             for path, _, new, _, _ in writes:
                 path.write_text(new, newline='\n')
-            self.assertEqual([path for path, old, new, _, _ in module.plan(registry, installs, ADAPTATIONS)[0] if old != new], [])
+            self.assertEqual([path for path, old, new, _, _ in module.plan(registry, installs, ADAPTATIONS) if old != new], [])
 
 
 if __name__ == '__main__':

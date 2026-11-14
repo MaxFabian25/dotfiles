@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from homes import Home
 from configuration import BlockedConfiguration, patch_fields
 from description import (CodexPlacement, EngineInstall, LocalSource, Lock, LockedTree, LooseSkill,
-                         Package, Roots, Rules, Setup, SkillRoot, ToolNotes, Visibility, intent)
+                         Package, Roots, Rules, Setup, SkillRoot, SnapshotSource, ToolNotes, Visibility, intent)
 from host_state import Host, Platform, SkillMode
 from invocation_overrides import frontmatter
 import opencode
@@ -155,7 +155,7 @@ class OpenCodeTests(unittest.TestCase):
                 opencode.materialise(plan, builder, home.roots.home / 'output')
             self.assertFalse((home.roots.home / 'output').exists())
 
-    def test_loose_off_manual_sidecar_and_codex_only_projection(self):
+    def test_loose_off_manual_sidecar_and_codex_only_projection_from_local_and_snapshot_sources(self):
         with Home() as home:
             setup, _, _ = self.fixture(home, names=())
             skills, locks = {}, dict(setup.lock)
@@ -169,7 +169,13 @@ class OpenCodeTests(unittest.TestCase):
                 if manual:
                     home.write(tree / 'agents/openai.yaml', 'policy:\n  allow_implicit_invocation: false\n')
                 digest = home.roots.tree_digest(tree)
-                skill = LooseSkill(name, Visibility.PUBLIC, '', LocalSource('loose/' + name, digest), {root: enabled})
+                visibility, source = Visibility.PUBLIC, LocalSource('loose/' + name, digest)
+                if name == 'codex-only':
+                    stored = setup.roots.private / 'snapshots' / digest.removeprefix('sha256:')
+                    stored.parent.mkdir(parents=True)
+                    tree.rename(stored)
+                    visibility, source = Visibility.PRIVATE, SnapshotSource({root: digest})
+                skill = LooseSkill(name, visibility, '', source, {root: enabled})
                 skills[name] = skill
                 locks[name] = Lock(intent(skill, {}), placements={root: digest})
             setup = replace(setup, loose=skills, lock=locks)

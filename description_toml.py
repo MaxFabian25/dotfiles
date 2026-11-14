@@ -87,9 +87,6 @@ def _parse_recipe(table: _Table, build: str) -> Recipe | None:
             if not isinstance(value, dict):
                 table.error(f'origins.{skill}', 'expected a table')
                 continue
-            if not value:
-                origins[skill] = None
-                continue
             origin = _Table(table.path, value, table.errors, f'{table.prefix}origins.{skill}.')
             commit = origin.get('commit', str, None)
             origins[skill] = Origin(origin.get('repository', str), origin.get('path', str),
@@ -297,7 +294,7 @@ def _parse_loose(path: Path, data: Mapping, visibility: Visibility, errors: list
         elif 'local' in source_table.data:
             source = _parse_source(source_table)
         else:
-            source = RepoSource(RepoName(source_table.get('repo', str)), source_table.get('path', str, None))
+            table.error('source', 'expected snapshot or local')
         source_table.done()
     place = {}
     place_table = table.sub('place', required=True)
@@ -557,7 +554,7 @@ def _dump_recipe(recipe: Recipe) -> dict:
     if isinstance(recipe, SnapshotRecipe):
         out['snapshot'] = recipe.snapshot
         out['origins'] = {skill: _Inline({k: v for k, v in (('repository', o.repository), ('path', o.path),
-                                                            ('commit', o.commit)) if v is not None} if o else {})
+                                                            ('commit', o.commit)) if v is not None})
                           for skill, o in recipe.origins.items()}
         return out
     out.update(repository=recipe.repository, commit=recipe.commit)
@@ -688,9 +685,7 @@ def _dump_loose(skill: LooseSkill) -> dict:
         out['note'] = skill.note
     source = skill.source
     out['source'] = (_dump_local(source) if isinstance(source, LocalSource) else
-                    {'snapshot': _Inline({root.value: digest for root, digest in sorted(source.snapshots.items())})}
-                     if isinstance(source, SnapshotSource)
-                     else {'repo': source.repo, **({'path': source.path} if source.path is not None else {})})
+                     {'snapshot': _Inline({root.value: digest for root, digest in sorted(source.snapshots.items())})})
     out['place'] = {root.value: on for root, on in sorted(skill.place.items())}
     return out
 

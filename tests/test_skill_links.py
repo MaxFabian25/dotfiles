@@ -52,18 +52,18 @@ class OverlayTest(unittest.TestCase):
             root = Path(directory).resolve() / 'kit'
             categories(root)
             installs = [('Codex', 'kit@personal', root)]
-            writes, _ = invocation_overrides.plan(NO_TARGETS, installs)
+            writes = invocation_overrides.plan(NO_TARGETS, installs)
             self.assertEqual(changed(writes, root), {'skills/in-progress/chief-of-staff/SKILL.md': RELINKED})
             for path, _, new, _, _ in writes:
                 path.write_text(new, encoding='utf-8', newline='\n')
-            self.assertEqual(invocation_overrides.plan(NO_TARGETS, installs)[0], [])
+            self.assertEqual(invocation_overrides.plan(NO_TARGETS, installs), [])
 
     def test_the_link_is_repointed_after_the_invocation_edit_in_the_same_file(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve() / 'kit'
             categories(root)
             registry = {'targets': {'Claude': {}}, 'explicitTargets': {'Claude': {'kit@personal-collections': ['chief-of-staff']}}}
-            writes, _ = invocation_overrides.plan(registry, [('Claude', 'kit@personal-collections', root)])
+            writes = invocation_overrides.plan(registry, [('Claude', 'kit@personal-collections', root)])
             self.assertEqual(changed(writes, root)['skills/in-progress/chief-of-staff/SKILL.md'],
                              RELINKED.replace('description: Run the team.\n', 'description: Run the team.\n'
                                               'disable-model-invocation: true\n'))
@@ -75,7 +75,7 @@ class OverlayTest(unittest.TestCase):
             with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory).resolve() / 'kit'
                 make(root)
-                self.assertEqual(invocation_overrides.plan(NO_TARGETS, [('Codex', 'kit@personal', root)])[0], [])
+                self.assertEqual(invocation_overrides.plan(NO_TARGETS, [('Codex', 'kit@personal', root)]), [])
 
     def test_a_link_to_a_skill_the_plugin_lacks_stops_the_overlay_and_names_the_plugin_file_and_links(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -53,31 +53,15 @@ class InvocationOverridesTest(unittest.TestCase):
             (root / 'agents/openai.yaml').write_text('policy:\n  allow_implicit_invocation: false\n', newline='\n')
             registry = {'targets': {'Codex': {'review-agent@system': ['review-agent']}, 'Claude': {}}}
             installs = [('Codex', 'review-agent@system', root)]
-            writes, counts = module.plan(registry, installs)
-            self.assertEqual(counts, {'Codex': 1, 'Claude': 0})
+            writes = module.plan(registry, installs)
             self.assertEqual(planned(writes, root)['SKILL.md'], original)
             self.assertEqual(changed(writes, root), {'agents/openai.yaml': 'policy:\n  allow_implicit_invocation: true\n'})
 
     def test_only_requested_frontmatter_changes(self):
         original = '---\nname: sample\ndescription: >-\n  A task.\ndisable-model-invocation: true\nallowed-tools: [Read, Write]\nuser-invocable: true\n---\n\nAsk for approval before publishing.\n'
-        result = module.transform_skill(original, 'plugin:sample', {})
+        result = module.transform_skill(original, 'plugin:sample')
         self.assertEqual(result, original.replace('disable-model-invocation: true', 'disable-model-invocation: false'))
-        self.assertEqual(module.transform_skill(result, 'plugin:sample', {}), result)
-
-    def test_description_override_handles_folded_yaml_without_changing_body(self):
-        source = '---\nname: sample\ndescription: >-\n  Only by name.\nallowed-tools: [Read]\n---\nOnly publish with permission.\n'
-        registry = {'descriptionReplacements': {'p:sample': {'from': 'Only by name.', 'to': 'Use for the task.'}}}
-        changed = module.transform_skill(source, 'p:sample', registry)
-        _, front = module.frontmatter(changed)
-        self.assertEqual(front['description'], 'Use for the task.')
-        self.assertEqual(front['allowed-tools'], ['Read'])
-        self.assertTrue(changed.endswith('Only publish with permission.\n'))
-
-    def test_changed_explicit_description_requires_review(self):
-        source = '---\nname: sample\ndescription: Only explicitly invoke.\n---\nBody\n'
-        registry = {'descriptionReplacements': {'p:sample': {'from': 'Only by name.', 'to': 'Use for the task.'}}}
-        with self.assertRaises(ValueError):
-            module.transform_skill(source, 'p:sample', registry)
+        self.assertEqual(module.transform_skill(result, 'plugin:sample'), result)
 
     def test_sidecar_preserves_other_policy_and_interface_fields(self):
         source = 'interface:\n  display_name: Sample\npolicy:\n  products: [codex]\n  allow_implicit_invocation: false # user-selected\n'
@@ -87,13 +71,6 @@ class InvocationOverridesTest(unittest.TestCase):
         self.assertEqual(module.transform_policy(None), 'policy:\n  allow_implicit_invocation: true\n')
         self.assertEqual(module.transform_policy('policy:\n  products: [codex]\n'),
                          'policy:\n  allow_implicit_invocation: true\n  products: [codex]\n')
-
-    def test_a_text_replacement_applies_once_and_an_ambiguous_one_stops(self):
-        registry = {'textReplacements': {'p:sample': [{'from': 'Use Task', 'to': 'Use a subagent'}]}}
-        skill = '---\nname: sample\ndescription: A task.\n---\nUse Task here.\n'
-        self.assertEqual(module.transform_skill(skill, 'p:sample', registry), skill.replace('Use Task', 'Use a subagent'))
-        with self.assertRaisesRegex(ValueError, 'Ambiguous text replacement: p:sample'):
-            module.transform_skill(skill + 'Use Task there.\n', 'p:sample', registry)
 
     def test_skills_are_not_collected_from_reference_example_or_test_folders(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -194,7 +171,7 @@ class InvocationOverridesTest(unittest.TestCase):
                                                    'adaptedRef': 'main', 'hosts': ['Codex']}}}
             registry = {'targets': {'Codex': {'plugin@m': ['sample']}, 'Claude': {}}}
             installs = [('Codex', 'plugin@m', root)]
-            writes, _ = module.plan(registry, installs, adaptations)
+            writes = module.plan(registry, installs, adaptations)
             effective = changed(writes, root)
             self.assertEqual(set(effective), {'skills/sample/SKILL.md', 'skills/sample/agents/openai.yaml',
                                               'skills/sample/references/harnesses.md'})
@@ -205,7 +182,7 @@ class InvocationOverridesTest(unittest.TestCase):
             for path, _, new, _, _ in writes:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(new, newline='\n')
-            self.assertEqual(changed(module.plan(registry, installs, adaptations)[0], root), {})
+            self.assertEqual(changed(module.plan(registry, installs, adaptations), root), {})
 
     def _adaptation_repository(self, directory):
         repository = directory / 'adaptation'
@@ -237,7 +214,7 @@ class InvocationOverridesTest(unittest.TestCase):
             adaptations = {'plugins': {'plugin': {'repository': str(repository), 'baseRef': 'upstream',
                                                    'adaptedRef': 'main', 'hosts': ['Codex']}}}
             registry = {'targets': {'Codex': {'plugin@m': []}, 'Claude': {}}}
-            writes, _ = module.plan(registry, [('Codex', 'plugin@m', root)], adaptations)
+            writes = module.plan(registry, [('Codex', 'plugin@m', root)], adaptations)
             self.assertEqual(planned(writes, root), {'docs/a.md': 'one\nTWO\nthree\nfour\nFIVE\n'})
 
     def test_a_crlf_copy_gets_the_adaptation_in_crlf_and_replays_to_nothing(self):
@@ -251,11 +228,11 @@ class InvocationOverridesTest(unittest.TestCase):
                                                    'adaptedRef': 'main', 'hosts': ['Codex']}}}
             registry = {'targets': {'Codex': {'plugin@m': []}, 'Claude': {}}}
             installs = [('Codex', 'plugin@m', root)]
-            writes, _ = module.plan(registry, installs, adaptations)
+            writes = module.plan(registry, installs, adaptations)
             self.assertEqual(changed(writes, root), {'docs/a.md': 'one\r\nTWO\r\nthree\r\nfour\r\nFIVE\r\n'})
             for path, _, new, _, _ in writes:
                 path.write_bytes(new.encode('utf-8'))
-            self.assertEqual(changed(module.plan(registry, installs, adaptations)[0], root), {})
+            self.assertEqual(changed(module.plan(registry, installs, adaptations), root), {})
 
     def test_adaptation_merges_beside_a_flag_the_policy_export_flipped(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -283,7 +260,7 @@ class InvocationOverridesTest(unittest.TestCase):
             adaptations = {'plugins': {'plugin': {'repository': str(repository), 'baseRef': 'upstream',
                                                    'adaptedRef': 'main', 'hosts': ['Codex']}}}
             registry = {'targets': {'Codex': {'plugin@m': ['sample']}, 'Claude': {}}}
-            writes, _ = module.plan(registry, [('Codex', 'plugin@m', root)], adaptations)
+            writes = module.plan(registry, [('Codex', 'plugin@m', root)], adaptations)
             self.assertEqual(planned(writes, root)['skills/sample/SKILL.md'],
                              '---\nname: sample\ndescription: Use when asked for samples by name.\n'
                              'disable-model-invocation: false\n---\nBody.\n')
@@ -328,7 +305,7 @@ class InvocationOverridesTest(unittest.TestCase):
             registry = {'targets': {'Codex': {}, 'Claude': {}}}
             adaptations = {'plugins': {'plugin': {'repository': str(repository), 'baseRef': 'upstream', 'adaptedRef': 'main',
                                                    'hosts': ['Codex'], 'identities': ['plugin@a']}}}
-            writes, _ = module.plan(registry, installs, adaptations=adaptations)
+            writes = module.plan(registry, installs, adaptations=adaptations)
             changed = [(identity, path.relative_to(directory).as_posix(), new)
                        for path, old, new, _, identity in writes if old != new]
             self.assertEqual(changed, [('plugin@a', 'cache/a/plugin/1/docs/a.md', 'one\nTWO\nthree\nfour\nfive\n')])
@@ -357,7 +334,7 @@ class InvocationOverridesTest(unittest.TestCase):
 
     def test_plan_without_adaptations_reads_no_registry_file(self):
         with patch.object(module, 'read_json', side_effect=AssertionError('read a registry file')):
-            self.assertEqual(module.plan({'targets': {'Codex': {}, 'Claude': {}}}, []), ([], {'Codex': 0, 'Claude': 0}))
+            self.assertEqual(module.plan({'targets': {'Codex': {}, 'Claude': {}}}, []), [])
 
     def test_overlay_refuses_paths_that_escape_through_a_symlink(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -376,6 +353,17 @@ class InvocationOverridesTest(unittest.TestCase):
                 module.plan(registry, [('Codex', 'plugin@m', root)], adaptations)
             self.assertEqual((outside / 'a.md').read_text(), 'one\ntwo\nthree\nfour\nfive\n')
 
+    def test_a_target_the_plugin_no_longer_ships_stops_the_plan_by_name(self):
+        for registry in ({'targets': {'Codex': {'plugin@m': ['gone']}, 'Claude': {}}},
+                         {'targets': {'Codex': {}, 'Claude': {}}, 'explicitTargets': {'Codex': {'plugin@m': ['gone']}}}):
+            with self.subTest(registry=registry), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory) / 'plugin'
+                skill = root / 'skills/other/SKILL.md'
+                skill.parent.mkdir(parents=True)
+                skill.write_text('---\nname: other\ndescription: A task.\n---\nBody\n', newline='\n')
+                with self.assertRaisesRegex(ValueError, r"Review missing selected skills in plugin@m: \['gone'\]"):
+                    module.plan(registry, [('Codex', 'plugin@m', root)])
+
     def test_explicit_target_sets_both_host_flags(self):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory).resolve()
@@ -386,8 +374,7 @@ class InvocationOverridesTest(unittest.TestCase):
             skill.write_text(original, newline='\n')
             registry = {'targets': {'Codex': {}, 'Claude': {}}, 'explicitTargets': {'Codex': {'plugin@m': ['sample']}}}
             installs = [('Codex', 'plugin@m', root)]
-            writes, counts = module.plan(registry, installs)
-            self.assertEqual(counts, {'Codex': 1, 'Claude': 0})
+            writes = module.plan(registry, installs)
             effective = changed(writes, root)
             self.assertEqual(set(effective), {'skills/sample/SKILL.md', 'skills/sample/agents/openai.yaml'})
             _, front = module.frontmatter(effective['skills/sample/SKILL.md'])
@@ -398,20 +385,20 @@ class InvocationOverridesTest(unittest.TestCase):
 
     def test_explicit_flag_replaces_a_false_value_only(self):
         original = '---\nname: sample\ndescription: A task.\ndisable-model-invocation: false\nallowed-tools: [Read]\n---\nBody\n'
-        result = module.transform_skill(original, 'p:sample', {}, selected=False, explicit=True)
+        result = module.transform_skill(original, 'p:sample', selected=False, explicit=True)
         self.assertEqual(result, original.replace('disable-model-invocation: false', 'disable-model-invocation: true'))
-        self.assertEqual(module.transform_skill(result, 'p:sample', {}, selected=False, explicit=True), result)
+        self.assertEqual(module.transform_skill(result, 'p:sample', selected=False, explicit=True), result)
 
     def test_explicit_flag_ends_the_header_unless_a_block_scalar_does(self):
         plain = '---\nname: sample\ndescription: A task.\n---\nBody\n'
-        self.assertEqual(module.transform_skill(plain, 'p:sample', {}, selected=False, explicit=True),
+        self.assertEqual(module.transform_skill(plain, 'p:sample', selected=False, explicit=True),
                          plain.replace('A task.\n', 'A task.\ndisable-model-invocation: true\n'))
         block = '---\nname: sample\ndescription: |\n  First line.\n  Second line.\n---\nBody\n'
-        result = module.transform_skill(block, 'p:sample', {}, selected=False, explicit=True)
+        result = module.transform_skill(block, 'p:sample', selected=False, explicit=True)
         self.assertEqual(module.frontmatter(result)[1], {'name': 'sample', 'description': 'First line.\nSecond line.',
                                                          'disable-model-invocation': True})
         self.assertTrue(result.endswith('\n---\nBody\n'))
-        self.assertEqual(module.transform_skill(result, 'p:sample', {}, selected=False, explicit=True), result)
+        self.assertEqual(module.transform_skill(result, 'p:sample', selected=False, explicit=True), result)
 
     def test_sidecar_can_be_made_explicit_preserving_other_fields(self):
         source = 'interface:\n  display_name: Sample\npolicy:\n  allow_implicit_invocation: true # upstream\n'
