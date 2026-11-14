@@ -1,7 +1,6 @@
 import importlib.util
 from pathlib import Path
 import tempfile
-import tomllib
 import unittest
 
 ENGINE = Path(__file__).resolve().parents[1]
@@ -9,8 +8,8 @@ spec = importlib.util.spec_from_file_location('codex_agents', ENGINE / 'codex_ag
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
-RULES = [tuple(pair) for pair in
-         tomllib.loads((ENGINE / 'setup/packages/impeccable.toml').read_text())['codex']['roles']['rewrite']]
+# The rules Impeccable's package gave its repository roles until 2026-11-14, when its agents moved to built-in spawns.
+RULES = [('.agents/skills/impeccable/', '{skill}/'), ('](../reference/', ']({skill}/reference/')]
 
 
 class CodexAgentsTest(unittest.TestCase):

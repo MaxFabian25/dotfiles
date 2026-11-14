@@ -26,13 +26,6 @@ exit 1
 if [ -n "$version" ] && [ "$os" != unknown ] && [ "$arch" != unknown ]; then'''
 
 
-[codex.roles]
-from = "repo"
-directory = ".agents/skills/impeccable/agents"
-pattern = "impeccable_*.toml"
-skill = "skills/impeccable"
-rewrite = [[".agents/skills/impeccable/", "{skill}/"], ["](../reference/", "]({skill}/reference/"]]
-
 [claude]
 install = [{ via = "impeccable", enabled = true }]
 
@@ -60,6 +53,53 @@ path = 'skills/impeccable/reference/live.md'
 find = '''A tag alone never lands on the first match: when the tag repeats and `--text` does not single out one element, or the element shares a source line with other markup (`reason: "shared_line"`), wrap exits `element_ambiguous`; follow the fallback flow as above.'''
 replace = '''When the tag repeats and `--text` does not single out one element, wrap exits `element_ambiguous`; follow the fallback flow as above. If wrap reports `reason: "shared_line"`, use that same fallback; sharing a line does not always prevent a wrap (engine 0.1.24 normalised a plain-HTML fixture on 14 November 2026).'''
 
+# Impeccable's four agents run as built-in agents at a pstack seat, as pstack's roles do (user, 2026-11-14), so the
+# plugin's agent types stay out of every session's agent list: Claude's settings deny them and Codex gets no role files.
+[[codex.replace]]
+path = 'skills/impeccable/reference/live.md'
+find = '''delegate source edits to `impeccable_manual_edit_applier` / `impeccable-manual-edit-applier`.'''
+replace = '''delegate source edits to a built-in agent: `general-purpose` in Claude Code, or `spawn_agent` with no `agent_type` and with `fork_turns` `none` in Codex, at the model and effort of the first seat on the `feature, refactoring` line in your harness's section of `~/.config/pstack/models.md` (a seat reads `model@effort`; skip one prefixed `codex:` or `claude:`). Begin its brief with "Read PATH, skip its frontmatter and follow the rest.", where PATH is the absolute path of `agents/impeccable-manual-edit-applier.md` in this plugin's root, two folders above this skill's folder.'''
+
+[[codex.replace]]
+path = 'skills/impeccable/reference/new-work-comp.md'
+find = '''spawn the shipped asset producer (`impeccable-asset-producer`; `impeccable_asset_producer` in codex; `/impeccable-asset-producer` in Cursor; on GitHub Copilot say "Use the impeccable-asset-producer agent") with the spec path and let it produce them all;'''
+replace = '''spawn the asset producer as a built-in agent: `general-purpose` in Claude Code, or `spawn_agent` with no `agent_type` and with `fork_turns` `none` in Codex, at the model and effort of the first seat on the `feature, refactoring` line in your harness's section of `~/.config/pstack/models.md` (a seat reads `model@effort`; skip one prefixed `codex:` or `claude:`). Begin its brief with "Read PATH, skip its frontmatter and follow the rest. `${CLAUDE_PLUGIN_ROOT}` in it means ROOT, and its links are relative to its folder.", where ROOT is the absolute path of this plugin's root, two folders above this skill's folder, and PATH is ROOT's `agents/impeccable-asset-producer.md`. Give it the spec path and let it produce them all;'''
+
+[[codex.replace]]
+path = 'skills/impeccable/reference/new-work.md'
+find = '''Then spawn the shipped finish reviewer, `impeccable-finish-reviewer` (`impeccable_finish_reviewer` in codex; `/impeccable-finish-reviewer` in Cursor; on GitHub Copilot say "Use the impeccable-finish-reviewer agent"), with'''
+replace = '''Then spawn the finish reviewer as a built-in agent: `general-purpose` in Claude Code, or `spawn_agent` with no `agent_type` and with `fork_turns` `none` in Codex, at the model and effort of the first seat on the `judgment and prose` line in your harness's section of `~/.config/pstack/models.md` (a seat reads `model@effort`; skip one prefixed `codex:` or `claude:`). Begin its brief with "Read PATH, skip its frontmatter and follow the rest. Do not edit, write or delete any file.", where PATH is the absolute path of `agents/impeccable-finish-reviewer.md` in this plugin's root, two folders above this skill's folder. Then give it'''
+
+[[codex.replace]]
+path = 'skills/impeccable/reference/new-work.md'
+find = '''Never read the shipped agents' definition files before spawning; the harness loads them at spawn, and you owe only the input packet.'''
+replace = '''Never read the agent's file yourself before spawning; the agent reads it, and you owe only the input packet.'''
+
+[[codex.replace]]
+path = 'skills/impeccable/reference/new-work.md'
+find = '''Then spawn the shipped documenter, `impeccable-documenter` (`impeccable_documenter` in codex), with'''
+replace = '''Then spawn the documenter as a built-in agent: `general-purpose` in Claude Code, or `spawn_agent` with no `agent_type` and with `fork_turns` `none` in Codex, at the model and effort of the first seat on the `feature, refactoring` line in your harness's section of `~/.config/pstack/models.md` (a seat reads `model@effort`; skip one prefixed `codex:` or `claude:`). Begin its brief with "Read PATH, skip its frontmatter and follow the rest.", where PATH is the absolute path of `agents/impeccable-documenter.md` in this plugin's root, two folders above this skill's folder. Then give it'''
+
+[[codex.replace]]
+path = 'skills/impeccable/reference/new-work.md'
+find = '''(`fork_turns: 0` in codex)'''
+replace = '''(`fork_turns` `none` in Codex)'''
+
+[[codex.replace]]
+path = 'skills/impeccable/reference/new-work-world.md'
+find = '''each spawn is the shipped asset producer with a single-comp packet,'''
+replace = '''each spawn is the asset producer as a built-in agent: `general-purpose` in Claude Code, or `spawn_agent` with no `agent_type` and with `fork_turns` `none` in Codex, at the model and effort of the first seat on the `feature, refactoring` line in your harness's section of `~/.config/pstack/models.md` (a seat reads `model@effort`; skip one prefixed `codex:` or `claude:`), whose brief begins "Read PATH, skip its frontmatter and follow the rest. `${CLAUDE_PLUGIN_ROOT}` in it means ROOT, and its links are relative to its folder.", where ROOT is the absolute path of this plugin's root, two folders above this skill's folder, and PATH is ROOT's `agents/impeccable-asset-producer.md`. Give each a single-comp packet,'''
+
+[[codex.replace]]
+path = 'skills/impeccable/reference/visualize.md'
+find = '''by the shipped asset producer or in the current thread'''
+replace = '''by the asset producer, a built-in agent spawned as the plates step of [new-work-comp.md](new-work-comp.md) says, or in the current thread'''
+
+[[codex.replace]]
+path = 'skills/impeccable/reference/component-review.md'
+find = '''then produce the new plates, with the asset producer when subagents are available.'''
+replace = '''then produce the new plates, with the asset producer when subagents are available, spawned as the plates step of [new-work-comp.md](new-work-comp.md) says.'''
+
 [[claude.replace]]
 path = 'skills/impeccable/reference/live.md'
 find = '''drop both, pass `--query`'''
@@ -69,3 +109,48 @@ replace = '''drop both; keep separate `--tag` and `--text`'''
 path = 'skills/impeccable/reference/live.md'
 find = '''A tag alone never lands on the first match: when the tag repeats and `--text` does not single out one element, or the element shares a source line with other markup (`reason: "shared_line"`), wrap exits `element_ambiguous`; follow the fallback flow as above.'''
 replace = '''When the tag repeats and `--text` does not single out one element, wrap exits `element_ambiguous`; follow the fallback flow as above. If wrap reports `reason: "shared_line"`, use that same fallback; sharing a line does not always prevent a wrap (engine 0.1.24 normalised a plain-HTML fixture on 14 November 2026).'''
+
+[[claude.replace]]
+path = 'skills/impeccable/reference/live.md'
+find = '''delegate source edits to `impeccable_manual_edit_applier` / `impeccable-manual-edit-applier`.'''
+replace = '''delegate source edits to a built-in agent: `general-purpose` in Claude Code, or `spawn_agent` with no `agent_type` and with `fork_turns` `none` in Codex, at the model and effort of the first seat on the `feature, refactoring` line in your harness's section of `~/.config/pstack/models.md` (a seat reads `model@effort`; skip one prefixed `codex:` or `claude:`). Begin its brief with "Read PATH, skip its frontmatter and follow the rest.", where PATH is the absolute path of `agents/impeccable-manual-edit-applier.md` in this plugin's root, two folders above this skill's folder.'''
+
+[[claude.replace]]
+path = 'skills/impeccable/reference/new-work-comp.md'
+find = '''spawn the shipped asset producer (`impeccable-asset-producer`; `impeccable_asset_producer` in codex; `/impeccable-asset-producer` in Cursor; on GitHub Copilot say "Use the impeccable-asset-producer agent") with the spec path and let it produce them all;'''
+replace = '''spawn the asset producer as a built-in agent: `general-purpose` in Claude Code, or `spawn_agent` with no `agent_type` and with `fork_turns` `none` in Codex, at the model and effort of the first seat on the `feature, refactoring` line in your harness's section of `~/.config/pstack/models.md` (a seat reads `model@effort`; skip one prefixed `codex:` or `claude:`). Begin its brief with "Read PATH, skip its frontmatter and follow the rest. `${CLAUDE_PLUGIN_ROOT}` in it means ROOT, and its links are relative to its folder.", where ROOT is the absolute path of this plugin's root, two folders above this skill's folder, and PATH is ROOT's `agents/impeccable-asset-producer.md`. Give it the spec path and let it produce them all;'''
+
+[[claude.replace]]
+path = 'skills/impeccable/reference/new-work.md'
+find = '''Then spawn the shipped finish reviewer, `impeccable-finish-reviewer` (`impeccable_finish_reviewer` in codex; `/impeccable-finish-reviewer` in Cursor; on GitHub Copilot say "Use the impeccable-finish-reviewer agent"), with'''
+replace = '''Then spawn the finish reviewer as a built-in agent: `general-purpose` in Claude Code, or `spawn_agent` with no `agent_type` and with `fork_turns` `none` in Codex, at the model and effort of the first seat on the `judgment and prose` line in your harness's section of `~/.config/pstack/models.md` (a seat reads `model@effort`; skip one prefixed `codex:` or `claude:`). Begin its brief with "Read PATH, skip its frontmatter and follow the rest. Do not edit, write or delete any file.", where PATH is the absolute path of `agents/impeccable-finish-reviewer.md` in this plugin's root, two folders above this skill's folder. Then give it'''
+
+[[claude.replace]]
+path = 'skills/impeccable/reference/new-work.md'
+find = '''Never read the shipped agents' definition files before spawning; the harness loads them at spawn, and you owe only the input packet.'''
+replace = '''Never read the agent's file yourself before spawning; the agent reads it, and you owe only the input packet.'''
+
+[[claude.replace]]
+path = 'skills/impeccable/reference/new-work.md'
+find = '''Then spawn the shipped documenter, `impeccable-documenter` (`impeccable_documenter` in codex), with'''
+replace = '''Then spawn the documenter as a built-in agent: `general-purpose` in Claude Code, or `spawn_agent` with no `agent_type` and with `fork_turns` `none` in Codex, at the model and effort of the first seat on the `feature, refactoring` line in your harness's section of `~/.config/pstack/models.md` (a seat reads `model@effort`; skip one prefixed `codex:` or `claude:`). Begin its brief with "Read PATH, skip its frontmatter and follow the rest.", where PATH is the absolute path of `agents/impeccable-documenter.md` in this plugin's root, two folders above this skill's folder. Then give it'''
+
+[[claude.replace]]
+path = 'skills/impeccable/reference/new-work.md'
+find = '''(`fork_turns: 0` in codex)'''
+replace = '''(`fork_turns` `none` in Codex)'''
+
+[[claude.replace]]
+path = 'skills/impeccable/reference/new-work-world.md'
+find = '''each spawn is the shipped asset producer with a single-comp packet,'''
+replace = '''each spawn is the asset producer as a built-in agent: `general-purpose` in Claude Code, or `spawn_agent` with no `agent_type` and with `fork_turns` `none` in Codex, at the model and effort of the first seat on the `feature, refactoring` line in your harness's section of `~/.config/pstack/models.md` (a seat reads `model@effort`; skip one prefixed `codex:` or `claude:`), whose brief begins "Read PATH, skip its frontmatter and follow the rest. `${CLAUDE_PLUGIN_ROOT}` in it means ROOT, and its links are relative to its folder.", where ROOT is the absolute path of this plugin's root, two folders above this skill's folder, and PATH is ROOT's `agents/impeccable-asset-producer.md`. Give each a single-comp packet,'''
+
+[[claude.replace]]
+path = 'skills/impeccable/reference/visualize.md'
+find = '''by the shipped asset producer or in the current thread'''
+replace = '''by the asset producer, a built-in agent spawned as the plates step of [new-work-comp.md](new-work-comp.md) says, or in the current thread'''
+
+[[claude.replace]]
+path = 'skills/impeccable/reference/component-review.md'
+find = '''then produce the new plates, with the asset producer when subagents are available.'''
+replace = '''then produce the new plates, with the asset producer when subagents are available, spawned as the plates step of [new-work-comp.md](new-work-comp.md) says.'''
