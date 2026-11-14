@@ -52,8 +52,10 @@ class DiskHost:
 
     def observe(self, request):
         seen = Observer(self.host, self.roots)
-        if (self.roots.agents_home / 'plugins/marketplace.json').is_file():
-            seen.add(Surface.MARKETPLACE, 'personal', EngineMarketplace())
+        catalog = self.roots.agents_home / 'plugins/marketplace.json'
+        if catalog.is_file():
+            listed = frozenset(entry['name'] for entry in json.loads(catalog.read_text())['plugins'])
+            seen.add(Surface.MARKETPLACE, 'personal', EngineMarketplace(listed))
         config = self.roots.codex_home / 'config.toml'
         switches = tomllib.loads(config.read_text()).get('plugins', {}) if config.is_file() else {}
         for identity, (version, directory) in self.installed.items():
@@ -1492,6 +1494,34 @@ class InstallationTest(unittest.TestCase):
     def test_catalog_only_drift_reconstructs_entries_without_reinstalling(self):
         self.assert_catalog_rebuilt_without_reinstalling()
 
+    def catalog_names(self):
+        return [entry['name'] for entry in json.loads((self.roots.agents_home / 'plugins/marketplace.json').read_bytes())['plugins']]
+
+    def test_an_entry_the_description_does_not_manage_leaves_the_catalog_without_reinstalling(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        catalog = self.roots.agents_home / 'plugins/marketplace.json'
+        data = json.loads(catalog.read_bytes())
+        data['plugins'].append({'name': 'retired', 'source': {'source': 'local', 'path': './retired/1.0'}})
+        catalog.write_text(json.dumps(data))
+        current = plan(self.setup, self.device)
+        self.assertEqual([(d.expected.plugins, d.observed.plugins) for d in current.changes
+                          if d.key and d.key.surface == Surface.MARKETPLACE], [({'kit'}, {'kit', 'retired'})])
+        self.calls.clear()
+        self.assertEqual(self.run_apply(current).exit_code, 0)
+        self.assertEqual(self.catalog_names(), ['kit'])
+        self.assertFalse(any(args[:2] == ('plugin', 'add') for _, args in self.calls))
+        self.assertIn((Host.CODEX, ('plugin', 'marketplace', 'add', str(self.roots.home), '--json')), self.calls)
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
+    def test_a_package_switched_off_leaves_the_catalog(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        kit = replace(self.setup.packages['kit'], codex=CodexPlacement((EngineInstall(False),)))
+        self.setup = replace(self.setup, packages={'kit': kit},
+                             lock={**self.setup.lock, 'kit': replace(self.setup.lock['kit'], intent=intent(kit, {}))})
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(self.catalog_names(), [])
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
     def keep_kit_current(self):
         """kit switched off and kept current, its roles line dropped while its lock still lists the role file."""
         kit = replace(self.setup.packages['kit'], codex=CodexPlacement((EngineInstall(False, keep_current=True),)))
@@ -1671,7 +1701,8 @@ class InstallationTest(unittest.TestCase):
         def build(builder, package, codex, *, verify=True):
             version = builder.setup.lock['kit'].trees[Host.CLAUDE].version
             release = catalog / 'plugins/kit' / version
-            shutil.copytree(codex.root, release)
+            if not release.exists():     # as claude_package.build, which leaves a finished build as it is
+                shutil.copytree(codex.root, release)
             return {plugin: Built('kit', release, version, builder.roots.tree_digest(release))}
 
         patch('claude_host.run', observe).start()
@@ -1688,6 +1719,29 @@ class InstallationTest(unittest.TestCase):
 
     def claude_switches(self):
         return json.loads(self.claude_settings().read_text(encoding='utf-8')).get('enabledPlugins', {})
+
+    def test_a_claude_engine_catalog_that_lists_too_much_or_too_little_converges_in_one_apply(self):
+        self.keep_kit_current_on_claude()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        path = self.roots.engine / 'claude/.claude-plugin/marketplace.json'
+
+        def listed():
+            return [entry['name'] for entry in json.loads(path.read_bytes())['plugins']]
+        self.assertEqual(listed(), ['kit'])
+        retired = {'name': 'retired', 'source': './plugins/retired/1', 'version': '1'}
+        for label, plugins in (('a retired entry', lambda current: current + [retired]), ('no entries', lambda _: [])):
+            with self.subTest(label):
+                data = json.loads(path.read_bytes())
+                data['plugins'] = plugins(data['plugins'])
+                path.write_text(json.dumps(data), encoding='utf-8')
+                current = plan(self.setup, self.device)
+                self.assertIn(FactKey(Host.CLAUDE, Surface.MARKETPLACE, 'personal-collections'),
+                              [d.key for d in current.changes])
+                self.calls.clear()
+                self.assertEqual(self.run_apply(current).exit_code, 0)
+                self.assertEqual(listed(), ['kit'])
+                self.assertIn(('plugin', 'marketplace', 'add'), [args[:3] for _, args in self.calls])
+                self.assertEqual(plan(self.setup, self.device).changes, ())
 
     def test_a_kept_current_plugin_installed_on_claude_code_ends_switched_off(self):
         self.keep_kit_current_on_claude()

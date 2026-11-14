@@ -23,11 +23,11 @@ class Apply:
         self.setup, self.device, self.current, self.builder = setup, device, current, builder
         self.roots = device.roots
         self.files = Files(backup_directory(self.roots))
-        catalogs = {(d.key.host, d.key.subject) for d in current.changes
-                    if d.key is not None and d.key.surface == Surface.MARKETPLACE and isinstance(d.expected, EngineMarketplace)}
-        self.catalogs_needed = catalogs
+        # Each engine catalog that differs from what the description wants -> the plugins it must list.
+        self.catalogs = {(d.key.host, d.key.subject): d.expected.plugins for d in current.changes
+                         if d.key is not None and d.key.surface == Surface.MARKETPLACE and isinstance(d.expected, EngineMarketplace)}
         catalog_packages = {p.name for p in setup.packages.values() for host in Host
-                            if p.placement(host) and any((host, via(i, host)) in catalogs and i.managed
+                            if p.placement(host) and any((host, via(i, host)) in self.catalogs and i.managed
                                                         for i in p.placement(host).installs)}
         self.packages = (changed_packages(current) | catalog_packages) & setup.packages.keys()
         self.owner = AcceptedInstallations(setup, device, configurations=current.configurations)
@@ -152,6 +152,9 @@ class Apply:
             raise RuntimeError(f'Native marketplace did not retain its exact pin: {spec.name}')
 
     def _catalogs(self):
+        """Each engine catalog gets the entries of the packages built in this run. One that differs from what the
+        description wants is rewritten to list exactly its managed plugins, so a package that is no longer managed
+        leaves it, even when nothing else changed."""
         entries = []
         for name, built in self.built.items():
             package = self.setup.packages[name]
@@ -165,27 +168,33 @@ class Apply:
             entries.append({'name': name, 'source': location,
                             'policy': {'installation': 'AVAILABLE', 'authentication': 'ON_USE'},
                             'category': 'Developer Tools'})
-        if entries:
+        managed = self.catalogs.get((Host.CODEX, 'personal'))
+        if entries or managed is not None:
             changed = self.files.json(self.roots.agents_home / 'plugins/marketplace.json',
-                                      lambda data: merge_catalog(data, 'personal', entries))
-            if changed or (Host.CODEX, 'personal') in self.catalogs_needed:
+                                      lambda data: merge_catalog(data, 'personal', entries, managed))
+            if changed or managed is not None:
                 self.command(Host.CODEX, 'plugin', 'marketplace', 'add', str(self.roots.agents_home.parent), '--json')
-        catalogs = {}
+        directories = {'codex-aligned': self.roots.claude_home / 'marketplaces/codex-aligned',
+                       'personal-collections': self.roots.engine / 'claude'}
+        catalogs = {marketplace: [] for marketplace in directories}
         for identity, built in self.claude.items():
             name, marketplace = identity.split('@', 1)
-            if marketplace not in ('codex-aligned', 'personal-collections'):
+            if marketplace not in directories:
                 continue
-            catalog = (self.roots.claude_home / 'marketplaces/codex-aligned' if marketplace == 'codex-aligned'
-                       else self.roots.engine / 'claude')
+            catalog = directories[marketplace]
             destination = catalog / 'plugins' / name / built.version
             if destination != built.root:
                 self._stage_source(built.root, destination)
-            catalogs.setdefault((marketplace, catalog), []).append(
+            catalogs[marketplace].append(
                 {'name': name, 'source': './' + destination.relative_to(catalog).as_posix(), 'version': built.version})
-        for (name, directory), entries in catalogs.items():
+        for name, entries in catalogs.items():
+            managed = self.catalogs.get((Host.CLAUDE, name))
+            if not entries and managed is None:
+                continue
+            directory = directories[name]
             changed = self.files.json(directory / '.claude-plugin/marketplace.json',
-                                      lambda data, n=name, e=entries: merge_catalog(data, n, e))
-            if changed or (Host.CLAUDE, name) in self.catalogs_needed:
+                                      lambda data, n=name, e=entries, m=managed: merge_catalog(data, n, e, m))
+            if changed or managed is not None:
                 self.command(Host.CLAUDE, 'plugin', 'marketplace', 'add', str(directory), '--scope', 'user', '--json')
 
     @staticmethod
@@ -338,7 +347,8 @@ def set_plugin_enabled(data, identity, enabled):
         plugins[identity] = {'enabled': enabled}
 
 
-def merge_catalog(data, name, entries):
+def merge_catalog(data, name, entries, managed=None):
+    """Adds or updates each entry. With `managed`, the names the catalog must list, every other entry goes."""
     if data.get('name', name) != name:
         raise RuntimeError(f'Refusing to overwrite a different marketplace with {name}')
     data.setdefault('name', name)
@@ -347,6 +357,8 @@ def merge_catalog(data, name, entries):
     else:
         data.setdefault('owner', {'name': 'Dotfiles'})
     current = data.setdefault('plugins', [])
+    if managed is not None:
+        current[:] = [i for i in current if i.get('name') in managed]
     for entry in entries:
         previous = next((i for i in current if i.get('name') == entry['name']), None)
         if previous is None:

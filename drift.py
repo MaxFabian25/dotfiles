@@ -308,8 +308,15 @@ def render(diff: Diff, *, full: bool = False, notes: bool = False) -> str:
                 lines.append(f'  {label:<30} {difference.kind.value:<11} {what}')
                 continue
             key = difference.key
-            change = (difference.detail if difference.kind == Kind.INCOMPLETE
-                      else f'want {_spell(difference.expected)} · have {_spell(difference.observed)}')
+            expected, observed = difference.expected, difference.observed
+            if difference.kind == Kind.INCOMPLETE:
+                change = difference.detail
+            elif isinstance(expected, EngineMarketplace) and isinstance(observed, EngineMarketplace):
+                gone, new = observed.plugins - expected.plugins, expected.plugins - observed.plugins
+                change = ' · '.join(f'{verb} {", ".join(sorted(names))}' for verb, names in (('drop', gone), ('add', new))
+                                    if names)
+            else:
+                change = f'want {_spell(expected)} · have {_spell(observed)}'
             lines.append(f'  {label:<30} {key.host.value:<6} {key.surface.name.lower():<11} {key.subject}  '
                          f'{difference.kind.value}  {change}')
             if folded.get(key):
@@ -338,6 +345,8 @@ def _plain(value):
         return {'type': type(value).__name__, **{f.name: _plain(getattr(value, f.name)) for f in fields(value)}}
     if isinstance(value, (tuple, list)):
         return [_plain(item) for item in value]
+    if isinstance(value, (set, frozenset)):
+        return sorted(_plain(item) for item in value)
     return value
 
 

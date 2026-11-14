@@ -58,7 +58,7 @@ class Device(homes.Home):
         self.write(r.claude_home / 'plugins/installed_plugins.json', json.dumps({'plugins': {
             'interfaces@interfaces': [{'scope': 'user', 'gitCommitSha': OLD}]}}))
         self.write(r.claude_home / 'marketplaces/codex-aligned/.claude-plugin/marketplace.json',
-                   json.dumps({'name': 'codex-aligned', 'plugins': []}))
+                   json.dumps({'name': 'codex-aligned', 'plugins': [{'name': 'kit'}]}))
         marketplace = r.engine / '.sync/checkouts/interfaces'
         self.write(marketplace / '.claude-plugin/marketplace.json', json.dumps({'name': 'interfaces', 'plugins': []}))
         git = ['git', '-c', 'user.name=t', '-c', 'user.email=t@t', '-C', str(marketplace)]
@@ -331,6 +331,11 @@ class DiffTest(unittest.TestCase):
     def plugins(self, result):
         return [(x.kind, x.key.host.value, x.key.subject) for x in result.differences if x.key and x.key.surface == S.PLUGIN]
 
+    def dropped(self, result):
+        """Each engine catalog the description wants rewritten, with the entries it would lose."""
+        return [(x.key.host.value, x.key.subject, sorted(x.observed.plugins - x.expected.plugins))
+                for x in result.differences if x.key and x.key.surface == S.MARKETPLACE]
+
     def dormant(self, result):
         return sorted((n.host.value, n.subject) for n in result.notes if n.kind == hs.NoteKind.DORMANT and n.subject.startswith('kit@'))
 
@@ -356,7 +361,15 @@ class DiffTest(unittest.TestCase):
         [codex] = [d for d in json.loads(drift.to_json(kept))['differences'] if d['subject'] == 'kit@personal']
         self.assertEqual((codex['expected']['type'], codex['observed']['type']), ('PluginValue', 'PluginValue'))
         self.assertEqual((codex['expected']['enabled'], codex['observed']['enabled']), (False, False))
-        self.assertEqual((plain.differences, plain.exit_code), ((), 0))
+        self.assertEqual(self.dropped(kept), [])
+        # A plain disabled plugin is in step, and only its entries leave the engine catalogs, which stop listing it.
+        self.assertEqual(self.plugins(plain), [])
+        self.assertEqual(self.dropped(plain), [('claude', 'codex-aligned', ['kit']), ('codex', 'personal', ['kit'])])
+        self.assertEqual(plain.exit_code, 1)
+        self.assertIn('personal  changed  drop kit\n', drift.render(plain))
+        self.assertEqual({(d['subject'], tuple(d['expected']['plugins']), tuple(d['observed']['plugins']))
+                          for d in json.loads(drift.to_json(plain))['differences']},
+                         {('codex-aligned', (), ('kit',)), ('personal', (), ('kit',))})
 
     def test_a_missing_kept_current_plugin_is_drift_and_a_missing_plain_disabled_one_is_dormant(self):
         def diff(keep_current):
@@ -370,7 +383,8 @@ class DiffTest(unittest.TestCase):
         self.assertEqual({x.kind.verdict for x in kept.differences}, {drift.Verdict.DRIFT})
         self.assertEqual(kept.exit_code, 1)
         self.assertEqual(self.dormant(kept), [])
-        self.assertEqual((plain.differences, plain.exit_code), ((), 0))
+        self.assertEqual(self.plugins(plain), [])
+        self.assertEqual(self.dropped(plain), [('claude', 'codex-aligned', ['kit']), ('codex', 'personal', ['kit'])])
         self.assertEqual(self.dormant(plain), [('claude', 'kit@codex-aligned'), ('codex', 'kit@personal')])
 
     def test_an_owned_source_edited_after_its_pin_needs_a_person(self):

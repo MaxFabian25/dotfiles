@@ -131,16 +131,18 @@ class ClaudeState:
             if repo.claude:
                 kind = CheckoutMarketplace if repo.claude.mode == MarketplaceMode.CHECKOUT else GitMarketplace
                 add(Surface.MARKETPLACE, repo.claude.name, kind(repo.url, repo.commit), repo.name)
+        catalogs: dict[str, set[str]] = {}   # each engine catalog an install names -> the plugins it lists
         for package in setup.packages.values():
             if package.claude is None:
                 continue
             lock = setup.lock.get(package.name)
             tree = lock.trees.get(_HOST) if lock else None
             for install in package.claude.installs:
-                marketplace = via(install, _HOST)
-                if isinstance(install, (EngineInstall, AlignedInstall)):
-                    add(Surface.MARKETPLACE, marketplace, EngineMarketplace(), None)
                 plugin = plugin_id(package.name, install, _HOST)
+                if isinstance(install, (EngineInstall, AlignedInstall)):
+                    listed = catalogs.setdefault(via(install, _HOST), set())
+                    if install.managed:
+                        listed.add(plugin.partition('@')[0])
                 if isinstance(install, AlignedInstall) or isinstance(package.source, (BuildSource, LocalSource)):
                     pin = Released(tree.version) if install.managed and tree else Unpinned()
                 elif isinstance(package.source, RepoSource):
@@ -162,6 +164,8 @@ class ClaudeState:
                         continue
                     name = portable_name(skill) if isinstance(install, AlignedInstall) else skill
                     add(Surface.SKILL, f'{plugin}:{name}', mode, package.name, key)
+        for marketplace, listed in catalogs.items():
+            add(Surface.MARKETPLACE, marketplace, EngineMarketplace(frozenset(listed)), None)
         for skill in setup.loose.values():
             if SkillRoot.CLAUDE not in skill.place:
                 continue
@@ -270,7 +274,10 @@ class ClaudeState:
                 if matches:
                     catalogs[name] = (directory, catalog)
                 if matches and name in outputs:
-                    seen.add(Surface.MARKETPLACE, name, EngineMarketplace())
+                    if (catalogued := EngineMarketplace.read(catalog)) is None:
+                        seen.unread(manifest, 'a catalog entry is not a table with a name of its own', {Surface.MARKETPLACE}, {name})
+                    else:
+                        seen.add(Surface.MARKETPLACE, name, catalogued)
                     continue
                 if matches:
                     try:

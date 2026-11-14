@@ -66,17 +66,51 @@ def _hook_keys(plugin_id: str, root: Path) -> set[str]:
     path = root / 'hooks/hooks.json'
     if not path.is_file():
         return set()
-    events = json.loads(portable.read_utf8(path))['hooks']
-    return {f'{plugin_id}:hooks/hooks.json:{re.sub(r"(?<!^)(?=[A-Z])", "_", event).lower()}:{group}:{index}'
+    return _state_keys(f'{plugin_id}:hooks/hooks.json', json.loads(portable.read_utf8(path))['hooks'])
+
+
+def _state_keys(source: str, events) -> set[str]:
+    return {f'{source}:{re.sub(r"(?<!^)(?=[A-Z])", "_", event).lower()}:{group}:{index}'
             for event, groups in events.items() for group, entry in enumerate(groups)
             for index, _ in enumerate(entry['hooks'])}
 
 
-def _stray_approval(name: str, defined: set[str]) -> bool:
-    """A hooks.state key is `<plugin id>:hooks/hooks.json:...` for a plugin's hook, or `<path>:<event>:<group>:<index>`
-    for one in the user's or a project's own hooks.json, which is live while that file exists."""
-    source = Path(name.rsplit(':', 3)[0])
-    return not source.is_file() if source.is_absolute() else name not in defined
+def _file_keys(source: str) -> set[str] | str | None:
+    """The keys a hooks file at an absolute path defines: none once it is gone, None for a file of another kind,
+    such as a config.toml layer, and for a hooks.json that cannot be read the reason. The last two count nothing
+    as stray."""
+    path = Path(source)
+    if not path.is_file():
+        return set()
+    if path.name != 'hooks.json':
+        return None
+    try:
+        return _state_keys(source, json.loads(portable.read_utf8(path))['hooks'])
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+        return f'{type(error).__name__}: {error}'
+
+
+def _stray_approvals(names, defined: set[str]) -> tuple[int, dict[str, str]]:
+    """A hooks.state key is `<source>:<event>:<group>:<index>`. Two sources can count: `<plugin id>:hooks/hooks.json`
+    for a plugin's hooks file, and the path of the user's or a project's own hooks file. Any other source counts
+    nothing, because nothing here can tell whether it is stray: a name in angle brackets, such as
+    `/<session-flags>/config.toml` for hooks given as -c flags, which no file records; `<plugin id>:plugin.json#hooks[N]`
+    for hooks a plugin declares in its manifest, which `_hook_keys` does not read; and another platform's path, such
+    as `/home/...` in Windows' config, which a Codex running in WSL may have written. Also gives each hooks file it
+    could not read, with the reason."""
+    files: dict[str, set[str] | str | None] = {}
+    stray = 0
+    for name in names:
+        source = name.rsplit(':', 3)[0]
+        if source.lstrip('/').startswith('<'):
+            continue
+        if Path(source).is_absolute():
+            if source not in files:
+                files[source] = _file_keys(source)
+            stray += isinstance(files[source], set) and name not in files[source]
+        elif source.endswith(':hooks/hooks.json'):
+            stray += name not in defined
+    return stray, {source: keys for source, keys in files.items() if isinstance(keys, str)}
 
 
 def _approved_hooks(cli: Sequence[str], home: Path, timeout: float = 30, *, codex_home: Path | None = None) -> frozenset[str]:
@@ -195,6 +229,7 @@ class CodexState:
                 value = (CheckoutMarketplace(repo.url, repo.commit) if repo.codex.mode == MarketplaceMode.CHECKOUT
                          else GitMarketplace(repo.url, repo.commit))
                 add(Surface.MARKETPLACE, repo.codex.name, value, repo.name)
+        catalog = None                   # the plugins the engine's catalog lists, once any install names it
         for package in setup.packages.values():
             placement = package.codex
             if placement is None:
@@ -203,8 +238,10 @@ class CodexState:
             tree = lock.trees.get(_HOST) if lock else None
             owner = None
             for install in placement.installs:
-                if via(install, _HOST) == ENGINE:
-                    add(Surface.MARKETPLACE, ENGINE, EngineMarketplace(), None)
+                if isinstance(install, EngineInstall):
+                    catalog = set() if catalog is None else catalog
+                    if install.managed:
+                        catalog.add(package.name)
                 plugin = plugin_id(package.name, install, _HOST)
                 repo = setup.repos[package.source.repo] if isinstance(package.source, RepoSource) else None
                 # Codex records no commit for a copy taken from a checkout, only its version.
@@ -236,6 +273,8 @@ class CodexState:
                     add(Surface.AGENT, role, FileValue(digest), package.name, key)
             for skill, mode in package.modes.items():
                 add(Surface.SKILL, f'{package.name}:{skill}', mode, package.name, owner)
+        if catalog is not None:
+            add(Surface.MARKETPLACE, ENGINE, EngineMarketplace(frozenset(catalog)), None)
         for skill in setup.loose.values():
             lock = setup.lock.get(skill.name)
             for root, token in ((SkillRoot.CODEX, '{codex_home}'), (SkillRoot.AGENTS, '{agents_home}')):
@@ -318,8 +357,12 @@ class CodexState:
             except (OSError, ValueError) as error:
                 seen.unread(personal, error, {Surface.MARKETPLACE}, {ENGINE})
                 catalog = {}
-            if catalog.get('name') == ENGINE:
-                seen.add(Surface.MARKETPLACE, ENGINE, EngineMarketplace())
+            catalogued = EngineMarketplace.read(catalog) if catalog.get('name') == ENGINE else None
+            if catalog.get('name') == ENGINE and catalogued is None:
+                seen.unread(personal, 'a catalog entry is not a table with a name of its own', {Surface.MARKETPLACE}, {ENGINE})
+                catalog = {}
+            if catalogued is not None:
+                seen.add(Surface.MARKETPLACE, ENGINE, catalogued)
                 orphans = [entry['name'] for entry in catalog.get('plugins', [])
                            if listed and f'{entry["name"]}@{ENGINE}' not in installed]
                 if orphans:
@@ -534,10 +577,12 @@ class CodexState:
             except Unread as error:
                 seen.unread('codex hooks/list', error, {Surface.HOOK}, {plugin for plugin, keys in hooks.items() if keys})
         defined = set().union(*hooks.values())
-        stray = sum(_stray_approval(name, defined) for name, value in state.items()
-                    if value.get('enabled', True) and value.get('trusted_hash'))
+        stray, unreadable = _stray_approvals((name for name, value in state.items()
+                                              if value.get('enabled', True) and value.get('trusted_hash')), defined)
         if stray:
             seen.note(NoteKind.RESIDUE, 'hooks.state', f'{stray} approvals of hooks no installed plugin or hooks file defines')
+        for source, reason in sorted(unreadable.items()):
+            seen.note(NoteKind.RESIDUE, 'hooks.state', f'approvals name {roots.tokens(source)}, which cannot be read: {reason}')
         for folder in (roots.codex_home / 'skills', roots.agents_home / 'skills'):
             observe_loose(seen, folder, _loose)
         rules = roots.codex_home / 'AGENTS.md'

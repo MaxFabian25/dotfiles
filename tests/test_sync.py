@@ -521,7 +521,7 @@ class NativeCatalogTest(unittest.TestCase):
             operation = Apply.__new__(Apply)
             operation.roots = DeviceRoots.current(root)
             operation.files = Files(root / 'backups')
-            operation.catalogs_needed = set()
+            operation.catalogs = {}
             operation.claude = {}
             operation.built = {'interfaces': SimpleNamespace(root=root / 'built')}
             operation.setup = SimpleNamespace(
@@ -538,6 +538,55 @@ class NativeCatalogTest(unittest.TestCase):
                 'policy': {'installation': 'AVAILABLE', 'authentication': 'ON_USE'},
                 'category': 'Developer Tools'}])
             self.assertEqual(commands, [(Host.CODEX, 'plugin', 'marketplace', 'add', str(root), '--json')])
+
+    def catalog_operation(self, root, catalogs, listed):
+        """An Apply with nothing built, the engine catalogs that differ, and each catalog file listing `listed`."""
+        from host_state import DeviceRoots
+        from sync_files import Files
+        from sync_hosts import Apply
+        home = root / 'home'
+        operation = Apply.__new__(Apply)
+        operation.roots = DeviceRoots(home, home / '.codex', home / '.claude', home / '.agents', root / 'engine')
+        operation.files = Files(root / 'backups')
+        operation.built, operation.claude, operation.catalogs = {}, {}, catalogs
+        paths = {'personal': operation.roots.agents_home / 'plugins/marketplace.json',
+                 'personal-collections': operation.roots.engine / 'claude/.claude-plugin/marketplace.json',
+                 'codex-aligned': operation.roots.claude_home / 'marketplaces/codex-aligned/.claude-plugin/marketplace.json'}
+        for name, path in paths.items():
+            path.parent.mkdir(parents=True)
+            head = {'interface': {'displayName': 'Personal'}} if name == 'personal' else {'owner': {'name': 'Dotfiles'}}
+            path.write_text(json.dumps({'name': name, **head, 'plugins': [
+                {'name': plugin, 'source': f'./plugins/{plugin}/1', 'version': '1'} for plugin in listed]}))
+        operation.commands = []
+        operation.command = lambda *args: operation.commands.append(args)
+        return operation, paths
+
+    def test_a_claude_catalog_that_differs_keeps_only_its_managed_plugins_even_with_nothing_built(self):
+        from host_state import Host
+        with tempfile.TemporaryDirectory() as temp:
+            operation, paths = self.catalog_operation(Path(temp), {(Host.CLAUDE, 'personal-collections'): frozenset({'kept'})},
+                                                      ('kept', 'retired'))
+            untouched = {name: paths[name].read_bytes() for name in ('personal', 'codex-aligned')}
+            operation._catalogs()
+            self.assertEqual([e['name'] for e in json.loads(paths['personal-collections'].read_text())['plugins']], ['kept'])
+            self.assertEqual({name: paths[name].read_bytes() for name in untouched}, untouched,
+                             'catalogs in step are left as they are')
+            self.assertEqual(operation.commands, [(Host.CLAUDE, 'plugin', 'marketplace', 'add',
+                                                   str(operation.roots.engine / 'claude'), '--scope', 'user', '--json')])
+
+    def test_an_engine_catalog_already_right_on_disk_is_registered_again_when_its_fact_differs(self):
+        from host_state import Host
+        with tempfile.TemporaryDirectory() as temp:
+            wanted = frozenset({'kept'})
+            operation, paths = self.catalog_operation(Path(temp), {(Host.CODEX, 'personal'): wanted,
+                                                                   (Host.CLAUDE, 'codex-aligned'): wanted}, ('kept',))
+            before = {name: path.read_bytes() for name, path in paths.items()}
+            operation._catalogs()
+            self.assertEqual({name: path.read_bytes() for name, path in paths.items()}, before)
+            self.assertEqual(operation.commands, [
+                (Host.CODEX, 'plugin', 'marketplace', 'add', str(operation.roots.home), '--json'),
+                (Host.CLAUDE, 'plugin', 'marketplace', 'add', str(operation.roots.claude_home / 'marketplaces/codex-aligned'),
+                 '--scope', 'user', '--json')])
 
     def test_claude_registers_an_exact_checkout_without_treating_the_pin_as_a_branch(self):
         from dataclasses import replace

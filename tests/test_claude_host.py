@@ -63,8 +63,8 @@ class ProjectTest(unittest.TestCase):
         split = key(S.PLUGIN, 'course@personal-collections')
         self.assertEqual({k: (f.value, f.follows) for k, f in facts.items()}, {
             key(S.MARKETPLACE, 'interfaces'): (hs.GitMarketplace('https://github.com/example/interfaces.git', NEW), None),
-            key(S.MARKETPLACE, 'codex-aligned'): (hs.EngineMarketplace(), None),
-            key(S.MARKETPLACE, 'personal-collections'): (hs.EngineMarketplace(), None),
+            key(S.MARKETPLACE, 'codex-aligned'): (hs.EngineMarketplace(frozenset({'interfaces'})), None),
+            key(S.MARKETPLACE, 'personal-collections'): (hs.EngineMarketplace(frozenset({'course'})), None),
             aligned: (hs.PluginValue(True, hs.Released('1.0+codex-aligned.x')), None),
             key(S.TREE, 'interfaces@codex-aligned'): (hs.TreeValue(D1), aligned),
             key(S.SKILL, 'interfaces@codex-aligned:better-interface'): (M.EXPLICIT, aligned),
@@ -356,6 +356,18 @@ class ObserveTest(unittest.TestCase):
                     observation = device.state().observe(hs.Request())
                     self.assertNotIn(key(S.MARKETPLACE, 'codex-aligned'), observation.facts)
 
+    def test_an_engine_catalog_entry_without_a_name_of_its_own_leaves_the_catalog_unread(self):
+        catalog = 'marketplaces/codex-aligned/.claude-plugin/marketplace.json'
+        kit = {'name': 'kit', 'source': './plugins/kit/1'}
+        for plugins in ([kit, {'source': './plugins/hand-made/1'}], [kit, dict(kit, source='./plugins/kit/2')], ['kit'],
+                        {'kit': {}}):
+            with self.subTest(plugins=plugins), Device() as device:
+                device.write(device.roots.claude_home / catalog, json.dumps({'name': 'codex-aligned', 'plugins': plugins}))
+                observation = device.state().observe(hs.Request())
+                self.assertNotIn(key(S.MARKETPLACE, 'codex-aligned'), observation.facts)
+                self.assertIn((frozenset({S.MARKETPLACE}), frozenset({'codex-aligned'}), 'a catalog entry is not a table with a name of its own'),
+                              [(u.surfaces, u.subjects, u.reason) for u in observation.unknown])
+
     def test_reads_installs_overrides_frontmatter_and_aligned_copies(self):
         with Device() as device:
             wanted = key(S.SKILL, 'skill-creator@claude-plugins-official:skill-creator')
@@ -372,7 +384,7 @@ class ObserveTest(unittest.TestCase):
             key(S.PLUGIN, 'skill-creator@claude-plugins-official'): hs.PluginValue(True, hs.Unpinned()),
             key(S.MARKETPLACE, 'interfaces'): hs.GitMarketplace('https://github.com/example/interfaces.git', None),
             key(S.MARKETPLACE, 'openai-codex'): hs.GitMarketplace('https://github.com/example/codex-plugin-cc.git', None),
-            key(S.MARKETPLACE, 'codex-aligned'): hs.EngineMarketplace(),
+            key(S.MARKETPLACE, 'codex-aligned'): hs.EngineMarketplace(frozenset()),
             key(S.SKILL, 'cli-creator'): M.OFF,
             key(S.SKILL, 'playwright'): M.ON,
             key(S.SKILL, 'kit@codex-aligned:fix-ci'): M.OFF,

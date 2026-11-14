@@ -233,7 +233,19 @@ class CheckoutMarketplace:
 
 @dataclass(frozen=True)
 class EngineMarketplace:
-    """personal, personal-collections or codex-aligned, registered at this device's engine output."""
+    """personal, personal-collections or codex-aligned, registered at this device's engine output. The engine owns
+    these catalogs, so the plugins one lists are part of its value: exactly the managed installs that name it."""
+    plugins: frozenset[str]
+
+    @classmethod
+    def read(cls, catalog: dict) -> EngineMarketplace | None:
+        """What a catalog file lists, or None when an entry is not a table with a name of its own, which only a hand
+        edit leaves. The hosts then report the catalog unread rather than guess which entry to keep."""
+        plugins = catalog.get('plugins', [])
+        if not isinstance(plugins, list) or not all(isinstance(p, dict) and isinstance(p.get('name'), str) for p in plugins):
+            return None
+        names = frozenset(p['name'] for p in plugins)
+        return cls(names) if len(names) == len(plugins) else None
 
 
 MarketplaceValue = GitMarketplace | CheckoutMarketplace | EngineMarketplace

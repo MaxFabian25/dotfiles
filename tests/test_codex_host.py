@@ -71,7 +71,7 @@ class ProjectTest(unittest.TestCase):
         loose = key(S.LOOSE_SKILL, '{codex_home}/skills/define-goal')
         self.assertEqual({k: (f.value, f.entry, f.follows) for k, f in facts.items()}, {
             key(S.MARKETPLACE, 'skills'): (hs.GitMarketplace('https://github.com/example/skills.git', C2), 'skills', None),
-            key(S.MARKETPLACE, 'personal'): (hs.EngineMarketplace(), None, None),
+            key(S.MARKETPLACE, 'personal'): (hs.EngineMarketplace(frozenset({'kit', 'impeccable'})), None, None),
             kit: (hs.PluginValue(True, hs.Released('1.0+upstream')), 'kit', None),
             key(S.TREE, 'kit@personal'): (hs.TreeValue(D1), 'kit', kit),
             key(S.SKILL, 'kit:fix-ci'): (M.OFF, 'kit', kit),
@@ -372,8 +372,10 @@ class ObserveTest(unittest.TestCase):
                     self.assertEqual(observed.unknown, ())
                 else:
                     self.assertNotIn(plugin_key, observed.facts)
+                    # A catalog that names a plugin twice is unread as well as the plugin it lists.
+                    catalog_unread = [(frozenset({S.MARKETPLACE}), frozenset({'personal'}))] if scenario == 'duplicate' else []
                     self.assertEqual([(u.surfaces, u.subjects) for u in observed.unknown],
-                                     [(frozenset({S.PLUGIN}), frozenset({identity}))])
+                                     catalog_unread + [(frozenset({S.PLUGIN}), frozenset({identity}))])
 
     def test_staged_engine_releases_require_the_exact_registered_package_and_content_address(self):
         for scenario in ('exact', 'unregistered', 'wrong-package', 'wrong-digest', 'builder-marker'):
@@ -417,7 +419,7 @@ class ObserveTest(unittest.TestCase):
         values = {k: f.value for k, f in observation.facts.items()}
         self.assertEqual(values, {
             key(S.MARKETPLACE, 'skills'): hs.GitMarketplace('https://github.com/example/skills.git', C2),
-            key(S.MARKETPLACE, 'personal'): hs.EngineMarketplace(),
+            key(S.MARKETPLACE, 'personal'): hs.EngineMarketplace(frozenset({'kit', 'impeccable', 'visualize'})),
             kit: hs.PluginValue(True, hs.Released('1.0')),
             key(S.PLUGIN, 'impeccable@personal'): hs.PluginValue(True, hs.Pinned(C1)),
             key(S.PLUGIN, 'rpi@skills'): hs.PluginValue(True, hs.Pinned(C2)),
@@ -483,19 +485,67 @@ class ObserveTest(unittest.TestCase):
         self.assertIn(('residue', 'hooks.state', '1 approvals of hooks no installed plugin or hooks file defines'),
                       [(n.kind.value, n.subject, n.detail) for n in observation.notes])
 
-    def test_approvals_from_a_hooks_file_are_stray_only_once_the_file_is_gone(self):
+    def test_an_engine_catalog_entry_without_a_name_of_its_own_leaves_the_catalog_unread(self):
+        for plugins in ([{'name': 'kit'}, {'source': {'source': 'local', 'path': './hand-made'}}], [{'name': 'kit'}] * 2,
+                        ['kit'], {'kit': {}}):
+            with self.subTest(plugins=plugins), Device() as device:
+                catalog = device.roots.agents_home / 'plugins/marketplace.json'
+                catalog.write_text(json.dumps({'name': 'personal', 'plugins': plugins}))
+                observation = device.state().observe(hs.Request())
+                self.assertNotIn(key(S.MARKETPLACE, 'personal'), observation.facts)
+                self.assertIn((frozenset({S.MARKETPLACE}), frozenset({'personal'}), 'a catalog entry is not a table with a name of its own'),
+                              [(u.surfaces, u.subjects, u.reason) for u in observation.unknown])
+
+    def test_an_approval_from_a_hooks_file_is_stray_once_the_file_no_longer_defines_that_hook(self):
         with Device() as device:
             own = device.roots.codex_home / 'hooks.json'
-            device.write(own, json.dumps({'hooks': {}}))
-            gone, also_gone = (device.roots.home / f'Documents/{name}/.codex/hooks.json' for name in ('old', 'older'))
+            device.write(own, json.dumps({'hooks': {'SessionStart': [{'hooks': [{'type': 'command', 'command': 'a'}]}]}}))
+            broken = device.roots.home / 'Documents/broken/.codex/hooks.json'
+            device.write(broken, '{"hooks": ')
+            layer = device.roots.home / 'Documents/layer/.codex/config.toml'
+            device.write(layer, '')
+            gone = device.roots.home / 'Documents/old/.codex/hooks.json'
             config = device.roots.codex_home / 'config.toml'
-            # One approval whose file is gone has no enabled key, which counts as on.
+            other_platform = '/home/x/.codex/hooks.json' if os.name == 'nt' else 'C:/Users/x/.codex/hooks.json'
+            # Stray: an event and a group the existing file lacks, and a file that is gone, whose approval has no
+            # enabled key, which counts as on. Not stray: the hook the file defines, hooks given as -c flags or by a
+            # managed config, which no file records, a hooks.json that cannot be parsed, a config.toml layer, hooks a
+            # plugin's manifest declares, and another platform's path, none of which this side can check.
+            approved = [(own, 'session_start:0:0', 'enabled = true\n'), (own, 'pre_tool_use:0:0', 'enabled = true\n'),
+                        (own, 'session_start:1:0', 'enabled = true\n'), (gone, 'session_start:0:0', ''),
+                        ('/<session-flags>/config.toml', 'stop:0:0', 'enabled = true\n'),
+                        ('/<legacy-managed-config.toml-mdm>/managed_config.toml', 'stop:0:0', ''),
+                        (broken, 'stop:0:0', ''), (layer, 'stop:0:0', ''), (own, 'stop:0:0', 'enabled = false\n'),
+                        ('chrome@openai-bundled:plugin.json#hooks[0]', 'stop:0:0', ''), (other_platform, 'stop:0:0', '')]
             config.write_text(config.read_text() + ''.join(
-                f'\n[hooks.state."{path.as_posix()}:session_start:0:0"]\n{enabled}trusted_hash = "sha256:z"\n'
-                for path, enabled in ((own, 'enabled = true\n'), (gone, ''), (also_gone, 'enabled = true\n'))))
+                f'\n[hooks.state."{path.as_posix() if isinstance(path, Path) else path}:{hook}"]\n'
+                f'{enabled}trusted_hash = "sha256:z"\n' for path, hook, enabled in approved))
             observation = device.state().observe(hs.Request())
-        self.assertIn(('residue', 'hooks.state', '2 approvals of hooks no installed plugin or hooks file defines'),
-                      [(n.kind.value, n.subject, n.detail) for n in observation.notes])
+        notes = [(n.kind.value, n.subject, n.detail) for n in observation.notes]
+        self.assertIn(('residue', 'hooks.state', '3 approvals of hooks no installed plugin or hooks file defines'), notes)
+        self.assertIn(('residue', 'hooks.state', 'approvals name {home}/Documents/broken/.codex/hooks.json, which cannot be '
+                       'read: JSONDecodeError: Expecting value: line 1 column 11 (char 10)'), notes)
+
+    def test_each_kind_of_approval_key_is_stray_or_not_on_its_own(self):
+        with Device() as device:
+            own = device.roots.codex_home / 'hooks.json'
+            device.write(own, json.dumps({'hooks': {'SessionStart': [{'hooks': [{'type': 'command', 'command': 'a'}]}]}}))
+            broken = device.roots.home / 'Documents/broken/.codex/hooks.json'
+            device.write(broken, '{"hooks": ')
+            layer = device.roots.home / 'Documents/layer/.codex/config.toml'
+            device.write(layer, '')
+            gone = (device.roots.home / 'Documents/old/.codex/hooks.json').as_posix()
+            other_platform = '/home/x/.codex/hooks.json' if os.name == 'nt' else 'C:/Users/x/.codex/hooks.json'
+            plugin = 'kit@personal:hooks/hooks.json'
+            for name, stray in ((f'{own.as_posix()}:session_start:0:0', 0), (f'{own.as_posix()}:pre_tool_use:0:0', 1),
+                                (f'{own.as_posix()}:session_start:1:0', 1), (f'{own.as_posix()}:session_start:0:1', 1),
+                                (f'{gone}:session_start:0:0', 1), ('/<session-flags>/config.toml:stop:0:0', 0),
+                                ('/<legacy-managed-config.toml-mdm>/managed_config.toml:stop:0:0', 0),
+                                (f'{broken.as_posix()}:stop:0:0', 0), (f'{layer.as_posix()}:stop:0:0', 0),
+                                ('chrome@openai-bundled:plugin.json#hooks[0]:stop:0:0', 0), (f'{other_platform}:stop:0:0', 0),
+                                (f'{plugin}:stop:0:0', 0), (f'{plugin}:pre_tool_use:0:0', 1)):
+                with self.subTest(name):
+                    self.assertEqual(codex_host._stray_approvals([name], {f'{plugin}:stop:0:0'})[0], stray)
 
     def test_hook_approvals_use_current_native_trust_and_enablement(self):
         for scenario in ('omitted-enabled', 'omitted-trust', 'disabled', 'untrusted', 'modified', 'absent',
