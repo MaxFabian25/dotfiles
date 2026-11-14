@@ -1,4 +1,4 @@
-"""Compare the description with this device and say what differs, what sync fixes, and what needs a person."""
+"""Compare the description with this device and say what differs, what sync fixes, and what it will not do, each with its fix."""
 from __future__ import annotations
 
 from collections import Counter
@@ -16,7 +16,15 @@ from host_state import (CATALOGS, Approved, CheckoutMarketplace, DeviceRoots, En
 
 class Verdict(enum.StrEnum):
     DRIFT = 'drift'                  # sync fixes it
-    ATTENTION = 'attention'          # a person must act; sync cannot or must not
+    ATTENTION = 'attention'          # sync will not do it; each row names its fix
+
+
+# Trusting changed hook content is the user's decision (dotfiles-private config/impeccable-hooks/README.md).
+APPROVE = (' · approve them only for a change the user approved, as dotfiles-private\'s '
+           'skills/release-dotfiles/references/finish-stops.md says under "Trusted Codex hooks"')
+# README: local edits are not permission to overwrite their files.
+KEEP = ' · sync never overwrites an edit, so ask the user whether to keep it or move it aside, then pull again'
+REREAD = ' · fix the read this names, then pull again'
 
 
 class Kind(enum.StrEnum):
@@ -79,7 +87,7 @@ class Diff:
 
     @property
     def exit_code(self) -> int:
-        """0 in step, 1 drift only, 2 anything needs a person, 3 a source could not be read."""
+        """0 in step, 1 drift only, 2 anything sync will not do, 3 a source could not be read."""
         kinds = {difference.kind for difference in self.differences}
         if Kind.INCOMPLETE in kinds:
             return 3
@@ -277,6 +285,11 @@ def _home(path: Path | None) -> str:
     return '~' + str(path)[len(home):] if str(path).startswith(home) else str(path)
 
 
+def _fix(difference: Difference) -> str:
+    """What clears an approval, local-edit or incomplete row; render writes the other attention rows' own fix."""
+    return {Kind.APPROVAL: APPROVE, Kind.LOCAL_EDIT: KEEP, Kind.INCOMPLETE: REREAD}.get(difference.kind, '')
+
+
 def render(diff: Diff, *, full: bool = False, notes: bool = False) -> str:
     """Grouped by entry, private entries tagged. A difference that follows another (a skill of a missing
     plugin) folds into a count under it unless `full`."""
@@ -300,11 +313,14 @@ def render(diff: Diff, *, full: bool = False, notes: bool = False) -> str:
             if difference.key is None:
                 match difference.kind:
                     case Kind.HOST_ABSENT:
-                        what = f'{difference.host.value}  host is not installed here'
+                        # device.py counts a host absent when portable cannot find its CLI, which <HOST>_CLI overrides.
+                        what = (f'{difference.host.value}  host is not installed here · if its CLI is installed, set '
+                                f'{difference.host.name}_CLI to its path; otherwise ask the user whether this machine '
+                                'should have it')
                     case Kind.STALE_LOCK:
                         what = difference.detail
                     case _:
-                        what = f'{difference.host.value if difference.host else ""}  {difference.detail}'
+                        what = f'{difference.host.value if difference.host else ""}  {difference.detail}{_fix(difference)}'
                 lines.append(f'  {label:<30} {difference.kind.value:<11} {what}')
                 continue
             key = difference.key
@@ -316,7 +332,9 @@ def render(diff: Diff, *, full: bool = False, notes: bool = False) -> str:
                 change = ' · '.join(f'{verb} {", ".join(sorted(names))}' for verb, names in (('drop', gone), ('add', new))
                                     if names)
             else:
-                change = f'want {_spell(expected)} · have {_spell(observed)}'
+                change = f'want {_spell(expected)} · have {_spell(observed)}' + (
+                    f' · {difference.detail}' if difference.kind == Kind.LOCAL_EDIT and difference.detail else '')
+            change += _fix(difference)
             lines.append(f'  {label:<30} {key.host.value:<6} {key.surface.name.lower():<11} {key.subject}  '
                          f'{difference.kind.value}  {change}')
             if folded.get(key):

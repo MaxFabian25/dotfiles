@@ -124,7 +124,8 @@ def apply(setup: Setup, device: Device, current: Plan, *, builder=None, configur
     from sync_sources import Builder
 
     if current.blocked:
-        raise RuntimeError('Sync is blocked by incomplete reads, stale locks, conflicts or local edits; no host files changed')
+        raise RuntimeError('Sync is blocked by incomplete reads, stale locks, conflicts, local edits, hook approvals or '
+                           'hosts that are not installed; no host files changed, and each attention row names its fix')
     if not current.changes:
         return current, None
     configurations = current.configurations if configurations is None else configurations
