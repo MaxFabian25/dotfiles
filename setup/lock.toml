@@ -1,12 +1,12 @@
 # Generated from the setup description and verified package builds. Do not edit.
 
 [agent-tool-study]
-intent = "sha256:677ee2abeb927f3bb303f393f449e86253df7d849c31a0045e6d846e614177a8"
-placements = { agents = "sha256:b76da7bc5c829159f41da8057a845ad421a8d01bd087a5ab641e74598e04b0ea", claude = "sha256:b76da7bc5c829159f41da8057a845ad421a8d01bd087a5ab641e74598e04b0ea" }
+intent = "sha256:1e3abe3982ab2ad8e9f62d5b6970e1bb3c6d52c595892e0b722e7e5cee06e631"
+placements = { agents = "sha256:8d08adf8d555ccbe24491bb69dc341d0f089c6d808218e0a3e1dd82665172509", claude = "sha256:8d08adf8d555ccbe24491bb69dc341d0f089c6d808218e0a3e1dd82665172509" }
 
 [browser-and-computer-use]
-intent = "sha256:4c7a8f50764d2a852a6fd92ace0df37d96dad24c9db9a4a6038e108ad53263a5"
-placements = { agents = "sha256:52c96d868d4b91088ff25a62dfc10d1e32b375c08f1ac3f2fdec94a49a8aa197", claude = "sha256:52c96d868d4b91088ff25a62dfc10d1e32b375c08f1ac3f2fdec94a49a8aa197" }
+intent = "sha256:07ccd2e64cec1d673161f8c762069c4056b369677688624b8624a6d705e2c453"
+placements = { agents = "sha256:b2bec21d20cf64acc72da02a68f09f5e4cd8abe4d8e8ddad525437f33f4b11d1", claude = "sha256:b2bec21d20cf64acc72da02a68f09f5e4cd8abe4d8e8ddad525437f33f4b11d1" }
 
 [build-iterated-agentic-loop]
 intent = "sha256:5a5c900801815c2408c103fd71ee14ae6a2231bf9d6cbe2189139c9835872fa7"
@@ -91,8 +91,8 @@ codex = { version = "0.1.0+upstream.ced39776fdf8.codex1", tree = "sha256:dd58dba
 claude = { version = "0.1.0+codex-aligned.f6c9d03c5fcf", tree = "sha256:7f6768983aa85ee443f728165e7065076ccb34b10e442535e68f7380419730fc" }
 
 [planted-error-checks]
-intent = "sha256:1304ea298560a27ca5a99f5fd4d26b34cb358e9255f235ff505384f5454568f8"
-placements = { agents = "sha256:baf23b6b4a4ad577b33ade638f2c2ea728e7f0ffa634658e7f0378892f85a8fd", claude = "sha256:baf23b6b4a4ad577b33ade638f2c2ea728e7f0ffa634658e7f0378892f85a8fd" }
+intent = "sha256:e54f8a7d541adef187229a8435025ec7fb292139975c6b1aa53f83ca34eab975"
+placements = { agents = "sha256:016fb2b49c474920852c821b139f94a37449ffa8ba0b91d1397de18ac0cf9d4f", claude = "sha256:016fb2b49c474920852c821b139f94a37449ffa8ba0b91d1397de18ac0cf9d4f" }
 
 [powerpoint-com-wsl]
 intent = "sha256:a76daeea53c80acdc78e54e9f9a17d76f8a99c8971b7ba4fbbe81c150ec1d75c"
