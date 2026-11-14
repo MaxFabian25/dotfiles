@@ -13,7 +13,7 @@ import tomllib
 from typing import Any, Mapping
 
 from description import (Adaptation, AlignedInstall, BUILDS, BuildSource, ClaudePlacement, CodexPlacement,
-                         CodexRoles, CourseRecipe, DescriptionError, EngineInstall, Frozen, GeneratedRoles, GenericRecipe,
+                         CodexRoles, CourseRecipe, DescriptionError, EngineInstall, Frozen, GenericRecipe,
                          Hooks, HostMarketplace, Install, Lock, LockedTree, LocalSource, LooseSkill, MarketplaceInstall, MarketplaceMode,
                          NoteRule, Origin, Package, PluginRoles, PublicEmilRecipe, Recipe, Repo, RepoName, RepoRoles,
                          RepoSource, Roots, Rules, SCHEMA, Setup, SkillRoot, SnapshotRecipe, SnapshotSource, Source,
@@ -190,10 +190,8 @@ def _parse_roles(table: _Table | None) -> CodexRoles | None:
                           tuple(tuple(pair) for pair in rewrite))
     elif kind == 'plugin':
         roles = PluginRoles(table.get('directory', str))
-    elif kind == 'generated':
-        roles = GeneratedRoles(table.get('directory', str, 'agents'))
     else:
-        table.error('from', 'expected repo, plugin or generated')
+        table.error('from', 'expected repo or plugin')
         roles = None
     table.done()
     return roles
@@ -650,8 +648,6 @@ def _dump_package(package: Package) -> dict:
                               'skill': roles.skill, 'rewrite': [list(pair) for pair in roles.rewrite]}
         elif isinstance(roles, PluginRoles):
             codex['roles'] = {'from': 'plugin', 'directory': roles.directory}
-        elif isinstance(roles, GeneratedRoles):
-            codex['roles'] = {'from': 'generated', 'directory': roles.directory}
         out['codex'] = codex
     if package.claude:
         out['claude'] = {'install': [_dump_install(i, Host.CLAUDE) for i in package.claude.installs]}

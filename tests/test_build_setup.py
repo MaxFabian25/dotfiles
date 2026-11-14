@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build_setup  # noqa: E402
 from description import (Adaptation, AlignedInstall, BuildSource, ClaudePlacement, CodexPlacement, EngineInstall,  # noqa: E402
-                         GeneratedRoles, GenericRecipe, Lock, LockedTree, MarketplaceInstall, Package, Roots, Setup, ToolNotes, Visibility,
+                         GenericRecipe, Lock, LockedTree, MarketplaceInstall, Package, PluginRoles, Roots, Setup, ToolNotes, Visibility,
                          intent)
 from host_state import DeviceRoots, Digest, Host, Platform  # noqa: E402
 from portable import GIT  # noqa: E402
@@ -59,7 +59,7 @@ class UnmanagedBuild(unittest.TestCase):
         (upstream / 'authorless.json').write_text(json.dumps({'version': '1.0.0'}), newline='\n')
         (upstream / 'skills/one/SKILL.md').write_text('---\nname: one\ndescription: One.\n---\nBody.\n', newline='\n')
         (upstream / 'agents').mkdir()
-        (upstream / 'agents/helper.md').write_text('---\nname: helper\ndescription: Helps.\ntools: Read\n---\nHelp.\n', newline='\n')
+        (upstream / 'agents/helper.toml').write_text('name = "helper"\ndescription = "Helps."\n', newline='\n')
         for arguments in (('init', '-q'), ('remote', 'add', 'origin', URL), ('add', '.'),
                           ('-c', 'user.name=T', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'Fixture')):
             subprocess.run([*GIT, '-C', str(upstream), *arguments], check=True, capture_output=True)
@@ -107,7 +107,7 @@ class UnmanagedBuild(unittest.TestCase):
         for codex_on, built in ((True, ['FAILED kit: kit: rebuilt agent roles differ from the lock']),
                                 (False, ['verified kit: Codex tree, 1 Claude tree(s), 0 role(s)'])):
             with self.subTest(codex_on=codex_on):
-                self.package = self.kit(None, CodexPlacement((EngineInstall(codex_on),), roles=GeneratedRoles()),
+                self.package = self.kit(None, CodexPlacement((EngineInstall(codex_on),), roles=PluginRoles('agents')),
                                         ClaudePlacement((EngineInstall(True),)))
                 code, lines = self.run_build(f'roles-{codex_on}', trees=trees,
                                              roles={'helper.toml': Digest('sha256:' + '0' * 64)})

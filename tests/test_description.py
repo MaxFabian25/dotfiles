@@ -206,6 +206,12 @@ class RenderTest(unittest.TestCase):
             path.write_text(path.read_text().replace('\n[claude]\n', "\n[[codex.replace]]\npath = 'a'\nfind = 'b'\n\n[claude]\n"))
             self.assertEqual(roots.problems(), [f'{path}:codex.replace[0]: expected path, find and replace strings'])
 
+    def test_a_role_source_other_than_repo_or_plugin_is_refused(self):
+        with Roots() as roots:
+            path = roots.public / 'packages/impeccable.toml'
+            path.write_text(path.read_text().replace('from = "repo"', 'from = "generated"'))
+            self.assertIn(f'{path}:codex.roles.from: expected repo or plugin', roots.problems())
+
     def test_a_kept_current_install_round_trips_and_changes_intent(self):
         with Roots() as roots:
             path = roots.public / 'packages/cursor-team-kit.toml'

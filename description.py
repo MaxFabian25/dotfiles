@@ -208,12 +208,7 @@ class PluginRoles:                   # pstack: TOML roles shipped inside the ins
     directory: str
 
 
-@dataclass(frozen=True)
-class GeneratedRoles:                # RPI: generated from Claude-format agent files
-    directory: str = 'agents'
-
-
-CodexRoles = RepoRoles | PluginRoles | GeneratedRoles
+CodexRoles = RepoRoles | PluginRoles
 
 
 @dataclass(frozen=True)
