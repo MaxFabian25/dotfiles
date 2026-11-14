@@ -15,7 +15,7 @@ attach stops with exit 3 and agent-browser's error when Chrome refused the sessi
 It closes that session, so attach again. --approve runs the attach under approve_attach.py, which needs uv,
 exits 4 without attaching when Chrome was not started with --force-renderer-accessibility, and
 takes Chrome's browser process from the default profile's SingletonLock unless PID is given. Use it only after
-the user said yes to attaching in this task.
+the user said yes to attaching in this task, or for a read that the browser skill exempts from that yes.
 
 close ends the session's daemon itself when agent-browser's own close fails, as it did on WSL on 10 November
 2026 after attaches nobody approved: on Linux it reads the daemon's PID from the session's pid file, checks that
