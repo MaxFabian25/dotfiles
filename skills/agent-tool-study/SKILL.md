@@ -5,25 +5,13 @@ description: Run a study or worked example that compares AI agents, chat apps, a
 
 # Agent tool study
 
-A study runs each setup on the same job many times and compares its time, cost and passes. Readers take three things on trust: that every setup did the same work, that a failure belongs to the tool and not to the harness, and that each sentence holds for the data behind it. Step 1 checks that the study can show a difference at all, and each later step protects one of them.
+A study runs each setup on the same job many times and compares its time, cost and passes. Readers take three things on trust: that every setup did the same work, that a failure belongs to the tool and not to the harness, and that each sentence holds for the data behind it. Step 2 checks that the study can show a difference at all, and each later step protects one of them.
 
 Load the `benchmark-checklist` skill before you design the pilot or choose run settings, and answer its questions for this comparison.
 
-## 1. Show that the sides can differ
+## 1. Find the original inputs
 
-Before the first run of any side, name the plan or account that each side and your own driving session draw on, read its usage page, and estimate the runs against what is left. Move your reading and research, such as subagents that read transcripts or sources, to another provider first.
-
-When one side runs what a guide or other document recommends, write that document first, because it defines that side.
-
-Run the baseline side first, on a draft of the job, under step 3's rules for run folders and for reading what each model received, because a baseline that loaded the toolkit's rules or skills ties for that reason alone. When the baseline passes every check of the draft, the job cannot show what the other setups add, so redesign the job before you build the rest of it. In a follow-up study, do step 2 before this run: the draft is the earlier study's job and harness, so ask the user before you redesign it, because step 2 makes a changed job a different study.
-
-Then run each side once, unscored, on the job as it now stands, reusing the baseline's run if the job did not change. Run them under the same step 3 rules and with step 3's route check, so that neither a leaked rules file nor a fallback route decides whether the sides look alike. Put the results in the form the study will publish, such as a screenshot of its results page. When the sides look the same there, ask the user what the comparison is meant to show before you build any scorer.
-
-This step is done when each side's run shows its own route and loaded nothing the plan doesn't name, and the published form shows the sides differing or the user has said what the comparison is for.
-
-## 2. Find the original inputs
-
-In a follow-up study, the earlier study's job prompt, harness, pass checks, results and derivation code are what the new numbers are compared against, so a rebuilt copy is a different study. Find each one before you write anything new:
+In a follow-up study, the earlier study's job prompt, harness, pass checks, results and derivation code are what the new numbers are compared against, so a rebuilt copy is a different study. A new study skips this step. Find each one before you write anything new:
 
 - the published post's repository, for its data and derivation module;
 - every reachable machine, with `ls -d` on each candidate folder;
@@ -31,6 +19,18 @@ In a follow-up study, the earlier study's job prompt, harness, pass checks, resu
 - the repository's Git history, deleted files included.
 
 This step is done when you have a path for each input. If one is truly gone, tell the user what a rebuilt version would differ in, and get their answer before any run.
+
+## 2. Show that the sides can differ
+
+Before the first run of any side, name the plan or account that each side and your own driving session draw on, read its usage page, and estimate the runs against what is left. Move your reading and research, such as subagents that read transcripts or sources, to another provider first.
+
+When one side runs what a guide or other document recommends, write that document first, because it defines that side.
+
+Run the baseline side first, on a draft of the job, under step 3's rules for run folders and for reading what each model received, because a baseline that loaded the toolkit's rules or skills ties for that reason alone. When the baseline passes every check of the draft, the job cannot show what the other setups add, so redesign the job before you build the rest of it. In a follow-up study the draft is the earlier study's job and harness, so ask the user before you redesign it, because step 1 makes a changed job a different study.
+
+Then run each side once, unscored, on the job as it now stands, reusing the baseline's run if the job did not change. Run them under the same step 3 rules and with step 3's route check, so that neither a leaked rules file nor a fallback route decides whether the sides look alike. Put the results in the form the study will publish, such as a screenshot of its results page. When the sides look the same there, ask the user what the comparison is meant to show before you build any scorer.
+
+This step is done when each side's run shows its own route and loaded nothing the plan doesn't name, and the published form shows the sides differing or the user has said what the comparison is for.
 
 ## 3. Pilot, and fix the harness first
 

@@ -1,3 +1,7 @@
+## Paired checkout
+
+The paired private checkout is the sibling `dotfiles-private`, or `private` beside this `public` folder in a `release.py` worktree.
+
 ## Agent skills
 
 ### Issue tracker

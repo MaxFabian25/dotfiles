@@ -74,11 +74,21 @@ if (import.meta.main) {
 	const urlAt = args.indexOf('--url');
 	const url = urlAt === -1 ? undefined : args.splice(urlAt, 2)[1];
 	const [name] = args;
-	if (!name) {
-		console.error('usage: node cdp.mjs [--url WS] NAME < steps.json');
+	const usage = 'usage: node cdp.mjs [--url WS] NAME < steps.json';
+	if (name === '--help' || name === '-h') {
+		console.log(usage);
+		process.exit(0);
+	}
+	if (!name || name.startsWith('-')) {
+		console.error(usage);
 		process.exit(2);
 	}
-	const steps = JSON.parse(readFileSync(0, 'utf8'));
+	const input = readFileSync(0, 'utf8');
+	if (!input.trim()) {
+		console.error(`no steps on standard input\n${usage}`);
+		process.exit(2);
+	}
+	const steps = JSON.parse(input);
 	const page = await connect(name, { url });
 	try {
 		for (const [index, [method, params]] of steps.entries()) {
