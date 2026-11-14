@@ -1910,7 +1910,8 @@ def clean(args, public_repo, private_repo):
         recover_publication(public_repo, private_repo, base, origin_heads(public_repo, private_repo))
     if public_pushed(base).is_file() and not args.force:
         raise RuntimeError(f'the public commit of {args.name} is on origin without its pair, as {public_pushed(base)} '
-                           f'notes; run its finish again, or pass --force to give the release up; nothing was removed')
+                           f'notes; run its finish again. --force gives the release up and deletes its unpushed '
+                           f'work, so pass it only on the user\'s yes; nothing was removed')
     sides = []
     for repo, tree in ((public_repo, public), (private_repo, private)):
         listed = subprocess.run([*GIT, '-C', str(repo), 'rev-parse', '--verify', '-q', args.name],
@@ -1920,8 +1921,9 @@ def clean(args, public_repo, private_repo):
             merged = subprocess.run([*GIT, '-C', str(repo), 'merge-base', '--is-ancestor', args.name, 'origin/main'],
                                     capture_output=True, timeout=60).returncode == 0
             if not merged:
-                raise RuntimeError(f'{repo}: branch {args.name} is not on origin/main; push it, or pass --force; '
-                                   'nothing was removed')
+                raise RuntimeError(f'{repo}: branch {args.name} is not on origin/main; finish the release. --force '
+                                   'deletes its unpushed commits and uncommitted edits, so pass it only on the '
+                                   'user\'s yes; nothing was removed')
         sides.append((repo, tree, listed))
     retire_candidates(public_repo, private_repo, base)
     for repo, tree, listed in sides:
