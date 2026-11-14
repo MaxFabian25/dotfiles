@@ -7,12 +7,15 @@ one process, so -p 'test_sync.py' runs one module and -k NAME the tests whose na
 checkout, or a release worktree's public folder:
 
     uv run --locked python -B tests/run.py [-p PATTERN] [-k NAME] [-v]
+
+Each run's temporary folders sit outside the system's, as TEMPORARY_PARENT says.
 """
 
 from concurrent.futures import ThreadPoolExecutor
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -24,6 +27,15 @@ RAN = re.compile(r'^Ran (\d+) tests? in', re.MULTILINE)
 RESULT = re.compile(r'^(?:OK|FAILED)(?: \((.*)\))?$', re.MULTILINE)
 SKIPPED = re.compile(r'\bskipped=(\d+)')
 MODULE_TIMEOUT_SECONDS = 900
+# Codex 0.169.0-alpha.6's Linux sandbox makes an empty .git, .agents, .codex and .aws at the top of each folder its
+# command may write, /tmp among them, for as long as the command runs, and description_checks reads a .git in any
+# parent of a root as damaged metadata. On 14 November 2026 a Codex session's commands on Omarchy gave a release's
+# suite 11 failures and errors that way, so each run's temporary folders sit under the home folder instead. That
+# holds while no Codex session works in the home folder itself or in its .cache.
+TEMPORARY_PARENT = Path.home() / '.cache' / 'dotfiles-tests'
+# A run stopped part-way leaves its folder there. A module stops at 15 minutes and release.py's whole suite at 30,
+# so a run's folder untouched for a day is a stopped run's.
+STALE_SECONDS = 24 * 60 * 60
 
 
 def run_module(path):
@@ -69,7 +81,15 @@ def main(argv):
     if not argv:
         return run_each_module()
     sys.dont_write_bytecode = True
-    with tempfile.TemporaryDirectory(prefix='dotfiles-tests-') as folder:
+    TEMPORARY_PARENT.mkdir(parents=True, exist_ok=True)
+    for stale in TEMPORARY_PARENT.glob('dotfiles-tests-*'):
+        try:
+            if time.time() - stale.lstat().st_mtime > STALE_SECONDS:
+                shutil.rmtree(stale, ignore_errors=True)
+        except FileNotFoundError:  # another run removed it first
+            pass
+    with tempfile.TemporaryDirectory(prefix='dotfiles-tests-', dir=TEMPORARY_PARENT) as folder:
+        os.environ['TMPDIR'] = folder
         absent = Path(folder) / 'absent-config'
         os.environ['CODEX_HOME'] = str(absent / 'codex')
         os.environ['CLAUDE_CONFIG_DIR'] = str(absent / 'claude')

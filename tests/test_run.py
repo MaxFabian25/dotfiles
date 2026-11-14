@@ -3,6 +3,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -27,17 +28,38 @@ READS_STDIN = ONE_TEST.replace('import unittest\n', 'import sys\nimport threadin
     '        reader.start()\n        reader.join(30)\n        self.assertEqual(read, [""])')
 ENDS_WITH_A_NOTE = ONE_TEST.replace('import unittest\n', 'import atexit\nimport sys\nimport unittest\n\n'
                                     'atexit.register(print, "left OK (skipped=8)", file=sys.stderr)\n', 1)
+# Checks that no parent of a temporary folder, made here or by a program this module starts, holds a .git.
+FINDS_NO_GIT_ABOVE_ITS_TEMPORARY_FOLDERS = '''import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
 
 
-def full_run(modules, runner=RUNNER, stdin=None):
+class Probe(unittest.TestCase):
+    def test_no_parent_of_a_temporary_folder_holds_git_metadata(self):
+        child = subprocess.run([sys.executable, '-c', 'import tempfile; print(tempfile.mkdtemp())'],
+                               capture_output=True, text=True, check=True, timeout=60)
+        for folder in Path(tempfile.mkdtemp()), Path(child.stdout.strip()):
+            self.assertEqual([str(parent / '.git') for parent in folder.parents if os.path.lexists(parent / '.git')],
+                             [], folder)
+'''
+
+
+def full_run(modules, runner=RUNNER, stdin=None, home=None):
     with tempfile.TemporaryDirectory() as folder:
         tests = Path(folder) / 'tests'
         tests.mkdir()
         (tests / 'run.py').write_text(runner, encoding='utf-8')
         for name, text in modules.items():
             (tests / name).write_text(text, encoding='utf-8')
+        # The run's temporary folders sit under the home folder, and a module stopped at its time limit leaves its
+        # folder there, so the run gets a home of its own. Path.home() reads USERPROFILE on Windows and HOME elsewhere.
+        home = str(home or Path(folder) / 'home')
         return subprocess.run([sys.executable, '-B', str(tests / 'run.py')], cwd=folder, capture_output=True, text=True,
-                              encoding='utf-8', timeout=300, stdin=stdin)
+                              encoding='utf-8', timeout=300, stdin=stdin,
+                              env=os.environ | {'HOME': home, 'USERPROFILE': home})
 
 
 class FullRun(unittest.TestCase):
@@ -107,6 +129,39 @@ class FullRun(unittest.TestCase):
 
     def test_a_run_with_no_tests_exits_5(self):
         self.assertEqual(full_run({}).returncode, 5)
+
+    def test_a_git_folder_in_the_system_temporary_folder_reaches_no_module(self):
+        # Codex's Linux sandbox leaves such a folder in /tmp while each of its commands runs.
+        with tempfile.TemporaryDirectory() as folder:
+            system = Path(folder) / 'tmp'
+            (system / '.git').mkdir(parents=True)
+            with patch.dict(os.environ, {'TMPDIR': str(system), 'TEMP': str(system), 'TMP': str(system)}):
+                result = full_run({'test_a.py': FINDS_NO_GIT_ABOVE_ITS_TEMPORARY_FOLDERS}, home=Path(folder) / 'home')
+            self.assertEqual(result.returncode, 0, result.stdout)
+            # The run made its folders in the home it was given, so it read that home rather than the real one.
+            self.assertTrue((Path(folder) / 'home' / '.cache' / 'dotfiles-tests').is_dir())
+
+    def test_a_run_removes_the_folders_of_runs_stopped_over_a_day_ago(self):
+        with tempfile.TemporaryDirectory() as home:
+            parent = Path(home) / '.cache' / 'dotfiles-tests'
+            old, fresh = parent / 'dotfiles-tests-old', parent / 'dotfiles-tests-fresh'
+            for folder in old, fresh:
+                (folder / 'tmpleft').mkdir(parents=True)
+            day_ago = time.time() - 24 * 60 * 60 - 60
+            os.utime(old, (day_ago, day_ago))
+            almost = time.time() - 23 * 60 * 60
+            os.utime(fresh, (almost, almost))
+            result = full_run({'test_a.py': ONE_TEST}, home=home)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertFalse(old.exists())
+            self.assertTrue((fresh / 'tmpleft').is_dir())
+
+    def test_a_run_goes_on_when_another_run_removed_a_folder_it_listed(self):
+        runner = RUNNER.replace("TEMPORARY_PARENT.glob('dotfiles-tests-*')",
+                                "[*TEMPORARY_PARENT.glob('dotfiles-tests-*'), TEMPORARY_PARENT / 'dotfiles-tests-gone']")
+        self.assertNotEqual(runner, RUNNER)
+        result = full_run({'test_a.py': ONE_TEST}, runner)
+        self.assertEqual(result.returncode, 0, result.stdout)
 
 
 if __name__ == '__main__':

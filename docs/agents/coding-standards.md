@@ -79,7 +79,7 @@ that rule with its date. Read those answers as part of the rule, and raise no ho
 - **A test is portable.** A new or changed test is written to pass on WSL, on the macOS runner, on Windows
   and in the main checkout. These traps each broke a test in November 2026:
   - macOS's temporary folder is behind a symlink: compare resolved paths, and reproduce it on WSL with
-    `TMPDIR` set to a symlinked folder;
+    `HOME` at a folder whose `.cache/dotfiles-tests` is a symlink, because `tests/run.py` replaces `TMPDIR`;
   - Windows can name the temporary folder in 8.3 short form, with a `~1` part: compare resolved paths;
   - behaviour only Linux has: pin `sys.platform` in the test;
   - `\U` in a Windows path inside a double-quoted TOML string starts an escape: use a single-quoted string;
