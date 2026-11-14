@@ -275,9 +275,9 @@ class Builder:
         if package.tool_notes == ToolNotes.APPLY:
             adaptations['toolNotes'] = {'plugins': [package.name],
                                          'rules': [{'match': r.match, 'note': r.note} for r in self.setup.note_rules]}
-        if host == Host.CODEX and package.codex and package.codex.replace:
-            adaptations['replace'] = {package.name: [(r.path, r.find, r.replace) for r in package.codex.replace]}
         placement = package.placement(host)
+        if placement and placement.replace:
+            adaptations['replace'] = {package.name: [(r.path, r.find, r.replace) for r in placement.replace]}
         if placement and (WINDOWS if windows is None else windows):
             command = placement.windows_hook_command if host == Host.CODEX else None
             if edits := windows_overlay(command, placement.windows_replace):

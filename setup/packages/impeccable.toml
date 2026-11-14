@@ -11,31 +11,12 @@ tool_notes = "apply"
 install = [{ via = "personal", enabled = true }]
 hooks = "trusted"
 windows_hook_command = 'cmd /c if exist "${CLAUDE_PLUGIN_ROOT}\skills\impeccable\scripts\impeccable.cmd" "${CLAUDE_PLUGIN_ROOT}\skills\impeccable\scripts\impeccable.cmd" hook'
-[[codex.windows_replace]]
-path = 'skills/impeccable/scripts/impeccable.cmd'
-find = '''"%~1" engine-probe >"%probe_tmp%" 2>nul'''
-replace = '''call "%~1" engine-probe >"%probe_tmp%" 2>nul'''
 
 [[codex.windows_replace]]
 path = 'skills/impeccable/scripts/impeccable.cmd'
 find = '''where curl.exe >nul 2>nul'''
 replace = '''echo impeccable: no engine found, and this setup never downloads one on Windows; install the pinned npm:impeccable with mise. 1>&2 & exit /b 1'''
 
-[[codex.windows_replace]]
-path = 'skills/impeccable/scripts/impeccable.cmd'
-find = '''where impeccable >nul 2>nul
-if errorlevel 1 goto download
-call :probe impeccable
-if not "%probe_ok%"=="1" goto download
-impeccable %*
-exit /b %errorlevel%'''
-replace = '''set "path_bin="
-for /f "delims=" %%p in ('where impeccable 2^>nul') do if not defined path_bin set "path_bin=%%p"
-if not defined path_bin goto download
-call :probe "%path_bin%"
-if not "%probe_ok%"=="1" goto download
-call "%path_bin%" %*
-exit /b %errorlevel%'''
 
 [[codex.windows_replace]]
 path = 'skills/impeccable/scripts/impeccable'
@@ -55,31 +36,12 @@ rewrite = [[".agents/skills/impeccable/", "{skill}/"], ["](../reference/", "]({s
 [claude]
 install = [{ via = "impeccable", enabled = true }]
 
-[[claude.windows_replace]]
-path = 'skills/impeccable/scripts/impeccable.cmd'
-find = '''"%~1" engine-probe >"%probe_tmp%" 2>nul'''
-replace = '''call "%~1" engine-probe >"%probe_tmp%" 2>nul'''
 
 [[claude.windows_replace]]
 path = 'skills/impeccable/scripts/impeccable.cmd'
 find = '''where curl.exe >nul 2>nul'''
 replace = '''echo impeccable: no engine found, and this setup never downloads one on Windows; install the pinned npm:impeccable with mise. 1>&2 & exit /b 1'''
 
-[[claude.windows_replace]]
-path = 'skills/impeccable/scripts/impeccable.cmd'
-find = '''where impeccable >nul 2>nul
-if errorlevel 1 goto download
-call :probe impeccable
-if not "%probe_ok%"=="1" goto download
-impeccable %*
-exit /b %errorlevel%'''
-replace = '''set "path_bin="
-for /f "delims=" %%p in ('where impeccable 2^>nul') do if not defined path_bin set "path_bin=%%p"
-if not defined path_bin goto download
-call :probe "%path_bin%"
-if not "%probe_ok%"=="1" goto download
-call "%path_bin%" %*
-exit /b %errorlevel%'''
 
 [[claude.windows_replace]]
 path = 'skills/impeccable/scripts/impeccable'
@@ -87,3 +49,23 @@ find = '''if [ -n "$version" ] && [ "$os" != unknown ] && [ "$arch" != unknown ]
 replace = '''echo "impeccable: this setup never downloads an engine on Windows; install the pinned npm:impeccable with mise." >&2
 exit 1
 if [ -n "$version" ] && [ "$os" != unknown ] && [ "$arch" != unknown ]; then'''
+
+[[codex.replace]]
+path = 'skills/impeccable/reference/live.md'
+find = '''drop both, pass `--query`'''
+replace = '''drop both; keep separate `--tag` and `--text`'''
+
+[[codex.replace]]
+path = 'skills/impeccable/reference/live.md'
+find = '''A tag alone never lands on the first match: when the tag repeats and `--text` does not single out one element, or the element shares a source line with other markup (`reason: "shared_line"`), wrap exits `element_ambiguous`; follow the fallback flow as above.'''
+replace = '''When the tag repeats and `--text` does not single out one element, wrap exits `element_ambiguous`; follow the fallback flow as above. If wrap reports `reason: "shared_line"`, use that same fallback; sharing a line does not always prevent a wrap (engine 0.1.24 normalised a plain-HTML fixture on 14 November 2026).'''
+
+[[claude.replace]]
+path = 'skills/impeccable/reference/live.md'
+find = '''drop both, pass `--query`'''
+replace = '''drop both; keep separate `--tag` and `--text`'''
+
+[[claude.replace]]
+path = 'skills/impeccable/reference/live.md'
+find = '''A tag alone never lands on the first match: when the tag repeats and `--text` does not single out one element, or the element shares a source line with other markup (`reason: "shared_line"`), wrap exits `element_ambiguous`; follow the fallback flow as above.'''
+replace = '''When the tag repeats and `--text` does not single out one element, wrap exits `element_ambiguous`; follow the fallback flow as above. If wrap reports `reason: "shared_line"`, use that same fallback; sharing a line does not always prevent a wrap (engine 0.1.24 normalised a plain-HTML fixture on 14 November 2026).'''

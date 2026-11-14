@@ -244,7 +244,7 @@ class CodexPlacement:
     # The commandWindows a pull on Windows gives the plugin's hooks. Absent from the intent of every other package.
     windows_hook_command: str | None = field(default=None, metadata={'intent': 'when-set'})
     windows_replace: tuple[WindowsReplace, ...] = field(default=(), metadata={'intent': 'when-set'})
-    # Edits on every platform. Claude gets them only through an aligned copy, built from the effective Codex tree.
+    # Edits on every platform; a native Claude install must declare the same edits explicitly.
     replace: tuple[TextReplace, ...] = field(default=(), metadata={'intent': 'when-set'})
 
 
@@ -255,6 +255,7 @@ class ClaudePlacement:
     # makes it model-invocable in Claude only. Absent means the package mode holds.
     modes: Mapping[str, SkillMode] = field(default_factory=dict, metadata={'intent': 'when-set'})
     windows_replace: tuple[WindowsReplace, ...] = field(default=(), metadata={'intent': 'when-set'})
+    replace: tuple[TextReplace, ...] = field(default=(), metadata={'intent': 'when-set'})
 
 
 class ToolNotes(enum.StrEnum):

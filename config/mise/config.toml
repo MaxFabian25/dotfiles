@@ -31,7 +31,7 @@ bun = "1.4.4"
 supabase = "3.0.0"
 "npm:portless" = "0.16.0"
 "npm:ctx7" = "0.10.0"
-"npm:impeccable" = "4.8.1"
+"npm:impeccable" = "4.9.1"
 stripe = "1.55.8"
 "npm:playwright" = "1.65.0"
 "npm:appium" = { version = "3.9.0", os = ["macos"] }

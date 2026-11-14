@@ -257,7 +257,7 @@ def _parse_package(path: Path, data: Mapping, visibility: Visibility, errors: li
     claude_table = table.sub('claude')
     if claude_table:
         claude = ClaudePlacement(_parse_installs(claude_table, Host.CLAUDE), _parse_claude_modes(claude_table.sub('skills')),
-                                 _parse_replace(claude_table, 'windows_replace'))
+                                 _parse_replace(claude_table, 'windows_replace'), _parse_replace(claude_table, 'replace'))
         claude_table.done()
     table.done()
     return Package(EntryName(path.stem), visibility, note, source, modes, tool_notes, codex, claude, platforms)
@@ -655,9 +655,9 @@ def _dump_package(package: Package) -> dict:
         out['codex'] = codex
     if package.claude:
         out['claude'] = {'install': [_dump_install(i, Host.CLAUDE) for i in package.claude.installs]}
-        if package.claude.windows_replace:
-            out['claude']['windows_replace'] = [_Inline({'path': r.path, 'find': r.find, 'replace': r.replace})
-                                               for r in package.claude.windows_replace]
+        for key in ('windows_replace', 'replace'):
+            if replaces := getattr(package.claude, key):
+                out['claude'][key] = [_Inline({'path': r.path, 'find': r.find, 'replace': r.replace}) for r in replaces]
         claude_skills = {mode.value: names for mode in CLAUDE_MODES
                          if (names := sorted(s for s, m in package.claude.modes.items() if m == mode))}
         if claude_skills:
