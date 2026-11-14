@@ -238,5 +238,4 @@ Notes:
 ## See also
 - API parameter quick reference for fallback CLI mode: `references/image-api.md`
 - Prompt examples shared across both top-level modes: `references/sample-prompts.md`
-- Network/sandbox notes for fallback CLI mode: `references/codex-network.md`
 - Built-in-first transparent image workflow: `SKILL.md` and `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/imagegen/scripts/remove_chroma_key.py`

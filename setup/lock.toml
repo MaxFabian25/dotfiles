@@ -49,8 +49,8 @@ placements = { agents = "sha256:bd050acf1da1c8d68c154a38c20d76dd515118953d888df3
 intent = "sha256:c7c9fa4611a3202288e998f3ba6f129c1e69de7be44ce6b36df98599110bd7ea"
 
 [imagegen]
-intent = "sha256:463b16e0f11b4ce1b831fb5a4fe0824a3914ffcd5868451ad13acde08299be5e"
-placements = { claude = "sha256:8d06274921427a67b5df90791b12842aded871f4578bd3a236d5178b139fd693" }
+intent = "sha256:ed9b4e1ffc6e9c36aa9009416a911d273642e54ad35496eb2d504618bf05aa49"
+placements = { claude = "sha256:22be6347ed411af38c82124e9147d3fa2f4ebe692f4f41fec34eb85dd04f7a3f" }
 
 [impeccable]
 intent = "sha256:3174ca140c6d0435fd0bf21e40aa362c92c67a429109dadc36b5a39c120c5ef0"
