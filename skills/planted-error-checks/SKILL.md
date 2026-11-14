@@ -101,19 +101,9 @@ faults go, and each test is a check.
   cannot read as success; and, for each new guard, a swapped argument of the same type, a changed
   constant, a member dropped from a list the code reads, a statement moved past its neighbour, and a
   secret added to an output.
-- For the faults you choose yourself, run `python3 -I
-  scripts/plant.py SOURCE TEST PLANTS_JSON [ROOT] [-- TEST_ARGUMENT...]` from this skill's folder.
-  The JSON file lists `[label, old, new]` plants. Each runs TEST in its own copy of ROOT, without a
-  sandbox, after the unchanged copy has passed, and prints as CAUGHT, MISSED, TIMED OUT or NOT
-  APPLIED. ROOT must hold every file TEST reads, or the unchanged copy fails and the script prints
-  the end of that run. Everything after `--` goes to TEST as its arguments, such as `-- -k finish`
-  to run only some tests of a unittest file. Write `{fresh}` in an argument for a TEST that needs a
-  folder that does not exist yet, such as `-- {fresh}`: each run gets the path of a new one, which
-  is removed when the run ends. A CAUGHT line names the tests that failed, from unittest's `FAIL:`
-  and `ERROR:` headings in a unittest run and otherwise from lines a TEST prints as `FAIL`, two
-  spaces and the check's name: check that they are the tests of the planted behaviour, because a
-  test that fails for another reason, such as one that fails now and then on a busy machine, is
-  printed as CAUGHT too.
+- For the faults you choose yourself, run `python3 -I scripts/plant.py` from this skill's folder;
+  with no arguments or with `--help` it prints its usage, the plant file's format and its outcomes.
+  It runs each plant without a sandbox of its own.
 
 ## Report
 
@@ -122,7 +112,8 @@ and the clean copies' result. The score is caught out of the plants that applied
 output. Fix or remove each NOT APPLIED and NO CHANGE plant before you quote a score.
 
 A plant that names the check it is aimed at, as step 2 asks, counts as CAUGHT only when that check
-fails. `plant.py` prints CAUGHT for any non-zero exit, a crash included, and counts every such line
+fails. `plant.py` prints CAUGHT for any non-zero exit, a crash or a test that fails now and then on a busy
+machine included, and counts every such line
 in its closing "N of M plants caught" line and its exit status, so read the test names on each
 CAUGHT line and count the score yourself. A CAUGHT line names at most three tests, so when the aimed
 test is not among them, rerun that plant with `-- -k` and the test's name. When another check, a

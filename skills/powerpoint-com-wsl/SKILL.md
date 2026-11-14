@@ -25,6 +25,11 @@ and column widths; links, layout, and section. It stops with exit 3 when PowerPo
 running, because the user may be working in it, and `--allow-running` measures in that instance
 without closing it.
 
+Before a job, take the `windows-desktop` claim that the `work-across-tailscale-machines` skill asks
+for, with a note that says what the job leaves free, so that another thread does not wait on it to
+use the screen: `--note 'powerpoint-com-wsl: a windowless PowerPoint over COM; the foreground and
+the clipboard stay free unless a slide show runs, which takes the screen'`.
+
 ## Rules for your own scripts
 
 - **One PowerPoint, one job.** `New-Object -ComObject PowerPoint.Application` attaches to a running
@@ -71,10 +76,11 @@ without closing it.
   broadcast, is enough for PowerPoint, though .NET's `InstalledFontCollection` may not list it.
   Confirm a font from PowerPoint's PDF with `pdffonts`.
 - **Files and output.** Copy the deck and script into a Windows folder and pass Windows paths. Run
-  `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <script>`. Write JSON with
-  `[IO.File]::WriteAllText(path, text, (New-Object Text.UTF8Encoding $false))` and `ConvertTo-Json
-  -Depth` deep enough for the data, and read it in Python with `encoding="utf-8-sig"`, because
-  Windows PowerShell's own UTF-8 writers add a byte-order mark. Delete the job folder once the
+  `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <script>`. Give
+  `ConvertTo-Json` a `-Depth` deep enough for the data. Windows PowerShell's own UTF-8 writers, such
+  as `Set-Content -Encoding UTF8`, add a byte-order mark, and
+  `[IO.File]::WriteAllText(path, text, (New-Object Text.UTF8Encoding $false))` adds none, so read
+  the JSON in Python with `encoding="utf-8-sig"`, which reads both. Delete the job folder once the
   results are copied out.
 
 The job is done when the results are saved outside the job folder, the job folder is gone, and the

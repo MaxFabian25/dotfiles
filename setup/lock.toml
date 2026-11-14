@@ -42,8 +42,8 @@ intent = "sha256:85ccbfe1f66b4f148f98c9c57b5c33bb184d09d9693d0ecf490142a59bd3015
 intent = "sha256:6f472bab5405540be5140cb16d982cc89f3ff3518b4fde3074e3a41ab0c8926a"
 
 [excel-com-wsl]
-intent = "sha256:0d272bab489b6d9d7db57af678af904574448f0949aa5a4744508126f8363580"
-placements = { agents = "sha256:bd050acf1da1c8d68c154a38c20d76dd515118953d888df34cbcba4e333f46be", claude = "sha256:bd050acf1da1c8d68c154a38c20d76dd515118953d888df34cbcba4e333f46be" }
+intent = "sha256:73152ea27ebbaa06884f8220cacac31e04c197e78d04082e74670850692e2071"
+placements = { agents = "sha256:62b48657983d3493356ecbee10abf9271cfc009e24b09150555bcee20b7984ff", claude = "sha256:62b48657983d3493356ecbee10abf9271cfc009e24b09150555bcee20b7984ff" }
 
 [financial-analysis]
 intent = "sha256:c7c9fa4611a3202288e998f3ba6f129c1e69de7be44ce6b36df98599110bd7ea"
@@ -91,12 +91,12 @@ codex = { version = "0.1.0+upstream.ced39776fdf8.codex1", tree = "sha256:dd58dba
 claude = { version = "0.1.0+codex-aligned.f6c9d03c5fcf", tree = "sha256:7f6768983aa85ee443f728165e7065076ccb34b10e442535e68f7380419730fc" }
 
 [planted-error-checks]
-intent = "sha256:9cb0cbba9a3b091e817ba6045ae75340254f3a036a275571db3d44256943576a"
-placements = { agents = "sha256:5fbb96e1d86789d0a3eb8ff5a883f2561b94b722eaa0bb34e148a5e4d86fbcde", claude = "sha256:5fbb96e1d86789d0a3eb8ff5a883f2561b94b722eaa0bb34e148a5e4d86fbcde" }
+intent = "sha256:1304ea298560a27ca5a99f5fd4d26b34cb358e9255f235ff505384f5454568f8"
+placements = { agents = "sha256:baf23b6b4a4ad577b33ade638f2c2ea728e7f0ffa634658e7f0378892f85a8fd", claude = "sha256:baf23b6b4a4ad577b33ade638f2c2ea728e7f0ffa634658e7f0378892f85a8fd" }
 
 [powerpoint-com-wsl]
-intent = "sha256:e0b5e8c9347ce130979ba30e2f47e199d5cd4655aeb1581faa7849b3fdc8d7c6"
-placements = { agents = "sha256:b969b705d87652c4ccb0b9aba7c48ee99d3da2b3ee2849a593e979c2a57d946f", claude = "sha256:b969b705d87652c4ccb0b9aba7c48ee99d3da2b3ee2849a593e979c2a57d946f" }
+intent = "sha256:a76daeea53c80acdc78e54e9f9a17d76f8a99c8971b7ba4fbbe81c150ec1d75c"
+placements = { agents = "sha256:eeeff1bc17719f7c56dfc00ec8dd4a39d4c1197d177b13e8efb2dc746fa68352", claude = "sha256:eeeff1bc17719f7c56dfc00ec8dd4a39d4c1197d177b13e8efb2dc746fa68352" }
 
 [private-equity]
 intent = "sha256:15c4ab6eb8970ddfb7089ef6a94b6bfbf14f09a36a992fa27fa28a546f918838"

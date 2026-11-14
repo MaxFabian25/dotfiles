@@ -2,7 +2,7 @@ public = true
 
 [source]
 local = "skills/powerpoint-com-wsl"
-tree = "sha256:b969b705d87652c4ccb0b9aba7c48ee99d3da2b3ee2849a593e979c2a57d946f"
+tree = "sha256:eeeff1bc17719f7c56dfc00ec8dd4a39d4c1197d177b13e8efb2dc746fa68352"
 
 [place]
 agents = true
