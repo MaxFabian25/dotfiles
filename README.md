@@ -202,8 +202,9 @@ full id into `build/public-pushed` and finishing again pairs it. So `clean` with
 note, as it does on a branch that is not on origin, and removes nothing. A `start` under the name of a release
 whose branches are gone deletes a note it finds, because that note is another release's.
 
-After a pull that changed skills or packages, it runs `skill_listing.py`, which warns when Claude Code
-lists skills without their descriptions. `clean NAME` removes the worktrees once `origin/main` has them.
+After a pull that changed skills or packages, it runs `skill_listing.py`, which checks that Claude Code
+lists skills with their descriptions, and exits with that check's status when the pull passed and the check did
+not. `clean NAME` removes the worktrees once `origin/main` has them.
 `status` names the release that holds the machine's lock and any pull or sync that runs, and lists every open
 release worktree with its commits, uncommitted files and the files it changes, with a line under each release
 whose finish runs, which covers one that is still in its checks and tests; `start` lists the other open releases. Under each release both name the T3 Code

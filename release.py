@@ -44,7 +44,7 @@ import traceback
 
 import candidate_result
 import claims
-from portable import GIT, codex_home, exclusive_lock, lock_holder, native_cli_environment, staging_folder
+from portable import GIT, WINDOWS, codex_home, exclusive_lock, lock_holder, native_cli_environment, staging_folder
 from pull import fetch, git
 
 ENGINE = Path(__file__).resolve().parent
@@ -703,6 +703,21 @@ def candidate_owner(public, private, base):
                                             for side, root in (('public', public), ('private', private))}}
 
 
+def unmarked(folder, marker):
+    """Whether folder is a candidate workspace that stopped before its first worktree, with its marker missing or
+    cut short, as a crash right after the folder was made or a power cut during the marker's write leaves it."""
+    if (folder.is_symlink() or not folder.is_dir() or marker.is_symlink()
+            or any(path != marker for path in folder.iterdir())):
+        return False
+    try:
+        json.loads(marker.read_text(encoding='utf-8'))
+    except (FileNotFoundError, ValueError):
+        return True
+    except OSError:
+        return False
+    return False
+
+
 def retire_candidates(public, private, base, *, keep=None):
     parent = base / 'build/candidates'
     if not parent.exists():
@@ -715,6 +730,10 @@ def retire_candidates(public, private, base, *, keep=None):
             continue
         retired = parent / f'{name}.owner.json'
         marker = retired if retired.exists() else folder / 'owner.json'
+        if marker != retired and re.fullmatch(r'round-[a-zA-Z0-9_-]+', name) and unmarked(folder, marker):
+            marker.unlink(missing_ok=True)
+            folder.rmdir()
+            continue
         try:
             known = (re.fullmatch(r'round-[a-zA-Z0-9_-]+', name) and not folder.is_symlink()
                      and not marker.is_symlink() and json.loads(marker.read_text(encoding='utf-8')) == owner)
@@ -750,7 +769,17 @@ def candidate(public, private, base, *, source, paired, message):
     parent = base / 'build/candidates'
     parent.mkdir(parents=True, exist_ok=True)
     folder = Path(staging_folder(prefix='round-', dir=parent))
-    (folder / 'owner.json').write_text(json.dumps(candidate_owner(public, private, base)) + '\n', encoding='utf-8')
+    # On disk before the first worktree, so that cleanup never meets a registered worktree without its marker.
+    with (folder / 'owner.json').open('w', encoding='utf-8') as marker:
+        marker.write(json.dumps(candidate_owner(public, private, base)) + '\n')
+        marker.flush()
+        os.fsync(marker.fileno())
+    if not WINDOWS:  # Windows cannot open a folder to sync it
+        entries = os.open(folder, os.O_RDONLY)
+        try:
+            os.fsync(entries)
+        finally:
+            os.close(entries)
     for side, repo in (('public', public), ('private', private)):
         git(repo, 'worktree', 'add', '--detach', '-q', str(folder / side), getattr(commits, side))
     draft = Candidate(folder / 'public', folder / 'private', source, commits, trees, paired)
@@ -1405,7 +1434,12 @@ def finish_tail(args, public_repo, private_repo, draft, *, published, origins=No
                                  '--private', str(private_repo), '--update', '--apply', '--wait', '0'],
                                 cwd=public_repo, timeout=1800)
         if result.returncode == 0 and (args.entry or args.package):
-            subprocess.run([sys.executable, '-B', str(public_repo / 'skill_listing.py')], cwd=public_repo, timeout=900)
+            listing = subprocess.run([sys.executable, '-B', str(public_repo / 'skill_listing.py')], cwd=public_repo,
+                                     timeout=900)
+            if listing.returncode:
+                print(f'The release is pushed and pulled, but skill_listing.py exited {listing.returncode}',
+                      file=sys.stderr, flush=True)
+                return listing.returncode
         return result.returncode
     return 0
 

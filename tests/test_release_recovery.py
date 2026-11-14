@@ -2,6 +2,7 @@ from contextlib import redirect_stderr
 import io
 import json
 from pathlib import Path
+import shutil
 import sys
 import unittest
 from unittest.mock import patch
@@ -66,6 +67,35 @@ class RecoveryTest(CandidateCase):
         self.assertEqual(self.origin_heads(), before)
         self.assertFalse(release.public_pushed(self.base).exists())
         self.assertFalse(list((self.base / 'build/candidates').iterdir()))
+
+    def test_finish_returns_the_skill_listing_status_after_a_pull_that_passed(self):
+        push = release.push
+        for pulled, listed, expected in ((0, 0, 0), (0, 1, 1), (0, 2, 2), (5, 1, 5)):
+            with self.subTest(pulled=pulled, listed=listed):
+                self.prepare(f'listing-{pulled}-{listed}')
+                (self.mine / 'content').write_text(f'{pulled} {listed}\n', encoding='utf-8')
+
+                def crash(root, commit):
+                    push(root, commit)
+                    if root == self.private_tree:
+                        raise ProcessReplaced('both accepted before cleanup')
+
+                with patch.object(release, 'push', crash), self.assertRaises(ProcessReplaced):
+                    release_main([*self.argv, '--push'], self.public)
+                (self.public / 'pull.py').write_text(f'raise SystemExit({pulled})\n', encoding='utf-8')
+                (self.public / 'listed').unlink(missing_ok=True)
+                (self.public / 'skill_listing.py').write_text(
+                    'from pathlib import Path\n(Path(__file__).resolve().parent / "listed").write_text("ran")\n'
+                    f'raise SystemExit({listed})\n', encoding='utf-8')
+                with redirect_stderr(io.StringIO()) as error:
+                    self.assertEqual(release_main([*self.argv, '--push', '--pull', '--entry', 'seed'], self.public),
+                                     expected)
+                self.assertEqual((self.public / 'listed').exists(), pulled == 0)
+                reported = f'pushed and pulled, but skill_listing.py exited {listed}'
+                if expected and not pulled:
+                    self.assertIn(reported, error.getvalue())
+                else:
+                    self.assertNotIn('skill_listing.py exited', error.getvalue())
 
     def test_lost_private_acknowledgement_is_reconciled_as_success(self):
         self.prepare()
@@ -146,6 +176,78 @@ class RecoveryTest(CandidateCase):
                 self.assertEqual(git(self.private_tree, 'status', '--porcelain'), '')
                 self.assertEqual(release_main([*self.argv, '--push'], self.public), 0)
                 self.assertFalse(list((self.base / 'build/candidates').iterdir()))
+
+    def test_a_candidate_workspace_stopped_before_its_marker_is_cleared(self):
+        self.prepare()
+        made = release.staging_folder
+
+        def crash(**kwargs):
+            made(**kwargs)
+            raise ProcessReplaced('stopped right after the folder was made')
+
+        with patch.object(release, 'staging_folder', crash), self.assertRaises(ProcessReplaced):
+            release_main(self.argv, self.public)
+        parent = self.base / 'build/candidates'
+        for name, text in (('round-cut', ''), ('round-half', '{"release": ')):
+            (parent / name).mkdir()
+            (parent / name / 'owner.json').write_text(text, encoding='utf-8')
+        self.assertEqual(len(list(parent.iterdir())), 3)
+        release.retire_candidates(self.mine, self.private_tree, self.base)
+        self.assertEqual(list(parent.iterdir()), [])
+        (parent / 'round-empty').mkdir()
+        (parent / 'round-cut').mkdir()
+        (parent / 'round-cut/owner.json').write_text('', encoding='utf-8')
+        self.assertEqual(release_main([*self.argv, '--push'], self.public), 0)
+        self.assertEqual(list(parent.iterdir()), [])
+
+    def test_the_marker_is_synced_before_the_first_worktree(self):
+        for windows, synced in ((False, 2), (True, 1)):
+            with self.subTest(windows=windows):
+                self.prepare(f'synced-{windows}')
+                self.assertEqual(release_main(self.argv, self.public), 0)
+                events, sync, original = [], release.os.fsync, release.git
+
+                def fsync(descriptor):
+                    events.append('fsync')
+                    sync(descriptor)
+
+                def git(root, *args):
+                    if args[:2] == ('worktree', 'add'):
+                        events.append('worktree add')
+                    return original(root, *args)
+
+                with patch.object(release, 'WINDOWS', windows), patch.object(release.os, 'fsync', fsync), \
+                        patch.object(release, 'git', git), self.make_candidate():
+                    pass
+                self.assertEqual(events[:synced + 1], ['fsync'] * synced + ['worktree add'])
+
+    def test_cleanup_still_refuses_a_markerless_workspace_it_cannot_vouch_for(self):
+        self.prepare()
+        parent = self.base / 'build/candidates'
+        parent.mkdir(parents=True)
+        (self.root / 'elsewhere').mkdir()
+        (self.root / 'garbled').write_text('', encoding='utf-8')
+        left = parent / 'round-left'
+        cases = {  # each with whether it sits in an empty round-left folder
+            'dangling marker link': (True, lambda: (left / 'owner.json').symlink_to(self.root / 'missing')),
+            'marker link to a cut file': (True, lambda: (left / 'owner.json').symlink_to(self.root / 'garbled')),
+            'marker is a folder': (True, lambda: (left / 'owner.json').mkdir()),
+            'a side without a worktree': (True, lambda: (left / 'public').mkdir()),
+            'a retired marker cut short': (True, lambda: (parent / 'round-left.owner.json').write_text('')),
+            'a name outside the pattern': (False, lambda: (parent / 'stray').mkdir()),
+            "a file in a folder's place": (False, lambda: (parent / 'round-file').write_text('')),
+            "a link in a folder's place": (False, lambda: (parent / 'round-link').symlink_to(self.root / 'elsewhere'))}
+        for label, (inside, make) in cases.items():
+            with self.subTest(label):
+                if inside:
+                    left.mkdir()
+                make()
+                before = sorted(parent.rglob('*'))
+                with self.assertRaisesRegex(RuntimeError, 'unrecognised candidate workspace'):
+                    release.retire_candidates(self.mine, self.private_tree, self.base)
+                self.assertEqual(sorted(parent.rglob('*')), before)
+                for path in parent.iterdir():
+                    path.unlink() if path.is_symlink() or path.is_file() else shutil.rmtree(path)
 
     def test_cleanup_refuses_unowned_directory_and_another_repository_registration(self):
         self.prepare()
