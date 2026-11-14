@@ -358,7 +358,7 @@ class Builder:
 
         if package.claude is None:
             return {}
-        result, collection = {}, None
+        result = {}
         locked = self.setup.lock.get(package.name)
         expected = locked.trees.get(Host.CLAUDE) if locked else None
         for install in package.claude.installs:
@@ -387,23 +387,13 @@ class Builder:
                 for path in skill_paths(root).values():
                     check_skill_links(identity, root, path, read_utf8(path))
             elif isinstance(install, EngineInstall):
-                if collection is None:  # one build makes every engine install's plugin
-                    collection_source = codex.pristine or codex.root
-                    metadata = package.source.metadata if isinstance(package.source, BuildSource) else {}
-                    descriptions = metadata.get('claudeDescriptions', {})
-                    definitions = []
-                    for member in package.claude.installs:
-                        if not isinstance(member, EngineInstall):
-                            continue
-                        name = member.name or package.name
-                        if name not in descriptions:
-                            raise BuildError(f'{identity}: no Claude packaging description in its recipe')
-                        skills = member.skills or tuple(sorted(p.parent.name for p in (collection_source / 'skills').glob('*/SKILL.md')))
-                        definitions.append({'name': name, 'skills': list(skills), 'description': descriptions[name]})
-                    explicit = frozenset(name for name, mode in package.modes.items() if mode == SkillMode.EXPLICIT)
-                    collection = build_collection(package.name, collection_source, definitions,
-                                                  metadata.get('claudePackaging', 1), self.directory / 'claude', explicit)
-                root = Path(next(p['release'] for p in collection if p['name'] == (install.name or package.name)))
+                metadata = package.source.metadata if isinstance(package.source, BuildSource) else {}
+                description = metadata.get('claudeDescriptions', {}).get(package.name)
+                if description is None:
+                    raise BuildError(f'{identity}: no Claude packaging description in its recipe')
+                explicit = frozenset(name for name, mode in package.modes.items() if mode == SkillMode.EXPLICIT)
+                root = build_collection(package.name, codex.pristine or codex.root, description,
+                                        metadata.get('claudePackaging', 1), self.directory / 'claude', explicit)
             else:
                 root = codex.root
             built = Built(package.name, root, str(plugin_manifest(root).get('version', '0.1.0')), self.roots.tree_digest(root))

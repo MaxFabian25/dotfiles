@@ -10,7 +10,7 @@ from accepted_installations import AcceptedInstallations, HeldMove, copy_tree, i
 from claude_host import native_marketplace
 import codex_runtime
 import profile_plugins
-from description import EngineInstall, MarketplaceMode, plugin_id, via
+from description import EngineInstall, plugin_id, via
 from device_sync import changed_packages
 from host_observation import Unread
 from host_state import EngineMarketplace, FactKey, Host, PluginValue, Released, SkillMode, Surface, clone_url
@@ -83,16 +83,7 @@ class Apply:
             host = difference.key.host
             spec = repo.marketplace(host)
             if host == Host.CODEX:
-                if spec.mode == MarketplaceMode.CHECKOUT:
-                    checkout = self.builder.sources.checkout(repo.url, repo.commit,
-                                                             self.roots.engine / '.sync/checkouts' / repo.name)
-                    self.command(host, 'plugin', 'marketplace', 'add', str(checkout), '--json')
-                else:
-                    self.command(host, 'plugin', 'marketplace', 'add', repo.url, '--ref', repo.commit, '--json')
-            elif spec.mode == MarketplaceMode.CHECKOUT:
-                checkout = self.builder.sources.checkout(repo.url, repo.commit,
-                                                         self.roots.engine / '.sync/checkouts' / repo.name)
-                self.command(host, 'plugin', 'marketplace', 'add', str(checkout), '--scope', 'user', '--json')
+                self.command(host, 'plugin', 'marketplace', 'add', repo.url, '--ref', repo.commit, '--json')
             else:
                 self._claude_git_marketplace(repo, spec)
 

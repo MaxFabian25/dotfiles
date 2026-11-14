@@ -32,7 +32,7 @@ SKILLS = {'one': '---\nname: one\ndescription: One.\n---\nThen run [two](../two/
           'two': '---\nname: two\ndescription: Two.\n---\nBody.\n',
           'bad': '---\nname: bad\ndescription: Bad.\n---\nThen run [absent](../absent/SKILL.md).\n',
           'odd': '---\nname: Odd_Name\ndescription: Odd.\n---\nBody.\n'}
-DESCRIPTIONS = {'kit': 'Kit.', 'kit-core': 'Core.', 'kit-extra': 'Extra.'}
+DESCRIPTIONS = {'kit': 'Kit.'}
 
 
 class OverlayAtRelease(unittest.TestCase):
@@ -107,11 +107,10 @@ class OverlayAtRelease(unittest.TestCase):
         self.assert_released(self.kit(('one', 'two'), CodexPlacement((EngineInstall(True),))))
 
     def test_a_claude_engine_install_is_checked_in_the_tree_claude_gets(self):
-        def kit(select, core, extra):
-            return self.kit(select, CodexPlacement((EngineInstall(False),)),
-                            ClaudePlacement((EngineInstall(True, 'kit-core', core), EngineInstall(False, 'kit-extra', extra))))
-        self.assert_refused(kit(('one', 'two'), ('one',), ('two',)), '../two/SKILL.md')
-        self.assert_released(kit(('bad', 'one', 'two'), ('one', 'two'), ('bad',)))
+        def kit(select):     # the Codex install is off, so only the Claude engine tree is checked
+            return self.kit(select, CodexPlacement((EngineInstall(False),)), ClaudePlacement((EngineInstall(True),)))
+        self.assert_refused(kit(('bad', 'two')), '../absent/SKILL.md')
+        self.assert_released(kit(('one', 'two')))
 
     def test_the_unmanaged_option_builds_a_package_no_pull_installs_whatever_its_links(self):
         package = self.kit(('bad', 'two'), CodexPlacement((EngineInstall(False),)), ClaudePlacement((EngineInstall(False),)))

@@ -59,18 +59,22 @@ class Device(homes.Home):
             'interfaces@interfaces': [{'scope': 'user', 'gitCommitSha': OLD}]}}))
         self.write(r.claude_home / 'marketplaces/codex-aligned/.claude-plugin/marketplace.json',
                    json.dumps({'name': 'codex-aligned', 'plugins': [{'name': 'kit'}]}))
-        marketplace = r.engine / '.sync/checkouts/interfaces'
+        marketplace = r.claude_home / 'plugins/marketplaces/interfaces'
         self.write(marketplace / '.claude-plugin/marketplace.json', json.dumps({'name': 'interfaces', 'plugins': []}))
         git = ['git', '-c', 'user.name=t', '-c', 'user.email=t@t', '-C', str(marketplace)]
         for args in (('init', '-q'), ('remote', 'add', 'origin', 'https://github.com/example/interfaces.git'),
                      ('add', '-A'), ('commit', '-qm', 'Pinned marketplace')):
             subprocess.run([*git, *args], check=True, capture_output=True)
         self.marketplace_pin = subprocess.check_output([*git, 'rev-parse', 'HEAD'], text=True).strip()
+        subprocess.run([*git, 'checkout', '-q', '--detach'], check=True, capture_output=True)
+        source = {'source': 'git', 'url': 'https://github.com/example/interfaces.git', 'ref': self.marketplace_pin}
+        self.write(r.claude_home / 'plugins/known_marketplaces.json', json.dumps({
+            'interfaces': {'source': source, 'installLocation': str(marketplace), 'autoUpdate': False}}))
         self.write(r.claude_home / 'settings.json', json.dumps({
             'enabledPlugins': {'kit@codex-aligned': True, 'interfaces@interfaces': False},
             'extraKnownMarketplaces': {
                 'codex-aligned': {'source': {'source': 'directory', 'path': str(r.claude_home / 'marketplaces/codex-aligned')}},
-                'interfaces': {'source': {'source': 'directory', 'path': str(marketplace)}}}}))
+                'interfaces': {'source': source, 'autoUpdate': False}}}))
         kit = d.Package('kit', d.Visibility.PUBLIC, '',
                         d.BuildSource(d.GenericRecipe('https://github.com/example/kit.git', C1, None, 'plugin.json', ()), 1, 'Kit'),
                         {'fix-ci': M.OFF, 'deslop': M.EXPLICIT}, d.ToolNotes.AUDIT,
@@ -79,7 +83,7 @@ class Device(homes.Home):
                                {'better-interface': M.EXPLICIT}, d.ToolNotes.AUDIT, None,
                                d.ClaudePlacement((d.MarketplaceInstall('interfaces', False),)))
         repo = d.Repo('interfaces', d.Visibility.PUBLIC, '', 'https://github.com/example/interfaces.git', self.marketplace_pin,
-                      None, d.HostMarketplace('interfaces', d.MarketplaceMode.CHECKOUT))
+                      None, d.HostMarketplace('interfaces'))
         lock = {'kit': d.Lock(d.intent(kit, {}), {hs.Host.CODEX: d.LockedTree('1.0', self.codex_release),
                                               hs.Host.CLAUDE: d.LockedTree('1.0-codex-aligned.x', r.tree_digest(aligned))}),
                 'interfaces': d.Lock(d.intent(interfaces, {'interfaces': repo}))}
@@ -88,7 +92,7 @@ class Device(homes.Home):
                              host_skills={}, rules=None, note_rules=(), public_repositories=frozenset(), lock=lock)
         return self
 
-    def device(self, codex_list=True, absent=(), codex_available=()):
+    def device(self, codex_list=True, absent=(), codex_available=(), platform=hs.Platform.MACOS, wsl=False):
         r = self.roots
         self.write(r.codex_home / 'config.toml', self.toggles)
         answers = {'--version': 'codex-cli 1\n'}
@@ -98,7 +102,7 @@ class Device(homes.Home):
         claude = {'--version': '2 (Claude Code)\n',
                   'plugin list --available --json': json.dumps({'installed': self.claude_inventory, 'available': []})}
         hosts = [codex_host.CodexState(r, self.cli('codex', answers)), claude_host.ClaudeState(r, self.cli('claude', claude))]
-        return device.Device(hs.Platform.MACOS, r, tuple(h for h in hosts if h.host not in absent), tuple(absent))
+        return device.Device(platform, r, tuple(h for h in hosts if h.host not in absent), tuple(absent), wsl)
 
     def diff(self, **options):
         return drift.diff(self.setup, self.device(**options))
@@ -109,6 +113,13 @@ def kinds(result):
 
 
 class DiffTest(unittest.TestCase):
+    def test_the_header_names_the_device_list_sync_read(self):
+        for platform, wsl, shown in ((hs.Platform.LINUX, True, 'wsl'), (hs.Platform.LINUX, False, 'linux'),
+                                     (hs.Platform.MACOS, False, 'macos')):
+            with self.subTest(shown), Device() as device:
+                header = drift.render(device.diff(platform=platform, wsl=wsl)).splitlines()[2]
+            self.assertTrue(header.startswith(f'device       {shown} · '), header)
+
     def test_attention_is_visible_even_when_its_plugin_is_missing(self):
         with Device() as device:
             result = device.diff()

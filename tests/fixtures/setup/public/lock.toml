@@ -1,11 +1,11 @@
 # setup/lock.toml. Written by agent_setup.py export and the maintainer's build. Do not edit.
 [cursor-team-kit]
-intent = "sha256:b4c59dac4e1af6036e70156815b3be7434ed787f7e4b81490a368c5e1f69b358"
+intent = "sha256:eed4354f4195cc46d918490a6d375aac273113cef7e04bf6ba6c5dd32560b975"
 codex = { version = "1.2.0+upstream.1e5c90a4b6f2.codex2", tree = "sha256:681957e1e0ef56d52dff37f6f7697406bc633d5ecb517e1991ec2db5f0241401" }
 claude = { version = "1.2.0+codex-aligned.9b8d80064182", tree = "sha256:0ab3d94889b2f3db3ea25fc146338b2e4833e71e6ae503bca61f4ff264fe59b8" }
 
 [impeccable]
-intent = "sha256:da34742ff54c797c96ed877c1b7a872ae64a25ff8143076a3db36f29a7437223"
+intent = "sha256:e69c85101e3fc78dfd62c19ee8ebc8a15a8e77577a0924977f7fd35f26e01212"
 codex = { version = "4.5.2", tree = "sha256:36a74890cbddb9737fc5bfc987ba84076026edee38f5c234653bcd3ed6c67aad" }
 claude = { version = "4.5.2", tree = "sha256:36a74890cbddb9737fc5bfc987ba84076026edee38f5c234653bcd3ed6c67aad" }
 hooks = 3

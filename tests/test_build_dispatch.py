@@ -250,29 +250,22 @@ class BuildDispatch(unittest.TestCase):
                 'skills/course-alpha/SKILL.md', 'skills/course-alpha/agents/openai.yaml', 'skills/course-alpha/data.txt',
                 'skills/course-alpha/guide.md'])})
 
-    def test_a_public_emil_recipe_builds_renamed_licensed_skills_with_their_metadata(self):
-        files = {'LICENSE': 'MIT License.\n', 'skills/motion/SKILL.md':
-                 '---\nname: motion\ndescription: Motion.\ndisable-model-invocation: true\n---\nBody.\n---\nMore.\n'}
+    def test_a_public_emil_recipe_builds_licensed_skills_with_their_upstream_files_as_they_are(self):
+        skill_text = '---\nname: motion\ndescription: Motion.\ndisable-model-invocation: true\n---\nBody.\n---\nMore.\n'
+        sidecar = 'policy:\n  allow_implicit_invocation: true\n'
+        files = {'LICENSE': 'MIT License.\n', 'skills/motion/SKILL.md': skill_text,
+                 'skills/motion/agents/openai.yaml': sidecar, 'skills/motion/notes.md': 'Notes.\n'}
         commit = self.commit(files, later={'skills/motion/SKILL.md': '---\nname: motion\ndescription: Motion.\n---\nLater.\n'})
-        sidecar = 'policy:\n  allow_implicit_invocation: false\n'
-        recipe = PublicEmilRecipe(URL, commit, ('skills/motion',), {'motion': 'emil-motion'})
-        source = BuildSource(recipe, 2, 'Motion', metadata={
-            'url': 'https://example.invalid/emil', 'description': 'Motion skills.', 'branch': 'main',
-            'skillMetadata': {'emil-motion': {'removeDisableModelInvocation': True, 'openaiYaml': sidecar,
-                                              'legacyProvenance': True}}})
+        source = BuildSource(PublicEmilRecipe(URL, commit, ('skills/motion',)), 2, 'Motion', metadata={
+            'url': 'https://example.invalid/emil', 'description': 'Motion skills.', 'branch': 'main'})
         release = self.build(source)
         version = f'0.1.0+upstream.{commit[:12]}.codex2'
         self.assertEqual(release.name, version)
         self.assertIn(release, self.held)
-        skill = release / 'skills/emil-motion'
-        self.assertEqual([read_utf8(skill / name) for name in ('SKILL.md', 'LICENSE.txt', 'agents/openai.yaml')],
-                         ['---\nname: emil-motion\ndescription: Motion.\n---\nBody.\n---\nMore.\n', 'MIT License.\n', sidecar])
+        skill = release / 'skills/motion'
+        self.assertEqual([read_utf8(skill / name) for name in ('SKILL.md', 'agents/openai.yaml', 'notes.md', 'LICENSE.txt')],
+                         [skill_text, sidecar, 'Notes.\n', 'MIT License.\n'])
         self.assertEqual(read_utf8(release / 'LICENSE'), 'MIT License.\n')
-        self.assertEqualInOrder(self.built_json(skill / '.emil-upstream.json'), {
-            'source': 'https://example.invalid/emil.git', 'ref': 'main', 'commit': commit, 'sourceDirectory': 'skills/motion',
-            'licenseSource': 'LICENSE', 'sourceName': 'motion', 'localName': 'emil-motion',
-            'normalizations': {'removedFrontmatter': ['disable-model-invocation'], 'codexInvocationPolicy': 'explicit-only'},
-            'files': ['LICENSE.txt', 'SKILL.md', 'agents/openai.yaml']})
         interface = {'displayName': 'Motion', 'shortDescription': 'Motion skills.',
                      'developerName': 'Emil Kowalski (upstream); personal Codex packaging', 'category': 'Developer Tools',
                      'websiteURL': 'https://example.invalid/emil'}
@@ -284,34 +277,21 @@ class BuildDispatch(unittest.TestCase):
             'license': 'MIT', 'skills': './skills/', 'interface': interface})
         self.assertEqualInOrder(self.built_json(release / '.codex-plugin/upstream.json'), {
             'repository': 'https://example.invalid/emil', 'branch': 'main', 'commit': commit, 'version': version,
-            'selectedSkills': [{'sourcePath': 'skills/motion', 'sourceName': 'motion', 'installedName': 'emil-motion',
-                                'removeDisableModelInvocation': True, 'openaiYaml': sidecar, 'legacyProvenance': True}],
-            'upstreamFileHashes': {'emil-motion': fixture_hashes(files, 'skills/motion/')},
-            'compatibilityChangedFiles': {'emil-motion': ['.emil-upstream.json', 'LICENSE.txt', 'SKILL.md', 'agents/openai.yaml']},
+            'selectedSkills': [{'sourcePath': 'skills/motion', 'sourceName': 'motion', 'installedName': 'motion'}],
+            'upstreamFileHashes': {'motion': fixture_hashes(files, 'skills/motion/')},
+            'compatibilityChangedFiles': {'motion': ['LICENSE.txt']},
             'packagedFileHashes': self.packaged(release, [
-                '.codex-plugin/plugin.json', 'LICENSE', 'plugin.json', 'skills/emil-motion/.emil-upstream.json',
-                'skills/emil-motion/LICENSE.txt', 'skills/emil-motion/SKILL.md', 'skills/emil-motion/agents/openai.yaml'])})
+                '.codex-plugin/plugin.json', 'LICENSE', 'plugin.json', 'skills/motion/LICENSE.txt', 'skills/motion/SKILL.md',
+                'skills/motion/agents/openai.yaml', 'skills/motion/notes.md'])})
         self.assertRebuildKeepsTheRelease(source, release)
 
-    def test_a_public_emil_skill_keeps_its_upstream_files_and_refuses_other_upstream_invocation_metadata(self):
-        sidecar = 'policy:\n  allow_implicit_invocation: false\n'
-        for shipped, refused in ((sidecar, False), ('policy:\n  allow_implicit_invocation: true\n', True)):
-            with self.subTest(refused=refused):
-                self.upstream = self.root / f'upstream-{refused}'
-                commit = self.commit({'LICENSE': 'MIT License.\n', 'skills/motion/agents/openai.yaml': shipped,
-                                      'skills/motion/notes.md': 'Notes.\n',
-                                      'skills/motion/SKILL.md': '---\nname: motion\ndescription: Motion.\n---\nBody.\n'},
-                                     later={})
-                source = BuildSource(PublicEmilRecipe(URL, commit, ('skills/motion',), {'motion': 'motion'}), 2, 'Motion',
-                                     metadata={'url': 'https://example.invalid/emil', 'description': 'Motion skills.',
-                                               'branch': 'main', 'skillMetadata': {'motion': {'openaiYaml': sidecar}}})
-                if refused:
-                    with self.assertRaisesRegex(RuntimeError, '^Upstream added conflicting invocation metadata: motion$'):
-                        self.build(source)
-                else:
-                    skill = self.build(source) / 'skills/motion'
-                    self.assertEqual([read_utf8(skill / name) for name in ('agents/openai.yaml', 'notes.md')],
-                                     [sidecar, 'Notes.\n'])
+    def test_a_public_emil_skill_whose_header_names_another_skill_stops_the_build(self):
+        commit = self.commit({'LICENSE': 'MIT License.\n',
+                              'skills/motion/SKILL.md': '---\nname: emil-motion\ndescription: Motion.\n---\nBody.\n'}, later={})
+        source = BuildSource(PublicEmilRecipe(URL, commit, ('skills/motion',)), 2, 'Motion', metadata={
+            'url': 'https://example.invalid/emil', 'description': 'Motion skills.', 'branch': 'main'})
+        with self.assertRaisesRegex(RuntimeError, '^Upstream skill identity changed: motion$'):
+            self.build(source)
 
     def test_a_snapshot_recipe_builds_its_selected_skills_with_its_metadata(self):
         stored = self.snapshot()
@@ -382,29 +362,49 @@ class BuildDispatch(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, f'^Immutable Claude release differs: {re.escape(str(claude.root))}$'):
             builder.claude(package, codex, verify=False)
 
-    def test_a_claude_collection_split_in_two_builds_each_plugin_at_the_default_packaging(self):
+    def test_a_claude_engine_install_builds_one_plugin_with_every_skill_at_the_default_packaging(self):
         stored = self.snapshot('one', 'two')
         source = BuildSource(SnapshotRecipe('sha256:' + stored.name, {'one': None, 'two': None}), 1, 'Snap', metadata={
-            'description': 'Snapshot skills.', 'sourceKind': 'personal',
-            'claudeDescriptions': {'kit': 'Claude one.', 'kit-extra': 'Claude two.'}})
+            'description': 'Snapshot skills.', 'sourceKind': 'personal', 'claudeDescriptions': {'kit': 'Claude kit.'}})
         package = Package('kit', Visibility.PRIVATE, '', source, {}, ToolNotes.AUDIT, CodexPlacement((EngineInstall(False),)),
-                          ClaudePlacement((EngineInstall(True, 'kit-extra', ('two',)), EngineInstall(True, skills=('one',)))))
+                          ClaudePlacement((EngineInstall(True),)))
         builder = self.builder(package)
         codex = builder.codex(package, verify=False)
         built = builder.claude(package, codex, verify=False)
-        self.assertEqual(sorted(built), ['kit-extra@personal-collections', 'kit@personal-collections'])
+        self.assertEqual(list(built), ['kit@personal-collections'])
         version = f'0.1.0+snapshot.{stored.name[:12]}.personal1.claude1'
-        for name, description, skill in (('kit', 'Claude one.', 'one'), ('kit-extra', 'Claude two.', 'two')):
-            with self.subTest(name):
-                root = built[f'{name}@personal-collections'].root
-                self.assertFields(self.built_json(root / '.claude-plugin/plugin.json'),
-                                  {'name': name, 'version': version, 'description': description})
-                self.assertFields(self.built_json(root / '.claude-plugin/upstream.json'), {
-                    'collection': 'kit', 'version': version, 'codexRelease': str(codex.root), 'selectedSkills': [skill],
-                    'sourceFileHashes': {skill: {'SKILL.md': sha(snapshot_skill(skill))}},
-                    'invocationContract': {skill: {'disable-model-invocation': False, 'user-invocable': True,
-                                                   'allowed-tools': None}},
-                    'packagedFileHashes': self.packaged(root, ['.claude-plugin/plugin.json', f'skills/{skill}/SKILL.md'])})
+        root = built['kit@personal-collections'].root
+        self.assertEqual(root, self.root / 'engine/claude/plugins/kit' / version)
+        self.assertFields(self.built_json(root / '.claude-plugin/plugin.json'),
+                          {'name': 'kit', 'version': version, 'description': 'Claude kit.'})
+        contract = {'disable-model-invocation': False, 'user-invocable': True, 'allowed-tools': None}
+        self.assertFields(self.built_json(root / '.claude-plugin/upstream.json'), {
+            'collection': 'kit', 'version': version, 'codexRelease': str(codex.root), 'selectedSkills': ['one', 'two'],
+            'sourceFileHashes': {skill: {'SKILL.md': sha(snapshot_skill(skill))} for skill in ('one', 'two')},
+            'invocationContract': {'one': contract, 'two': contract},
+            'packagedFileHashes': self.packaged(root, ['.claude-plugin/plugin.json', 'skills/one/SKILL.md',
+                                                       'skills/two/SKILL.md'])})
+
+        missing = replace(package, source=replace(source, metadata={**source.metadata, 'claudeDescriptions': {'other': 'D'}}))
+        with self.assertRaisesRegex(BuildError, '^kit@personal-collections: no Claude packaging description in its recipe$'):
+            self.builder(missing).claude(missing, codex, verify=False)
+
+    def test_a_claude_engine_install_makes_the_setups_explicit_skills_explicit_from_the_codex_build_before_its_export(self):
+        from host_state import SkillMode
+        stored = self.snapshot('one', 'two')
+        source = BuildSource(SnapshotRecipe('sha256:' + stored.name, {'one': None, 'two': None}), 1, 'Snap', metadata={
+            'description': 'Snapshot skills.', 'sourceKind': 'personal', 'claudeDescriptions': {'kit': 'Claude kit.'}})
+        package = Package('kit', Visibility.PRIVATE, '', source, {'one': SkillMode.EXPLICIT}, ToolNotes.AUDIT,
+                          CodexPlacement((EngineInstall(True),)), ClaudePlacement((EngineInstall(True),)))
+        builder = self.builder(package)
+        codex = builder.codex(package, verify=False)
+        self.assertIsNotNone(codex.pristine, 'the Codex install exports its explicit policy')
+        claude = builder.claude(package, codex, verify=False)['kit@personal-collections']
+        receipt = self.built_json(claude.root / '.claude-plugin/upstream.json')
+        self.assertEqual(receipt['codexRelease'], str(codex.pristine))
+        self.assertRegex(claude.version, r'\.claude1\.explicit\.[0-9a-f]{12}$')
+        self.assertEqual({skill: contract['disable-model-invocation'] for skill, contract in receipt['invocationContract'].items()},
+                         {'one': True, 'two': False})
 
     def test_a_recipe_without_its_build_metadata_names_the_migration(self):
         commit = self.commit({'skills/one/SKILL.md': '---\nname: one\ndescription: One.\n---\nBody.\n'}, later={})

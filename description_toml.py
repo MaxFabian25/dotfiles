@@ -14,7 +14,7 @@ from typing import Any, Mapping
 
 from description import (Adaptation, AlignedInstall, BUILDS, BuildSource, ClaudePlacement, CodexPlacement,
                          CourseRecipe, DescriptionError, EngineInstall, Frozen, GenericRecipe,
-                         Hooks, HostMarketplace, Install, Lock, LockedTree, LocalSource, LooseSkill, MarketplaceInstall, MarketplaceMode,
+                         Hooks, HostMarketplace, Install, Lock, LockedTree, LocalSource, LooseSkill, MarketplaceInstall,
                          NoteRule, Origin, Package, PluginRoles, PublicEmilRecipe, Recipe, Repo, RepoName,
                          RepoSource, Roots, Rules, SCHEMA, Setup, SkillRoot, SnapshotRecipe, SnapshotSource, Source,
                          TextReplace, ToolNotes, Visibility, entry_path, via, WindowsReplace)
@@ -101,11 +101,7 @@ def _parse_recipe(table: _Table, build: str) -> Recipe | None:
         return CourseRecipe(**common, select=table.strings('select', _REQUIRED), prefix=table.get('prefix', str, ''),
                             trim_descriptions=table.strings('trim_descriptions'))
     if build == 'public-emil':
-        rename = table.get('rename', dict, {})
-        if not all(isinstance(value, str) for value in rename.values()):
-            table.error('rename', 'expected folder = "installed name" pairs')
-            rename = {}
-        return PublicEmilRecipe(**common, select=table.strings('select', _REQUIRED), rename=rename)
+        return PublicEmilRecipe(**common, select=table.strings('select', _REQUIRED))
     table.error('build', f'unknown build {build!r}; expected one of {sorted(BUILDS)}')
     return None
 
@@ -145,7 +141,7 @@ def _parse_install(table: _Table, index: int, raw: Any, host: Host) -> Install |
     if keep_current and enabled:
         item.error('keep_current', 'applies only with enabled = false; an enabled install is kept current already')
     if name == ENGINE_MARKETPLACE[host]:
-        install = EngineInstall(enabled, item.get('name', str, None), item.strings('skills') or None, keep_current)
+        install = EngineInstall(enabled, keep_current)
     elif host == Host.CLAUDE and name == ALIGNED_MARKETPLACE:
         agents = item.strings('agents') if 'agents' in raw else None
         install = AlignedInstall(enabled, frozenset(agents) if agents is not None else None, keep_current)
@@ -262,9 +258,7 @@ def _parse_package(path: Path, data: Mapping, visibility: Visibility, errors: li
 def _parse_marketplace(table: _Table | None) -> HostMarketplace | None:
     if table is None:
         return None
-    marketplace = HostMarketplace(table.get('marketplace', str),
-                                  table.parse('mode', MarketplaceMode, table.get('mode', str, 'git')),
-                                  table.strings('sparse'))
+    marketplace = HostMarketplace(table.get('marketplace', str), table.strings('sparse'))
     table.done()
     return marketplace
 
@@ -570,24 +564,17 @@ def _dump_recipe(recipe: Recipe) -> dict:
         out['prefix'] = recipe.prefix
         if recipe.trim_descriptions:
             out['trim_descriptions'] = list(recipe.trim_descriptions)
-    if isinstance(recipe, PublicEmilRecipe) and recipe.rename:
-        out['rename'] = _Inline(dict(sorted(recipe.rename.items())))
     if recipe.select or not isinstance(recipe, GenericRecipe):
         out['select'] = list(recipe.select)
     return out
 
 
 _SOURCE_ORDER = ('build', 'snapshot', 'repository', 'commit', 'subdirectory', 'manifest', 'packaging', 'display_name',
-                 'prefix', 'trim_descriptions', 'select', 'rename', 'frozen', 'origins', 'metadata')
+                 'prefix', 'trim_descriptions', 'select', 'frozen', 'origins', 'metadata')
 
 
 def _dump_install(install: Install, host: Host) -> _Inline:
     out: dict[str, Any] = {'via': via(install, host)}
-    if isinstance(install, EngineInstall):
-        if install.name:
-            out['name'] = install.name
-        if install.skills:
-            out['skills'] = list(install.skills)
     out['enabled'] = install.enabled
     if not isinstance(install, MarketplaceInstall) and install.keep_current:
         out['keep_current'] = True
@@ -662,8 +649,6 @@ def _dump_package(package: Package) -> dict:
 
 def _dump_marketplace(marketplace: HostMarketplace) -> dict:
     out: dict[str, Any] = {'marketplace': marketplace.name}
-    if marketplace.mode != MarketplaceMode.GIT:
-        out['mode'] = marketplace.mode.value
     if marketplace.sparse:
         out['sparse'] = list(marketplace.sparse)
     return out

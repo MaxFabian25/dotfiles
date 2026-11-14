@@ -10,7 +10,7 @@ from typing import Mapping
 
 from description import LocalSource, Setup, SkillRoot, Visibility
 from device import Device
-from host_state import (CATALOGS, Approved, CheckoutMarketplace, DeviceRoots, EngineMarketplace, EntryName, Fact, FactKey, FactSet, FactValue,
+from host_state import (CATALOGS, Approved, CheckoutMarketplace, DeviceList, DeviceRoots, EngineMarketplace, EntryName, Fact, FactKey, FactSet, FactValue,
                         FileValue, GitMarketplace, Host, Note, NoteKind, Observation, Pinned, Platform, PluginValue, Released,
                         Request, Surface, TreeValue, Unknown, Unpinned, WorkingCopy)
 
@@ -72,6 +72,7 @@ class Difference:
 @dataclass(frozen=True)
 class Diff:
     platform: Platform
+    device_list: DeviceList          # the device file sync read, setup/devices/<list>.toml
     roots: Mapping[Visibility, Path | None]
     hosts: Mapping[Host, str]        # host -> CLI version
     entries: Mapping[Visibility, int]
@@ -202,7 +203,7 @@ def diff(setup: Setup, device: Device, *, observations: Mapping[Host, Observatio
                                           entry, folded, detail=f'{cause.source}: {cause.reason}' if cause else '', cause=cause))
     differences.sort(key=lambda d: (d.entry.name if d.entry else '~', d.key is not None, d.key or d.host))
     entries = Counter(entry.visibility for entry in (*setup.packages.values(), *setup.repos.values(), *setup.loose.values()))
-    return Diff(device.platform, {Visibility.PUBLIC: setup.roots.public, Visibility.PRIVATE: setup.roots.private},
+    return Diff(device.platform, device.device_list, {Visibility.PUBLIC: setup.roots.public, Visibility.PRIVATE: setup.roots.private},
                 versions, {v: entries.get(v, 0) for v in Visibility}, compared, trees, tuple(differences), tuple(notes))
 
 
@@ -295,7 +296,7 @@ def render(diff: Diff, *, full: bool = False, notes: bool = False) -> str:
     plugin) folds into a count under it unless `full`."""
     lines = [f'description  public  {_home(diff.roots[Visibility.PUBLIC]):<40} {diff.entries[Visibility.PUBLIC]} entries',
              f'             private {_home(diff.roots[Visibility.PRIVATE]):<40} {diff.entries[Visibility.PRIVATE]} entries',
-             f'device       {diff.platform.value} · ' + ' · '.join(diff.hosts.values()),
+             f'device       {diff.device_list.value} · ' + ' · '.join(diff.hosts.values()),
              'compared     ' + ' · '.join(f'{host.value} {count} facts' for host, count in diff.compared.items())
              + f' · {diff.trees} trees verified', '']
     if not diff.differences:

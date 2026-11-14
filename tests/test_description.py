@@ -294,8 +294,7 @@ packaging = 2
 display_name = "Kit"
 select = ["./skills/keep"]
 ''')
-        self.assertEqual(written(description.PublicEmilRecipe('example/emil', commit, ('skills/one', 'skills/two'),
-                                                              {'two': 'second', 'one': 'first'}),
+        self.assertEqual(written(description.PublicEmilRecipe('example/emil', commit, ('skills/one', 'skills/two')),
                                  frozen=description.Frozen('2026-01-01', 'b' * 40, 'Upstream changed its licence.')), f'''\
 [source]
 build = "public-emil"
@@ -304,7 +303,6 @@ commit = "{commit}"
 packaging = 2
 display_name = "Kit"
 select = ["skills/one", "skills/two"]
-rename = {{ one = "first", two = "second" }}
 frozen = {{ since = "2026-01-01", upstream = "{'b' * 40}", reason = "Upstream changed its licence." }}
 ''')
         self.assertEqual(written(description.SnapshotRecipe('sha256:' + 'c' * 64, {
@@ -752,6 +750,39 @@ class LeakTest(unittest.TestCase):
             problems = roots.problems()
         self.assertIn(f'{path}:source.origins.y.repository: missing', problems)
         self.assertIn(f'{path}:source.origins.y.path: missing', problems)
+
+    def test_a_package_installs_through_each_marketplace_at_most_once_per_host(self):
+        with Roots() as roots:
+            path = roots.private / 'packages/y.toml'
+            path.write_text(f'[source]\nbuild = "snapshot"\nsnapshot = "sha256:{"a" * 64}"\npackaging = 1\ndisplay_name = "Y"\n'
+                            '[source.origins]\ny = { repository = "example/y", path = "skills/y" }\n[claude]\n'
+                            'install = [{ via = "personal-collections", enabled = true }, '
+                            '{ via = "personal-collections", enabled = false }]\n')
+            self.assertIn(f'{path}:claude.install: at most one install through each marketplace', roots.problems())
+        with Roots() as roots:
+            path = roots.private / 'packages/example-connector.toml'
+            one = '{ via = "openai-curated-remote", enabled = true }'
+            text = path.read_text()
+            self.assertIn(one, text)
+            path.write_text(text.replace(one, one + ', { via = "openai-curated-remote", enabled = false }'))
+            self.assertIn(f'{path}:codex.install: at most one install through each marketplace', roots.problems())
+            path.write_text(text.replace(one, one + ', { via = "openai-curated", enabled = false }'))
+            description_toml.load(roots.roots())
+
+    def test_split_installs_checkout_marketplaces_and_renamed_public_emil_skills_are_unknown_keys(self):
+        with Roots() as roots:
+            package = roots.private / 'packages/y.toml'
+            package.write_text(f'[source]\nbuild = "public-emil"\nrepository = "example/emil"\ncommit = "{"a" * 40}"\n'
+                               'packaging = 1\ndisplay_name = "Y"\nselect = ["skills/y"]\nrename = { y = "z" }\n'
+                               '[claude]\ninstall = [{ via = "personal-collections", name = "y-extra", skills = ["y"], '
+                               'enabled = false }]\n')
+            problems = roots.problems()
+            for key in ('source.rename', 'claude.install[0].name', 'claude.install[0].skills'):
+                self.assertIn(f'{package}:{key}: unknown key', problems)
+            package.unlink()
+            repo = roots.public / 'repos/impeccable.toml'
+            repo.write_text(repo.read_text() + 'mode = "checkout"\n')
+            self.assertEqual(roots.problems(), [f'{repo}:claude.mode: unknown key'])
 
     def test_a_device_list_loads_from_the_private_root_only(self):
         with Roots() as roots:

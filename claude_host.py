@@ -19,7 +19,7 @@ from typing import Sequence
 
 import yaml
 
-from description import (HOST_TOGGLES, RULES, AlignedInstall, BuildSource, EngineInstall, LocalSource, MarketplaceMode, RepoSource, Setup, SkillRoot,
+from description import (HOST_TOGGLES, RULES, AlignedInstall, BuildSource, EngineInstall, LocalSource, RepoSource, Setup, SkillRoot,
                          plugin_id, via)
 from host_observation import Observer, Unread, checkout, observe_loose, observe_trees, run
 from invocation_overrides import frontmatter, read_text, skill_paths
@@ -54,7 +54,9 @@ def _loaded(catalogs: dict[str, tuple[Path, dict]], plugin_id: str, install: Pat
     if marketplace not in catalogs:
         return install
     directory, catalog = catalogs[marketplace]
-    entry = next((p for p in catalog.get('plugins', []) if isinstance(p, dict) and p.get('name') == name), None)
+    if not isinstance(plugins := catalog.get('plugins', []), list):
+        raise Unread(f'the {marketplace} catalog lists no plugins: {plugins!r}')
+    entry = next((p for p in plugins if isinstance(p, dict) and p.get('name') == name), None)
     source = entry.get('source') if entry else None
     if not isinstance(source, str):
         return install
@@ -129,8 +131,7 @@ class ClaudeState:
 
         for repo in setup.repos.values():
             if repo.claude:
-                kind = CheckoutMarketplace if repo.claude.mode == MarketplaceMode.CHECKOUT else GitMarketplace
-                add(Surface.MARKETPLACE, repo.claude.name, kind(repo.url, repo.commit), repo.name)
+                add(Surface.MARKETPLACE, repo.claude.name, GitMarketplace(repo.url, repo.commit), repo.name)
         catalogs: dict[str, set[str]] = {}   # each engine catalog an install names -> the plugins it lists
         for package in setup.packages.values():
             if package.claude is None:
@@ -142,7 +143,7 @@ class ClaudeState:
                 if isinstance(install, (EngineInstall, AlignedInstall)):
                     listed = catalogs.setdefault(via(install, _HOST), set())
                     if install.managed:
-                        listed.add(plugin.partition('@')[0])
+                        listed.add(package.name)
                 if isinstance(install, AlignedInstall) or isinstance(package.source, (BuildSource, LocalSource)):
                     pin = Released(tree.version) if install.managed and tree else Unpinned()
                 elif isinstance(package.source, RepoSource):
@@ -153,13 +154,10 @@ class ClaudeState:
                 key = add(Surface.PLUGIN, plugin, PluginValue(install.enabled, pin, kept_current=kept), package.name)
                 if install.managed and tree:
                     add(Surface.TREE, plugin, TreeValue(tree.digest), package.name, key)
-                share = install.skills if isinstance(install, EngineInstall) and install.skills else None
                 own = package.claude.modes if isinstance(install, AlignedInstall) else {}
                 modes = {**{s: m for s, m in package.modes.items() if s not in own},
                          **{s: m for s, m in own.items() if m == SkillMode.EXPLICIT}}
                 for skill, mode in modes.items():
-                    if share is not None and skill not in share:
-                        continue
                     if mode != SkillMode.EXPLICIT and not install.enabled:
                         continue
                     name = portable_name(skill) if isinstance(install, AlignedInstall) else skill
