@@ -2,6 +2,7 @@ from contextlib import redirect_stderr, redirect_stdout
 import io
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -288,7 +289,7 @@ class ChecksTest(ReleaseCase):
         finish = ['finish', 'hooks', '--private-message', str(message), '--push', *self.options()]
         with redirect_stderr(io.StringIO()) as error:
             self.assertEqual(release_main(finish, self.public), 3)
-        self.assertIn('may change the Codex content of hooked, whose Codex hooks are trusted', error.getvalue())
+        self.assertIn('may change the files that the trusted Codex hooks of hooked run', error.getvalue())
         self.assertIn('"sha256:aa"', git(self.private_origin, 'show', 'main:setup/lock.toml'))
         self.assertEqual(release_main([*finish, '--hooks-reapproved'], self.public), 0)
         self.assertIn('"sha256:bb"', git(self.private_origin, 'show', 'main:setup/lock.toml'))
@@ -399,6 +400,101 @@ class ChecksTest(ReleaseCase):
         git(seed, 'add', '-A')
         git(seed, 'commit', '-qm', 'Add a package')
         git(seed, 'push', '-q', 'origin', 'HEAD:main')
+
+
+HOOKED_PACKAGE = '''[source]
+repo = "impeccable"
+path = "plugin"
+
+[skills]
+tool_notes = "apply"
+
+[codex]
+install = [{ via = "personal", enabled = true }]
+hooks = "trusted"
+
+[[codex.windows_replace]]
+path = 'skills/impeccable/scripts/impeccable.cmd'
+find = 'where curl.exe'
+replace = 'exit /b 1'
+
+[codex.roles.impeccable_asset_producer]
+config_file = "agents/asset-producer.toml"
+
+[[codex.replace]]
+path = 'skills/impeccable/reference/live.md'
+find = 'drop both'
+replace = 'keep both'
+
+[claude]
+install = [{ via = "impeccable", enabled = true }]
+'''
+
+
+class ReapprovalsTest(unittest.TestCase):
+    """Which plugins with trusted Codex hooks make finish ask the user, from a branch's edits against origin/main."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.public, self.private = Path(folder.name, 'public'), Path(folder.name, 'private')
+        files = {
+            self.public / 'setup/setup.toml': '[[tool_note]]\nmatch = "\\\\bWhen"\nnote = " (a note)"\n',
+            self.public / 'setup/packages/impeccable.toml': HOOKED_PACKAGE,
+            self.public / 'setup/lock.toml': '[impeccable]\nintent = "sha256:11"\n'
+                                              'codex = { version = "4.9.1", tree = "sha256:aa" }\nhooks = 3\n',
+            self.private / 'setup/lock.toml': '',
+        }
+        for path, text in files.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding='utf-8')
+        for root in (self.public, self.private):
+            git(root.parent, 'init', '-q', str(root))
+            git(root, 'add', '-A')
+            git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'base')
+            git(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+
+    def edit(self, relative, old, new):
+        path = self.public / relative
+        text = path.read_text(encoding='utf-8')
+        self.assertEqual(text.count(old), 1, old)
+        path.write_text(text.replace(old, new), encoding='utf-8')
+
+    def test_a_tool_note_alone_asks_for_no_approval(self):
+        self.edit('setup/setup.toml', ' (a note)', ' (a changed note)')
+        self.assertEqual(release.reapprovals(self.public, self.private), [])
+
+    def test_markdown_replacements_roles_and_claude_settings_ask_for_no_approval(self):
+        self.edit('setup/lock.toml', 'sha256:11', 'sha256:22')
+        self.edit('setup/packages/impeccable.toml', "replace = 'keep both'", "replace = 'keep neither'")
+        self.edit('setup/packages/impeccable.toml', 'asset-producer.toml', 'asset.toml')
+        self.edit('setup/packages/impeccable.toml', '"impeccable", enabled = true', '"impeccable", enabled = false')
+        self.edit('setup/packages/impeccable.toml', 'tool_notes = "apply"', 'tool_notes = "audit"')
+        self.assertEqual(release.reapprovals(self.public, self.private), [])
+
+    def test_a_change_to_the_hook_files_asks_again(self):
+        for relative, old, new in (('setup/lock.toml', 'sha256:aa', 'sha256:bb'),
+                                   ('setup/lock.toml', 'hooks = 3', 'hooks = 4'),
+                                   ('setup/packages/impeccable.toml', "replace = 'exit /b 1'", "replace = 'exit /b 2'"),
+                                   ('setup/packages/impeccable.toml', "path = 'skills/impeccable/reference/live.md'",
+                                    "path = 'hooks/hooks.json'"),
+                                   ('setup/packages/impeccable.toml', 'hooks = "trusted"\n',
+                                    'hooks = "trusted"\nwindows_hook_command = "cmd /c run"\n'),
+                                   ('setup/packages/impeccable.toml', 'path = "plugin"', 'path = "plugin2"'),
+                                   ('setup/packages/impeccable.toml', '[source]\nrepo',
+                                    'platforms = ["windows"]\n\n[source]\nrepo'),
+                                   ('setup/packages/impeccable.toml', 'via = "personal", enabled = true',
+                                    'via = "personal", enabled = false'),
+                                   ('setup/packages/impeccable.toml', 'hooks = "trusted"\n',
+                                    'hooks = "trusted"\nadaptation = { repository = "https://example.invalid/a.git", '
+                                    'base = "aa", adapted = "bb", harness = "x.md" }\n'),
+                                   ('setup/packages/impeccable.toml', 'hooks = "trusted"\n',
+                                    'hooks = "trusted"\nsetting_from_a_later_release = 1\n')):
+            with self.subTest(file=relative, change=new):
+                self.edit(relative, old, new)
+                self.assertEqual(release.reapprovals(self.public, self.private), ['impeccable'])
+                self.edit(relative, new, old)
+                self.assertEqual(release.reapprovals(self.public, self.private), [])
 
 
 if __name__ == '__main__':

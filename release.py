@@ -1178,11 +1178,11 @@ def recover_publication(public, private, base, origins):
 
 
 def reapprovals(public, private):
-    """Plugins with trusted Codex hooks whose installed Codex content this branch may change: their lock entry
-    changed, or they apply tool notes and the notes changed, which the lock leaves out. Codex ties a hook's
-    approval to the plugin's content, so every machine's pull stops on those hooks until the user approves them
-    again."""
-    notes = started(public, SETUP).get('tool_note') != current(public, SETUP).get('tool_note')
+    """Plugins with trusted Codex hooks whose hook files this branch may change: the upstream tree its lock entry
+    pins, or any of its package's settings but those that edit only Markdown or leave the plugin alone. Codex voids
+    a hook's approval on any change to the plugin's content, but a device can re-trust unchanged hook files without
+    the user, as the private repo's approval helper does for Impeccable. So a tool note, which edits only Markdown,
+    needs no approval here."""
     changed = []
     for root in (public, private):
         before = started(root, LOCK)
@@ -1190,10 +1190,21 @@ def reapprovals(public, private):
             if not isinstance(lock, dict) or not lock.get('hooks'):
                 continue
             old = before.get(name) or {}
-            applies = current(root, f'setup/packages/{name}.toml').get('skills', {}).get('tool_notes') == 'apply'
-            if (lock.get('intent'), lock.get('codex')) != (old.get('intent'), old.get('codex')) or (notes and applies):
+            package = f'setup/packages/{name}.toml'
+            if ((lock.get('codex'), lock.get('hooks')) != (old.get('codex'), old.get('hooks'))
+                    or hook_settings(started(root, package)) != hook_settings(current(root, package))):
                 changed.append(name)
     return sorted(changed)
+
+
+def hook_settings(package):
+    """A package's settings that can change the files its Codex hooks run. Left out: Claude's settings, the tool
+    notes switch, Codex roles, which install outside the plugin, and replacements in Markdown, which no hook runs."""
+    kept = {key: value for key, value in package.items() if key != 'claude'}
+    kept['skills'] = {key: value for key, value in package.get('skills', {}).items() if key != 'tool_notes'}
+    codex = kept['codex'] = {key: value for key, value in package.get('codex', {}).items() if key != 'roles'}
+    codex['replace'] = [entry for entry in codex.get('replace', []) if not str(entry.get('path')).endswith('.md')]
+    return kept
 
 
 def keep(log):
@@ -1514,8 +1525,8 @@ def release_checks(args, public, private, private_repo, *, final=False, hooks=Tr
         raise RuntimeError(f'{", ".join(sorted(stale.values()))} changed after its tree was pinned, so every '
                            f"machine's pull would stop on a stale lock. Finish again with {flags} --refresh-owned")
     if hooks and not args.hooks_reapproved and (changed := reapprovals(public, private)):
-        raise RuntimeError(f'this release may change the Codex content of {", ".join(changed)}, whose Codex hooks '
-                           'are trusted; ask the user to approve them again, queue each machine\'s approval in '
+        raise RuntimeError(f'this release may change the files that the trusted Codex hooks of {", ".join(changed)} '
+                           'run; ask the user to approve them again, queue each machine\'s approval in '
                            'maintenance/pending-sync.md, then finish again with --hooks-reapproved')
     if hits := leaks(public, private, args.message):
         raise RuntimeError(f'{", ".join(hits[:20])} in {public} hold a string that the private {DENYLIST} names; '
