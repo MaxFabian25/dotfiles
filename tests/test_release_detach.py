@@ -1,4 +1,4 @@
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 import io
 from pathlib import Path
 import subprocess
@@ -37,12 +37,12 @@ class DetachTest(ReleaseCase):
         self.assertIn('--detach needs an absolute path for pair.txt', error.getvalue())
         log.parent.mkdir(parents=True, exist_ok=True)
         log.write_text('Ran 3 tests: OK\nRelease stopped: nothing to release\n', encoding='utf-8')
-        with redirect_stderr(io.StringIO()) as error, patch.object(release, 'unit_active', return_value=True):
+        with redirect_stderr(io.StringIO()) as error, patch.object(release, 'unit_state', return_value=('active', '')):
             self.assertEqual(release_main(['result', 'away', '--timeout', '0.1', *self.options()], self.public), 4)
         self.assertIn('Still running', error.getvalue())
         # A unit that was killed is gone and wrote no status. On 10 November 2026 result waited an hour on one.
         with redirect_stderr(io.StringIO()) as error, redirect_stdout(io.StringIO()) as output, \
-                patch.object(release, 'unit_active', return_value=False):
+                patch.object(release, 'unit_state', return_value=('inactive', '')):
             self.assertEqual(release_main(['result', 'away', '--timeout', '600', *self.options()], self.public),
                              release.CRASHED)
         self.assertIn('ended without a status', error.getvalue())
@@ -52,6 +52,42 @@ class DetachTest(ReleaseCase):
             self.assertEqual(release_main(['result', 'away', *self.options()], self.public), 3)
         self.assertIn('Release stopped: nothing to release', output.getvalue())
         self.assertIn('finish away exited 3', output.getvalue())
+
+    def test_result_waits_through_a_systemctl_call_that_gives_no_state_and_names_the_state_it_ends_on(self):
+        # On 14 November 2026 one such call, about twelve minutes into a running finish, made result exit 70 and
+        # report the unit gone, while the finish ran another six minutes and wrote its own status.
+        release_main(['start', 'asked', *self.options()], self.public)
+        log = self.worktrees / 'asked/build/finish.log'
+        log.parent.mkdir(parents=True)
+        log.write_text('Both complete suites run\n', encoding='utf-8')
+
+        @contextmanager
+        def systemctl(*answers, then=(0, 'active\n', '')):
+            calls, clock = iter(answers), [0.0]  # result's two-second polls pass on this clock
+
+            def run(command, **options):
+                self.assertEqual(command, ['systemctl', '--user', 'is-active', 'dotfiles-release-asked'])
+                return subprocess.CompletedProcess(command, *next(calls, then))
+            with patch.object(release.subprocess, 'run', run), patch.object(release.time, 'monotonic', lambda: clock[0]), \
+                    patch.object(release.time, 'sleep', lambda seconds: clock.__setitem__(0, clock[0] + seconds)):
+                yield
+        no_answer = (1, '', 'Failed to get unit: Connection timed out\n')
+        with systemctl(no_answer, (3, 'refreshing\n', '')), redirect_stderr(io.StringIO()) as error, \
+                redirect_stdout(io.StringIO()):
+            self.assertEqual(release_main(['result', 'asked', '--timeout', '3', *self.options()], self.public), 4)
+        self.assertIn('Still running after 3 seconds; log', error.getvalue())
+        # With no state at the last check, the line says so in systemctl's own words.
+        with systemctl(then=no_answer), redirect_stderr(io.StringIO()) as error, redirect_stdout(io.StringIO()):
+            self.assertEqual(release_main(['result', 'asked', '--timeout', '3', *self.options()], self.public), 4)
+        self.assertIn('Still running after 3 seconds, though systemd gave no state at the last check (systemctl '
+                      'exited 1: Failed to get unit: Connection timed out); log', error.getvalue())
+        for state in ('inactive', 'failed'):
+            with self.subTest(state=state), systemctl(no_answer, (3, f'{state}\n', '')), \
+                    redirect_stderr(io.StringIO()) as error, redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(release_main(['result', 'asked', '--timeout', '20', *self.options()], self.public),
+                                 release.CRASHED)
+                self.assertIn(f'ended without a status: systemd calls its unit {state}', error.getvalue())
+                self.assertIn('Both complete suites run', output.getvalue())
 
     def test_a_finish_started_by_a_unit_reports_its_status_to_the_file_result_reads(self):
         release_main(['start', 'unit', *self.options()], self.public)
@@ -150,15 +186,21 @@ class DetachTest(ReleaseCase):
             return [sys.executable, '-c', 'pass']
 
         with patch.object(release, 'detach_command', unit), patch.object(release.shutil, 'which', return_value='/bin/x'):
-            with patch.object(release, 'unit_state', return_value='active'), redirect_stderr(io.StringIO()) as error:
+            with patch.object(release, 'unit_state', return_value=('active', '')), redirect_stderr(io.StringIO()) as error:
                 self.assertEqual(release_main(argv, self.public), 3)
             self.assertIn('a detached finish of twice still runs as unit dotfiles-release-twice', error.getvalue())
             self.assertEqual(started, [])
             self.assertEqual(log.read_text(encoding='utf-8'), 'Release stopped: the first attempt\n')
             self.assertEqual(status.read_text(encoding='utf-8'), '3\n')
-            for state in ('inactive', None):  # None: systemd could not be asked
+            no_state = (None, 'systemctl exited 1: Failed to connect to bus: No medium found')
+            with patch.object(release, 'unit_state', return_value=no_state), redirect_stderr(io.StringIO()) as error:
+                self.assertEqual(release_main(argv, self.public), 3)
+            self.assertIn('systemd gave no state for unit dotfiles-release-twice (systemctl exited 1: Failed to connect '
+                          'to bus: No medium found), so an earlier finish of twice may still run', error.getvalue())
+            self.assertEqual((started, log.read_text(encoding='utf-8')), ([], 'Release stopped: the first attempt\n'))
+            for state in ('inactive', 'failed'):
                 log.write_text(f'Release stopped: an attempt, unit {state}\n', encoding='utf-8')
-                with self.subTest(state=state), patch.object(release, 'unit_state', return_value=state), \
+                with self.subTest(state=state), patch.object(release, 'unit_state', return_value=(state, '')), \
                         redirect_stdout(io.StringIO()) as output:
                     self.assertEqual(release_main(argv, self.public), 0)
                     kept = sorted(log.parent.glob('finish.*.log'), key=lambda path: path.stat().st_mtime_ns)[-1]
@@ -168,13 +210,20 @@ class DetachTest(ReleaseCase):
                     self.assertFalse(status.exists())
         self.assertEqual(len(started), 2)
         self.assertEqual(len(list(log.parent.glob('finish.*.log'))), 2)
-        # result keeps waiting when systemd cannot be asked, and detach above went on.
-        with patch.object(release.subprocess, 'run', side_effect=OSError('no systemctl')):
-            self.assertIsNone(release.unit_state('twice'))
-            self.assertTrue(release.unit_active('twice'))
-        for state, active in (('active', True), ('deactivating', True), ('inactive', False), ('failed', False)):
+        # systemd gives no state without systemctl, or when its bus call fails and it prints only to stderr, as
+        # systemctl --user did on Omarchy with no bus to reach; result keeps waiting then, and detach above stopped.
+        failed_call = subprocess.CompletedProcess(
+            [], 1, '', 'Failed to connect to user scope bus via local transport: No such file or directory\n')
+        for answer, problem in (
+                ({'side_effect': OSError('no systemctl')}, 'systemctl: no systemctl'),
+                ({'return_value': failed_call}, 'systemctl exited 1: Failed to connect to user scope bus via local '
+                                                'transport: No such file or directory'),
+                ({'return_value': subprocess.CompletedProcess([], 3, 'unknown\n', '')}, "systemctl exited 3: 'unknown'")):
+            with patch.object(release.subprocess, 'run', **answer):
+                self.assertEqual(release.unit_state('twice'), (None, problem))
+        for state in ('active', 'deactivating', 'refreshing', 'inactive', 'failed', 'maintenance'):
             with patch.object(release.subprocess, 'run', return_value=subprocess.CompletedProcess([], 3, f'{state}\n')):
-                self.assertEqual(release.unit_active('twice'), active)
+                self.assertEqual(release.unit_state('twice'), (state, ''))
 
 
 if __name__ == '__main__':

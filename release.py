@@ -1669,10 +1669,14 @@ def detach(args, argv):
         raise RuntimeError(f'{stop}; nothing was started')
     if not shutil.which('systemd-run'):
         raise RuntimeError('--detach needs systemd-run, which this machine lacks; run the finish in the foreground')
-    if unit_state(args.name) in RUNNING_UNIT:
+    state, problem = unit_state(args.name)
+    if state is None or state in RUNNING_UNIT:
         # Its log would move aside while the unit still writes it, and result would lose the status file.
-        raise RuntimeError(f'a detached finish of {args.name} still runs as unit dotfiles-release-{args.name}; wait '
-                           f'for it with release.py result {args.name} --timeout 3600; nothing was started')
+        unit = f'dotfiles-release-{args.name}'
+        runs = (f'systemd gave no state for unit {unit} ({problem}), so an earlier finish of {args.name} may still '
+                'run; run this again once systemctl answers, or wait for it' if state is None else
+                f'a detached finish of {args.name} still runs as unit {unit}; wait for it')
+        raise RuntimeError(f'{runs} with release.py result {args.name} --timeout 3600; nothing was started')
     log, status = detached_paths(args)
     log.parent.mkdir(parents=True, exist_ok=True)
     status.unlink(missing_ok=True)
@@ -1686,27 +1690,28 @@ def detach(args, argv):
     return 0
 
 
-RUNNING_UNIT = ('active', 'activating', 'reloading', 'deactivating')
+RUNNING_UNIT = ('active', 'activating', 'reloading', 'deactivating', 'refreshing')
+UNIT_STATES = (*RUNNING_UNIT, 'inactive', 'failed', 'maintenance')  # systemd's ActiveState values
 
 
 def unit_state(name):
-    """What systemd calls the state of a detached finish's unit, or None when systemd cannot be asked."""
+    """What systemd calls the state of a detached finish's unit, and '', or None and systemctl's own error when it
+    gave no state. A systemctl call whose bus call fails prints only to stderr; on 14 November 2026 one such call,
+    twelve minutes into a running finish, made result report its unit gone."""
     try:
-        return subprocess.run(['systemctl', '--user', 'is-active', f'dotfiles-release-{name}'],
-                              capture_output=True, text=True, timeout=30).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return None
-
-
-def unit_active(name):
-    """Whether the unit of a detached finish still runs. True when systemd cannot be asked, so result keeps waiting."""
-    state = unit_state(name)
-    return state is None or state in RUNNING_UNIT
+        asked = subprocess.run(['systemctl', '--user', 'is-active', f'dotfiles-release-{name}'],
+                               capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as error:
+        return None, f'systemctl: {error}'
+    state = asked.stdout.strip()
+    if state in UNIT_STATES:
+        return state, ''
+    return None, f'systemctl exited {asked.returncode}: {asked.stderr.strip() or repr(state)}'
 
 
 def result(args):
     """Block until a detached finish has ended, print the end of its log, and return its status: the one it
-    wrote, or CRASHED when its unit is gone and it wrote none, as after a kill."""
+    wrote, or CRASHED when systemd says its unit no longer runs and it wrote none, as after a kill."""
     log, status = detached_paths(args)
     if not log.exists():
         raise RuntimeError(f'no detached finish of {args.name} was started: {log} is absent')
@@ -1714,20 +1719,22 @@ def result(args):
     def reported():
         return status.is_file() and status.read_text(encoding='utf-8').strip()
 
-    deadline, ended = time.monotonic() + args.timeout, False
+    deadline, ended, problem = time.monotonic() + args.timeout, None, ''
     while not reported():
         if ended:  # looked again after the unit was gone, since it writes its status as its last step
             break
         if time.monotonic() >= deadline:
-            print(f'Still running after {args.timeout:g} seconds; log {log}', file=sys.stderr)
+            silent = f', though systemd gave no state at the last check ({problem})' if problem else ''
+            print(f'Still running after {args.timeout:g} seconds{silent}; log {log}', file=sys.stderr)
             return 4
-        ended = not unit_active(args.name)
+        state, problem = unit_state(args.name)
+        ended = None if state in RUNNING_UNIT else state  # None too while systemd gives no state
         time.sleep(2)
     lines = log.read_text(encoding='utf-8', errors='replace').splitlines()
     print('\n'.join(lines[-RESULT_LINES:]))
     if not reported():
-        print(f'finish {args.name} ended without a status: its unit is gone, so it was killed or never started; '
-              f'full log {log}', file=sys.stderr)
+        print(f'finish {args.name} ended without a status: systemd calls its unit {ended}, so it was killed or '
+              f'never started; full log {log}', file=sys.stderr)
         return CRASHED
     code = int(reported())
     print(f'finish {args.name} exited {code}; full log {log}')
