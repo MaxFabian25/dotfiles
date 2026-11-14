@@ -4,11 +4,13 @@
 Without --action it prints each element whose role and name match, with the actions it offers. With --action it
 runs that action on the one matching element through org.a11y.atspi.Action.DoAction, and refuses when none or
 several elements match, so a click never lands on a lookalike. --frame limits the walk to the window whose frame
-has exactly that name, and --skip-documents leaves page content out, for tab-strip work.
+has exactly that name, and --skip-documents leaves page content out, for tab-strip work. --uri prints the address
+of each matching page document instead, which Chrome's address bar leaves out of the tree on Linux, and with it
+--frame takes every window of that name.
 
 Run it with one D-Bus connection for the whole walk:
   uv run --with jeepney python -I atspi_do.py --pid PID --role 'push button' --name '^Save$' --action press
-Exit status 1 means no single match or a refused action.
+Exit status 1 means no single match or a refused action, or with --uri no frame of that name.
 """
 
 import argparse
@@ -26,6 +28,7 @@ parser.add_argument("--name", required=True, help="regular expression for the ac
 parser.add_argument("--action", help="action to run on the single match, such as press, click, check or uncheck")
 parser.add_argument("--frame", help="exact name of the window frame to search in")
 parser.add_argument("--skip-documents", action="store_true", help="do not descend into page documents")
+parser.add_argument("--uri", action="store_true", help="print the address of each matching page document")
 parser.add_argument("--limit", type=int, default=20000, help="most nodes to visit")
 args = parser.parse_args()
 role_re, name_re = re.compile(args.role, re.I), re.compile(args.name, re.I)
@@ -73,9 +76,9 @@ for name, path in children("org.a11y.atspi.Registry", "/org/a11y/atspi/accessibl
         pass
 if not roots:
     sys.exit(f"no accessible application for pid {args.pid}")
-if args.frame:
+if args.frame is not None:
     roots = [(n, p) for root in roots for n, p in children(*root) if info(n, p) == ("frame", args.frame)]
-    if len(roots) != 1:
+    if not roots or (len(roots) > 1 and not args.uri):  # --uri reads; it acts on nothing
         sys.exit(f"expected one frame named {args.frame!r}, found {len(roots)}")
 
 matches, queue, seen = [], deque(roots), 0
@@ -96,9 +99,12 @@ while queue and seen < args.limit:
         pass
 
 for name, path, role, label in matches[:20]:
+    if args.uri:
+        print("uri=" + call(name, path, "org.a11y.atspi.Document", "GetAttributeValue", "s", ("URI",))[0])
+        continue
     print(f"{role} {label!r} actions={actions(name, path)}")
 if not args.action:
-    sys.exit(0 if matches else 1)
+    sys.exit(0 if matches or args.uri else 1)  # --uri's answer may be an empty list, such as a page still loading
 if len(matches) != 1:
     sys.exit(f"{len(matches)} matches after {seen} nodes; act only on exactly one")
 name, path, _, _ = matches[0]
