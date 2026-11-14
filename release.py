@@ -1279,9 +1279,7 @@ def test_suite(public, private, log):
 
 def device_check(public, private, state):
     """Stop on a release that would stop the pull, which every device would then hit. Sync exits 1 when it
-    only has changes to apply, as every release does, but so does a crash, which writes no result.
-    Name each Claude plugin cache that running sessions hold: the pull swaps it at once when only its skills'
-    Markdown text changes, and otherwise applies the rest of the release and replaces it once they exit."""
+    only has changes to apply, as every release does, but so does a crash, which writes no result."""
     result = subprocess.run([sys.executable, '-B', str(public / 'sync.py'), '--candidate', '--json', '--public',
                              str(public / 'setup'), '--private', str(private / 'setup')],
                             cwd=public, capture_output=True, text=True, encoding='utf-8', errors='replace',
@@ -1296,10 +1294,6 @@ def device_check(public, private, state):
     if result.returncode not in (0, 1) or candidate is None or candidate.blocking:
         sys.stderr.write((result.stdout if candidate is None else '') + result.stderr)
         raise RuntimeError(f'the pull on this device would stop on this release ({stopped}); {state}')
-    for held in candidate.held:
-        print(f'{held.lease}; the pull here swaps it at once if only skill text changes, and otherwise applies the '
-              'rest of the release and replaces that cache once they exit',
-              flush=True)
 
 
 def push(root, commit):

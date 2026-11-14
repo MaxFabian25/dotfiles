@@ -13,7 +13,7 @@ from drift import Diff, Difference, Kind, Verdict, diff
 from host_state import DeviceList, FactKey, Host, Note, NoteKind, Observation, Request, Surface
 
 if TYPE_CHECKING:
-    from accepted_installations import HeldCache, HeldMove
+    from accepted_installations import HeldMove
 
 
 @dataclass(frozen=True)
@@ -26,7 +26,7 @@ class Plan:
     configurations: bool = True
     expected: tuple[Difference, ...] = ()   # unmanaged, and named in this platform's device list
     profile_mirrors: tuple[profile_plugins.Mirror, ...] = ()
-    held: tuple[HeldCache | HeldMove, ...] = ()
+    held: tuple[HeldMove, ...] = ()
 
     @property
     def exit_code(self):

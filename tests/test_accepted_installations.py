@@ -1,5 +1,7 @@
 import contextlib
 from dataclasses import replace
+from datetime import datetime, timezone
+import hashlib
 import inspect
 import io
 import json
@@ -18,16 +20,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import accepted_installations
 from codex_host import CodexState
 from configuration import desired
-from description import (Adaptation, AlignedInstall, ClaudePlacement, CodexPlacement, EngineInstall, Hooks, HostMarketplace,
-                         LocalSource, Lock, LockedTree, LooseSkill, MarketplaceInstall, MarketplaceMode, NoteRule, Package,
-                         PluginRoles, Repo, RepoSource, Roots, Rules, Setup, SkillRoot, SnapshotSource, ToolNotes,
-                         Visibility, intent)
+from description import (Adaptation, AlignedInstall, ClaudePlacement, CodexPlacement, EngineInstall, Hooks, LocalSource,
+                         Lock, LockedTree, LooseSkill, NoteRule, Package, PluginRoles, Repo, RepoSource, Roots, Rules,
+                         Setup, SkillRoot, SnapshotSource, ToolNotes, Visibility, intent)
 from device import Device
 from device_sync import apply, plan
 from homes import hold_built_trees_once, isolate_git
 from host_observation import Observer, Unread
 from host_state import (Approved, DeviceList, DeviceRoots, EngineMarketplace, FactKey, FileValue, Host, InstallDetail,
-                        Pinned, Platform, PluginValue, Released, SkillMode, Surface, TreeValue, Unknown, bytes_digest)
+                        Platform, PluginValue, Released, SkillMode, Surface, TreeValue, Unknown, bytes_digest,
+                        upstream_version)
 import portable
 from sync_files import ConcurrentEdit
 from sync_sources import BuildError, Builder, Sources
@@ -59,8 +61,10 @@ class DiskHost:
         config = self.roots.codex_home / 'config.toml'
         switches = tomllib.loads(config.read_text()).get('plugins', {}) if config.is_file() else {}
         for identity, (version, directory) in self.installed.items():
+            directory = codex_loads(directory)
+            version = directory.name
             enabled = switches.get(identity, {}).get('enabled', True)
-            seen.add(Surface.PLUGIN, identity, PluginValue(enabled, Released(version)),
+            seen.add(Surface.PLUGIN, identity, PluginValue(enabled, Released(upstream_version(version))),
                      detail=InstallDetail(version, directory))
             if directory.is_dir():
                 seen.add(Surface.TREE, identity, TreeValue(self.roots.tree_digest(directory)))
@@ -75,6 +79,21 @@ class DiskHost:
         if rules.is_file():
             seen.add(Surface.RULES, 'AGENTS.md', FileValue(bytes_digest(rules.read_bytes())))
         return seen.finish('disk test host', set(self.installed))
+
+
+def codex_loads(installed):
+    """The version folder Codex 0.169.0-alpha.6 loads a plugin from: the highest under the plugin's folder in semver
+    order with build metadata compared as text, never a folder whose name starts with a dot beside others, as an
+    isolated probe of that version showed on 14 November 2026, and the last dot folder when only such folders are
+    there, as that version listed the engine's work folder on 13 November 2026."""
+    def order(folder):
+        core, _, build = folder.name.partition('+')
+        release, _, pre = core.partition('-')
+        return tuple(int(part) for part in release.split('.')), not pre, pre, build
+
+    folders = sorted(path for path in installed.parent.glob('*') if path.is_dir())
+    named = [path for path in folders if not path.name.startswith('.')]
+    return max(named, key=order) if named else folders[-1] if folders else installed
 
 
 def moving_aside(tree):
@@ -95,6 +114,52 @@ def own_lease(directory, start=None):
     lease = directory / str(os.getpid())
     lease.write_text(json.dumps({'pid': os.getpid(), 'procStart': start}, separators=(',', ':')))
     return lease
+
+
+def claude_records(roots):
+    return roots.claude_home / 'plugins/installed_plugins.json'
+
+
+def claude_install(roots, plugin, release):
+    """Install a release as `claude plugin install` and `claude plugin update` do: copy it to its version folder in
+    Claude Code's cache and name that folder in the user-scope entry of the install record, keeping the other
+    entries. Gives the version folder."""
+    name, marketplace = plugin.split('@')
+    destination = roots.claude_home / 'plugins/cache' / marketplace / name / release.version
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(release.root, destination, dirs_exist_ok=True)
+    path = claude_records(roots)
+    data = json.loads(path.read_text()) if path.is_file() else {'version': 2, 'plugins': {}}
+    others = [entry for entry in data['plugins'].get(plugin, []) if entry['scope'] != 'user']
+    data['plugins'][plugin] = [{'scope': 'user', 'installPath': str(destination), 'version': release.version,
+                                'installedAt': '2026-11-14T08:00:00.000Z'}, *others]
+    path.write_text(json.dumps(data, indent=2))
+    return destination
+
+
+def claude_listing(roots, enabled):
+    """What `claude plugin list --available --json` prints: each entry of the install record, with the folder the
+    record names."""
+    path = claude_records(roots)
+    plugins = json.loads(path.read_text())['plugins'] if path.is_file() else {}
+    return json.dumps({'installed': [{'id': plugin, 'enabled': enabled(plugin), **entry}
+                                     for plugin, entries in plugins.items() for entry in entries], 'available': []})
+
+
+def claude_entry(roots, plugin):
+    entry, = (entry for entry in json.loads(claude_records(roots).read_text())['plugins'][plugin]
+              if entry['scope'] == 'user')
+    return entry
+
+
+def stopped_clock(when):
+    """The engine's clock, stopped at when, a UTC time."""
+    class Stopped(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return when
+
+    return patch('accepted_installations.datetime', Stopped)
 
 
 class InstallationTest(unittest.TestCase):
@@ -138,10 +203,12 @@ class InstallationTest(unittest.TestCase):
             self.operation = operation   # kept alive, so a staged tree goes only when apply leaves the staging stack
             self.calls.append((host, args))
             if args[:2] == ('plugin', 'add'):
+                # Codex 0.169.0-alpha.6's `plugin add` removed the plugin's other version folders in an isolated
+                # probe on 14 November 2026 (evidence/codex/downgrade-summary.txt). The probe had no dot folders.
                 release = operation.built['kit']
                 destination = self.roots.codex_home / 'plugins/cache/personal/kit' / release.version
-                if destination.exists():
-                    shutil.rmtree(destination)
+                for folder in destination.parent.glob('[!.]*'):
+                    shutil.rmtree(folder)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copytree(release.root, destination)
                 self.host.installed[args[2]] = (release.version, destination)
@@ -157,7 +224,8 @@ class InstallationTest(unittest.TestCase):
                                      sources=Sources(self.roots.engine / 'sources', seeds=self.seeds)))[0]
 
     def installed(self):
-        return self.host.installed['kit@personal'][1]
+        """The folder Codex loads the kit from."""
+        return codex_loads(self.host.installed['kit@personal'][1])
 
     def receipt_paths(self):
         return sorted((self.roots.codex_home / 'dotfiles/accepted').glob('*.json'))
@@ -197,10 +265,10 @@ class InstallationTest(unittest.TestCase):
         backup, = (self.roots.codex_home / 'skills').glob('.sync-loose-*/displaced')
         return backup
 
-    def apply_reporting(self):
+    def apply_reporting(self, current=None):
         """Run a sync that exits 0 and give what it printed to stderr."""
         with patch('sys.stderr', new_callable=io.StringIO) as stderr:
-            self.assertEqual(self.run_apply().exit_code, 0)
+            self.assertEqual(self.run_apply(current).exit_code, 0)
         return stderr.getvalue()
 
     @contextlib.contextmanager
@@ -229,29 +297,28 @@ class InstallationTest(unittest.TestCase):
         return self.roots.home / '.npmrc'
 
     def release_in_place(self):
+        """Install, then release a second loose skill, which a sync replaces in place, and a setting the sync writes
+        after it. Gives the skill's folder and the setting's file."""
         self.assertEqual(self.run_apply().exit_code, 0)
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
         self.revise_loose('A second loose skill.\n')
-        return self.installed(), self.release_a_setting_written_after_the_plugins()
+        return self.roots.codex_home / 'skills/loose', self.release_a_setting_written_after_the_plugins()
 
     def move_refused(self, installed, refusal):
         return (f'Move refused: {installed}: Windows refused the move on each of {ATTEMPTS} tries over {WAITED:g} '
                 f'seconds ({refusal}), as it does while a program holds a file in the folder being moved open, or '
-                'while access rules forbid the move; this replacement waits as a pending one, and the next pull tries '
-                'it again')
+                'while access rules forbid the move; this change waits, and the next pull tries it again')
 
     def assert_move_waits(self, result, installed, npmrc, refusals):
         self.assertEqual(result.exit_code, 1)
         self.assertEqual(result.blocked, ())
         self.assertEqual([d.detail for d in result.changes],
-                         ['plugin:codex:kit@personal: Finish a verified pending replacement'])
+                         ['codex:LOOSE_SKILL:{codex_home}/skills/loose: Finish a verified pending replacement'])
         [held] = result.held
         self.assertEqual((type(held), held.path, held.line),
                          (accepted_installations.HeldMove, installed, self.move_refused(installed, refusals[-1])))
         self.assertIs(held.refusal.__cause__, refusals[-1])
         self.assertEqual(len(refusals), ATTEMPTS)
-        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
-        self.assertEqual((self.roots.codex_home / 'skills/loose/SKILL.md').read_text(), 'A second loose skill.\n')
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A loose skill.\n')
         self.assertEqual(npmrc.read_text(), 'min-release-age=3\n')
 
     def test_a_sync_removes_the_plugin_trees_it_staged(self):
@@ -327,45 +394,46 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual([mirror.profile for mirror in plan(self.setup, replace(self.device, wsl=True)).profile_mirrors],
                          [profile])
 
-    def test_a_release_that_changes_only_intent_keeps_the_backup_an_account_home_is_matched_against(self):
+    def test_an_account_home_holding_an_earlier_version_folder_s_copy_is_brought_up_to_date(self):
         self.assertEqual(self.run_apply().exit_code, 0)
+        earlier = self.installed()
         profile = self.roots.home / '.local/share/orca/codex-accounts/account/home'
         copy = profile / 'plugins/cache/personal/kit/1.0.0'
-        shutil.copytree(self.installed(), copy)
+        shutil.copytree(earlier, copy)
         (profile / 'config.toml').write_text('[plugins."kit@personal"]\nenabled = true\n')
         self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the first reader'),),
                              account_homes={Platform.LINUX: ('.local/share/orca/codex-accounts/*/home',)})
         with patch('profile_plugins.apply', side_effect=RuntimeError('before the account homes')), \
                 self.assertRaisesRegex(RuntimeError, 'before the account homes'):
             self.run_apply()
-        backup, = self.installed().parent.glob('.sync-1.0.0-*/displaced')
-        self.setup = replace(self.setup, note_rules=(*self.setup.note_rules, NoteRule('Grep', 'a tool the kit never names')))
+        self.assertNotEqual(self.installed(), earlier)
         self.assertEqual(self.run_apply().exit_code, 0)
         self.assertIn('use the first reader', (copy / 'skills/one/SKILL.md').read_text())
-        self.assertIn('use the local reader', (backup / 'skills/one/SKILL.md').read_text())
-        self.assertEqual(self.unnamed_work_folders(), [])
+        self.assertIn('use the local reader', (earlier / 'skills/one/SKILL.md').read_text())
 
-    def test_a_backup_kept_through_a_release_that_changes_only_intent_is_still_checked_before_it_goes(self):
+    def test_an_account_home_holding_the_copy_an_earlier_engine_kept_as_its_backup_is_brought_up_to_date(self):
+        release, saved, work = self.replaced_in_place_by_an_earlier_engine()
+        shutil.copytree(release, work / 'displaced')
+        (work / 'displaced/ordinary.txt').write_text('bytes of the release before\n')
+        saved['accepted']['backup_image'] = accepted_installations.image(work / 'displaced')
+        self.receipt_of('plugin:').write_text(json.dumps(saved))
+        profile = self.roots.home / '.local/share/orca/codex-accounts/account/home'
+        copy = profile / 'plugins/cache/personal/kit/1.0.0'
+        shutil.copytree(work / 'displaced', copy)
+        (profile / 'config.toml').write_text('[plugins."kit@personal"]\nenabled = true\n')
+        self.setup = replace(self.setup, account_homes={Platform.LINUX: ('.local/share/orca/codex-accounts/*/home',)})
         self.assertEqual(self.run_apply().exit_code, 0)
-        backup, = self.installed().parent.glob('.sync-1.0.0-*/displaced')
-        self.setup = replace(self.setup, note_rules=(*self.setup.note_rules, NoteRule('Grep', 'a tool the kit never names')))
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual(json.loads(self.receipt_of('plugin:').read_bytes())['accepted']['backup'], str(backup))
-        (backup / 'ordinary.txt').write_text('My edit in the backup.\n')
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
-        self.assertIn(f'Work folder left in place: {backup.parent}: ', self.apply_reporting())
-        self.assertEqual((backup / 'ordinary.txt').read_text(), 'My edit in the backup.\n')
+        self.assertEqual((copy / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
 
-    def test_a_backup_kept_through_a_release_that_changes_only_intent_goes_at_the_next_replacement(self):
+    def test_an_account_home_whose_cache_is_linked_to_codex_home_s_needs_no_copy(self):
         self.assertEqual(self.run_apply().exit_code, 0)
-        work, = self.installed().parent.glob('.sync-1.0.0-*')
-        self.setup = replace(self.setup, note_rules=(*self.setup.note_rules, NoteRule('Grep', 'a tool the kit never names')))
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertTrue(work.exists())
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertFalse(work.exists())
-        self.assertEqual(self.unnamed_work_folders(), [])
+        profile = self.roots.home / '.local/share/orca/codex-accounts/account/home'
+        (profile / 'plugins').mkdir(parents=True)
+        (profile / 'plugins/cache').symlink_to(self.roots.codex_home / 'plugins/cache', target_is_directory=True)
+        (profile / 'config.toml').write_text('[plugins."kit@personal"]\nenabled = true\n')
+        self.setup = replace(self.setup, account_homes={Platform.LINUX: ('.local/share/orca/codex-accounts/*/home',)})
+        current = plan(self.setup, self.device)
+        self.assertEqual((current.exit_code, current.profile_mirrors, current.blocked), (0, (), ()))
 
     def test_a_destination_that_already_holds_the_new_release_drops_the_backup_of_the_one_before(self):
         backup = self.loose_backup()
@@ -415,37 +483,9 @@ class InstallationTest(unittest.TestCase):
                               f"{skills / 'loose'}'s work folders\n", self.apply_reporting())
                 self.assertTrue((named / 'SKILL.md').exists())
 
-    def test_a_version_change_removes_the_backup_beside_the_old_version(self):
-        self.assertEqual(self.run_apply().exit_code, 0)
-        old, = self.installed().parent.glob('.sync-1.0.0-*')
-        (self.source / '.codex-plugin/plugin.json').write_text('{"name":"kit","version":"1.1.0"}')
-        digest = self.roots.tree_digest(self.source)
-        package = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
-        lock = replace(self.setup.lock['kit'], intent=intent(package, {}), trees={Host.CODEX: LockedTree('1.1.0', digest)})
-        self.setup = replace(self.setup, packages={'kit': package}, lock={**self.setup.lock, 'kit': lock})
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual(self.installed().name, '1.1.0')
-        self.assertFalse(old.exists())
-        self.assertEqual(self.unnamed_work_folders(), [])
-
     def receipt_of(self, prefix):
         path, = (path for path in self.receipt_paths() if json.loads(path.read_bytes())['identity'].startswith(prefix))
         return path
-
-    def test_a_version_that_changes_in_the_lock_alone_with_its_folder_in_place_drops_the_backup_beside_the_old(self):
-        self.assertEqual(self.run_apply().exit_code, 0)
-        old = self.installed()
-        work, = old.parent.glob('.sync-1.0.0-*')
-        lock = replace(self.setup.lock['kit'],
-                       trees={Host.CODEX: LockedTree('1.1.0', self.setup.lock['kit'].trees[Host.CODEX].digest)})
-        self.setup = replace(self.setup, lock={**self.setup.lock, 'kit': lock})
-        shutil.copytree(old, old.parent / '1.1.0')
-        # The fixture's host goes on reporting 1.0.0 as installed, so the sync ends with that difference left.
-        self.assertEqual(self.run_apply().exit_code, 1)
-        accepted = json.loads(self.receipt_of('plugin:').read_bytes())['accepted']
-        self.assertEqual((Path(accepted['path']).name, accepted.get('backup')), ('1.1.0', None))
-        self.assertFalse(work.exists())
-        self.assertEqual(self.unnamed_work_folders(), [])
 
     def test_a_destination_that_went_missing_is_created_again_without_the_backup_of_the_tree_before(self):
         backup = self.loose_backup()
@@ -590,112 +630,8 @@ class InstallationTest(unittest.TestCase):
         backups = [path for path in (self.roots.codex_home / 'skills').glob('.sync-loose-*/displaced/SKILL.md')]
         self.assertEqual([path.read_text() for path in backups], ['A second loose skill.\n'])
 
-    def test_a_removal_that_stopped_part_way_is_finished_by_the_next_run(self):
-        self.assertEqual(self.run_apply().exit_code, 0)
-        work, = self.installed().parent.glob('.sync-1.0.0-*')
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
-        rmtree = shutil.rmtree
-
-        def stop_part_way(path, *args, **kwargs):
-            if Path(path) != work:
-                return rmtree(path, *args, **kwargs)
-            (work / 'displaced/ordinary.txt').unlink()
-            rmtree(work / 'displaced/skills')
-            raise RuntimeError('stopped during the removal')
-
-        with patch('shutil.rmtree', stop_part_way), self.assertRaisesRegex(RuntimeError, 'stopped during the removal'):
-            self.run_apply()
-        self.assertTrue((work / 'displaced/agents/reviewer.toml').exists())
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertFalse(work.exists())
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def claude_backup_folder(self, note):
-        """Replace the Claude cache in place with a release that carries note, and give the folder of its backup."""
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', note),))
-        self.assertEqual(self.run_apply().exit_code, 0)
-        return Path(json.loads(self._pending_claude_receipt().read_bytes())['accepted']['backup']).parent
-
-    def test_a_claude_backup_folder_goes_with_a_valid_orphan_marker_and_stays_with_an_invalid_one(self):
-        self._installed_claude()
-        marked = self.claude_backup_folder('a first note')
-        (marked / '.orphaned_at').write_text('1794063570885')
-        invalid = self.claude_backup_folder('a second note')
-        self.assertFalse(marked.exists())
-        (invalid / '.orphaned_at').write_text('not a time')
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'a third note'),))
-        self.assertIn(f'Work folder left in place: {invalid}: Invalid Claude orphan marker', self.apply_reporting())
-        self.assertEqual(sorted(path.name for path in invalid.iterdir()), ['.orphaned_at', 'displaced'])
-
-    def test_a_claude_backup_that_holds_the_markers_of_sessions_goes_like_any_other(self):
-        self._installed_claude()
-        first = self.claude_backup_folder('a first note')
-        (first / 'displaced/.in_use').mkdir()
-        (first / 'displaced/.in_use/17').write_text('{"pid":17,"procStart":"Thu Oct 15 12:30:00 2026"}')
-        self.claude_backup_folder('a second note')
-        self.assertFalse(first.exists())
-
-    def test_a_claude_backup_that_holds_a_file_beside_its_markers_stays_and_is_reported(self):
-        self._installed_claude()
-        first = self.claude_backup_folder('a first note')
-        (first / 'displaced/.in_use').mkdir()
-        (first / 'displaced/.in_use/notes.txt').write_text('mine')
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'a second note'),))
-        self.assertIn(f'Work folder left in place: {first}: ', self.apply_reporting())
-        self.assertEqual((first / 'displaced/.in_use/notes.txt').read_text(), 'mine')
-
-    def stage_removed_part_way(self):
-        """Hold a Claude cache so that a first revision stays staged, then stop a second revision's run part-way
-        through removing that stage. Gives the cache, the lease that holds it and the stage's work folder."""
-        destination = self._installed_claude()
-        lease = own_lease(destination / '.in_use')
-        self.revise_release('first revision\n')
-        self.assert_held(destination)
-        work = Path(json.loads(self._pending_claude_receipt().read_bytes())['pending']['staged']).parent
-        self.revise_release('second revision\n')
-        rmtree = shutil.rmtree
-
-        def stop_part_way(path, *args, **kwargs):
-            if Path(path) != work:
-                return rmtree(path, *args, **kwargs)
-            (work / 'staged/ordinary.txt').unlink()
-            raise RuntimeError('stopped during the removal')
-
-        with patch('shutil.rmtree', stop_part_way), self.assertRaisesRegex(RuntimeError, 'stopped during the removal'):
-            self.run_apply()
-        return destination, lease, work
-
-    def test_a_stage_removed_part_way_is_removed_by_the_next_run_of_the_release_that_took_over(self):
-        destination, _, work = self.stage_removed_part_way()
-        self.assert_held(destination)
-        self.assertFalse(work.exists())
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def test_a_stage_removed_part_way_is_built_again_for_the_release_it_was_staged_for(self):
-        destination, lease, _ = self.stage_removed_part_way()
-        self.revise_release('first revision\n')
-        lease.unlink()
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'first revision\n')
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def test_a_stage_that_holds_an_edit_stops_its_release_and_keeps_the_edit(self):
-        destination = self._installed_claude()
-        lease = own_lease(destination / '.in_use')
-        self.revise_release('first revision\n')
-        self.assert_held(destination)
-        edited = Path(json.loads(self._pending_claude_receipt().read_bytes())['pending']['staged']) / 'ordinary.txt'
-        edited.write_text('edited in the stage\n')
-        lease.unlink()
-        with self.assertRaisesRegex(ConcurrentEdit, f'^Prepared stage was edited: {re.escape(str(edited.parent))}$'):
-            self.run_apply()
-        self.assertEqual(edited.read_text(), 'edited in the stage\n')
-
     def test_a_receipt_edited_to_name_a_folder_elsewhere_as_its_stage_stops_its_release_and_keeps_the_folder(self):
-        destination = self._installed_claude()
-        lease = own_lease(destination / '.in_use')
-        self.revise_release('first revision\n')
-        self.assert_held(destination)
+        destination = self.loose_waiting_on_a_refused_move()
         name = f'.sync-{destination.name}-{"ab" * 16}'
         for case, mine in (('outside the work folders', self.root / 'elsewhere/mine'),
                            ('under another folder', self.root / 'elsewhere' / name / 'staged'),
@@ -709,30 +645,15 @@ class InstallationTest(unittest.TestCase):
                     (self.root / 'linked').mkdir()
                     mine.parent.symlink_to(self.root / 'linked', target_is_directory=True)
                 mine.mkdir(parents=True)
-                (mine / 'ordinary.txt').write_text('first revision\n')
-                receipt = self._pending_claude_receipt()
+                # A copy of the release, so that only the folder's place and name keep it.
+                (mine / 'SKILL.md').write_text('A second loose skill.\n')
+                receipt = self.receipt_of('codex:LOOSE_SKILL')
                 value = json.loads(receipt.read_bytes())
                 value['pending']['staged'] = str(mine)
                 receipt.write_text(json.dumps(value))
-                lease.unlink(missing_ok=True)
                 with self.assertRaisesRegex(ConcurrentEdit, f'^Prepared stage was edited: {re.escape(str(mine))}$'):
                     self.run_apply()
-                self.assertEqual((mine / 'ordinary.txt').read_text(), 'first revision\n')
-
-    def test_a_stage_that_holds_session_markers_stays_when_a_newer_release_takes_over(self):
-        destination = self._installed_claude()
-        own_lease(destination / '.in_use')
-        self.revise_release('first revision\n')
-        self.assert_held(destination)
-        staged = Path(json.loads(self._pending_claude_receipt().read_bytes())['pending']['staged'])
-        (staged / '.in_use').mkdir()
-        (staged / '.in_use/17').write_text('{"pid":17,"procStart":"Thu Oct 15 12:30:00 2026"}')
-        self.revise_release('second revision\n')
-        with patch('sys.stderr', new_callable=io.StringIO) as stderr:
-            self.assert_held(destination)
-        self.assertIn(f'Work folder left in place: {staged.parent}: its tree is not the one its record holds\n',
-                      stderr.getvalue())
-        self.assertTrue((staged / '.in_use/17').exists())
+                self.assertEqual((mine / 'SKILL.md').read_text(), 'A second loose skill.\n')
 
     def test_a_stage_whose_copy_stopped_part_way_is_built_again(self):
         self.assertEqual(self.run_apply().exit_code, 0)
@@ -823,109 +744,106 @@ class InstallationTest(unittest.TestCase):
         self.assertTrue(loose.is_symlink())
         self.assertEqual((displaced / 'SKILL.md').read_text(), 'A second loose skill.\n')
 
-    def test_a_run_that_stops_while_removing_a_stage_a_newer_release_took_over_leaves_it_for_the_next_run(self):
-        destination = self._installed_claude()
-        own_lease(destination / '.in_use')
-        self.revise_release('first revision\n')
-        self.assert_held(destination)
-        work = Path(json.loads(self._pending_claude_receipt().read_bytes())['pending']['staged']).parent
-        self.revise_release('second revision\n')
-        with self.refuse_removal_of(work, RuntimeError('stopped during the removal')), \
-                self.assertRaisesRegex(RuntimeError, 'stopped during the removal'):
-            self.run_apply()
-        self.assertEqual(self.unnamed_work_folders(), [])
-        self.assert_held(destination)
-        self.assertFalse(work.exists())
-        self.assertEqual(self.unnamed_work_folders(), [])
+    def loose_waiting_on_a_refused_move(self):
+        """A second loose skill whose swap waits on a move Windows refused, with its stage named in its receipt."""
+        installed, _ = self.release_in_place()
+        with self.refusing(moves=moving_aside(installed)):
+            self.assertEqual(self.run_apply().exit_code, 1)
+        return installed
 
-    def test_a_run_that_stops_while_removing_a_stage_its_release_no_longer_needs_leaves_it_for_the_next_run(self):
-        destination = self._installed_claude()
-        lease = own_lease(destination / '.in_use')
-        self.revise_release('first revision\n')
-        self.assert_held(destination)
-        work = Path(json.loads(self._pending_claude_receipt().read_bytes())['pending']['staged']).parent
-        self.revise_release('ordinary release bytes\n')
-        with self.refuse_removal_of(work, RuntimeError('stopped during the removal')), \
-                self.assertRaisesRegex(RuntimeError, 'stopped during the removal'):
-            self.run_apply()
-        self.assertEqual(self.unnamed_work_folders(), [])
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertFalse(work.exists())
-        self.assertEqual(self.unnamed_work_folders(), [])
-        self.assertTrue(lease.exists())
+    def receipt_naming_another_displaced_path(self, installed):
+        receipt = self.receipt_of('codex:LOOSE_SKILL')
+        value = json.loads(receipt.read_bytes())
+        value['pending']['displaced'] = str(installed.parent / ('.sync-loose-' + 'ab' * 16) / 'displaced')
+        receipt.write_text(json.dumps(value))
+        return Path(value['pending']['staged'])
 
     def test_a_stopped_replacement_whose_receipt_names_another_displaced_path_keeps_its_stage(self):
-        destination = self._installed_claude()
-        own_lease(destination / '.in_use')
-        self.revise_release('first revision\n')
-        self.assert_held(destination)
-        receipt = self._pending_claude_receipt()
-        value = json.loads(receipt.read_bytes())
-        staged = Path(value['pending']['staged'])
-        value['pending']['displaced'] = str(destination.parent / ('.sync-1.0.0-' + 'ab' * 16) / 'displaced')
-        receipt.write_text(json.dumps(value))
-        self.revise_release('second revision\n')
-        with patch('sys.stderr', new_callable=io.StringIO) as stderr:
-            self.assert_held(destination)
-        self.assertEqual(stderr.getvalue(),
+        installed = self.loose_waiting_on_a_refused_move()
+        staged = self.receipt_naming_another_displaced_path(installed)
+        self.revise_loose('A third loose skill.\n')
+        self.assertEqual(self.apply_reporting(),
                          f'Work folder left in place: {staged.parent}: its receipt names a displaced tree outside it\n')
         self.assertTrue(staged.is_dir())
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A third loose skill.\n')
 
     def test_a_stopped_replacement_whose_receipt_names_another_displaced_path_and_no_work_folder_names_none(self):
-        destination = self._installed_claude()
-        own_lease(destination / '.in_use')
-        self.revise_release('first revision\n')
-        self.assert_held(destination)
-        receipt = self._pending_claude_receipt()
-        value = json.loads(receipt.read_bytes())
-        shutil.rmtree(Path(value['pending']['staged']).parent)
-        value['pending']['displaced'] = str(destination.parent / ('.sync-1.0.0-' + 'ab' * 16) / 'displaced')
-        receipt.write_text(json.dumps(value))
-        self.revise_release('second revision\n')
-        with patch('sys.stderr', new_callable=io.StringIO) as stderr:
-            self.assert_held(destination)
-        self.assertEqual(stderr.getvalue(), '')
+        installed = self.loose_waiting_on_a_refused_move()
+        shutil.rmtree(self.receipt_naming_another_displaced_path(installed).parent)
+        self.revise_loose('A third loose skill.\n')
+        self.assertEqual(self.apply_reporting(), '')
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A third loose skill.\n')
 
-    def test_a_tree_windows_briefly_holds_is_moved_once_it_is_free(self):
-        held = hold_built_trees_once(self)
+    def refused_once(self, refused):
+        """Refuse the first move of a stage as Windows does while a program holds the folder, and record its target in
+        refused."""
+        rename = os.rename
+
+        def attempt(source, target, *args, **kwargs):
+            if Path(source).name == 'staged' and not refused:
+                refused.append(Path(target))
+                raise PermissionError(13, 'Access is denied', str(source), None, str(target))
+            return rename(source, target, *args, **kwargs)
+
+        return patch('os.rename', attempt)
+
+    def test_a_plugin_folder_windows_briefly_holds_is_moved_into_place_once_it_is_free(self):
         self.assertEqual(self.run_apply().exit_code, 0)
-        installed = self.installed()
-        self.assertIn(installed, held)
-        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+        before = self.installed()
         self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        refused = []
+        with patch.object(portable, 'RETRIES_REFUSALS', True), patch.object(portable.time, 'sleep'), \
+                self.refused_once(refused):
+            self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(refused, [self.installed()])
+        self.assertIn('use the reviewed replacement', (self.installed() / 'skills/one/SKILL.md').read_text())
+        self.assertIn('use the local reader', (before / 'skills/one/SKILL.md').read_text())
+
+    def test_a_plugin_stage_edited_while_windows_holds_its_move_stops_and_leaves_the_loaded_folder(self):
         self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('displaced', [path.name for path in held], 'the replaced tree is moved aside')
-        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
+        before = self.installed()
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        refused = []
+
+        def edit(seconds):
+            [stage] = before.parent.parent.glob('.sync-kit-*/staged')
+            (stage / 'ordinary.txt').write_text('edited during the wait\n')
+
+        with patch.object(portable, 'RETRIES_REFUSALS', True), patch.object(portable.time, 'sleep', edit), \
+                self.refused_once(refused), self.assertRaisesRegex(ConcurrentEdit, '^Prepared stage was edited: '):
+            self.run_apply()
+        self.assertFalse(refused[0].exists())
+        self.assertEqual(self.installed(), before)
+        self.assertIn('use the local reader', (before / 'skills/one/SKILL.md').read_text())
 
     def test_a_tree_edited_while_windows_holds_it_is_left_where_it_is(self):
         self.assertEqual(self.run_apply().exit_code, 0)
-        installed = self.installed()
+        installed = self.roots.codex_home / 'skills/loose'
 
         def edit(target):
             if target.name == 'displaced':
-                (installed / 'ordinary.txt').write_text('edited during the wait\n')
+                (installed / 'SKILL.md').write_text('edited during the wait\n')
 
         held = hold_built_trees_once(self, meanwhile=edit)
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.revise_loose('A second loose skill.\n')
         with self.assertRaisesRegex(ConcurrentEdit, f'^Tree changed before replacement: {re.escape(str(installed))}$'):
             self.run_apply()
         self.assertEqual([path.name for path in held], ['displaced'])
-        self.assertEqual((installed / 'ordinary.txt').read_text(), 'edited during the wait\n')
-        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'edited during the wait\n')
 
     def stage_edited_during_the_wait_for(self, name):
         self.assertEqual(self.run_apply().exit_code, 0)
-        installed = self.installed()
+        installed = self.roots.codex_home / 'skills/loose'
 
         def edit(target):
             if target.name == name:
                 [stage] = installed.parent.glob('.sync-*/staged')
-                (stage / 'ordinary.txt').write_text('edited during the wait\n')
+                (stage / 'SKILL.md').write_text('edited during the wait\n')
 
         held = hold_built_trees_once(self, meanwhile=edit)
         if name == 'displaced':
             held.append(installed)  # so that only the first move waits, and the second is tried once
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.revise_loose('A second loose skill.\n')
         moved, rename = [], os.rename
 
         def recorded(source, target, *args, **kwargs):
@@ -937,18 +855,18 @@ class InstallationTest(unittest.TestCase):
             self.run_apply()
         [stage] = installed.parent.glob('.sync-*/staged')
         self.assertEqual(str(stopped.exception), f'Prepared stage was edited: {stage}')
-        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A loose skill.\n')
         self.assertEqual([path.name for path in stage.parent.iterdir()], ['staged'])
         shutil.rmtree(stage)
         self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A second loose skill.\n')
         return moved
 
     def test_a_stage_edited_while_windows_holds_the_old_tree_leaves_the_old_tree_where_it_is(self):
         self.assertEqual(self.stage_edited_during_the_wait_for('displaced'), [])
 
     def test_a_stage_edited_while_windows_holds_the_new_tree_puts_the_old_tree_back(self):
-        self.assertEqual(self.stage_edited_during_the_wait_for('1.0.0'), ['displaced', '1.0.0'])
+        self.assertEqual(self.stage_edited_during_the_wait_for('loose'), ['displaced', 'loose'])
 
     def test_a_stage_edited_before_a_first_install_moves_it_into_place_stops_the_install(self):
         loose = self.roots.codex_home / 'skills/loose'
@@ -972,8 +890,8 @@ class InstallationTest(unittest.TestCase):
 
     def test_a_stage_edited_before_the_old_tree_is_moved_aside_moves_nothing(self):
         self.assertEqual(self.run_apply().exit_code, 0)
-        installed = self.installed()
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        installed = self.roots.codex_home / 'skills/loose'
+        self.revise_loose('A second loose skill.\n')
         moved, rename = [], os.rename
 
         def recorded(source, target, *args, **kwargs):
@@ -984,19 +902,19 @@ class InstallationTest(unittest.TestCase):
                 self.assertRaisesRegex(ConcurrentEdit, '^Prepared stage was edited: '):
             self.run_apply()
         self.assertNotIn('displaced', moved)
-        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A loose skill.\n')
 
     def test_an_empty_folder_that_appears_where_the_new_tree_goes_stays_and_the_old_tree_stays_aside(self):
         self.assertEqual(self.run_apply().exit_code, 0)
-        installed = self.installed()
+        installed = self.roots.codex_home / 'skills/loose'
         hold_built_trees_once(self, meanwhile=lambda target: target.name != 'displaced' and target.mkdir())
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.revise_loose('A second loose skill.\n')
         with patch('sys.stderr', new_callable=io.StringIO) as stderr, \
                 self.assertRaisesRegex(ConcurrentEdit, f'^Tree changed during replacement: {re.escape(str(installed))}$'):
             self.run_apply()
         self.assertEqual(list(installed.iterdir()), [])
-        displaced = Path(json.loads(self.receipt_of('plugin:').read_bytes())['pending']['displaced'])
-        self.assertIn('use the local reader', (displaced / 'skills/one/SKILL.md').read_text())
+        displaced = Path(self.pending_of('codex:LOOSE_SKILL')['displaced'])
+        self.assertEqual((displaced / 'SKILL.md').read_text(), 'A loose skill.\n')
         self.assertEqual(stderr.getvalue(), f'Old tree left aside: {displaced}, from {installed}: its place is taken\n')
 
     def test_an_empty_folder_where_a_stopped_swap_left_a_loose_skill_absent_blocks(self):
@@ -1010,7 +928,7 @@ class InstallationTest(unittest.TestCase):
 
     def move_into_place_refused(self):
         self.assertEqual(self.run_apply().exit_code, 0)
-        installed = self.installed()
+        installed = self.roots.codex_home / 'skills/loose'
         rename = os.rename
 
         def refuse(source, target, *args, **kwargs):
@@ -1018,27 +936,27 @@ class InstallationTest(unittest.TestCase):
                 raise PermissionError(13, 'Access is denied', str(target))
             return rename(source, target, *args, **kwargs)
 
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.revise_loose('A second loose skill.\n')
         with patch.object(portable, 'RETRIES_REFUSALS', False), patch('os.rename', refuse), \
                 self.assertRaises(PermissionError) as stopped:
             self.run_apply()
         self.assertEqual(Path(stopped.exception.filename), installed)
-        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A loose skill.\n')
         return installed
 
     def test_a_new_tree_that_cannot_be_moved_into_place_leaves_the_old_tree_in_place(self):
         installed = self.move_into_place_refused()
         self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A second loose skill.\n')
 
     def test_a_newer_release_takes_over_a_replacement_whose_old_tree_was_put_back(self):
         installed = self.move_into_place_refused()
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the newer release'),))
+        self.revise_loose('A third loose skill.\n')
         self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the newer release', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A third loose skill.\n')
         [work] = installed.parent.glob(f'.sync-{installed.name}-*')
         self.assertEqual([path.name for path in work.iterdir()], ['displaced'])
-        self.assertIn('use the local reader', (work / 'displaced/skills/one/SKILL.md').read_text())
+        self.assertEqual((work / 'displaced/SKILL.md').read_text(), 'A loose skill.\n')
 
     def test_a_tree_that_cannot_be_read_again_while_windows_holds_it_is_left_where_it_is(self):
         probe = self.root / 'probe'
@@ -1051,19 +969,18 @@ class InstallationTest(unittest.TestCase):
         else:
             self.skipTest('needs a file its owner cannot read')
         self.assertEqual(self.run_apply().exit_code, 0)
-        installed = self.installed()
+        installed = self.roots.codex_home / 'skills/loose'
         held = hold_built_trees_once(
-            self, meanwhile=lambda target: target.name == 'displaced' and (installed / 'ordinary.txt').chmod(0))
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+            self, meanwhile=lambda target: target.name == 'displaced' and (installed / 'SKILL.md').chmod(0))
+        self.revise_loose('A second loose skill.\n')
         with self.assertRaises(PermissionError) as stopped:
             self.run_apply()
-        self.assertEqual(Path(stopped.exception.filename), installed / 'ordinary.txt')
+        self.assertEqual(Path(stopped.exception.filename), installed / 'SKILL.md')
         self.assertEqual([path.name for path in held], ['displaced'])
-        (installed / 'ordinary.txt').chmod(0o644)
-        self.assertEqual((installed / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
-        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+        (installed / 'SKILL.md').chmod(0o644)
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A loose skill.\n')
         self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A second loose skill.\n')
 
     def test_a_folder_that_appears_where_windows_holds_the_new_tree_is_not_replaced(self):
         def appear(target):
@@ -1085,7 +1002,7 @@ class InstallationTest(unittest.TestCase):
         self.assert_move_waits(result, installed, npmrc, refusals)
         self.assertEqual(stderr.getvalue(), '')
         self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A second loose skill.\n')
 
     def test_a_new_tree_windows_refuses_to_move_into_place_waits_with_the_old_tree_put_back(self):
         installed, npmrc = self.release_in_place()
@@ -1094,18 +1011,18 @@ class InstallationTest(unittest.TestCase):
             result = self.run_apply()
         self.assert_move_waits(result, installed, npmrc, refusals)
         self.assertEqual(stderr.getvalue(), '')
-        pending = json.loads(self.receipt_of('plugin:').read_bytes())['pending']
+        pending = self.pending_of('codex:LOOSE_SKILL')
         self.assertEqual([path.name for path in Path(pending['staged']).parent.iterdir()], ['staged'])
         self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A second loose skill.\n')
 
     def test_a_newer_release_takes_over_a_replacement_waiting_on_a_refused_move(self):
         installed, npmrc = self.release_in_place()
         with self.refusing(moves=moving_aside(installed)) as refusals:
             self.assert_move_waits(self.run_apply(), installed, npmrc, refusals)
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the newer release'),))
+        self.revise_loose('A third loose skill.\n')
         self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the newer release', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A third loose skill.\n')
         self.assertEqual(self.unnamed_work_folders(), [])
 
     def stage_edited_during_the_last_refused_attempt(self, refused):
@@ -1113,19 +1030,19 @@ class InstallationTest(unittest.TestCase):
 
         def edit():
             [stage] = installed.parent.glob('.sync-*/staged')
-            (stage / 'ordinary.txt').write_text('edited during the last attempt\n')
+            (stage / 'SKILL.md').write_text('edited during the last attempt\n')
 
         with self.refusing(moves=refused(installed), at_last_attempt=edit) as refusals, \
                 self.assertRaises(portable.StillHeld) as stopped:
             self.run_apply()
         self.assertIs(stopped.exception.__cause__, refusals[-1])
         self.assertFalse(npmrc.exists())
-        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A loose skill.\n')
         [stage] = installed.parent.glob('.sync-*/staged')
-        self.assertEqual((stage / 'ordinary.txt').read_text(), 'edited during the last attempt\n')
+        self.assertEqual((stage / 'SKILL.md').read_text(), 'edited during the last attempt\n')
         with self.assertRaisesRegex(ConcurrentEdit, f'^Prepared stage was edited: {re.escape(str(stage))}$'):
             self.run_apply()
-        self.assertEqual((stage / 'ordinary.txt').read_text(), 'edited during the last attempt\n')
+        self.assertEqual((stage / 'SKILL.md').read_text(), 'edited during the last attempt\n')
 
     def test_a_stage_edited_during_the_last_refused_move_aside_stops_the_sync_and_keeps_the_edit(self):
         self.stage_edited_during_the_last_refused_attempt(moving_aside)
@@ -1138,37 +1055,15 @@ class InstallationTest(unittest.TestCase):
         with self.refusing(moves=lambda source, target: target == installed) as refusals, \
                 patch('sys.stderr', new_callable=io.StringIO) as stderr, self.assertRaises(portable.StillHeld) as stopped:
             self.run_apply()
-        displaced = Path(json.loads(self.receipt_of('plugin:').read_bytes())['pending']['displaced'])
+        displaced = Path(self.pending_of('codex:LOOSE_SKILL')['displaced'])
         self.assertIs(stopped.exception.__cause__, refusals[ATTEMPTS - 1])
         self.assertEqual(stderr.getvalue(), f'Old tree left aside: {displaced}, from {installed}: {refusals[-1]}\n')
         self.assertFalse(installed.exists())
         self.assertFalse(npmrc.exists())
 
-    def test_a_codex_version_bump_whose_installed_tree_windows_refuses_to_move_aside_stops_the_sync(self):
-        self.assertEqual(self.run_apply().exit_code, 0)
-        old = self.installed()
-        (self.source / '.codex-plugin/plugin.json').write_text('{"name":"kit","version":"1.1.0"}')
-        digest = self.roots.tree_digest(self.source)
-        package = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
-        lock = replace(self.setup.lock['kit'], intent=intent(package, {}), trees={Host.CODEX: LockedTree('1.1.0', digest)})
-        self.setup = replace(self.setup, packages={'kit': package}, lock={**self.setup.lock, 'kit': lock})
-        npmrc = self.release_a_setting_written_after_the_plugins()
-        def plugin_add_removes_the_other_versions(installed):
-            shutil.rmtree(old)
-
-        self.interrupt = plugin_add_removes_the_other_versions
-        new = old.parent / '1.1.0'
-        with self.refusing(moves=moving_aside(new)) as refusals, \
-                self.assertRaises(portable.StillHeld) as stopped:
-            self.run_apply()
-        self.assertIs(stopped.exception.__cause__, refusals[-1])
-        self.assertEqual([args[:2] for _, args in self.calls][-1:], [('plugin', 'add')])
-        self.assertFalse(old.exists())
-        self.assertFalse(npmrc.exists())
-
     def receipt_save_refused(self, saves_allowed):
         installed, npmrc = self.release_in_place()
-        receipt, saves = self.receipt_of('plugin:'), []
+        receipt, saves = self.receipt_of('codex:LOOSE_SKILL'), []
 
         def refused(source, target):
             if target != receipt:
@@ -1181,9 +1076,9 @@ class InstallationTest(unittest.TestCase):
         self.assertIs(stopped.exception.__cause__, refusals[-1])
         self.assertEqual(len(refusals), ATTEMPTS)
         self.assertFalse(npmrc.exists())
-        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A loose skill.\n')
         self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A second loose skill.\n')
         self.assertEqual(npmrc.read_text(), 'min-release-age=3\n')
 
     def test_a_pending_replacement_whose_first_save_windows_refuses_stops_the_sync_and_the_next_sync_finishes(self):
@@ -1202,13 +1097,13 @@ class InstallationTest(unittest.TestCase):
 
     def receipt_changed_during_the_last_refused_move(self, change):
         installed, npmrc = self.release_in_place()
-        receipt = self.receipt_of('plugin:')
+        receipt = self.receipt_of('codex:LOOSE_SKILL')
         with self.refusing(moves=moving_aside(installed), at_last_attempt=lambda: change(receipt)) as refusals, \
                 self.assertRaises(portable.StillHeld) as stopped:
             self.run_apply()
         self.assertIs(stopped.exception.__cause__, refusals[-1])
         self.assertFalse(npmrc.exists())
-        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A loose skill.\n')
 
     def test_a_receipt_removed_during_the_last_refused_move_stops_the_sync(self):
         self.receipt_changed_during_the_last_refused_move(Path.unlink)
@@ -1226,7 +1121,7 @@ class InstallationTest(unittest.TestCase):
 
     def test_a_malformed_receipt_after_the_last_refused_move_preserves_the_stop_message(self):
         installed, npmrc = self.release_in_place()
-        receipt = self.receipt_of('plugin:')
+        receipt = self.receipt_of('codex:LOOSE_SKILL')
         saved = receipt.read_bytes()
         malformed = json.loads(saved)
         del malformed['accepted']['bindings'][0]['path']
@@ -1240,38 +1135,6 @@ class InstallationTest(unittest.TestCase):
                     self.assertEqual(self.sync_main(), (3, f'Sync stopped: {refusals[-1]}\n'))
                 self.assertEqual(receipt.read_text(), changed)
                 self.assertFalse(npmrc.exists())
-
-    def precached_codex_update(self):
-        self.assertEqual(self.run_apply().exit_code, 0)
-        old = self.installed()
-        (self.source / '.codex-plugin/plugin.json').write_text('{"name":"kit","version":"1.1.0"}')
-        digest = self.roots.tree_digest(self.source)
-        package = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
-        lock = replace(self.setup.lock['kit'], intent=intent(package, {}), trees={Host.CODEX: LockedTree('1.1.0', digest)})
-        self.setup = replace(self.setup, packages={'kit': package}, lock={**self.setup.lock, 'kit': lock})
-        new = old.parent / '1.1.0'
-        shutil.copytree(self.source, new)
-        return old, new, self.release_a_setting_written_after_the_plugins()
-
-    def test_a_precached_update_with_a_changed_previous_tree_stops_before_other_writes(self):
-        old, new, npmrc = self.precached_codex_update()
-        edited = old / 'ordinary.txt'
-        with self.refusing(moves=moving_aside(new),
-                           at_last_attempt=lambda: edited.write_text('concurrent edit\n')) as refusals:
-            self.assertEqual(self.sync_main(), (3, f'Sync stopped: {refusals[-1]}\n'))
-        self.assertEqual(edited.read_text(), 'concurrent edit\n')
-        self.assertFalse(npmrc.exists())
-        self.assertTrue(json.loads(self.receipt_of('plugin:').read_bytes())['pending'])
-
-    def test_a_precached_update_waits_and_finishes_after_the_previous_version_is_removed(self):
-        old, new, npmrc = self.precached_codex_update()
-        with self.refusing(moves=moving_aside(new)) as refusals:
-            self.assertEqual(self.sync_main(), (1, self.move_refused(new, refusals[-1]) + '\n'))
-        self.assertEqual(npmrc.read_text(), 'min-release-age=3\n')
-        shutil.rmtree(old)
-        self.assertEqual(self.sync_main(), (0, ''))
-        self.assertIn('use the local reader', (new / 'skills/one/SKILL.md').read_text())
-        self.assertIsNone(json.loads(self.receipt_of('plugin:').read_bytes())['pending'])
 
     def sync_main(self):
         import sync
@@ -1289,20 +1152,20 @@ class InstallationTest(unittest.TestCase):
 
     def test_a_sync_stopped_by_a_refused_move_that_cannot_wait_prints_the_refusal_alone(self):
         installed, npmrc = self.release_in_place()
-        receipt = self.receipt_of('plugin:')
+        receipt = self.receipt_of('codex:LOOSE_SKILL')
         with self.refusing(moves=moving_aside(installed), at_last_attempt=receipt.unlink) as refusals:
             self.assertEqual(self.sync_main(), (3, f'Sync stopped: {refusals[-1]}\n'))
 
     def test_a_sync_stopped_by_a_refused_receipt_save_prints_the_refusal_alone(self):
         installed, npmrc = self.release_in_place()
-        receipt = self.receipt_of('plugin:')
+        receipt = self.receipt_of('codex:LOOSE_SKILL')
         with self.refusing(replaces=lambda source, target: target == receipt) as refusals:
             self.assertEqual(self.sync_main(), (3, f'Sync stopped: {refusals[-1]}\n'))
 
     @unittest.skipUnless(portable.WINDOWS, 'Windows refuses to move a folder that holds a file a program has open')
     def test_a_tree_holding_a_file_a_program_has_open_waits_and_the_rest_of_the_release_applies(self):
         installed, npmrc = self.release_in_place()
-        with (installed / 'ordinary.txt').open('rb'):
+        with (installed / 'SKILL.md').open('rb'):
             result = self.run_apply()
         self.assertEqual(result.exit_code, 1)
         [held] = result.held
@@ -1311,11 +1174,10 @@ class InstallationTest(unittest.TestCase):
                           Path(refusal.filename2).name, str(refusal)),
                          (accepted_installations.HeldMove, installed, portable.StillHeld, 5, installed, 'displaced',
                           str(refusal.__cause__)))
-        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
-        self.assertEqual((self.roots.codex_home / 'skills/loose/SKILL.md').read_text(), 'A second loose skill.\n')
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A loose skill.\n')
         self.assertEqual(npmrc.read_text(), 'min-release-age=3\n')
         self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A second loose skill.\n')
 
     def test_install_then_strict_noop_and_complete_manifest(self):
         after = self.run_apply()
@@ -1477,14 +1339,18 @@ class InstallationTest(unittest.TestCase):
             (path / 'ordinary.txt').write_text('partial native output\n')
             raise RuntimeError('interrupted')
         self.interrupt = crash
+
+        def plugins():
+            return {path: value for path, value in self.snapshot().items() if path.parts[:3] == ('home', '.codex', 'plugins')}
+
         with self.assertRaises(RuntimeError):
             self.run_apply()
-        before = self.snapshot()
+        before = plugins()
         current = plan(self.setup, self.device)
-        self.assertEqual(current.exit_code, 2)
-        with self.assertRaises(RuntimeError):
+        self.assertEqual(current.exit_code, 1)
+        with self.assertRaisesRegex(ConcurrentEdit, '^Unverified existing content preserved: plugin:codex:kit@personal;'):
             self.run_apply(current)
-        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(plugins(), before)
         self.assertEqual((self.installed() / 'ordinary.txt').read_text(), 'partial native output\n')
 
     def assert_catalog_rebuilt_without_reinstalling(self):
@@ -1679,25 +1545,20 @@ class InstallationTest(unittest.TestCase):
         self.roots.claude_home.mkdir(parents=True)
         self.claude_settings().write_text(json.dumps({'extraKnownMarketplaces': {'personal-collections': {
             'source': {'source': 'directory', 'path': str(catalog)}}}}), encoding='utf-8')
-        installed = []
+        self.claude_plugin = plugin
 
         def observe(command, **_):
             if command[-1] == '--version':
                 return 'claude-test\n'
             if command[-4:] == ['plugin', 'list', '--available', '--json']:
                 switches = self.claude_switches()
-                return json.dumps({'installed': [{**record, 'enabled': switches.get(record['id'], False)}
-                                                 for record in installed], 'available': []})
+                return claude_listing(self.roots, lambda identity: switches.get(identity, False))
             raise AssertionError(command)
 
         def native(operation, host, *args):
             self.calls.append((host, args))
             if args[:2] in (('plugin', 'install'), ('plugin', 'update')):
-                release = operation.claude[plugin]
-                destination = self.roots.claude_home / 'plugins/cache/personal-collections/kit' / release.version
-                shutil.copytree(release.root, destination)
-                installed[:] = [{'id': plugin, 'scope': 'user', 'version': release.version,
-                                 'installPath': str(destination)}]
+                destination = claude_install(self.roots, plugin, operation.claude[plugin])
                 if self.interrupt:
                     self.interrupt(destination)
                 self.switch_claude_on()
@@ -2082,27 +1943,9 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual(self.run_apply().exit_code, 0)
         self.assertEqual(path.stat().st_mtime_ns, before)
 
-    def test_interrupted_tree_swap_recovers_its_recorded_stage(self):
-        self.run_apply()
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
-        rename = Path.rename
-        failed = False
-
-        def crash(path, target):
-            nonlocal failed
-            if path.name == 'staged' and not failed:
-                failed = True
-                raise RuntimeError('between tree renames')
-            return rename(path, target)
-        with patch.object(Path, 'rename', crash), self.assertRaisesRegex(RuntimeError, 'between tree renames'):
-            self.run_apply()
-        self.assertFalse(self.installed().exists())
-        self.calls.clear()
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the reviewed replacement', (self.installed() / 'skills/one/SKILL.md').read_text())
-        self.assertFalse(any(args[:2] == ('plugin', 'add') for _, args in self.calls))
-
-    def _interrupted_claude_install(self, *, aligned=False, implicit=False):
+    def _claude_kit(self, *, aligned=False, implicit=False):
+        """Release the kit to Claude Code alone, on a Claude Code whose CLI keeps its install record as
+        `claude_install` and `claude_listing` do. Gives the folder of the release, where its native install goes."""
         from claude_host import ClaudeState
         from sync_sources import Built
 
@@ -2116,8 +1959,8 @@ class InstallationTest(unittest.TestCase):
             alignment = self.source / '.claude-plugin/codex-alignment.json'
             alignment.parent.mkdir()
             alignment.write_text('{"excludedSkillNames": []}')
-        # The kit's tool notes make the installed image differ from the release, which the interrupted swaps here
-        # need. A real description refuses tool notes for an engine install, since Claude Code runs the release.
+        # The kit's tool notes make the installed image differ from the release, so the engine writes a folder of its
+        # own. A real description refuses tool notes for an engine install, since Claude Code runs the release.
         package = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', self.roots.tree_digest(self.source)), codex=None,
                           claude=ClaudePlacement((AlignedInstall(True) if aligned else EngineInstall(True),)),
                           modes={} if implicit else {'one': SkillMode.EXPLICIT})
@@ -2131,24 +1974,19 @@ class InstallationTest(unittest.TestCase):
         (self.roots.claude_home / 'settings.json').write_text(json.dumps({
             'extraKnownMarketplaces': {marketplace_name: {'source': {
                 'source': 'directory', 'path': str(marketplace)}}}}))
-        inventory = []
+        self.claude_plugin = plugin
 
         def observe_command(command, **_):
             if command[-1] == '--version':
                 return 'claude-test\n'
             if command[-4:] == ['plugin', 'list', '--available', '--json']:
-                return json.dumps({'installed': inventory, 'available': []})
+                return claude_listing(self.roots, lambda _: True)
             raise AssertionError(command)
 
         def native_command(operation, host, *args):
             self.calls.append((host, args))
             if args[:2] in (('plugin', 'install'), ('plugin', 'update')):
-                release = operation.claude[plugin]
-                destination = self.roots.claude_home / 'plugins/cache' / marketplace_name / 'kit' / release.version
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(release.root, destination, dirs_exist_ok=True)
-                inventory[:] = [{'id': plugin, 'scope': 'user', 'enabled': True,
-                                 'version': release.version, 'installPath': str(destination)}]
+                destination = claude_install(self.roots, plugin, operation.claude[plugin])
                 if self.interrupt:
                     self.interrupt(destination)
             return ''
@@ -2162,41 +2000,476 @@ class InstallationTest(unittest.TestCase):
             shutil.copytree(codex.root, release)
             return {plugin: Built('kit', release, version, builder.roots.tree_digest(release))}
 
-        rename = Path.rename
-        failed = False
-
-        def crash(path, target):
-            nonlocal failed
-            if path.name == 'staged' and not failed:
-                failed = True
-                raise RuntimeError('between tree renames')
-            return rename(path, target)
-
         patch('claude_host.run', observe_command).start()
         patch('sync_hosts.Apply.command', native_command).start()
         patch.object(Builder, 'claude', build_claude).start()
-        if aligned:
-            self.assertEqual(self.run_apply().exit_code, 0)
-            (self.source / 'ordinary.txt').write_text('revised release bytes\n')
-            package = replace(package, source=LocalSource('owned/kit', self.roots.tree_digest(self.source)))
-            lock = replace(lock, intent=intent(package, {}),
-                           trees={Host.CLAUDE: LockedTree('1.0.0', self.roots.tree_digest(self.source))})
-            self.setup = replace(self.setup, packages={'kit': package}, lock={'kit': lock})
-        with patch.object(Path, 'rename', crash), self.assertRaisesRegex(RuntimeError, 'between tree renames'):
-            self.run_apply()
-        destination = self.roots.claude_home / 'plugins/cache' / marketplace_name / 'kit/1.0.0'
-        self.assertFalse(destination.exists())
-        return destination
+        return self.roots.claude_home / 'plugins/cache' / marketplace_name / 'kit/1.0.0'
 
-    def _pending_claude_receipt(self):
+    def _claude_receipt(self):
         return next(path for path in self.receipt_paths()
-                    if json.loads(path.read_bytes())['identity'] == 'plugin:claude:kit@personal-collections')
+                    if json.loads(path.read_bytes())['identity'] == f'plugin:claude:{self.claude_plugin}')
 
-    def _installed_claude(self):
-        destination = self._interrupted_claude_install()
+    def claude_loads(self):
+        """The folder Claude Code loads the kit from: the one its install record's user-scope entry names."""
+        return Path(claude_entry(self.roots, self.claude_plugin)['installPath'])
+
+    def _installed_claude(self, **kit):
+        self._claude_kit(**kit)
         self.assertEqual(self.run_apply().exit_code, 0)
         self.calls.clear()
-        return destination
+        return self.claude_loads()
+
+    def left_aside_by_an_earlier_engine(self, loaded, receipt):
+        """Turn a plugin that a host loads from loaded into what an earlier engine left when its in-place replacement
+        stopped between its two moves: the release folder moved into a work folder beside a stage, as the only folder
+        of the plugin, and a receipt whose pending record names both. Gives the release folder and the work folder."""
+        release = loaded.parent / '1.0.0'
+        if loaded != release:
+            shutil.rmtree(release)
+        work = release.parent / ('.sync-1.0.0-' + 'ab' * 16)
+        work.mkdir()
+        loaded.rename(work / 'displaced')
+        shutil.copytree(work / 'displaced', work / 'staged')
+        value = json.loads(receipt.read_bytes())
+        accepted = {**value['accepted'], 'path': str(release)}
+        tree = accepted['image']
+        value.update(accepted=accepted, pending={
+            'before': tree, 'before_path': str(release), 'bindings': accepted['bindings'], 'destination_before': tree,
+            'target': accepted, 'pristine': tree, 'staged': str(work / 'staged'), 'displaced': str(work / 'displaced'),
+            'swap_before': tree})
+        receipt.write_text(json.dumps(value))
+        return release, work
+
+    def legacy_claude_swap_aside(self, **kit):
+        """left_aside_by_an_earlier_engine for the Claude cache, whose install record names the release folder."""
+        release, work = self.left_aside_by_an_earlier_engine(self._installed_claude(**kit), self._claude_receipt())
+        self.point_claude_at(release)
+        return release, work
+
+    def point_claude_at(self, folder):
+        data = json.loads(claude_records(self.roots).read_text())
+        entry, = (entry for entry in data['plugins'][self.claude_plugin] if entry['scope'] == 'user')
+        entry['installPath'] = str(folder)
+        claude_records(self.roots).write_text(json.dumps(data))
+
+    def state_of(self, folder):
+        """Each entry of folder, and the folder itself, with its modification time and its bytes if a file."""
+        return {path.relative_to(folder): (path.lstat().st_mtime_ns, path.read_bytes() if path.is_file() else None)
+                for path in (folder, *folder.rglob('*'))}
+
+    def test_a_release_gets_a_version_folder_of_its_own_that_codex_loads(self):
+        with stopped_clock(datetime(2026, 11, 14, 19, 0, 0, 250, tzinfo=timezone.utc)):
+            self.assertEqual(self.run_apply().exit_code, 0)
+        release, loaded = self.host.installed['kit@personal'][1], self.installed()
+        self.assertEqual((release.name, loaded.parent), ('1.0.0', release.parent))
+        accepted = json.loads(self.receipt_of('plugin:').read_bytes())['accepted']
+        # The digest of the image in its canonical encoding, so a later release can verify a folder this one named.
+        canonical = json.dumps(accepted['image'], sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
+        self.assertEqual(loaded.name, f'1.0.0+notes.20261114T190000Z.{hashlib.sha256(canonical).hexdigest()[:12]}')
+        self.assertIn('use the local reader', (loaded / 'skills/one/SKILL.md').read_text())
+        self.assertNotIn('use the local reader', (release / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(accepted['path'], str(loaded))
+        self.assertEqual(list(release.parent.parent.glob('.sync-*')), [])
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
+    def test_a_change_leaves_the_folder_codex_loaded_as_it_was(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        first = self.installed()
+        before = self.state_of(first)
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertNotEqual(self.installed(), first)
+        self.assertIn('use the reviewed replacement', (self.installed() / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(self.state_of(first), before)
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
+    def test_a_rollback_gets_a_newer_folder_than_the_one_that_held_its_content_before(self):
+        notes = self.setup.note_rules
+        with stopped_clock(datetime(2026, 11, 14, 19, 0, 0, tzinfo=timezone.utc)):
+            self.assertEqual(self.run_apply().exit_code, 0)
+            first = self.installed()
+            self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+            self.assertEqual(self.run_apply().exit_code, 0)
+            second = self.installed()
+            self.setup = replace(self.setup, note_rules=notes)
+            self.assertEqual(self.run_apply().exit_code, 0)
+        third = self.installed()
+        self.assertEqual([folder.name.split('.')[-2] for folder in (first, second, third)],
+                         ['20261114T190000Z', '20261114T190001Z', '20261114T190002Z'])
+        self.assertEqual(third.name.split('.')[-1], first.name.split('.')[-1])
+        self.assertEqual((third / 'skills/one/SKILL.md').read_bytes(), (first / 'skills/one/SKILL.md').read_bytes())
+        self.assertTrue(second.is_dir())
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
+    def test_a_folder_windows_refuses_to_move_into_place_waits_with_the_loaded_folder_kept(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        first = self.installed()
+        npmrc = self.release_a_setting_written_after_the_plugins()
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        with self.refusing(moves=lambda source, target: source.name == 'staged' and target.parent == first.parent) \
+                as refusals:
+            result = self.run_apply()
+        self.assertEqual((result.exit_code, result.blocked), (1, ()))
+        [held] = result.held
+        # The stage waits outside the plugin's folder, where neither host reads versions.
+        self.assertEqual((type(held), held.path, held.into.parent, held.path.parent.parent),
+                         (accepted_installations.HeldMove, Path(refusals[-1].filename), first.parent, first.parent.parent))
+        self.assertEqual(held.line, (
+            f'Move refused: {held.path}: Windows refused its move to {held.into} on each of {ATTEMPTS} tries over '
+            f'{WAITED:g} seconds ({refusals[-1]}), as it does while a program holds a file in the folder being moved '
+            f'open, or while access rules forbid the move; {held.into} was not created, the folder the app loads '
+            'stays in use, and the next pull tries again'))
+        self.assertEqual(len(refusals), ATTEMPTS)
+        self.assertFalse(held.into.exists())
+        self.assertEqual(self.installed(), first)
+        self.assertEqual(list(first.parent.parent.glob('.sync-*')), [])
+        self.assertEqual(npmrc.read_text(), 'min-release-age=3\n')
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the reviewed replacement', (self.installed() / 'skills/one/SKILL.md').read_text())
+        self.assertIn('use the local reader', (first / 'skills/one/SKILL.md').read_text())
+
+    def test_an_upstream_release_is_installed_natively_once_and_gets_a_folder_of_its_own(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        first = self.installed()
+        self.release_version('2.0.0', 'second release bytes\n')
+        self.calls.clear()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual([args[:3] for _, args in self.calls if args[:2] == ('plugin', 'add')],
+                         [('plugin', 'add', 'kit@personal')])
+        loaded = self.installed()
+        self.assertEqual((loaded.parent, loaded.name.startswith('2.0.0+notes.')), (first.parent, True))
+        self.assertEqual((loaded / 'ordinary.txt').read_text(), 'second release bytes\n')
+        self.assertIn('use the local reader', (loaded / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(sorted(path.name for path in first.parent.iterdir()), ['2.0.0', loaded.name])
+        self.calls.clear()
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(self.calls, [])
+
+    def test_a_codex_plugin_an_earlier_engine_left_moved_aside_gets_a_folder_of_its_own(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        release, work = self.left_aside_by_an_earlier_engine(self.installed(), self.receipt_of('plugin:'))
+        # Codex lists the work folder when it is the plugin's only folder.
+        self.assertEqual(self.installed(), work)
+        self.calls.clear()
+        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
+        self.assertEqual(self.apply_reporting(),
+                         f'Work folders left in place: {work}: an earlier engine replaced plugin:codex:kit@personal in '
+                         'place there, and this one leaves those folders as they are\n')
+        self.assertEqual(self.calls, [])
+        self.assertEqual((self.installed().parent, self.installed().name.startswith('1.0.0+notes.')),
+                         (release.parent, True))
+        self.assertIn('use the local reader', (self.installed() / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(sorted(path.name for path in work.iterdir()), ['displaced', 'staged'])
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
+    def replaced_in_place_by_an_earlier_engine(self):
+        """Install, then turn the plugin into what an earlier engine left after it replaced the release folder in
+        place: the receipt names that folder, and a work folder beside it holds the backup the receipt names. Gives
+        the release folder, the receipt as saved, and the work folder."""
+        self.assertEqual(self.run_apply().exit_code, 0)
+        loaded = self.installed()
+        release = loaded.parent / '1.0.0'
+        shutil.rmtree(release)
+        loaded.rename(release)
+        work = release.parent / ('.sync-1.0.0-' + 'ab' * 16)
+        receipt = self.receipt_of('plugin:')
+        value = json.loads(receipt.read_bytes())
+        value['accepted'] = {**value['accepted'], 'path': str(release), 'backup': str(work / 'displaced'),
+                             'backup_image': value['accepted']['image']}
+        receipt.write_text(json.dumps(value))
+        return release, value, work
+
+    def test_each_state_an_earlier_engine_s_replacement_stopped_in_is_known_and_any_other_blocks(self):
+        release, saved, _ = self.replaced_in_place_by_an_earlier_engine()
+        held = accepted_installations.image(release)
+        other = {'kind': 'tree', 'entries': {'other.txt': {'kind': 'file', 'sha256': 'sha256:' + '0' * 64}}}
+        accepted = {**saved['accepted'], 'image': other}
+        work = release.parent / ('.sync-1.0.0-' + 'cd' * 16)
+        # A newer release, so that only the receipt's record of the stopped replacement vouches for the folder.
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        for known in (None, 'destination_before', 'pristine', 'target', 'before'):
+            with self.subTest(known=known):
+                tree = {name: held if name == known else other
+                        for name in ('before', 'destination_before', 'pristine', 'target')}
+                pending = {'before': tree['before'], 'before_path': str(release), 'bindings': accepted['bindings'],
+                           'destination_before': tree['destination_before'], 'pristine': tree['pristine'],
+                           'target': {**accepted, 'image': tree['target']}, 'staged': str(work / 'staged'),
+                           'displaced': str(work / 'displaced'), 'swap_before': other}
+                self.receipt_of('plugin:').write_text(json.dumps({**saved, 'accepted': accepted, 'pending': pending}))
+                current = plan(self.setup, self.device)
+                if known:
+                    self.assertEqual((current.blocked, [d.detail for d in current.changes]),
+                                     ((), ['plugin:codex:kit@personal: Write a folder of its own beside the replacement '
+                                           'an earlier engine left unfinished']))
+                else:
+                    self.assertEqual([d.detail for d in current.blocked],
+                                     ['plugin:codex:kit@personal: Unverified existing content preserved: '
+                                      'plugin:codex:kit@personal; an independently pinned baseline is required'])
+        self.assertEqual(self.run_apply(current).exit_code, 0)
+        self.assertIn('use the reviewed replacement', (self.installed() / 'skills/one/SKILL.md').read_text())
+        self.assertIn('use the local reader', (release / 'skills/one/SKILL.md').read_text())
+
+    def test_the_backup_an_earlier_engine_kept_beside_a_plugin_is_named_once_and_left_in_place(self):
+        release, _, work = self.replaced_in_place_by_an_earlier_engine()
+        shutil.copytree(release, work / 'displaced')
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.assertEqual(self.apply_reporting(),
+                         f'Work folders left in place: {work}: an earlier engine replaced plugin:codex:kit@personal in '
+                         'place there, and this one leaves those folders as they are\n')
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the second replacement'),))
+        self.assertEqual(self.apply_reporting(), '')
+        self.assertIn('use the second replacement', (self.installed() / 'skills/one/SKILL.md').read_text())
+        self.assertEqual([path.name for path in work.iterdir()], ['displaced'])
+        self.assertIn('use the local reader', (release / 'skills/one/SKILL.md').read_text())
+
+    def test_a_backup_an_earlier_engine_named_that_is_gone_is_not_named(self):
+        self.replaced_in_place_by_an_earlier_engine()
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.assertEqual(self.apply_reporting(), '')
+        self.assertIn('use the reviewed replacement', (self.installed() / 'skills/one/SKILL.md').read_text())
+
+    def test_a_folder_that_appears_where_the_new_folder_goes_while_windows_holds_the_move_stays(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        first = self.installed()
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        refused = []
+        with patch.object(portable, 'RETRIES_REFUSALS', True), \
+                patch.object(portable.time, 'sleep', lambda seconds: refused[0].mkdir()), self.refused_once(refused), \
+                self.assertRaisesRegex(ConcurrentEdit, '^Tree changed during replacement: '):
+            self.run_apply()
+        self.assertEqual(list(refused[0].iterdir()), [])
+        self.assertIn('use the local reader', (first / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(list(first.parent.parent.glob('.sync-*')), [])
+
+    def test_a_new_folder_edited_before_its_receipt_is_saved_stops_and_is_not_accepted(self):
+        from accepted_installations import AcceptedInstallations
+        self.assertEqual(self.run_apply().exit_code, 0)
+        write = AcceptedInstallations._write_folder
+
+        def edited(owner, prepared):
+            folder = write(owner, prepared)
+            (folder / 'ordinary.txt').write_text('edited as it appeared\n')
+            return folder
+
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        with patch.object(AcceptedInstallations, '_write_folder', edited), self.assertRaisesRegex(
+                ConcurrentEdit, '^Effective output failed verification: plugin:codex:kit@personal$'):
+            self.run_apply()
+        with self.assertRaisesRegex(ConcurrentEdit, 'Unverified existing content preserved: plugin:codex:kit@personal;'):
+            self.run_apply()
+        self.assertEqual((self.installed() / 'ordinary.txt').read_text(), 'edited as it appeared\n')
+
+    def test_a_change_that_leaves_a_plugin_s_bytes_as_they_are_writes_no_folder(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        loaded = self.installed()
+        folders, state = sorted(loaded.parent.iterdir()), self.state_of(loaded)
+        self.setup = replace(self.setup, note_rules=(*self.setup.note_rules, NoteRule('Grep', 'a tool the kit never names')))
+        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual((sorted(loaded.parent.iterdir()), self.state_of(loaded)), (folders, state))
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
+    def test_a_plugin_stage_edited_before_its_move_stops_and_writes_no_folder(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        first = self.installed()
+        folders = sorted(first.parent.iterdir())
+        copy = accepted_installations.copy_tree
+
+        def edited(source, destination, *args):
+            copy(source, destination, *args)
+            if destination.name == 'staged':
+                (destination / 'ordinary.txt').write_text('edited in the stage\n')
+
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        with patch('accepted_installations.copy_tree', edited), \
+                self.assertRaisesRegex(ConcurrentEdit, '^Prepared stage was edited: '):
+            self.run_apply()
+        self.assertEqual(sorted(first.parent.iterdir()), folders)
+
+    def test_a_sync_stopped_after_the_native_install_of_a_new_release_is_finished_by_the_next_run(self):
+        from accepted_installations import AcceptedInstallations
+        self.assertEqual(self.run_apply().exit_code, 0)
+        first = self.installed()
+        self.release_version('2.0.0', 'second release bytes\n')
+        with patch.object(AcceptedInstallations, '_write_folder', side_effect=RuntimeError('stopped')), \
+                self.assertRaisesRegex(RuntimeError, 'stopped'):
+            self.run_apply()
+        self.assertEqual(self.installed(), first.parent / '2.0.0')
+        self.calls.clear()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual([args for _, args in self.calls if args[:2] == ('plugin', 'add')], [])
+        self.assertEqual((self.installed() / 'ordinary.txt').read_text(), 'second release bytes\n')
+        self.assertTrue(self.installed().name.startswith('2.0.0+notes.'))
+
+    def stopped_before_the_plugin_receipt(self):
+        """Run a sync of the reviewed replacement that stops after it pointed the host at the plugin's new folder and
+        before it saved the plugin's receipt, as a closed terminal or a full disk stops one."""
+        from accepted_installations import AcceptedInstallations
+        save = AcceptedInstallations._save
+
+        def stopped(owner, artifact, accepted, pending=None):
+            if artifact.kind == 'plugin':
+                raise RuntimeError('stopped before the receipt')
+            return save(owner, artifact, accepted, pending)
+
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        with patch.object(AcceptedInstallations, '_save', stopped), \
+                self.assertRaisesRegex(RuntimeError, 'stopped before the receipt'):
+            self.run_apply()
+
+    def test_a_sync_stopped_after_the_new_folder_appeared_accepts_it_without_another(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.stopped_before_the_plugin_receipt()
+        written = self.installed()
+        folders = sorted(written.parent.iterdir())
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual((self.installed(), sorted(written.parent.iterdir())), (written, folders))
+        self.assertEqual(json.loads(self.receipt_of('plugin:').read_bytes())['accepted']['path'], str(written))
+
+    def test_a_folder_a_stopped_sync_left_codex_loading_is_the_baseline_for_a_newer_release(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        first = self.installed()
+        self.stopped_before_the_plugin_receipt()
+        written = self.installed()
+        self.assertNotEqual(written, first)
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the second replacement'),))
+        current = plan(self.setup, self.device)
+        self.assertEqual((current.exit_code, current.blocked), (1, ()))
+        self.assertEqual(self.run_apply(current).exit_code, 0)
+        self.assertIn('use the second replacement', (self.installed() / 'skills/one/SKILL.md').read_text())
+        self.assertIn('use the reviewed replacement', (written / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
+    def test_a_folder_a_stopped_sync_left_claude_loading_is_the_baseline_for_a_newer_release(self):
+        first = self._installed_claude()
+        self.stopped_before_the_plugin_receipt()
+        written = self.claude_loads()
+        self.assertNotEqual(written, first)
+        # A session that started on the new folder holds a lease there, which its image leaves out.
+        own_lease(written / '.in_use')
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the second replacement'),))
+        current = plan(self.setup, self.device)
+        self.assertEqual((current.exit_code, current.blocked), (1, ()))
+        self.assertEqual(self.run_apply(current).exit_code, 0)
+        self.assertIn('use the second replacement', (self.claude_loads() / 'skills/one/SKILL.md').read_text())
+        self.assertIn('use the reviewed replacement', (written / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
+    def test_a_folder_a_stopped_sync_left_loaded_and_then_edited_blocks_a_newer_release(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.stopped_before_the_plugin_receipt()
+        written = self.installed()
+        (written / 'ordinary.txt').write_text('edited after the stopped sync\n')
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the second replacement'),))
+        with self.assertRaisesRegex(ConcurrentEdit, 'Unverified existing content preserved: plugin:codex:kit@personal;'):
+            self.run_apply()
+        self.assertEqual((self.installed(), (written / 'ordinary.txt').read_text()),
+                         (written, 'edited after the stopped sync\n'))
+
+    def test_a_claude_session_marker_in_the_folder_an_earlier_engine_moved_aside_does_not_block(self):
+        release, _ = self.legacy_claude_swap_aside()
+        release.mkdir()
+        lease = own_lease(release / '.in_use')
+        current = plan(self.setup, self.device)
+        self.assertEqual((current.exit_code, current.blocked), (1, ()))
+        self.apply_reporting(current)
+        self.assertNotEqual(self.claude_loads(), release)
+        self.assertTrue(lease.exists())
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
+    def test_a_claude_record_repointed_during_the_sync_stops_it_before_any_write(self):
+        first = self._installed_claude()
+        release = first.parent / '1.0.0'
+        read = accepted_installations.contents
+
+        def repointed(path):
+            if path == claude_records(self.roots):
+                self.point_claude_at(release)
+            return read(path)
+
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        names = sorted(path.name for path in first.parent.iterdir())
+        with patch('accepted_installations.contents', repointed), self.assertRaisesRegex(
+                ConcurrentEdit, f"^Claude Code's install record does not name {re.escape(str(first))} for plugin:claude:"):
+            self.run_apply()
+        self.assertEqual(sorted(path.name for path in first.parent.iterdir()), names)
+        self.assertEqual(self.claude_loads(), release)
+
+    def test_a_claude_change_points_the_record_at_a_new_folder_and_leaves_the_running_one_alone(self):
+        first = self._installed_claude()
+        lease = own_lease(first / '.in_use')
+        data = json.loads(claude_records(self.roots).read_text())
+        project = {'scope': 'project', 'projectPath': str(self.root / 'project'), 'installPath': str(first),
+                   'version': '1.0.0'}
+        data['plugins'][self.claude_plugin].append(project)
+        claude_records(self.roots).write_text(json.dumps(data))
+        entry = claude_entry(self.roots, self.claude_plugin)
+        before = self.state_of(first)
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        result = self.run_apply()
+        self.assertEqual((result.exit_code, result.held), (0, ()))
+        folder = self.claude_loads()
+        self.assertEqual((folder.parent, folder.name.startswith('1.0.0-notes.')), (first.parent, True))
+        self.assertIn('use the reviewed replacement', (folder / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(json.loads(claude_records(self.roots).read_text())['plugins'][self.claude_plugin],
+                         [{**entry, 'installPath': str(folder)}, project])
+        self.assertEqual(self.state_of(first), before)
+        self.assertTrue(lease.exists())
+        self.assertEqual(self.calls, [])
+        unchanged = self.snapshot()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(self.snapshot(), unchanged)
+
+    def test_a_claude_record_changed_while_the_folder_is_written_stays_as_changed_until_the_next_run(self):
+        from accepted_installations import AcceptedInstallations
+        first = self._installed_claude()
+        write = AcceptedInstallations._write_folder
+
+        def meanwhile(owner, prepared):
+            folder = write(owner, prepared)
+            data = json.loads(claude_records(self.roots).read_text())
+            data['plugins'][self.claude_plugin][0]['lastUpdated'] = '2026-11-14T19:00:00.000Z'
+            claude_records(self.roots).write_text(json.dumps(data))
+            return folder
+
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        with patch.object(AcceptedInstallations, '_write_folder', meanwhile), self.assertRaisesRegex(
+                ConcurrentEdit, f'^Changed during sync: {re.escape(str(claude_records(self.roots)))}$'):
+            self.run_apply()
+        self.assertEqual(self.claude_loads(), first)
+        self.assertEqual(claude_entry(self.roots, self.claude_plugin)['lastUpdated'], '2026-11-14T19:00:00.000Z')
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('use the reviewed replacement', (self.claude_loads() / 'skills/one/SKILL.md').read_text())
+        self.assertEqual(claude_entry(self.roots, self.claude_plugin)['lastUpdated'], '2026-11-14T19:00:00.000Z')
+
+    def test_an_upstream_release_on_claude_is_updated_natively_once_and_gets_a_folder_of_its_own(self):
+        first = self._installed_claude()
+        self.release_version('2.0.0', 'second release bytes\n')
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual([args[:2] for _, args in self.calls if args[:2] in (('plugin', 'install'), ('plugin', 'update'))],
+                         [('plugin', 'update')])
+        folder = self.claude_loads()
+        self.assertEqual((folder.parent, folder.name.startswith('2.0.0-notes.')), (first.parent, True))
+        self.assertEqual((folder / 'ordinary.txt').read_text(), 'second release bytes\n')
+        self.assertEqual(claude_entry(self.roots, self.claude_plugin)['version'], '2.0.0')
+        self.assertTrue(first.is_dir())
+        self.calls.clear()
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(self.calls, [])
+
+    def test_a_claude_record_that_is_not_json_stops_the_sync_without_writes(self):
+        self._installed_claude()
+        claude_records(self.roots).write_text('{not json')
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        before = self.snapshot()
+        current = plan(self.setup, self.device)
+        self.assertEqual(current.exit_code, 3)
+        with self.assertRaises(RuntimeError):
+            self.run_apply(current)
+        self.assertEqual(self.snapshot(), before)
 
     def test_an_edit_to_the_folder_claude_code_runs_blocks_like_a_cache_edit(self):
         self._installed_claude()
@@ -2222,7 +2495,7 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual(self.run_apply().exit_code, 0)
         self.assertEqual(self.snapshot(), before)
         self.assertEqual(self.calls, [])
-        receipt = self._pending_claude_receipt()
+        receipt = self._claude_receipt()
         receipt.unlink()
         self.assertEqual(self.run_apply().exit_code, 0)
         accepted = json.loads(receipt.read_bytes())['accepted']['image']['entries']
@@ -2232,222 +2505,23 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
         self.assertEqual(self.calls, [])
 
-    def test_claude_malformed_runtime_metadata_blocks_without_writes(self):
+    def test_claude_session_markers_read_as_unchanged_content_whatever_they_hold(self):
         destination = self._installed_claude()
-        cases = [
-            ('.in_use', b'17'),
-            ('.orphaned_at', None),
-            ('.orphaned_at', b''),
-            ('.orphaned_at', b'1792091304500\n'),
-            ('.orphaned_at', b'8640000000000001'),
-            ('.in_use/notes.txt', b'{"pid":17}'),
-            ('.in_use/17/child', b'{"pid":17}'),
-            ('.in_use/17', b'not json'),
-            ('.in_use/17', '{"pid":17}'.encode('utf-16')),
-            ('.in_use/17', b'{}'),
-            ('.in_use/17', b'{"pid":18}'),
-            ('.in_use/17', b'{"pid":true}'),
-            ('.in_use/17', b'{"pid":17,"procStart":17}'),
-            ('.in_use/17', b'{"pid":17,"procStartFt":null}'),
-            ('.in_use/17', b'{"pid":17,"other":"user content"}'),
-            ('.in_use/17', b'{"pid":18,"pid":17}'),
-            ('.in_use/2147483648', b'{"pid":2147483648}'),
-            ('.in_use/17.tmp.1234ABCD', b'{"pid":17}'),
-            ('.in_use/17.tmp.1234abcd', b''),
-            ('.in_use/17.tmp.1234abcd', b'{"pid":17,"procStart":"' + b'0' * 4096 + b'"}'),
-        ]
+        # Claude Code writes a lease as <pid>.tmp.<8 hex> and renames it, so a sync can meet one empty or part-written,
+        # as a finish on WSL did on 14 November 2026.
+        cases = [('.in_use/2512477.tmp.45e56d19', b''), ('.in_use/2512477.tmp.45e56d19', b'{"pid":2512'),
+                 ('.in_use/17', b'not json'), ('.orphaned_at', b'not a time')]
         for name, data in cases:
-            with self.subTest(name=name, data=data[:80] if data else data):
+            with self.subTest(name=name, data=data):
                 entry = destination / name
                 entry.parent.mkdir(parents=True, exist_ok=True)
-                entry.mkdir() if data is None else entry.write_bytes(data)
+                entry.write_bytes(data)
                 before = self.snapshot()
-                current = plan(self.setup, self.device)
-                self.assertEqual(current.exit_code, 2)
-                with self.assertRaisesRegex(RuntimeError, 'blocked'):
-                    self.run_apply(current)
-                self.assertEqual(self.snapshot(), before)
+                self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+                self.assertEqual(self.run_apply().exit_code, 0)
+                self.assertEqual((self.snapshot(), self.calls), (before, []))
                 top = destination / Path(name).parts[0]
                 shutil.rmtree(top) if top.is_dir() else top.unlink()
-
-    def test_claude_runtime_links_are_rejected(self):
-        destination = self._installed_claude()
-        external = self.root / 'external-marker'
-        external.write_text('{"pid":17}')
-        external_directory = self.root / 'external-leases'
-        external_directory.mkdir()
-        for name, target, hardlink in [('.in_use', external_directory, False),
-                                       ('.in_use/17', external, False),
-                                       ('.in_use/17', external, True),
-                                       ('.orphaned_at', external, False)]:
-            with self.subTest(name=name, hardlink=hardlink):
-                entry = destination / name
-                entry.parent.mkdir(parents=True, exist_ok=True)
-                entry.hardlink_to(target) if hardlink else entry.symlink_to(target, target_is_directory=target.is_dir())
-                self.assertEqual(plan(self.setup, self.device).exit_code, 2)
-                self.assertEqual(external.read_text(), '{"pid":17}')
-                entry.unlink()
-                if entry.parent.name == '.in_use':
-                    entry.parent.rmdir()
-
-    def test_claude_lease_disappearing_during_read_is_a_noop(self):
-        destination = self._installed_claude()
-        lease = destination / '.in_use/17'
-        lease.parent.mkdir()
-        lease.write_text('{"pid":17,"procStart":"42"}')
-        read_bytes = Path.read_bytes
-
-        def released(path):
-            if path == lease:
-                path.unlink()
-            return read_bytes(path)
-
-        with patch.object(Path, 'read_bytes', released):
-            self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
-        self.assertEqual(tuple(lease.parent.iterdir()), ())
-        self.assertEqual(self.calls, [])
-
-    def held(self):
-        from accepted_installations import AcceptedInstallations
-        owner = AcceptedInstallations(self.setup.for_platform(self.device.platform), self.device)
-        return owner.held_replacements(plan(self.setup, self.device).observations)
-
-    def assert_held(self, destination):
-        """Apply while this test's process holds the cache: the rest of the release applies, and the cache
-        waits as it was for a later pull."""
-        result = self.run_apply()
-        self.assertEqual(result.exit_code, 1)
-        self.assertEqual([(type(held), held.path, held.holders, held.line) for held in result.held],
-                         [(accepted_installations.HeldCache, destination, (os.getpid(),),
-                           f'Claude lease: {destination}, held by running Claude processes {os.getpid()}, stays as '
-                           'it is; the first pull after they exit replaces it')])
-        return result
-
-    def revise_release(self, text):
-        """Release new bytes for the kit's file outside its skills at the same version, a change running Claude
-        sessions hold its cache against."""
-        (self.source / 'ordinary.txt').write_text(text)
-        digest = self.roots.tree_digest(self.source)
-        package = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
-        lock = replace(self.setup.lock['kit'], intent=intent(package, {}), trees={Host.CLAUDE: LockedTree('1.0.0', digest)})
-        self.setup = replace(self.setup, packages={'kit': package}, lock={'kit': lock})
-
-    def test_a_claude_session_that_starts_while_windows_holds_the_cache_keeps_it(self):
-        destination = self._installed_claude()
-        self.revise_release('revised release bytes\n')
-        held = hold_built_trees_once(
-            self, meanwhile=lambda target: target.name == 'displaced' and own_lease(destination / '.in_use'))
-        self.assert_held(destination)
-        self.assertEqual([path.name for path in held], ['displaced'])
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
-
-    def test_claude_same_path_replacement_waits_for_a_running_holder(self):
-        destination = self._installed_claude()
-        lease = own_lease(destination / '.in_use')
-        marker = lease.read_text()
-        self.assertEqual(self.held(), [])
-        self.revise_release('revised release bytes\n')
-        holder = [('plugin:claude:kit@personal-collections', destination, (os.getpid(),))]
-        self.assertEqual(self.held(), holder)
-        self.assert_held(destination)
-        self.assertEqual(self.held(), holder)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
-        self.assertEqual(lease.read_text(), marker)
-        lease.unlink()
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'revised release bytes\n')
-        self.assertEqual(self.calls, [])
-
-    def test_a_held_claude_cache_leaves_the_rest_of_the_release_to_apply(self):
-        destination = self._installed_claude()
-        lease = own_lease(destination / '.in_use')
-        # The plugin comes before the configurations in the apply order, so a stop on it would leave the npm file.
-        self.revise_release('revised release bytes\n')
-        config_source = self.public / 'config/npm/npmrc.toml'
-        config_source.parent.mkdir(parents=True)
-        config_source.write_text('min-release-age = 3\n')
-        result = self.assert_held(destination)
-        self.assertEqual((self.roots.home / '.npmrc').read_text(), 'min-release-age=3\n')
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
-        self.assertEqual([d.detail for d in result.changes],
-                         ['plugin:claude:kit@personal-collections: Finish a verified pending replacement'])
-        lease.unlink()
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'revised release bytes\n')
-
-    def test_a_change_to_skill_text_alone_replaces_a_held_cache_and_keeps_its_leases(self):
-        destination = self._installed_claude()
-        lease = own_lease(destination / '.in_use')
-        marker = lease.read_text()
-        # Claude Code writes a marker under a temporary name and renames it in its folder, so that one stays.
-        writing = destination / '.in_use/29.tmp.0123abcd'
-        writing.write_text('{"pid":29,"procStartFt":"134044866000000000"}')
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
-        result = self.run_apply()
-        self.assertEqual((result.exit_code, result.held), (0, ()))
-        self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
-        self.assertEqual(lease.read_text(), marker)
-        backup = Path(json.loads(self._pending_claude_receipt().read_bytes())['accepted']['backup'])
-        self.assertEqual([path.name for path in (backup / '.in_use').iterdir()], [writing.name])
-        self.assertEqual(self.calls, [])
-        # The moved lease still holds the new folder against a change beyond the skill text.
-        self.revise_release('revised release bytes\n')
-        self.assert_held(destination)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
-
-    def test_a_pending_change_to_skill_text_alone_is_not_held(self):
-        destination = self._installed_claude()
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
-        rename = Path.rename
-
-        def crash(path, target):
-            if path == destination:
-                raise RuntimeError('before the swap')
-            return rename(path, target)
-
-        with patch.object(Path, 'rename', crash), self.assertRaisesRegex(RuntimeError, 'before the swap'):
-            self.run_apply()
-        self.assertIsNotNone(json.loads(self._pending_claude_receipt().read_bytes())['pending'])
-        lease = own_lease(destination / '.in_use')
-        self.assertEqual(self.held(), [])
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
-        self.assertTrue(lease.exists())
-
-    def test_a_skill_text_change_whose_cache_windows_refuses_to_move_while_a_session_runs_waits_at_each_sync(self):
-        destination = self._installed_claude()
-        lease = own_lease(destination / '.in_use')
-        marker = lease.read_text()
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
-        for _ in range(2):
-            with self.refusing(moves=moving_aside(destination)):
-                result = self.run_apply()
-            self.assertEqual((result.exit_code, [(type(held), held.path) for held in result.held]),
-                             (1, [(accepted_installations.HeldMove, destination)]))
-            self.assertEqual(self.held(), [])
-            self.assertEqual(lease.read_text(), marker)
-            self.assertIn('use the local reader', (destination / 'skills/one/SKILL.md').read_text())
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
-        self.assertEqual(lease.read_text(), marker)
-        self.assertEqual(self.calls, [])
-
-    def test_a_claude_version_bump_whose_new_tree_windows_refuses_to_move_into_place_stops_the_sync(self):
-        old = self._installed_claude()
-        (self.source / 'ordinary.txt').write_text('release 2.0.0\n')
-        digest = self.roots.tree_digest(self.source)
-        package = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
-        lock = replace(self.setup.lock['kit'], intent=intent(package, {}), trees={Host.CLAUDE: LockedTree('2.0.0', digest)})
-        self.setup = replace(self.setup, packages={'kit': package}, lock={'kit': lock})
-        npmrc = self.release_a_setting_written_after_the_plugins()
-        new = old.parent / '2.0.0'
-        with self.refusing(moves=moving_into_place(new)) as refusals, self.assertRaises(portable.StillHeld) as stopped:
-            self.run_apply()
-        self.assertIs(stopped.exception.__cause__, refusals[-1])
-        self.assertEqual([args[:2] for _, args in self.calls][-1], ('plugin', 'update'))
-        self.assertEqual((new / 'ordinary.txt').read_text(), 'release 2.0.0\n')
-        self.assertFalse(npmrc.exists())
 
     def stopped_between_the_moves(self):
         rename = Path.rename
@@ -2460,62 +2534,11 @@ class InstallationTest(unittest.TestCase):
         with patch.object(Path, 'rename', crash), self.assertRaisesRegex(RuntimeError, 'between the moves'):
             self.run_apply()
 
-    def test_a_change_to_skill_text_alone_that_a_later_run_finishes_keeps_its_leases(self):
-        destination = self._installed_claude()
-        lease = own_lease(destination / '.in_use')
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
-        self.stopped_between_the_moves()
-        self.assertFalse(destination.exists())
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
-        self.assertTrue(lease.exists())
-        self.revise_release('revised release bytes\n')
-        self.assert_held(destination)
-
-    def test_a_change_to_skill_text_alone_that_stopped_after_its_moves_keeps_its_leases(self):
-        destination = self._installed_claude()
-        lease = own_lease(destination / '.in_use')
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
-        rename = Path.rename
-
-        def crash(path, target):
-            result = rename(path, target)
-            if path.name == 'staged':
-                raise RuntimeError('after the moves')
-            return result
-
-        with patch.object(Path, 'rename', crash), self.assertRaisesRegex(RuntimeError, 'after the moves'):
-            self.run_apply()
-        self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
-        self.assertFalse(lease.exists())
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertTrue(lease.exists())
-        self.revise_release('revised release bytes\n')
-        self.assert_held(destination)
-
-    def test_a_new_tree_that_cannot_be_moved_into_place_by_the_run_that_finishes_a_swap_puts_the_old_tree_back(self):
-        destination = self._installed_claude()
-        self.revise_release('revised release bytes\n')
-        self.stopped_between_the_moves()
-        rename = os.rename
-
-        def refuse(source, target, *args, **kwargs):
-            if Path(source).name == 'staged':
-                raise PermissionError(13, 'Access is denied', str(target))
-            return rename(source, target, *args, **kwargs)
-
-        with patch.object(portable, 'RETRIES_REFUSALS', False), patch('os.rename', refuse), \
-                self.assertRaises(PermissionError):
-            self.run_apply()
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'revised release bytes\n')
-
     def test_a_run_that_resumes_a_swap_and_cannot_save_its_receipt_puts_the_old_tree_back(self):
         from accepted_installations import AcceptedInstallations
         self.assertEqual(self.run_apply().exit_code, 0)
-        installed = self.installed()
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        installed = self.roots.codex_home / 'skills/loose'
+        self.revise_loose('A second loose skill.\n')
         self.stopped_between_the_moves()
         self.assertFalse(installed.exists())
         save, failed = AcceptedInstallations._save, []
@@ -2528,34 +2551,34 @@ class InstallationTest(unittest.TestCase):
 
         with patch.object(AcceptedInstallations, '_save', fail_once), self.assertRaises(OSError):
             self.run_apply()
-        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A loose skill.\n')
         self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A second loose skill.\n')
 
     def test_an_old_tree_edited_after_it_was_moved_aside_is_not_put_back(self):
         self.assertEqual(self.run_apply().exit_code, 0)
-        installed = self.installed()
+        installed = self.roots.codex_home / 'skills/loose'
         rename = os.rename
 
         def refuse(source, target, *args, **kwargs):
             if Path(source).name == 'staged':
-                (Path(source).parent / 'displaced/ordinary.txt').write_text('edited after the move aside\n')
+                (Path(source).parent / 'displaced/SKILL.md').write_text('edited after the move aside\n')
                 raise PermissionError(13, 'Access is denied', str(target))
             return rename(source, target, *args, **kwargs)
 
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.revise_loose('A second loose skill.\n')
         with patch('os.rename', refuse), patch('sys.stderr', new_callable=io.StringIO) as stderr, \
                 self.assertRaises(PermissionError):
             self.run_apply()
         self.assertFalse(installed.exists())
-        displaced = Path(json.loads(self.receipt_of('plugin:').read_bytes())['pending']['displaced'])
-        self.assertEqual((displaced / 'ordinary.txt').read_text(), 'edited after the move aside\n')
+        displaced = Path(self.pending_of('codex:LOOSE_SKILL')['displaced'])
+        self.assertEqual((displaced / 'SKILL.md').read_text(), 'edited after the move aside\n')
         self.assertEqual(stderr.getvalue(),
                          f'Old tree left aside: {displaced}, from {installed}: it changed after it was moved aside\n')
 
     def test_an_old_tree_that_cannot_be_put_back_is_named_and_the_next_run_finishes_the_swap(self):
         self.assertEqual(self.run_apply().exit_code, 0)
-        installed = self.installed()
+        installed = self.roots.codex_home / 'skills/loose'
         rename = os.rename
 
         def refuse(source, target, *args, **kwargs):
@@ -2563,154 +2586,16 @@ class InstallationTest(unittest.TestCase):
                 raise PermissionError(13, 'Access is denied', str(target))
             return rename(source, target, *args, **kwargs)
 
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.revise_loose('A second loose skill.\n')
         with patch('os.rename', refuse), patch('sys.stderr', new_callable=io.StringIO) as stderr, \
                 self.assertRaises(PermissionError):
             self.run_apply()
         self.assertFalse(installed.exists())
-        displaced = Path(json.loads(self.receipt_of('plugin:').read_bytes())['pending']['displaced'])
+        displaced = Path(self.pending_of('codex:LOOSE_SKILL')['displaced'])
         self.assertEqual(stderr.getvalue(), f'Old tree left aside: {displaced}, from {installed}: '
                                             f'[Errno 13] Access is denied: {str(installed)!r}\n')
         self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
-
-    def session_started_between_the_moves(self):
-        destination = self._installed_claude()
-        self.revise_release('revised release bytes\n')
-        self.stopped_between_the_moves()
-        destination.mkdir()
-        return destination, own_lease(destination / '.in_use')
-
-    def test_a_marker_a_session_wrote_between_the_moves_goes_into_the_tree_a_later_run_installs(self):
-        destination, lease = self.session_started_between_the_moves()
-        self.assertEqual(self.held(), [])
-        self.assertEqual(plan(self.setup, self.device).blocked, ())
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'revised release bytes\n')
-        self.assertTrue(lease.exists())
-        self.revise_release('revised again\n')
-        self.assert_held(destination)
-
-    def test_a_marker_a_session_wrote_again_between_the_moves_replaces_its_marker_in_the_old_tree(self):
-        destination = self._installed_claude()
-        own_lease(destination / '.in_use', start='1')
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
-        self.stopped_between_the_moves()
-        destination.mkdir()
-        lease = own_lease(destination / '.in_use')
-        marker = lease.read_text()
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the reviewed replacement', (destination / 'skills/one/SKILL.md').read_text())
-        self.assertEqual(lease.read_text(), marker)
-
-    def test_a_marker_still_being_written_between_the_moves_stops_the_run_until_it_is_written(self):
-        destination, lease = self.session_started_between_the_moves()
-        writing = destination / f'.in_use/{lease.name}.tmp.0123abcd'
-        writing.write_text(lease.read_text())
-        with self.assertRaisesRegex(ConcurrentEdit, f'^Tree changed before replacement: {re.escape(str(destination))}$'):
-            self.run_apply()
-        self.assertTrue(writing.exists())
-        backup = Path(json.loads(self._pending_claude_receipt().read_bytes())['pending']['displaced'])
-        self.assertEqual((backup / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
-        writing.replace(lease)
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'revised release bytes\n')
-        self.assertTrue(lease.exists())
-
-    def test_a_folder_between_the_moves_that_holds_more_than_markers_blocks(self):
-        destination, _ = self.session_started_between_the_moves()
-        for name, text in (('theirs.txt', 'made between the moves\n'), ('.orphaned_at', '1794063570885')):
-            with self.subTest(name):
-                (destination / name).write_text(text)
-                current = plan(self.setup, self.device)
-                self.assertEqual([d.detail for d in current.blocked],
-                                 ['plugin:claude:kit@personal-collections: Unknown partial installation preserved: '
-                                  'plugin:claude:kit@personal-collections'])
-                (destination / name).unlink()
-
-    def test_a_link_that_appears_where_the_marker_folder_was_keeps_the_markers_it_leads_to(self):
-        from accepted_installations import AcceptedInstallations
-        destination = self._installed_claude()
-        self.revise_release('revised release bytes\n')
-        self.stopped_between_the_moves()
-        other = self.root / 'other-cache'
-        other.mkdir()
-        marker = own_lease(other / '.in_use')
-        tree = AcceptedInstallations._tree
-
-        def linked_first(owner, prepared, pending, accepted, actual):
-            destination.symlink_to(other, target_is_directory=True)
-            return tree(owner, prepared, pending, accepted, actual)
-
-        with patch.object(AcceptedInstallations, '_tree', linked_first), \
-                patch('sys.stderr', new_callable=io.StringIO) as stderr, self.assertRaises(ConcurrentEdit):
-            self.run_apply()
-        displaced = Path(json.loads(self._pending_claude_receipt().read_bytes())['pending']['displaced'])
-        self.assertTrue(marker.exists())
-        self.assertFalse((displaced / '.in_use' / marker.name).exists())
-        self.assertEqual(stderr.getvalue(), f'Old tree left aside: {displaced}, from {destination}: its place is taken\n')
-
-    def test_only_markdown_files_under_skills_that_both_caches_hold_count_as_skill_text(self):
-        from accepted_installations import _skill_text_only
-
-        def tree(entries):
-            return {'kind': 'tree', 'entries': {path: {'kind': 'directory'} if digest is None else {'kind': 'file', 'sha256': digest}
-                                                for path, digest in entries.items()}}
-
-        installed = {'skills': None, 'skills/one': None, 'skills/one/SKILL.md': 'a', 'skills/one/run.sh': 'b', 'README.md': 'c'}
-        self.assertTrue(_skill_text_only(tree(installed), tree({**installed, 'skills/one/SKILL.md': 'z'})))
-        without = {path: digest for path, digest in installed.items() if path != 'skills/one/SKILL.md'}
-        for changed in [{**installed, 'README.md': 'z'}, {**installed, 'skills/one/run.sh': 'z'},
-                        {**installed, 'skills/one/SKILL.md': None}, {**installed, 'skills/one/OTHER.md': 'd'}, without]:
-            with self.subTest(changed=changed):
-                self.assertFalse(_skill_text_only(tree(installed), tree(changed)))
-        self.assertFalse(_skill_text_only(tree(installed), {'kind': 'absent'}))
-
-    def test_a_newer_release_takes_over_a_replacement_a_running_holder_stopped(self):
-        destination = self._installed_claude()
-        lease = own_lease(destination / '.in_use')
-        self.revise_release('first revision\n')
-        self.assert_held(destination)
-        stale = json.loads(self._pending_claude_receipt().read_bytes())['pending']
-        self.assertTrue(Path(stale['staged']).is_dir())
-        # Claude Code marks the work folder as an orphaned version, as it did on WSL on 2026-11-07.
-        (Path(stale['staged']).parent / '.orphaned_at').write_text('1794063570885')
-        self.revise_release('second revision\n')
-        self.assert_held(destination)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
-        self.assertFalse(Path(stale['staged']).parent.exists())
-        lease.unlink()
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'second revision\n')
-        self.assertIsNone(json.loads(self._pending_claude_receipt().read_bytes())['pending'])
-        self.assertEqual(self.calls, [])
-
-    def test_a_newer_release_takes_over_a_stopped_replacement_of_content_it_restores(self):
-        destination = self._installed_claude()
-        lease = own_lease(destination / '.in_use')
-        self.revise_release('first revision\n')
-        self.assert_held(destination)
-        stale = json.loads(self._pending_claude_receipt().read_bytes())['pending']
-        self.revise_release('ordinary release bytes\n')
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertTrue(lease.exists())
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
-        self.assertFalse(Path(stale['staged']).parent.exists())
-        self.assertIsNone(json.loads(self._pending_claude_receipt().read_bytes())['pending'])
-
-    def test_a_stopped_replacement_keeps_a_stage_it_does_not_recognise(self):
-        destination = self._installed_claude()
-        lease = own_lease(destination / '.in_use')
-        self.revise_release('first revision\n')
-        self.assert_held(destination)
-        stale = json.loads(self._pending_claude_receipt().read_bytes())['pending']
-        extra = Path(stale['staged']) / 'ordinary.txt'
-        extra.write_text('edited in the stage\n')
-        lease.unlink()
-        self.revise_release('second revision\n')
-        self.assertIn(f'Work folder left in place: {extra.parent.parent}: ', self.apply_reporting())
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'second revision\n')
-        self.assertEqual(extra.read_text(), 'edited in the stage\n')
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A second loose skill.\n')
 
     def pending_of(self, prefix):
         return json.loads(self.receipt_of(prefix).read_bytes())['pending']
@@ -2739,32 +2624,6 @@ class InstallationTest(unittest.TestCase):
         with patch.object(Path, 'rename', crash), self.assertRaisesRegex(RuntimeError, 'after the moves'):
             self.run_apply()
 
-    def refused_into_place(self):
-        rename = os.rename
-
-        def refuse(source, target, *args, **kwargs):
-            if Path(source).name == 'staged':
-                raise PermissionError(13, 'Access is denied', str(target))
-            return rename(source, target, *args, **kwargs)
-
-        with patch('os.rename', refuse), patch('portable.time.sleep'), self.assertRaises(PermissionError):
-            self.run_apply()
-
-    def test_a_newer_release_takes_over_a_claude_cache_whose_old_tree_a_stopped_replacement_moved_aside(self):
-        destination = self._installed_claude()
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the first replacement'),))
-        self.stopped_between_the_moves()
-        stale = self.pending_of('plugin:claude')
-        self.assertFalse(destination.exists())
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the second replacement'),))
-        self.assertEqual(plan(self.setup, self.device).blocked, ())
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the second replacement', (destination / 'skills/one/SKILL.md').read_text())
-        self.assertIn('use the local reader', (self.backup_of('plugin:claude') / 'skills/one/SKILL.md').read_text())
-        self.assertFalse(Path(stale['staged']).parent.exists())
-        self.assertEqual(self.unnamed_work_folders(), [])
-        self.assertEqual(self.calls, [])
-
     def test_a_newer_release_puts_back_the_loose_skill_a_stopped_replacement_moved_aside(self):
         old_backup = self.loose_backup()
         self.revise_loose('A third loose skill.\n')
@@ -2778,119 +2637,6 @@ class InstallationTest(unittest.TestCase):
         self.assertFalse(Path(stale['staged']).parent.exists())
         self.assertFalse(old_backup.exists())
         self.assertEqual(self.unnamed_work_folders(), [])
-
-    def test_a_newer_release_takes_over_a_codex_aligned_claude_cache_a_stopped_replacement_moved_aside(self):
-        destination = self._interrupted_claude_install(aligned=True)
-        self.revise_release('newest aligned release\n')
-        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'newest aligned release\n')
-        self.assertEqual((self.backup_of('plugin:claude') / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def test_a_newer_release_puts_back_the_old_tree_with_the_marker_of_a_session_that_started_while_it_was_aside(self):
-        destination, lease = self.session_started_between_the_moves()
-        self.revise_release('newest release\n')
-        self.assertEqual(plan(self.setup, self.device).blocked, ())
-        self.assert_held(destination)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
-        self.assertTrue(lease.exists())
-        lease.unlink()
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'newest release\n')
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def test_a_newer_release_puts_back_the_old_tree_with_a_session_marker_that_replaces_a_finished_one_of_its_name(self):
-        destination = self._installed_claude()
-        own_lease(destination / '.in_use', start='1')
-        self.revise_release('revised release bytes\n')
-        with patch('accepted_installations._lease_held', return_value=False):
-            self.stopped_between_the_moves()
-        destination.mkdir()
-        lease = own_lease(destination / '.in_use')
-        live = lease.read_text()
-        self.revise_release('newest release\n')
-        self.assert_held(destination)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
-        self.assertEqual(lease.read_text(), live)
-
-    def test_a_newer_version_takes_over_a_version_update_whose_native_tree_a_stopped_replacement_moved_aside(self):
-        old = self._installed_claude()
-        self.release_version('2.0.0', 'second release bytes\n')
-        self.stopped_between_the_moves()
-        self.assertFalse(old.with_name('2.0.0').exists())
-        self.release_version('3.0.0', 'third release bytes\n')
-        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((old.with_name('3.0.0') / 'ordinary.txt').read_text(), 'third release bytes\n')
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def test_a_newer_version_takes_over_a_version_update_stopped_before_its_swap_over_a_release_claude_code_cached(self):
-        old = self._installed_claude()
-        self.release_version('2.0.0', 'second release bytes\n')
-        shutil.copytree(self.source, old.with_name('2.0.0'))
-        copy = accepted_installations.copy_tree
-
-        def stop(source, target, *args):
-            if target.name == 'staged':
-                raise RuntimeError('stopped while staging')
-            return copy(source, target, *args)
-
-        with patch('accepted_installations.copy_tree', stop), self.assertRaisesRegex(RuntimeError, 'stopped while staging'):
-            self.run_apply()
-        pending = self.pending_of('plugin:claude')
-        self.assertEqual(pending['destination_before'], pending['pristine'])
-        self.release_version('3.0.0', 'third release bytes\n')
-        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((old.with_name('3.0.0') / 'ordinary.txt').read_text(), 'third release bytes\n')
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def test_a_newer_release_of_a_version_takes_over_its_update_stopped_before_installing_over_a_release_claude_code_cached(self):
-        from sync_hosts import Apply
-        old = self._installed_claude()
-        self.release_version('2.0.0', 'second release bytes\n')
-        cached = old.with_name('2.0.0')
-        shutil.copytree(self.source, cached)
-        with patch.object(Apply, '_install', side_effect=RuntimeError('native install stopped')), \
-                self.assertRaisesRegex(RuntimeError, 'native install stopped'):
-            self.run_apply()
-        self.assertEqual(self.pending_of('plugin:claude')['target']['path'], str(cached))
-        self.release_version('2.0.0', 'newer bytes of the same version\n')
-        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((cached / 'ordinary.txt').read_text(), 'newer bytes of the same version\n')
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def first_install_that_lost_its_old_tree_aside(self):
-        destination = self._interrupted_claude_install()
-        pending = self.pending_of('plugin:claude')
-        shutil.rmtree(pending['displaced'])
-        return destination, Path(pending['staged'])
-
-    def test_a_first_install_that_lost_its_tree_aside_is_finished_from_its_stage(self):
-        destination, _ = self.first_install_that_lost_its_old_tree_aside()
-        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), (self.source / 'ordinary.txt').read_text())
-
-    def test_a_first_install_that_lost_its_tree_aside_and_whose_stage_was_edited_stays_blocked(self):
-        destination, staged = self.first_install_that_lost_its_old_tree_aside()
-        (staged / 'extra.txt').write_text('edited in the stage\n')
-        current = plan(self.setup, self.device)
-        self.assertEqual(current.exit_code, 3)
-        self.assertIn('cache not on disk', ' '.join(d.detail for d in current.blocked))
-        self.assertEqual((staged / 'extra.txt').read_text(), 'edited in the stage\n')
-
-    def test_a_newer_release_takes_over_a_first_install_that_lost_its_tree_aside_and_keeps_its_edited_stage(self):
-        destination, staged = self.first_install_that_lost_its_old_tree_aside()
-        (staged / 'extra.txt').write_text('edited in the stage\n')
-        self.revise_release('revised release bytes\n')
-        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
-        printed = self.apply_reporting()
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'revised release bytes\n')
-        self.assertIn(f'Work folder left in place: {staged.parent}: ', printed)
-        self.assertEqual((staged / 'extra.txt').read_text(), 'edited in the stage\n')
 
     def test_a_newer_release_whose_old_tree_cannot_go_back_names_where_it_stays(self):
         self.loose_backup()
@@ -2998,79 +2744,6 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual(printed, f'Work folder left in place: {displaced.parent}: the tree moved aside changed: '
                                   f'[Errno 13] Access is denied: {str(displaced)!r}\n')
 
-    def test_a_newer_version_refuses_a_copy_of_a_stopped_replacement_s_native_output_where_it_goes(self):
-        self.refused_into_place()
-        native_output = self.installed()
-        self.release_version('2.0.0', 'second release bytes\n')
-        copy = native_output.with_name('2.0.0')
-        shutil.copytree(native_output, copy)
-        self.assertEqual([d.detail for d in plan(self.setup, self.device).blocked],
-                         [f'plugin:codex:kit@personal: Unverified destination preserved: {copy}'])
-        with self.assertRaisesRegex(RuntimeError, 'blocked'):
-            self.run_apply()
-        self.assertEqual((copy / 'ordinary.txt').read_text(), (native_output / 'ordinary.txt').read_text())
-
-    def test_a_third_release_of_a_version_takes_over_a_second_stopped_over_a_release_claude_code_cached(self):
-        from sync_hosts import Apply
-        old = self._installed_claude()
-        self.release_version('2.0.0', 'second release bytes\n')
-        cached = old.with_name('2.0.0')
-        shutil.copytree(self.source, cached)
-        for text in ('second release bytes\n', 'newer bytes of the same version\n'):
-            self.release_version('2.0.0', text)
-            with patch.object(Apply, '_install', side_effect=RuntimeError('native install stopped')), \
-                    self.assertRaisesRegex(RuntimeError, 'native install stopped'):
-                self.run_apply()
-        self.release_version('2.0.0', 'third bytes of the same version\n')
-        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((cached / 'ordinary.txt').read_text(), 'third bytes of the same version\n')
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def test_a_newer_version_takes_over_a_take_over_that_stopped_before_its_native_install(self):
-        from sync_hosts import Apply
-        self.refused_into_place()
-        first = self.installed()
-        self.release_version('2.0.0', 'second release bytes\n')
-        with patch.object(Apply, '_install', side_effect=RuntimeError('stopped before the native install')), \
-                self.assertRaisesRegex(RuntimeError, 'stopped before the native install'):
-            self.run_apply()
-        self.assertEqual(self.pending_of('plugin:codex')['before_path'], str(first))
-        self.release_version('3.0.0', 'third release bytes\n')
-        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual(self.installed().name, '3.0.0')
-        self.assertEqual((self.installed() / 'ordinary.txt').read_text(), 'third release bytes\n')
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def empty_folder_is_finished_like_a_missing_cache(self, **kwargs):
-        destination = self._interrupted_claude_install(**kwargs)
-        destination.mkdir()
-        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), (self.source / 'ordinary.txt').read_text())
-
-    def test_a_pending_claude_cache_whose_folder_is_empty_is_finished_like_a_missing_one(self):
-        self.empty_folder_is_finished_like_a_missing_cache()
-
-    def test_a_pending_codex_aligned_cache_whose_folder_is_empty_is_finished_like_a_missing_one(self):
-        self.empty_folder_is_finished_like_a_missing_cache(aligned=True)
-
-    def empty_folder_is_taken_over_by_a_newer_release(self, **kwargs):
-        destination = self._interrupted_claude_install(**kwargs)
-        destination.mkdir()
-        self.revise_release('newest release\n')
-        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'newest release\n')
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def test_a_newer_release_takes_over_a_pending_claude_cache_whose_folder_is_empty(self):
-        self.empty_folder_is_taken_over_by_a_newer_release()
-
-    def test_a_newer_release_takes_over_a_pending_codex_aligned_cache_whose_folder_is_empty(self):
-        self.empty_folder_is_taken_over_by_a_newer_release(aligned=True)
-
     def test_a_newer_release_accepts_a_loose_skill_replacement_that_stopped_after_its_moves(self):
         old_backup = self.loose_backup()
         self.revise_loose('A third loose skill.\n')
@@ -3133,96 +2806,6 @@ class InstallationTest(unittest.TestCase):
         self.assertTrue((displaced / 'link.txt').is_symlink())
         self.assertEqual(outside.read_text(), 'mine')
 
-    def native_first_install_put_back(self):
-        destination = self._interrupted_claude_install()
-        self.refused_into_place()
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
-        self.assertNotIn('use the local reader', (destination / 'skills/one/SKILL.md').read_text())
-        return destination
-
-    def test_a_newer_release_takes_over_a_first_install_whose_native_output_was_put_back(self):
-        destination = self.native_first_install_put_back()
-        self.revise_release('revised release bytes\n')
-        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'revised release bytes\n')
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def test_a_newer_version_takes_over_a_first_install_whose_native_output_was_put_back(self):
-        destination = self.native_first_install_put_back()
-        self.release_version('2.0.0', 'second release bytes\n')
-        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((destination.with_name('2.0.0') / 'ordinary.txt').read_text(), 'second release bytes\n')
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def test_a_newer_version_is_refused_where_its_folder_holds_content_no_receipt_records(self):
-        destination = self.native_first_install_put_back()
-        self.release_version('2.0.0', 'second release bytes\n')
-        occupied = destination.with_name('2.0.0')
-        occupied.mkdir()
-        (occupied / 'local.txt').write_text('not owned\n')
-        self.assertEqual([d.detail for d in plan(self.setup, self.device).blocked],
-                         [f'plugin:claude:kit@personal-collections: Unverified destination preserved: {occupied}'])
-        with self.assertRaisesRegex(RuntimeError, 'blocked'):
-            self.run_apply()
-        self.assertEqual([path.name for path in occupied.iterdir()], ['local.txt'])
-
-    def codex_version_update_put_back_after_codex_removed_the_old_version(self):
-        from sync_hosts import Apply
-        self.assertEqual(self.run_apply().exit_code, 0)
-        old = self.installed()
-        self.release_version('2.0.0', 'second release bytes\n')
-        native = Apply.command
-
-        def command(operation, host, *args):
-            result = native(operation, host, *args)
-            if args[:2] == ('plugin', 'add'):
-                shutil.rmtree(old)   # as codex plugin add does with the version folder it replaces
-            return result
-
-        with patch.object(Apply, 'command', command):
-            self.refused_into_place()
-        self.assertFalse(old.exists())
-        self.assertEqual((self.installed() / 'ordinary.txt').read_text(), 'second release bytes\n')
-        return self.installed()
-
-    def test_a_codex_version_update_put_back_after_codex_removed_the_old_version_finishes(self):
-        installed = self.codex_version_update_put_back_after_codex_removed_the_old_version()
-        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the local reader', (installed / 'skills/one/SKILL.md').read_text())
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def test_a_newer_release_takes_over_a_codex_version_update_put_back_after_codex_removed_the_old_version(self):
-        installed = self.codex_version_update_put_back_after_codex_removed_the_old_version()
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use a newer reader'),))
-        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use a newer reader', (installed / 'skills/one/SKILL.md').read_text())
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def test_a_first_install_over_a_copy_of_the_release_that_no_receipt_records_is_refused(self):
-        destination = self.roots.codex_home / 'plugins/cache/personal/kit/1.0.0'
-        shutil.copytree(self.source, destination)
-        with self.assertRaisesRegex(ConcurrentEdit, '^Unverified existing content preserved: plugin:codex:kit@personal;'):
-            self.run_apply()
-        self.assertNotIn('use the local reader', (destination / 'skills/one/SKILL.md').read_text())
-
-    def test_a_newer_release_refuses_a_copy_of_the_native_output_away_from_its_stopped_replacement(self):
-        self.refused_into_place()
-        native_output = self.installed()
-        copy = native_output.with_name('0.9.0')
-        shutil.copytree(native_output, copy)
-        self.host.installed['kit@personal'] = ('0.9.0', copy)
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use a newer reader'),))
-        self.assertEqual([d.detail for d in plan(self.setup, self.device).blocked],
-                         ['plugin:codex:kit@personal: Unverified existing content preserved: plugin:codex:kit@personal; '
-                          'an independently pinned baseline is required'])
-        with self.assertRaisesRegex(RuntimeError, 'blocked'):
-            self.run_apply()
-        self.assertNotIn('use the local reader', (copy / 'skills/one/SKILL.md').read_text())
-
     def managed_keys_stopped(self, *, written):
         from sync_files import Files
         source = self.public / 'config/mise/config.toml'
@@ -3277,204 +2860,6 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual([d.detail for d in plan(self.setup, self.device).blocked],
                          ['configuration:mise-tools: Unknown partial installation preserved: configuration:mise-tools'])
         self.assertIn(b'node = "local edit"', live.read_bytes())
-
-    def list_codex_as_its_cli_does(self):
-        """codex-cli 0.169.0-alpha.6 on 13 November 2026 named a plugin's version after the last folder under its
-        cache folder, so it named the engine's work folder once the version folder was moved aside."""
-        folder = self.roots.codex_home / 'plugins/cache/personal/kit'
-
-        def run(command, seconds=None, **_):
-            if command[-1] == '--version':
-                return 'codex-test\n'
-            if command[-4:] == ['plugin', 'list', '--available', '--json']:
-                version = sorted(path.name for path in folder.iterdir() if path.is_dir())[-1]
-                return json.dumps({'installed': [{
-                    'pluginId': 'kit@personal', 'name': 'kit', 'marketplaceName': 'personal', 'version': version,
-                    'installed': True, 'enabled': True,
-                    'source': {'source': 'local', 'path': str(self.roots.engine / 'build/kit')}}], 'available': []})
-            raise AssertionError(command)
-
-        patch('codex_host.run', run).start()
-        self.device = Device(Platform.LINUX, self.roots, (CodexState(self.roots, 'codex'),), ())
-
-    def codex_tree_aside(self):
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
-        self.stopped_between_the_moves()
-        self.assertFalse(self.installed().exists())
-        self.list_codex_as_its_cli_does()
-        self.calls.clear()
-        return self.installed()
-
-    def test_a_codex_plugin_whose_cli_lists_the_work_folder_finishes_its_replacement_without_reinstalling(self):
-        installed = self.codex_tree_aside()
-        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
-        self.assertEqual(self.calls, [])
-
-    def test_a_newer_release_takes_over_a_codex_plugin_whose_cli_lists_the_work_folder_without_reinstalling(self):
-        installed = self.codex_tree_aside()
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use a newer reader'),))
-        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use a newer reader', (installed / 'skills/one/SKILL.md').read_text())
-        self.assertIn('use the local reader', (self.backup_of('plugin:codex') / 'skills/one/SKILL.md').read_text())
-        self.assertEqual(self.calls, [])
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def test_an_accepted_codex_plugin_whose_folder_went_missing_beside_its_backup_is_installed_again(self):
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
-        self.assertEqual(self.run_apply().exit_code, 0)
-        installed = self.installed()
-        shutil.rmtree(installed)
-        self.list_codex_as_its_cli_does()
-        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the reviewed replacement', (installed / 'skills/one/SKILL.md').read_text())
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def test_a_newer_release_takes_over_a_git_pinned_codex_plugin_without_reinstalling_it(self):
-        from accepted_installations import AcceptedInstallations, image
-        from host_observation import Observer
-        from sync_files import Files
-        commit = 'a' * 40
-        repository = Repo('upstream', Visibility.PUBLIC, '', 'https://example.invalid/upstream.git', commit,
-                          HostMarketplace('upstream', MarketplaceMode.GIT), None)
-        package = replace(self.setup.packages['kit'], source=RepoSource('upstream', '.'),
-                          codex=CodexPlacement((MarketplaceInstall('upstream', True),)))
-        self.setup = replace(self.setup, packages={'kit': package}, repos={'upstream': repository}, loose={},
-                             rules=None)
-        self.device = Device(Platform.LINUX, self.roots, (CodexState(self.roots, 'codex'),), ())
-        owner = AcceptedInstallations(self.setup, self.device, configurations=False)
-        destination = self.roots.codex_home / 'plugins/cache/upstream/kit/1.0.0'
-        installs = []
-
-        def install(host, subject):
-            installs.append(subject)
-            if destination.exists():
-                shutil.rmtree(destination)
-            shutil.copytree(self.source, destination)
-
-        def observed(version):
-            seen = Observer(Host.CODEX, self.roots)
-            if version:
-                seen.add(Surface.PLUGIN, 'kit@upstream', PluginValue(True, Pinned(commit)),
-                         detail=InstallDetail(version, destination.parent / version))
-            return {Host.CODEX: seen.finish('git-pinned listing', {'kit@upstream'})}
-
-        def applied(text, version):
-            source = self.root / f'overlay-{len(owner._prepared)}'
-            shutil.copytree(self.source, source)
-            (source / 'skills/one/SKILL.md').write_text(text)
-            artifact, = (item for item in owner.artifacts(observed(version)) if item.kind == 'plugin')
-            token = object()
-            owner._prepared[token] = owner._prepare_artifact(artifact, image(source), source, None, image(self.source))
-            owner.apply(token, Files(self.root / 'file-backups'), native=install)
-            return artifact
-
-        artifact = applied('the overlay before both releases\n', None)
-        accepted = owner._receipt(artifact)['accepted']['image']
-        with self.assertRaisesRegex(RuntimeError, 'between the moves'):
-            rename = Path.rename
-
-            def crash(path, target):
-                if path.name == 'staged':
-                    raise RuntimeError('between the moves')
-                return rename(path, target)
-
-            with patch.object(Path, 'rename', crash):
-                applied('the overlay of the stopped release\n', '1.0.0')
-        work = Path(owner._receipt(artifact)['pending']['displaced']).parent
-        installs.clear()
-        applied('the overlay of the newer release\n', work.name)
-        self.assertEqual(installs, [])
-        self.assertEqual((destination / 'skills/one/SKILL.md').read_text(), 'the overlay of the newer release\n')
-        self.assertEqual(owner._receipt(artifact)['accepted']['backup_image'], accepted)
-
-    def lost_work_folder(self):
-        """Claude Code 2.1.322 sweeps the folders under its plugin cache that no install names after 14 days (read in
-        its bundle, not run)."""
-        destination = self._installed_claude()
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the stopped replacement'),))
-        self.stopped_between_the_moves()
-        shutil.rmtree(Path(self.pending_of('plugin:claude')['staged']).parent)
-        return destination
-
-    def test_a_replacement_whose_work_folder_went_missing_is_installed_again(self):
-        destination = self.lost_work_folder()
-        self.assertEqual(plan(self.setup, self.device).blocked, ())
-        self.assertEqual(self.apply_reporting(), '')
-        self.assertIn('use the stopped replacement', (destination / 'skills/one/SKILL.md').read_text())
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def test_a_newer_release_takes_over_a_replacement_whose_work_folder_went_missing(self):
-        destination = self.lost_work_folder()
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use a newer reader'),))
-        self.assertEqual(plan(self.setup, self.device).blocked, ())
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use a newer reader', (destination / 'skills/one/SKILL.md').read_text())
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def lost_work_folder_while_a_session_holds_its_place(self, note):
-        destination = self.lost_work_folder()
-        destination.mkdir()
-        lease = own_lease(destination / '.in_use')
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', note),))
-        self.assertEqual(plan(self.setup, self.device).blocked, ())
-        self.assert_held(destination)
-        self.assertTrue(lease.exists())
-        lease.unlink()
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn(note, (destination / 'skills/one/SKILL.md').read_text())
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def test_a_replacement_whose_work_folder_went_missing_waits_for_the_session_that_holds_its_place(self):
-        self.lost_work_folder_while_a_session_holds_its_place('use the stopped replacement')
-
-    def test_a_newer_release_takes_over_a_replacement_whose_work_folder_went_missing_once_its_place_is_free(self):
-        self.lost_work_folder_while_a_session_holds_its_place('use a newer reader')
-
-    def test_a_first_install_whose_work_folder_went_missing_is_installed_again(self):
-        destination = self._interrupted_claude_install()
-        shutil.rmtree(Path(self.pending_of('plugin:claude')['staged']).parent)
-        self.assertEqual(plan(self.setup, self.device).blocked, ())
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the local reader', (destination / 'skills/one/SKILL.md').read_text())
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def test_a_version_update_whose_old_version_folder_went_missing_while_it_was_stopped_finishes(self):
-        old = self._installed_claude()
-        self.release_version('2.0.0', 'second release bytes\n')
-        self.stopped_between_the_moves()
-        shutil.rmtree(old)
-        self.assertEqual(plan(self.setup, self.device).blocked, ())
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((old.with_name('2.0.0') / 'ordinary.txt').read_text(), 'second release bytes\n')
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def test_a_take_over_stopped_after_moving_a_session_marker_into_the_old_tree_is_finished_by_the_next_run(self):
-        destination, lease = self.session_started_between_the_moves()
-        displaced = Path(self.pending_of('plugin:claude')['displaced'])
-        self.revise_release('newest release\n')
-        rename = Path.rename
-
-        def stop(path, target):
-            if path == displaced:
-                raise RuntimeError('after the marker moved')
-            return rename(path, target)
-
-        with patch.object(Path, 'rename', stop), self.assertRaisesRegex(RuntimeError, 'after the marker moved'):
-            self.run_apply()
-        self.assertFalse(destination.exists())
-        self.assertTrue((displaced / '.in_use' / lease.name).exists())
-        self.assert_held(destination)
-        self.assertTrue(lease.exists())
-        lease.unlink()
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'newest release\n')
-        self.assertEqual(self.unnamed_work_folders(), [])
 
     def test_a_take_over_stopped_after_putting_the_old_tree_back_is_finished_by_the_next_run(self):
         self.loose_backup()
@@ -3537,28 +2922,6 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual((self.roots.codex_home / 'skills/loose/SKILL.md').read_text(), 'A fourth loose skill.\n')
         self.assertEqual((self.backup_of('codex:LOOSE_SKILL') / 'SKILL.md').read_text(), 'A third loose skill.\n')
         self.assertFalse(old_backup.parent.exists())
-        self.assertEqual(self.unnamed_work_folders(), [])
-
-    def test_a_take_over_stopped_while_moving_the_markers_of_sessions_is_finished_by_the_next_run(self):
-        destination = self._installed_claude()
-        lease = own_lease(destination / '.in_use')
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the first replacement'),))
-        self.stopped_after_the_moves()
-        displaced = Path(self.pending_of('plugin:claude')['displaced'])
-        self.assertTrue((displaced / '.in_use' / lease.name).exists())
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the second replacement'),))
-        move = Path.replace
-
-        def stop(path, target):
-            if path.parent == displaced / '.in_use':
-                raise RuntimeError('while moving the markers')
-            return move(path, target)
-
-        with patch.object(Path, 'replace', stop), self.assertRaisesRegex(RuntimeError, 'while moving the markers'):
-            self.run_apply()
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the second replacement', (destination / 'skills/one/SKILL.md').read_text())
-        self.assertTrue(lease.exists())
         self.assertEqual(self.unnamed_work_folders(), [])
 
     def test_a_take_over_stopped_after_accepting_the_stopped_replacement_is_finished_by_the_next_run(self):
@@ -3675,116 +3038,6 @@ class InstallationTest(unittest.TestCase):
         self.assertFalse((self.roots.codex_home / 'skills/loose').exists())
         self.assertEqual((displaced / 'SKILL.md').read_text(), 'A second loose skill.\n')
 
-    def test_a_newer_version_takes_over_where_claude_code_cached_its_release_beside_a_first_install_put_back(self):
-        destination = self.native_first_install_put_back()
-        self.release_version('2.0.0', 'second release bytes\n')
-        cached = destination.with_name('2.0.0')
-        shutil.copytree(self.source, cached)
-        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((cached / 'ordinary.txt').read_text(), 'second release bytes\n')
-        self.assertIn('use the local reader', (cached / 'skills/one/SKILL.md').read_text())
-
-    def assert_newer_version_refused_over_unowned(self, folder):
-        destination = self.native_first_install_put_back()
-        self.release_version('2.0.0', 'second release bytes\n')
-        cached = destination.with_name('2.0.0')
-        shutil.copytree(self.source, cached)
-        (cached / folder).mkdir()
-        (cached / folder / 'HEAD').write_text('mine\n')
-        self.assertEqual([d.detail for d in plan(self.setup, self.device).blocked],
-                         [f'plugin:claude:kit@personal-collections: Unowned tree content preserved: {cached}'])
-        with self.assertRaisesRegex(RuntimeError, 'blocked'):
-            self.run_apply()
-        self.assertEqual((cached / folder / 'HEAD').read_text(), 'mine\n')
-
-    def test_a_newer_version_is_refused_where_its_cached_release_holds_a_working_copy(self):
-        self.assert_newer_version_refused_over_unowned('.git')
-
-    def test_a_newer_version_is_refused_where_its_cached_release_holds_installed_packages(self):
-        self.assert_newer_version_refused_over_unowned('node_modules')
-
-    def test_a_newer_version_whose_place_changes_after_the_checks_leaves_the_stopped_replacement_as_it_is(self):
-        from sync_hosts import Apply
-        old = self._installed_claude()
-        self.release_version('2.0.0', 'second release bytes\n')
-        self.stopped_between_the_moves()
-        displaced = Path(self.pending_of('plugin:claude')['displaced'])
-        self.release_version('3.0.0', 'third release bytes\n')
-        newest = old.with_name('3.0.0')
-        catalogs = Apply._catalogs
-
-        def occupied(operation):
-            newest.mkdir()
-            (newest / 'local.txt').write_text('not owned\n')
-            return catalogs(operation)
-
-        with patch.object(Apply, '_catalogs', occupied), self.assertRaisesRegex(
-                ConcurrentEdit, '^Changed after preparation: plugin:claude:'):
-            self.run_apply()
-        self.assertTrue(displaced.is_dir())
-        self.assertFalse(old.with_name('2.0.0').exists())
-        self.assertEqual([path.name for path in newest.iterdir()], ['local.txt'])
-
-    def test_a_newer_release_moves_the_markers_of_sessions_out_of_a_tree_moved_aside_that_changed(self):
-        destination = self._installed_claude()
-        lease = own_lease(destination / '.in_use')
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the first replacement'),))
-        self.stopped_after_the_moves()
-        displaced = Path(self.pending_of('plugin:claude')['displaced'])
-        (displaced / 'mine.txt').write_text('mine')
-        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the second replacement'),))
-        self.assertEqual(self.apply_reporting(), f'Work folder left in place: {displaced.parent}: the tree moved aside '
-                                                 'changed: its tree is not the one its receipt holds\n')
-        self.assertIn('use the second replacement', (destination / 'skills/one/SKILL.md').read_text())
-        self.assertTrue(lease.exists())
-        self.assertEqual((displaced / 'mine.txt').read_text(), 'mine')
-
-    def test_claude_same_path_replacement_ignores_a_finished_session_lease(self):
-        destination = self._installed_claude()
-        lease = destination / '.in_use/17'
-        lease.parent.mkdir()
-        lease.write_text('{"pid":17,"procStart":"42"}')
-        self.revise_release('revised release bytes\n')
-        with patch('accepted_installations._lease_held', return_value=False):
-            self.assertEqual(self.held(), [])
-            self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'revised release bytes\n')
-        self.assertEqual(self.calls, [])
-
-    def test_claude_lease_replaced_during_disappearance_check_is_not_ignored(self):
-        destination = self._installed_claude()
-        lease = destination / '.in_use/17'
-        lease.parent.mkdir()
-        lease.write_text('{"pid":17}')
-        read_bytes = Path.read_bytes
-
-        def replaced_marker(path):
-            if path == lease:
-                path.write_text('replacement bytes')
-                raise FileNotFoundError(path)
-            return read_bytes(path)
-
-        with patch.object(Path, 'read_bytes', replaced_marker):
-            self.assertEqual(plan(self.setup, self.device).exit_code, 2)
-        self.assertEqual(lease.read_text(), 'replacement bytes')
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
-
-    def test_claude_pending_displaced_runtime_metadata_recovers_but_stage_metadata_does_not(self):
-        destination = self._interrupted_claude_install()
-        pending = json.loads(self._pending_claude_receipt().read_bytes())['pending']
-        displaced = Path(pending['displaced'])
-        (displaced / '.in_use').mkdir()
-        (displaced / '.orphaned_at').write_text('1792091304500')
-        staged_marker = Path(pending['staged']) / '.in_use'
-        staged_marker.mkdir()
-        self.assertEqual(plan(self.setup, self.device).exit_code, 3)
-        staged_marker.rmdir()
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
-        self.assertFalse((destination / '.orphaned_at').exists())
-        self.assertEqual((displaced / '.orphaned_at').read_text(), '1792091304500')
-
     def test_claude_source_runtime_metadata_is_not_adopted_as_content(self):
         destination = self._installed_claude()
         builder = Builder(self.setup, self.roots, self.roots.engine)
@@ -3797,111 +3050,10 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual((destination / 'skills/one/SKILL.md').read_bytes(), before)
         self.assertEqual(self.calls, [])
 
-    def test_claude_version_update_pending_retry_tolerates_old_native_bookkeeping_only(self):
-        destination = self._installed_claude()
-        old_lease = destination / '.in_use/17'
-        old_lease.parent.mkdir()
-        old_lease.write_text('{"pid":17,"procStart":"42"}')
-        (self.source / '.codex-plugin/plugin.json').write_text('{"name":"kit","version":"2.0.0"}')
-        (self.source / 'ordinary.txt').write_text('second release bytes\n')
-        digest = self.roots.tree_digest(self.source)
-        package = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
-        lock = replace(self.setup.lock['kit'], intent=intent(package, {}),
-                       trees={Host.CLAUDE: LockedTree('2.0.0', digest)})
-        self.setup = replace(self.setup, packages={'kit': package}, lock={'kit': lock})
-
-        def native_bookkeeping(new):
-            (destination / '.orphaned_at').write_text('1792091304500')
-            (new / '.in_use').mkdir()
-
-        self.interrupt = native_bookkeeping
-        rename = Path.rename
-
-        def crash(path, target):
-            if path.name == 'staged':
-                raise RuntimeError('between version tree renames')
-            return rename(path, target)
-
-        with patch.object(Path, 'rename', crash), self.assertRaisesRegex(RuntimeError, 'between version tree renames'):
-            self.run_apply()
-        self.assertEqual((destination / '.orphaned_at').read_text(), '1792091304500')
-        self.assertEqual(old_lease.read_text(), '{"pid":17,"procStart":"42"}')
-        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
-        (destination / 'ordinary.txt').write_text('user edit in old cache\n')
-        edited = plan(self.setup, self.device)
-        self.assertEqual(edited.exit_code, 3)
-        self.assertTrue(any('Previous installation changed' in difference.detail for difference in edited.blocked))
-        (destination / 'ordinary.txt').write_text('ordinary release bytes\n')
-        self.calls.clear()
-        self.assertEqual(self.run_apply().exit_code, 0)
-        current = destination.with_name('2.0.0')
-        self.assertEqual((current / 'ordinary.txt').read_text(), 'second release bytes\n')
-        self.assertFalse((current / '.orphaned_at').exists())
-        self.assertEqual(old_lease.read_text(), '{"pid":17,"procStart":"42"}')
-        self.assertEqual(self.calls, [])
-
-    def test_claude_version_update_adopts_the_pinned_release_a_native_listing_cached_and_registers_it(self):
-        destination = self._installed_claude()
-        (self.source / '.codex-plugin/plugin.json').write_text('{"name":"kit","version":"2.0.0"}')
-        (self.source / 'ordinary.txt').write_text('second release bytes\n')
-        digest = self.roots.tree_digest(self.source)
-        package = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
-        lock = replace(self.setup.lock['kit'], intent=intent(package, {}),
-                       trees={Host.CLAUDE: LockedTree('2.0.0', digest)})
-        self.setup = replace(self.setup, packages={'kit': package}, lock={'kit': lock})
-        current = destination.with_name('2.0.0')
-        shutil.copytree(self.source, current)
-        (current / '.in_use').mkdir()
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((current / 'ordinary.txt').read_text(), 'second release bytes\n')
-        self.assertIn('use the local reader', (current / 'skills/one/SKILL.md').read_text())
-        self.assertIn(('plugin', 'update'), [args[:2] for _, args in self.calls])
-
-    def test_claude_version_update_preserves_other_content_at_the_new_cache_path(self):
-        destination = self._installed_claude()
-        (self.source / '.codex-plugin/plugin.json').write_text('{"name":"kit","version":"2.0.0"}')
-        digest = self.roots.tree_digest(self.source)
-        package = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
-        lock = replace(self.setup.lock['kit'], intent=intent(package, {}),
-                       trees={Host.CLAUDE: LockedTree('2.0.0', digest)})
-        self.setup = replace(self.setup, packages={'kit': package}, lock={'kit': lock})
-        current = destination.with_name('2.0.0')
-        shutil.copytree(self.source, current)
-        (current / 'ordinary.txt').write_text('unknown bytes\n')
-        with self.assertRaisesRegex(ConcurrentEdit, 'Unverified destination preserved'):
-            self.run_apply()
-        self.assertEqual((current / 'ordinary.txt').read_text(), 'unknown bytes\n')
-        self.assertEqual(self.calls, [])
-
-    def test_claude_lease_created_after_swap_receipt_stops_the_rename(self):
-        from accepted_installations import AcceptedInstallations
-
-        destination = self._installed_claude()
-        self.revise_release('revised release bytes\n')
-        save = AcceptedInstallations._save
-        writes = 0
-        lease = None
-
-        def concurrent_lease(owner, artifact, accepted, pending=None):
-            nonlocal writes, lease
-            save(owner, artifact, accepted, pending)
-            if pending:
-                writes += 1
-                if writes == 2:
-                    lease = own_lease(destination / '.in_use')
-
-        with patch.object(AcceptedInstallations, '_save', concurrent_lease):
-            self.assert_held(destination)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
-        self.assertTrue(lease.exists())
-        lease.unlink()
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'revised release bytes\n')
-
     def test_claude_historical_receipt_metadata_is_not_silently_normalized(self):
         destination = self._installed_claude()
         (destination / '.in_use').mkdir()
-        receipt = self._pending_claude_receipt()
+        receipt = self._claude_receipt()
         value = json.loads(receipt.read_bytes())
         value['accepted']['image']['entries']['.in_use'] = {'kind': 'directory'}
         receipt.write_text(json.dumps(value))
@@ -3987,111 +3139,43 @@ class InstallationTest(unittest.TestCase):
         (destination / '__pycache__').symlink_to(elsewhere, target_is_directory=True)
         self.assertEqual(plan(self.setup, self.device).exit_code, 2)
 
-    def test_claude_skill_unread_during_verified_pending_swap_recovers(self):
-        destination = self._interrupted_claude_install()
-        settings = self.roots.claude_home / 'settings.json'
-        configured = json.loads(settings.read_bytes())
-        configured['skillOverrides'] = {'kit:one': 'off'}
-        settings.write_text(json.dumps(configured))
+    def legacy_missing_cache_gets_a_folder_of_its_own(self, **kit):
+        """A first run over an earlier engine's replacement that stopped with the folder Claude Code's record names
+        moved aside: the skill reads of that missing folder wait, the plugin gets a folder of its own without a native
+        install, the record names it, and the earlier engine's work folder stays as it was."""
+        release, work = self.legacy_claude_swap_aside(**kit)
         current = plan(self.setup, self.device)
         self.assertEqual(current.exit_code, 1, [(d.kind.value, d.key, d.detail) for d in current.result.differences])
-        self.assertEqual(current.observations[Host.CLAUDE].unknown[0].missing_tree,
-                         FactKey(Host.CLAUDE, Surface.TREE, 'kit@personal-collections'))
-        self.assertEqual([(d.kind.value, d.key.surface.name) for d in current.changes],
-                         [('changed', 'TREE')])
-        self.calls.clear()
-        after_recovery = self.run_apply(current)
+        self.assertEqual([d.detail for d in current.changes],
+                         [f'plugin:claude:{self.claude_plugin}: Write a folder of its own beside the replacement an '
+                          'earlier engine left unfinished'])
+        self.assertEqual(len(current.observations[Host.CLAUDE].unknown), 1)
+        self.assertEqual(self.apply_reporting(current),
+                         f'Work folders left in place: {work}: an earlier engine replaced '
+                         f'plugin:claude:{self.claude_plugin} in place there, and this one leaves those folders as they '
+                         'are\n')
         self.assertEqual(self.calls, [])
-        self.assertTrue((destination / 'skills/one/SKILL.md').is_file())
-        self.assertEqual([(d.kind.value, d.key.subject) for d in after_recovery.changes
-                          if d.key and d.key.surface == Surface.SKILL], [('changed', 'kit@personal-collections:one')])
-        self.assertEqual(self.run_apply(after_recovery).exit_code, 0)
-        self.assertEqual(self.calls, [])
-        # Claude Code runs the catalog's copy, so flags are read there; an edited cache still stops the plan.
-        (destination / 'skills/one/SKILL.md').write_text('---\nnot valid yaml: [\n---\n')
-        edited = plan(self.setup, self.device)
-        self.assertEqual(edited.exit_code, 2, edited.blocked)
-        (self.roots.engine / 'claude/plugins/kit/1.0.0/skills/one/SKILL.md').write_text('---\nnot valid yaml: [\n---\n')
-        self.assertEqual(plan(self.setup, self.device).exit_code, 3)
+        folder = self.claude_loads()
+        self.assertEqual((folder.parent, folder.name.startswith('1.0.0-notes.')), (release.parent, True))
+        self.assertEqual((folder / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
+        self.assertEqual(sorted(path.name for path in work.iterdir()), ['displaced', 'staged'])
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+        return folder
 
     def test_aligned_claude_missing_cache_defers_alignment_and_skill_reads(self):
-        destination = self._interrupted_claude_install(aligned=True)
-        current = plan(self.setup, self.device)
-        self.assertEqual(current.exit_code, 1, [(d.kind.value, d.key, d.detail) for d in current.result.differences])
-        self.assertEqual(len(current.observations[Host.CLAUDE].unknown), 1)
-        self.calls.clear()
-        self.assertEqual(self.run_apply(current).exit_code, 0)
-        self.assertEqual(self.calls, [])
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'revised release bytes\n')
-        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
-        (destination / '.claude-plugin/codex-alignment.json').write_text('{bad json')
+        folder = self.legacy_missing_cache_gets_a_folder_of_its_own(aligned=True)
+        (folder / '.claude-plugin/codex-alignment.json').write_text('{bad json')
         self.assertEqual(plan(self.setup, self.device).exit_code, 3)
 
     def test_aligned_claude_implicit_skills_missing_cache_recovers(self):
-        destination = self._interrupted_claude_install(aligned=True, implicit=True)
-        current = plan(self.setup, self.device)
-        self.assertEqual(current.exit_code, 1, [(d.kind.value, d.key, d.detail) for d in current.result.differences])
-        self.assertEqual(len(current.observations[Host.CLAUDE].unknown), 1)
-        self.calls.clear()
-        self.assertEqual(self.run_apply(current).exit_code, 0)
-        self.assertEqual(self.calls, [])
-        self.assertEqual((destination / 'ordinary.txt').read_text(), 'revised release bytes\n')
-        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+        self.legacy_missing_cache_gets_a_folder_of_its_own(aligned=True, implicit=True)
 
-    def test_pending_claude_cache_unknown_stage_or_displaced_blocks(self):
-        self._interrupted_claude_install()
-        pending = json.loads(self._pending_claude_receipt().read_bytes())['pending']
-        for field in ('staged', 'displaced'):
-            with self.subTest(field=field):
-                ordinary = Path(pending[field]) / 'ordinary.txt'
-                original = ordinary.read_bytes()
-                ordinary.write_bytes(b'unrecognized bytes\n')
-                before = self.snapshot()
-                current = plan(self.setup, self.device)
-                self.assertEqual(current.exit_code, 3)
-                with self.assertRaises(RuntimeError):
-                    self.run_apply(current)
-                self.assertEqual(self.snapshot(), before)
-                ordinary.write_bytes(original)
-
-    def marker_only_folder_is_finished_like_a_missing_cache(self, **kwargs):
-        destination = self._interrupted_claude_install(**kwargs)
-        destination.mkdir()
-        lease = own_lease(destination / '.in_use')
-        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
-        self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertEqual((destination / 'ordinary.txt').read_text(), (self.source / 'ordinary.txt').read_text())
-        self.assertTrue(lease.exists())
-
-    def test_a_pending_claude_cache_whose_folder_holds_only_a_session_marker_is_finished_like_a_missing_one(self):
-        self.marker_only_folder_is_finished_like_a_missing_cache()
-
-    def test_a_pending_codex_aligned_cache_whose_folder_holds_only_a_session_marker_is_finished_like_a_missing_one(self):
-        self.marker_only_folder_is_finished_like_a_missing_cache(aligned=True)
-
-    def test_pending_claude_cache_changed_binding_or_stage_path_blocks(self):
-        self._interrupted_claude_install()
-        receipt = self._pending_claude_receipt()
-        original = json.loads(receipt.read_bytes())
-        for field in ('binding', 'stage'):
-            with self.subTest(field=field):
-                changed = json.loads(json.dumps(original))
-                if field == 'binding':
-                    changed['pending']['target']['bindings'][0]['physical'] = '/retargeted'
-                else:
-                    changed['pending']['staged'] = str(Path(changed['pending']['staged']).parent.parent / 'elsewhere')
-                receipt.write_text(json.dumps(changed))
-                before = self.snapshot()
-                current = plan(self.setup, self.device)
-                self.assertEqual(current.exit_code, 3)
-                with self.assertRaises(RuntimeError):
-                    self.run_apply(current)
-                self.assertEqual(self.snapshot(), before)
-                receipt.write_text(json.dumps(original))
+    def test_a_claude_cache_an_earlier_engine_left_moved_aside_gets_a_folder_of_its_own(self):
+        self.legacy_missing_cache_gets_a_folder_of_its_own()
 
     def test_claude_missing_cache_without_pending_does_not_defer_skill_error(self):
-        self._interrupted_claude_install()
-        receipt = self._pending_claude_receipt()
+        self.legacy_claude_swap_aside()
+        receipt = self._claude_receipt()
         receipt.rename(receipt.with_suffix('.retained'))
         before = self.snapshot()
         current = plan(self.setup, self.device)
@@ -4100,13 +3184,21 @@ class InstallationTest(unittest.TestCase):
             self.run_apply(current)
         self.assertEqual(self.snapshot(), before)
 
-    def test_pending_claude_linked_work_parent_blocks(self):
-        self._interrupted_claude_install()
-        pending = json.loads(self._pending_claude_receipt().read_bytes())['pending']
-        work = Path(pending['staged']).parent
-        retained = work.with_name(work.name + '-retained')
-        work.rename(retained)
-        work.symlink_to(retained, target_is_directory=True)
+    def test_a_missing_folder_that_claude_code_s_record_names_beside_another_s_stopped_replacement_blocks(self):
+        release, _ = self.legacy_claude_swap_aside()
+        self.point_claude_at(release.with_name('0.9.0'))
+        before = self.snapshot()
+        current = plan(self.setup, self.device)
+        self.assertEqual(current.exit_code, 3)
+        with self.assertRaises(RuntimeError):
+            self.run_apply(current)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_a_missing_folder_that_claude_code_s_record_names_without_a_pending_replacement_blocks(self):
+        first = self._installed_claude()
+        release = first.parent / '1.0.0'
+        shutil.rmtree(release)
+        self.point_claude_at(release)
         before = self.snapshot()
         current = plan(self.setup, self.device)
         self.assertEqual(current.exit_code, 3)
@@ -4117,7 +3209,7 @@ class InstallationTest(unittest.TestCase):
     def test_pending_claude_cache_other_skill_unread_still_blocks(self):
         from claude_host import ClaudeState
 
-        destination = self._interrupted_claude_install()
+        destination, _ = self.legacy_claude_swap_aside()
         state = self.device.host(Host.CLAUDE)
         original = state.observe
         plugin = 'kit@personal-collections'
@@ -4141,7 +3233,7 @@ class InstallationTest(unittest.TestCase):
             self.assertEqual(plan(self.setup, self.device).exit_code, 3)
 
     def test_pending_aligned_implicit_cache_other_orphan_unread_still_blocks(self):
-        destination = self._interrupted_claude_install(aligned=True, implicit=True)
+        destination, _ = self.legacy_claude_swap_aside(aligned=True, implicit=True)
         state = self.device.host(Host.CLAUDE)
         original = state.observe
         extra = Unknown(self.roots.tokens(destination), 'independent unread', frozenset({Surface.SKILL}),
@@ -4161,7 +3253,7 @@ class InstallationTest(unittest.TestCase):
             self.assertEqual(self.snapshot(), before)
 
     def test_claude_non_directory_or_unreadable_cache_has_no_missing_marker(self):
-        destination = self._interrupted_claude_install()
+        destination, _ = self.legacy_claude_swap_aside()
         destination.write_text('not a directory')
         current = plan(self.setup, self.device)
         self.assertEqual(current.exit_code, 3)
@@ -4323,47 +3415,6 @@ class InstallationTest(unittest.TestCase):
             self.assertEqual(self.run_apply().exit_code, 0)
         self.assertIn('node = "25"', live.read_text())
         self.assertIn('SECRET = "test-only-concurrent-value"', live.read_text())
-
-
-class LeaseHolderTest(unittest.TestCase):
-    """Real processes, because the point is telling a running Claude session from one that has exited."""
-
-    def test_a_running_process_holds_its_lease(self):
-        import os
-        from accepted_installations import _lease_held
-        stat = Path('/proc/self/stat')
-        start = {'procStart': stat.read_text().rsplit(')', 1)[1].split()[19]} if stat.exists() else {}
-        self.assertTrue(_lease_held({'pid': os.getpid(), **start}))
-
-    def test_a_finished_process_holds_no_lease(self):
-        import subprocess
-        from accepted_installations import _lease_held
-        child = subprocess.run([sys.executable, '-c', 'import os; print(os.getpid())'],
-                               capture_output=True, text=True, check=True)
-        self.assertFalse(_lease_held({'pid': int(child.stdout)}))
-
-    def test_a_running_process_holds_its_lease_whatever_windows_start_it_records(self):
-        import os
-        from accepted_installations import _lease_held
-        self.assertTrue(_lease_held({'pid': os.getpid(), 'procStartFt': '1'}))
-
-    @unittest.skipUnless(os.name == 'nt', 'only Windows markers hold a procStart that is not the clock ticks Linux uses')
-    def test_a_running_process_holds_its_lease_whatever_procstart_claude_records_on_windows(self):
-        from accepted_installations import _lease_held
-        self.assertTrue(_lease_held({'pid': os.getpid(), 'procStart': '639202300505758780'}))
-
-    @unittest.skipUnless(Path('/proc/self/stat').exists(), 'only Linux records the start time sync can compare')
-    def test_a_reused_process_id_holds_no_lease(self):
-        import os
-        from accepted_installations import _lease_held
-        self.assertFalse(_lease_held({'pid': os.getpid(), 'procStart': '1'}))
-
-    @unittest.skipUnless(Path('/proc/self/stat').exists(), 'only Linux records the start time sync can compare')
-    def test_a_lease_is_held_where_proc_cannot_tell_its_process(self):
-        from accepted_installations import _lease_held
-        with patch('portable._proc_shows_host', return_value=False):  # a sandbox's own /proc
-            self.assertTrue(_lease_held({'pid': os.getpid(), 'procStart': '1'}))
-        self.assertTrue(_lease_held({'pid': os.getpid(), 'procStart': 'Thu Oct 15 12:30:00 2026'}))
 
 
 if __name__ == '__main__':

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path, PureWindowsPath
@@ -182,6 +183,29 @@ class ParsingTest(unittest.TestCase):
         for text in ('main', 'd631a88', 'D631A8827F99414D2B6DABA4EF08B7F8701751D7'):
             with self.assertRaises(ValueError):
                 host_state.parse_commit(text)
+
+    def test_a_version_folder_names_its_upstream_release_and_reads_back_as_it(self):
+        built = '1.20.0+composed.b7e3.explicit.ec4b'
+        now = datetime(2026, 11, 14, 19, 0, 0, 500, tzinfo=timezone.utc)
+        for version, name in (('4.9.1', '4.9.1+notes.20261114T190000Z.0123456789ab'),
+                              (built, f'{built}.notes.20261114T190000Z.0123456789ab')):
+            with self.subTest(version=version):
+                self.assertEqual(host_state.version_folder(version, '0123456789ab' + 'f' * 52, now), name)
+                self.assertEqual(host_state.upstream_version(name), version)
+                self.assertEqual(host_state.upstream_version(version), version)
+                for spelling in (name, name.replace('+', '-')):
+                    self.assertTrue(host_state.named_for(spelling, '0123456789ab' + 'f' * 52))
+                    self.assertFalse(host_state.named_for(spelling, '0123456789ac' + 'f' * 52))
+                self.assertFalse(host_state.named_for(version, '0123456789ab' + 'f' * 52))
+
+    def test_a_version_folder_is_named_after_every_earlier_one_even_when_the_clock_says_otherwise(self):
+        now = datetime(2026, 11, 14, 19, 0, 0, tzinfo=timezone.utc)
+        siblings = ('4.9.1', '4.9.1+notes.20261114T190000Z.ffffffffffff', '4.9.1-notes.20261114T190005Z.000000000000',
+                    '.sync-kit-1234', '4.10.0')
+        self.assertEqual(host_state.version_folder('4.9.1', '0' * 64, now, siblings),
+                         '4.9.1+notes.20261114T190006Z.000000000000')
+        self.assertEqual(host_state.version_folder('4.9.1', '0' * 64, now.replace(hour=20), siblings),
+                         '4.9.1+notes.20261114T200000Z.000000000000')
 
     def test_clone_url_spells_github_repositories_one_way(self):
         for text in ('https://github.com/cursor/plugins/tree/main/pstack', 'https://github.com/cursor/plugins',

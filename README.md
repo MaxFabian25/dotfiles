@@ -45,6 +45,26 @@ Personal Codex catalog exports carry explicit-only policy in their files. A chan
 `codex-exports/`; the upstream snapshot stays untouched. Fresh profile installs therefore receive the
 same policy as the canonical cache. Harness adaptations remain a separate installation overlay.
 
+A sync never moves or writes a plugin folder that Claude Code or Codex loads from `~/.claude` or `~/.codex`.
+When a plugin's installed bytes change, as the release or its installation overlay does, the sync writes them
+to a new folder beside the old one in the plugin's cache folder and points the app there
+(`accepted_installations.py`). On Codex the folder is named
+`<version>+notes.<UTC time>.<first 12 hex digits of its content's digest>` (`.notes.` after existing build
+metadata), with a time later than every earlier such folder, so it sorts above every folder of that version and
+Codex loads it. On Claude Code the name has `-` for `+`, and the sync changes only the `installPath` of the
+plugin's user-scope entry in `~/.claude/plugins/installed_plugins.json`, keeping the upstream `version` and every
+other entry. An isolated probe on 14 November 2026 showed `claude plugin update` putting an entry whose version is
+not the upstream one back on the upstream folder. A session that started on the old folder reads it to the
+end, except on Codex when the upstream version changes: the native `codex plugin add` that the sync runs first
+removes the plugin's other version folders, as Codex 0.169.0-alpha.6 did in an isolated probe on 14 November
+2026. A rerun that finds the app loading a folder with the reviewed bytes writes no folder. A loaded folder whose
+name carries the digest of the bytes it holds counts as the sync's own unedited output, so a sync that stopped
+before saving its receipt leaves a folder the next sync builds on, whatever release that sync brings. An edit
+changes the digest, and the sync then stops rather than build on it. The sync stages the new folder outside the plugin's folder and
+moves it into place with one rename, so an app sees all of it or none. When Windows refuses that rename, the
+app keeps the folder it loads, which is the unadapted upstream release when the same sync installed a new one, the sync applies the rest of the release and exits 1, and the next pull tries again. Work folders that an earlier engine left beside a
+plugin it replaced in place stay where they are, and the sync names them once.
+
 Native publisher plugins keep their publisher versions and catalog ownership.
 
 An account home is a separate Codex home that another app keeps, such as each account of the Orca desktop app,
@@ -55,8 +75,9 @@ in one, its `plugin/list` call installs a newer catalog version, which lacks the
 adaptation of the accepted `~/.codex` copy. So for each plugin a home has installed and enabled, and for each
 kept-current plugin a home has installed, whatever that home's switch says, a sync
 copies the accepted `~/.codex` copy into that home in place of an older version, the native copy, its own
-earlier copy, or the `~/.codex` copy a release replaced at the same version, which a home that already
-matched holds without a copy receipt (`profile_plugins.py`). It decides which homes need a copy after updating `~/.codex`, so a
+earlier copy, or an earlier `~/.codex` copy, which a home that already matched holds without a copy receipt:
+another version folder of the plugin in `~/.codex`, or the backup an earlier engine kept when it replaced the
+`~/.codex` copy in place (`profile_plugins.py`). It decides which homes need a copy after updating `~/.codex`, so a
 release that changes the accepted copy reaches every home in the same sync. The copies it replaces move to
 the sync backup. A copy with any other file blocks the sync as a local edit. A home whose marketplace
 setting differs from `~/.codex` gets a note instead. A sync installs no plugin a home lacks, enables nothing, and leaves settings, credentials
@@ -64,20 +85,16 @@ and roles alone. A cache that is linked to `~/.codex`, as on Windows, is already
 whose hooks are `trusted` blocks the sync until its hooks are approved in each home as well; a sync
 never approves them.
 
-Claude's validated root `.in_use` leases and `.orphaned_at` timestamp are native cache state, not
-plugin content. This distinction applies only to installed Claude plugins. Unknown entries, malformed
-markers, and links still block reconciliation. A lease from a running Claude process keeps that cache
-path as it is: the pull leaves its replacement pending, applies the rest of the release, exits 1, and
-replaces the cache at the first pull after those processes exit. A replacement that changes only
-Markdown files under `skills/`, as tool notes and invocation choices do, goes ahead at once, since a
-session reads those files when it uses the skill; the swap moves the sessions' leases into the new
-folder. Source builds and staged replacements remain strict raw trees.
+Claude's root `.in_use` leases and `.orphaned_at` timestamp are native cache state, not plugin content,
+and a sync leaves both unread, since Claude Code writes them while it runs. This distinction applies only to
+installed Claude plugins. Other unknown entries and links still block reconciliation. A running Claude
+session holds back no change, since the sync leaves the folder it runs from as it is. Source builds and staged replacements remain strict raw trees.
 
 Python writes a `__pycache__` folder beside any module it imports. Comparisons of installed, accepted
 and staged trees leave out these folders and the regular files in them, as the tree digests do, so a
 skill whose script was imported is not a local edit. A link or special file inside one still blocks
-reconciliation. Copies from a source leave the folders out, and a replacement moves the installed ones
-aside with the rest of the old tree. A changed `.pyc` file therefore goes unnoticed.
+reconciliation. Copies from a source leave the folders out, and a replacement leaves the installed ones
+with the rest of the old tree. A changed `.pyc` file therefore goes unnoticed.
 
 ## Review source changes
 

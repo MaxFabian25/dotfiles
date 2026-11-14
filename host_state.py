@@ -6,6 +6,7 @@ paths. Only engine-generated files are neutralised before hashing; every other b
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 import enum
 import fnmatch
 import hashlib
@@ -13,7 +14,7 @@ import json
 from pathlib import Path, PurePosixPath
 import re
 import sys
-from typing import TYPE_CHECKING, Mapping, NewType, Protocol
+from typing import TYPE_CHECKING, Iterable, Mapping, NewType, Protocol
 
 import portable
 
@@ -273,6 +274,35 @@ class Pinned:
 @dataclass(frozen=True)
 class Released:
     version: str                     # engine release or aligned copy; the version encodes commit and packaging
+
+
+_FOLDER = re.compile(r'(.+?)[+.-]notes\.([0-9]{8}T[0-9]{6}Z)\.([0-9a-f]{12})')
+_STAMP = '%Y%m%dT%H%M%SZ'
+
+
+def version_folder(version: str, digest: str, now: datetime, siblings: Iterable[str] = ()) -> str:
+    """The name of a plugin folder the engine writes, in Codex's spelling: the upstream version, then a UTC time and
+    the start of its content's digest as build metadata. Codex loads the highest version folder and orders build
+    metadata as text, so the time is now or one second past the latest engine folder among siblings, whichever is
+    later. The folder then sorts above the upstream release and every earlier engine folder of it, also when two
+    writes fall in one second or the clock went back."""
+    stamps = [datetime.strptime(match[2], _STAMP).replace(tzinfo=timezone.utc) + timedelta(seconds=1)
+              for name in siblings if (match := _FOLDER.fullmatch(name))]
+    when = max([now, *stamps])
+    return f'{version}{"." if "+" in version else "+"}notes.{when.strftime(_STAMP)}.{digest[:12]}'
+
+
+def named_for(name: str, digest: str) -> bool:
+    """Whether name, in either host's spelling, is a version_folder name made for content with this digest."""
+    match = _FOLDER.fullmatch(name)
+    return match is not None and match[3] == digest[:12]
+
+
+def upstream_version(version: str) -> str:
+    """The upstream version that Codex's name for a version_folder folder was made from, which is what a pin compares.
+    Claude Code's name for it needs no inverse, since its install record keeps the upstream version."""
+    match = _FOLDER.fullmatch(version)
+    return match[1] if match else version
 
 
 @dataclass(frozen=True)

@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from candidate_result import CandidateResult, HeldCache, dump
+from candidate_result import CandidateResult, dump
 from description import DescriptionError, Roots
 from description_toml import load
 from device import Device
@@ -56,15 +56,11 @@ def run(args):
             owner.rehearse(current.observations)
             from sync_hosts import Rehearsal
             Rehearsal(setup.for_platform(device.platform), device, current).run()
-            held = tuple(HeldCache(identity, cache, tuple(holders))
-                         for identity, cache, holders in owner.held_replacements(current.observations))
             if args.json:
                 if current.blocked:  # release.py shows these rows, which name each blocker and its fix
                     print(render(current.result, notes=args.notes), end='', file=sys.stderr)
-                print(dump(CandidateResult(len(current.blocked), held)))
+                print(dump(CandidateResult(len(current.blocked))))
                 return current.exit_code
-            for cache in held:
-                print(cache.lease)
         if args.apply:
             if current.blocked and not args.json:
                 print(render(current.result, notes=args.notes), end='')  # its attention rows name each blocker and its fix

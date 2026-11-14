@@ -123,9 +123,11 @@ def inspect(setup, roots, patterns, accepted, approved=None):
             if not (switched_on or getattr(install, 'keep_current', False)):
                 continue
             entry = EntryRef(package.name, package.visibility)
-            canonical = roots.codex_home / relative
+            record = accepted(f'plugin:{Host.CODEX}:{subject}')
+            # The receipt names the version folder of its own that sync wrote for the plugin in ~/.codex.
+            canonical = Path(record['path']) if record else roots.codex_home / relative
             try:
-                shared = (profile / relative).resolve() == canonical.resolve()
+                shared = (profile / relative).parent.resolve() == canonical.parent.resolve()
                 try:
                     target = profile / relative if shared else child(profile, relative)
                 except BuildError:
@@ -140,8 +142,7 @@ def inspect(setup, roots, patterns, accepted, approved=None):
                                           f'{profile} configures the {marketplace} marketplace differently from '
                                           '~/.codex; its copy is left to Codex'))
                         continue
-                    record = accepted(f'plugin:{Host.CODEX}:{subject}')
-                    accepted_image = record['image'] if record and Path(record['path']) == canonical else None
+                    accepted_image = record['image'] if record else None
                     actual = image(target)
                     if actual != accepted_image:
                         copied = _copied(roots, profile, subject)
@@ -149,10 +150,13 @@ def inspect(setup, roots, patterns, accepted, approved=None):
                         references = [accepted_image] if accepted_image else []
                         references += [image(native)] if native is not None else []
                         references += [copied['image']] if copied and copied['path'] == str(target) else []
-                        # A home whose copy already matched ~/.codex has no copy receipt, so once a release replaces
-                        # the ~/.codex copy in place, the copy it moved aside is what the home still holds.
-                        replaced = Path(record['backup']) if record and record.get('backup') else None
-                        references += [image(replaced)] if replaced is not None and replaced.is_dir() else []
+                        # A home whose copy already matched ~/.codex has no copy receipt, so once a release gives
+                        # ~/.codex a new copy, the earlier copy is what the home still holds: in its own version folder,
+                        # or, from an engine that replaced copies in place, in the folder that receipt names as backup.
+                        replaced = [path for path in canonical.parent.iterdir()
+                                    if path != canonical and not path.name.startswith('.')] if record else []
+                        replaced += [Path(record['backup'])] if record and record.get('backup') else []
+                        references += [image(path) for path in replaced if path.is_dir()]
                         if actual != _ABSENT and not _known_copy(actual, references):
                             raise ConcurrentEdit(f'{target} has files that are in none of the accepted ~/.codex copy, '
                                                  'the copy it replaced, the release Codex installs, or the copy sync '

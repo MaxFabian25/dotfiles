@@ -10,27 +10,23 @@ from unittest import mock
 
 ENGINE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ENGINE))
-from candidate_result import CandidateResult, HeldCache, dump, read
+from candidate_result import CandidateResult, dump, read
 import release
 
-HELD = HeldCache('plugin:claude:kit@m', Path('/cache/kit/1.0.0'), (4242, 4343))
-LEASE = f'Claude lease: plugin:claude:kit@m at {HELD.cache}, held by running Claude processes 4242, 4343'
 GOOD = {'blocking': 0, 'held': []}
 
 
 class ReadTest(unittest.TestCase):
     def test_what_dump_writes_reads_back_as_the_same_result(self):
-        result = CandidateResult(2, (HELD,))
+        result = CandidateResult(2)
         self.assertEqual(read(dump(result)), result)
 
-    def test_a_missing_key_is_named(self):
-        for key in GOOD:
-            with self.subTest(key=key), self.assertRaisesRegex(ValueError, f'^the candidate result has no {key}$'):
-                read(json.dumps({k: v for k, v in GOOD.items() if k != key}))
+    def test_a_result_without_blocking_is_named(self):
+        with self.assertRaisesRegex(ValueError, '^the candidate result has no blocking$'):
+            read(json.dumps({'held': []}))
 
-    def test_a_held_cache_missing_its_holders_is_named(self):
-        with self.assertRaisesRegex(ValueError, '^held cache 0 has no holders$'):
-            read(json.dumps({**GOOD, 'held': [{'identity': 'kit', 'cache': '/c'}]}))
+    def test_a_result_without_held_caches_reads_as_one_with_none(self):
+        self.assertEqual(read(json.dumps({'blocking': 1})), CandidateResult(1))
 
     def test_a_wrong_type_is_named_with_its_value(self):
         for value, shown in (('0', "'0'"), (0.0, '0.0')):
@@ -42,15 +38,8 @@ class ReadTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'has blocking True, which is not of type int'):
             read(json.dumps({**GOOD, 'blocking': True}))
 
-    def test_a_holder_that_is_not_a_process_id_is_named(self):
-        for holder, shown in (('1', "'1'"), (True, 'True')):
-            with self.subTest(holder=holder), self.assertRaisesRegex(
-                    ValueError, f'^held cache 0 has holders that are not all process ids: \\[4242, {shown}\\]$'):
-                read(json.dumps({**GOOD, 'held': [{'identity': 'kit', 'cache': '/c', 'holders': [4242, holder]}]}))
-
     def test_a_key_a_later_release_adds_is_ignored(self):
-        held = {'identity': HELD.identity, 'cache': str(HELD.cache), 'holders': list(HELD.holders), 'since': 'boot'}
-        self.assertEqual(read(json.dumps({'blocking': 0, 'held': [held], 'unmanaged': 4})), CandidateResult(0, (HELD,)))
+        self.assertEqual(read(json.dumps({**GOOD, 'unmanaged': 4})), CandidateResult(0))
 
     def test_output_after_the_result_is_refused(self):
         with self.assertRaisesRegex(ValueError, '^the candidate result is not JSON: Extra data, line 2$'):
@@ -139,14 +128,9 @@ class DeviceCheckTest(unittest.TestCase):
                 self.assertEqual(stop, f'the pull on this device would stop on this release (sync exited {code}); '
                                        'nothing was pushed')
 
-    def test_each_held_claude_cache_is_named_with_what_the_pull_does_about_it(self):
-        other = HeldCache('plugin:claude:pack@m', Path('/cache/pack/2.0.0'), (5151,))
-        output, error, stop = self.check(candidate_sync(dump(CandidateResult(0, (HELD, other)))))
-        self.assertIsNone(stop)
-        after = ('; the pull here swaps it at once if only skill text changes, and otherwise applies the rest of the '
-                 'release and replaces that cache once they exit\n')
-        self.assertEqual(output, LEASE + after + f'Claude lease: plugin:claude:pack@m at {other.cache}, held by '
-                                                 'running Claude processes 5151' + after)
+    def test_a_result_from_a_sync_that_still_lists_held_claude_caches_prints_nothing(self):
+        held = {'identity': 'plugin:claude:kit@m', 'cache': '/cache/kit/1.0.0', 'holders': [4242]}
+        self.assertEqual(self.check(candidate_sync(json.dumps({**GOOD, 'held': [held]}))), ('', '', None))
 
 
 class CandidateOutputTest(unittest.TestCase):
@@ -159,8 +143,6 @@ class CandidateOutputTest(unittest.TestCase):
         current = SimpleNamespace(changes=('a', 'b'), blocked=blocked, unmanaged=('c',), expected=(),
                                   observations={'kit': 'observed'}, result='plan', exit_code=2 if blocked else 1)
         owner = mock.Mock()
-        owner.held_replacements.side_effect = lambda observed: (
-            [(HELD.identity, HELD.cache, list(HELD.holders))] if observed is current.observations else [])
 
         def validate(configurations, roots, *, proposed):
             if (configurations, roots, proposed) != (owner.configurations, device.roots, True):
@@ -181,18 +163,18 @@ class CandidateOutputTest(unittest.TestCase):
         code, output, error = self.candidate('--json')
         self.assertEqual((code, error), (1, ''))
         self.assertEqual(len(output.splitlines()), 1)
-        self.assertEqual(read(output), CandidateResult(0, (HELD,)))
+        # A pull no longer waits on a held Claude cache, but an older release.py still needs the key.
+        self.assertEqual(json.loads(output), {'blocking': 0, 'held': []})
 
     def test_with_json_a_blocked_plan_also_writes_its_rows_to_stderr(self):
         code, output, error = self.candidate('--json', blocked=('stale lock',))
         self.assertEqual((code, error), (2, 'rows\n'))
-        self.assertEqual(read(output), CandidateResult(1, (HELD,)))
+        self.assertEqual(read(output), CandidateResult(1))
 
-    def test_without_json_it_prints_the_lease_lines_and_summary_a_person_reads(self):
+    def test_without_json_it_prints_the_summary_a_person_reads(self):
         code, output, error = self.candidate()
         self.assertEqual((code, error), (1, ''))
-        self.assertEqual(output, f'{LEASE}\nrows\nManaged changes: 2; blocking issues: 0; '
-                                 'unmanaged differences left untouched: 1.\n')
+        self.assertEqual(output, 'rows\nManaged changes: 2; blocking issues: 0; unmanaged differences left untouched: 1.\n')
 
 
 if __name__ == '__main__':

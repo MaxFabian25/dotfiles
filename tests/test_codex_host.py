@@ -411,6 +411,21 @@ class ObserveTest(unittest.TestCase):
             observation = device.state().observe(hs.Request())
         self.assertEqual(observation.facts[key(S.PLUGIN, 'tracker@skills')].value, hs.PluginValue(True, hs.Released('2.0')))
 
+    def test_a_version_folder_the_engine_wrote_is_known_by_its_upstream_release(self):
+        with Device() as device:
+            cache = device.roots.codex_home / 'plugins/cache/personal/kit'
+            folder = cache / '1.0+notes.20261114T190000Z.0123456789ab'
+            (cache / '1.0').rename(folder)
+            device.inventory[0]['version'] = folder.name
+            device.inventory.append(plugin(device, 'tracker@skills', True, '2.0+notes.20261114T190000Z.0123456789ab',
+                                           {'source': 'git', 'url': 'u', 'ref': 'main'}))
+            observation = device.state().observe(hs.Request())
+        kit = key(S.PLUGIN, 'kit@personal')
+        self.assertEqual(observation.facts[kit].value, hs.PluginValue(True, hs.Released('1.0')))
+        self.assertEqual(observation.details[kit].root, folder)
+        self.assertEqual(observation.facts[key(S.PLUGIN, 'tracker@skills')].value,
+                         hs.PluginValue(True, hs.Released('2.0')))
+
     def test_reads_effective_state_from_the_cli_config_and_caches(self):
         with Device() as device:
             observation = device.state().observe(hs.Request())

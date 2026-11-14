@@ -26,7 +26,7 @@ from invocation_overrides import skill_paths
 from host_state import (CATALOGS as ALL_CATALOGS, ENGINE_MARKETPLACE, PRIMARY_RUNTIME, Approved, CheckoutMarketplace, DeviceRoots,
                         Commit, EngineMarketplace, Fact, FactKey, FactSet, FileValue, GitMarketplace, Host, InstallDetail,
                         NoteKind, Observation, Pinned, PluginValue, Released, Request, SkillMode, Surface,
-                        TreeValue, Unpinned, bytes_digest, clone_url, parse_commit)
+                        TreeValue, Unpinned, bytes_digest, clone_url, parse_commit, upstream_version)
 import portable
 
 _HOST = Host.CODEX
@@ -421,10 +421,9 @@ class CodexState:
             release = releases.get(plugin['pluginId'])
             if isinstance(release, Unread):
                 raise release
-            if release is not None:
-                return Released(plugin['version'])
-            if plugin['pluginId'] in local_releases:
-                return Released(plugin['version'])
+            # Codex names a version after its folder, and the engine names the folders it writes after the release.
+            if release is not None or plugin['pluginId'] in local_releases:
+                return Released(upstream_version(plugin['version']))
             if source.get('source') in ('git', 'git-subdir') and (commit := _commit_or_none(source.get('ref'))):
                 return Pinned(commit)
             if source.get('source') == 'local' and marketplace not in checkouts:
@@ -450,7 +449,7 @@ class CodexState:
                         raise Unread(f'{roots.tokens(record)} unreadable: {error}') from error
                 return Pinned(fetched[record])
             # A checkout's copies and branch-following sources: Codex records only the installed version.
-            return Released(plugin['version'])
+            return Released(upstream_version(plugin['version']))
 
         hooks: dict[str, set[str]] = {}
         for plugin in inventory:

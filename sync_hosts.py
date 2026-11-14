@@ -6,7 +6,7 @@ import sys
 import tomllib
 
 import portable
-from accepted_installations import AcceptedInstallations, HeldCache, HeldMove, copy_tree, image
+from accepted_installations import AcceptedInstallations, HeldMove, copy_tree, image
 from claude_host import native_marketplace
 import codex_runtime
 import profile_plugins
@@ -46,7 +46,7 @@ class Apply:
         for artifact in self.prepared.artifacts:
             try:
                 self.owner.apply(artifact, self.files, native=self._install)
-            except (HeldCache, HeldMove) as held:
+            except HeldMove as held:
                 self.held.append(held)
         self._plugins()
         self._skills()

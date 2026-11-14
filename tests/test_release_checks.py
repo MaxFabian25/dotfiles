@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import release  # noqa: E402
 from release_case import (ALLOWLIST, FAILING_TEST, PACKAGE, PASSING_TEST, ReleaseCase, SEEDED_TESTS,
-                          SYNC_WITH_CHANGES, git, package_toml, release_main, sync_with_changes)  # noqa: E402
+                          SYNC_WITH_CHANGES, git, package_toml, release_main)  # noqa: E402
 from release_case import skip_on_windows as setUpModule  # noqa: E402, F401
 
 
@@ -322,19 +322,6 @@ class ChecksTest(ReleaseCase):
         self.assertEqual(release_main(['finish', 'moved', '--message', str(message), '--push', *self.options()],
                                       self.public), 0)
         self.assertIn('b' * 40, git(self.public_origin, 'show', f'main:{PACKAGE}'))
-
-    def test_finish_pushes_and_names_claude_sessions_holding_a_plugin_it_replaces(self):
-        release_main(['start', 'held', *self.options()], self.public)
-        held = sync_with_changes({'identity': 'plugin:claude:kit@m', 'cache': '/cache/kit/1.0.0', 'holders': [4242]})
-        (self.worktrees / 'held/public/sync.py').write_text(held, encoding='utf-8')
-        message = self.root / 'message'
-        message.write_text('Hold the plugin\n', encoding='utf-8')
-        finish = ['finish', 'held', '--message', str(message), '--push', *self.options()]
-        with redirect_stdout(io.StringIO()) as output:
-            self.assertEqual(release_main(finish, self.public), 0)
-        self.assertIn('Claude lease: plugin:claude:kit@m at /cache/kit/1.0.0, held by running Claude processes 4242; '
-                      'the pull here swaps it at once if only skill text changes', output.getvalue())
-        self.assertEqual(git(self.public_origin, 'show', 'main:sync.py'), held.strip())
 
     def test_a_pushed_finish_says_which_of_the_users_other_machines_are_online(self):
         status = {'Self': {'UserID': 7, 'HostName': 'here', 'OS': 'linux'}, 'Peer': {

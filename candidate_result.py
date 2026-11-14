@@ -8,32 +8,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
-from pathlib import Path
-
-
-@dataclass(frozen=True)
-class HeldCache:
-    """A Claude plugin cache the pull would replace in place while running Claude processes hold it."""
-    identity: str
-    cache: Path
-    holders: tuple[int, ...]
-
-    @property
-    def lease(self):
-        return (f'Claude lease: {self.identity} at {self.cache}, held by running Claude processes '
-                f'{", ".join(map(str, self.holders))}')
 
 
 @dataclass(frozen=True)
 class CandidateResult:
     blocking: int
-    held: tuple[HeldCache, ...] = ()
 
 
 def dump(result):
-    return json.dumps({'blocking': result.blocking,
-                       'held': [{'identity': held.identity, 'cache': str(held.cache), 'holders': list(held.holders)}
-                                for held in result.held]})
+    # A release.py from before plugins got folders of their own requires the list of held Claude caches, which is
+    # always empty now. Drop the key once every machine that finishes releases runs a release.py that ignores it.
+    return json.dumps({'blocking': result.blocking, 'held': []})
 
 
 def read(text):
@@ -42,15 +27,8 @@ def read(text):
         data = json.loads(text)
     except json.JSONDecodeError as error:
         raise ValueError(f'the candidate result is not JSON: {error.msg}, line {error.lineno}') from None
-    _fields(data, 'the candidate result', {'blocking': int, 'held': list})
-    held = []
-    for number, entry in enumerate(data['held']):
-        where = f'held cache {number}'
-        _fields(entry, where, {'identity': str, 'cache': str, 'holders': list})
-        if any(type(pid) is not int for pid in entry['holders']):
-            raise ValueError(f'{where} has holders that are not all process ids: {entry["holders"]!r}')
-        held.append(HeldCache(entry['identity'], Path(entry['cache']), tuple(entry['holders'])))
-    return CandidateResult(data['blocking'], tuple(held))
+    _fields(data, 'the candidate result', {'blocking': int})
+    return CandidateResult(data['blocking'])
 
 
 def _fields(value, where, kinds):

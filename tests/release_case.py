@@ -31,13 +31,8 @@ def parser_into(root):
     return [source.name for source in sources]
 
 
-def sync_with_changes(*held):
-    """A worktree's sync.py whose candidate check finds one change to apply and the held Claude caches."""
-    result = json.dumps({'blocking': 0, 'held': list(held)})
-    return f'print({result!r})\nraise SystemExit(1)\n'
-
-
-SYNC_WITH_CHANGES = sync_with_changes()
+# A worktree's sync.py whose candidate check finds one change to apply.
+SYNC_WITH_CHANGES = f'print({json.dumps({"blocking": 0, "held": []})!r})\nraise SystemExit(1)\n'
 PASSING_TEST = 'import unittest\n\n\nclass Seed(unittest.TestCase):\n    def test_passes(self):\n        pass\n'
 FAILING_TEST = PASSING_TEST.replace('        pass', '        self.fail("broken")')
 RUN_ALONE = '\n\nif __name__ == "__main__":\n    unittest.main()\n'
