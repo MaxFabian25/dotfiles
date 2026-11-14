@@ -45,9 +45,45 @@ class Probe(unittest.TestCase):
             self.assertEqual([str(parent / '.git') for parent in folder.parents if os.path.lexists(parent / '.git')],
                              [], folder)
 '''
+FINDS_ITS_TEMPORARY_FOLDERS_BEHIND_A_LINK = '''from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
 
 
-def full_run(modules, runner=RUNNER, stdin=None, home=None):
+class Probe(unittest.TestCase):
+    def test_a_temporary_folder_differs_from_its_resolved_path_and_exists_there(self):
+        child = subprocess.run([sys.executable, '-c', 'import tempfile; print(tempfile.mkdtemp())'],
+                               capture_output=True, text=True, check=True, timeout=60)
+        for folder in Path(tempfile.mkdtemp()), Path(child.stdout.strip()):
+            self.assertNotEqual(folder.resolve(), folder)
+            self.assertTrue(folder.resolve().is_dir(), folder)
+'''
+# One name for each prefix and part the runner drops, matched by that member alone, and one name it keeps.
+SESSION_NAMES = ('ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL', 'OPENAI_ORG_ID', 'T3CODE_THREAD_ID', 'CLAUDECODE', 'CODEX_THREAD_ID',
+                 'GH_TOKEN', 'CLIENT_SECRET', 'MAPS_API_KEY', 'DB_PASSWORD', 'npm_config_authtoken')
+SEES_NO_SESSION_VARIABLES = f'''import json
+import os
+import subprocess
+import sys
+import unittest
+
+NAMES = {[name.upper() for name in SESSION_NAMES]!r}
+
+
+class Probe(unittest.TestCase):
+    def test_neither_a_test_nor_a_program_it_starts_sees_a_session_variable(self):
+        child = subprocess.run([sys.executable, '-c', 'import json, os; print(json.dumps(dict(os.environ)))'],
+                               capture_output=True, text=True, check=True, timeout=60)
+        for seen in dict(os.environ), json.loads(child.stdout):
+            seen = {{name.upper(): value for name, value in seen.items()}}
+            self.assertEqual([name for name in NAMES if name in seen], [])
+            self.assertEqual(seen.get('DOTFILES_KEPT'), 'kept')
+'''
+
+
+def full_run(modules, runner=RUNNER, stdin=None, home=None, environment=None):
     with tempfile.TemporaryDirectory() as folder:
         tests = Path(folder) / 'tests'
         tests.mkdir()
@@ -59,7 +95,7 @@ def full_run(modules, runner=RUNNER, stdin=None, home=None):
         home = str(home or Path(folder) / 'home')
         return subprocess.run([sys.executable, '-B', str(tests / 'run.py')], cwd=folder, capture_output=True, text=True,
                               encoding='utf-8', timeout=300, stdin=stdin,
-                              env=os.environ | {'HOME': home, 'USERPROFILE': home})
+                              env=os.environ | (environment or {}) | {'HOME': home, 'USERPROFILE': home})
 
 
 class FullRun(unittest.TestCase):
@@ -140,6 +176,17 @@ class FullRun(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout)
             # The run made its folders in the home it was given, so it read that home rather than the real one.
             self.assertTrue((Path(folder) / 'home' / '.cache' / 'dotfiles-tests').is_dir())
+
+    @unittest.skipIf(sys.platform == 'win32', 'the runner links no temporary folder on Windows')
+    def test_a_module_and_the_programs_it_starts_find_their_temporary_folders_behind_a_link(self):
+        result = full_run({'test_a.py': FINDS_ITS_TEMPORARY_FOLDERS_BEHIND_A_LINK})
+        self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_no_session_variable_reaches_a_module_or_the_programs_it_starts(self):
+        result = full_run({'test_a.py': SEES_NO_SESSION_VARIABLES},
+                          environment=dict.fromkeys(SESSION_NAMES, 'made-up') | {'DOTFILES_KEPT': 'kept'})
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertRegex(result.stdout, r'(?m)^Ran 1 test in \S+\nOK\n\Z')
 
     def test_a_run_removes_the_folders_of_runs_stopped_over_a_day_ago(self):
         with tempfile.TemporaryDirectory() as home:

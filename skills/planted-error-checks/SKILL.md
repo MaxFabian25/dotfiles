@@ -51,8 +51,9 @@ blind to it.
 - Run each plant in its own copy of the project, so one plant cannot leak into another. Copy the
   sources the checks read into the copy, or freeze them for the run, because a symlinked source
   edited during the run changes every copy at once.
-- Before a run of more than a handful of plants, time one plant's CPU and wall-clock cost and
-  multiply it by the number of plants. Choose the number of workers, the machine, and whether to
+- Before a run of more than a handful of plants, read the estimate that `plant.py` prints once the
+  unchanged copy passes, its wall and CPU time multiplied by the number of plants, and the load
+  warning it prints at start. With another tool, time one plant yourself and multiply. Choose the number of workers, the machine, and whether to
   start the run with `agent-job`, from that total.
 - Run copies in parallel where the tools and the machine's load allow it, and one at a time for a
   tool that holds one instance, such as desktop PowerPoint. On a machine that other sessions or CI

@@ -17,7 +17,10 @@ MISE = shutil.which('mise')
 class MiseEnvironmentTests(unittest.TestCase):
     def test_shells_keep_their_tools_while_the_selected_npm_is_not_installed(self):
         env = tomllib.loads((ROOT / 'config/mise/config.toml').read_text(encoding='utf-8'))['env']
-        with tempfile.TemporaryDirectory() as home:
+        with tempfile.TemporaryDirectory() as folder:
+            # mise compares MISE_CEILING_PATHS with its resolved working folder, so behind a link it reads past the
+            # ceiling into the real home's config.
+            home = str(Path(folder).resolve())
             config = Path(home) / '.config/mise'
             config.mkdir(parents=True)
             tools = {'npm:npm': '0.0.0'}

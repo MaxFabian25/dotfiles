@@ -8,7 +8,10 @@ checkout, or a release worktree's public folder:
 
     uv run --locked python -B tests/run.py [-p PATTERN] [-k NAME] [-v]
 
-Each run's temporary folders sit outside the system's, as TEMPORARY_PARENT says.
+Each run's temporary folders sit outside the system's, as TEMPORARY_PARENT says, and outside Windows behind a
+symbolic link, so a test that compares a resolved path with one it did not resolve fails on every device, as it
+fails on macOS, where /var links to /private/var. The tests see none of the agent session's variables that
+session_variable names.
 """
 
 from concurrent.futures import ThreadPoolExecutor
@@ -36,6 +39,15 @@ TEMPORARY_PARENT = Path.home() / '.cache' / 'dotfiles-tests'
 # A run stopped part-way leaves its folder there. A module stops at 15 minutes and release.py's whole suite at 30,
 # so a run's folder untouched for a day is a stopped run's.
 STALE_SECONDS = 24 * 60 * 60
+# Agent sessions export their thread, their session and API keys, and a test that passes them on to a program it
+# starts can write them into a file, as a probe once wrote a pool key into a Codex snapshot.
+SESSION_PREFIXES = ('ANTHROPIC_', 'OPENAI_', 'T3CODE_', 'CLAUDE', 'CODEX_')
+SECRET_PARTS = ('TOKEN', 'SECRET', 'API_KEY', 'PASSWORD')
+
+
+def session_variable(name):
+    name = name.upper()
+    return name.startswith(SESSION_PREFIXES) or any(part in name for part in SECRET_PARTS)
 
 
 def run_module(path):
@@ -88,8 +100,15 @@ def main(argv):
                 shutil.rmtree(stale, ignore_errors=True)
         except FileNotFoundError:  # another run removed it first
             pass
+    for name in [name for name in os.environ if session_variable(name)]:
+        del os.environ[name]
     with tempfile.TemporaryDirectory(prefix='dotfiles-tests-', dir=TEMPORARY_PARENT) as folder:
-        os.environ['TMPDIR'] = folder
+        temporary = Path(folder)
+        if sys.platform != 'win32':  # Windows makes a symbolic link only with a privilege or in developer mode
+            (temporary / 'real').mkdir()
+            temporary = temporary / 'linked'
+            temporary.symlink_to('real', target_is_directory=True)
+        os.environ['TMPDIR'] = str(temporary)
         absent = Path(folder) / 'absent-config'
         os.environ['CODEX_HOME'] = str(absent / 'codex')
         os.environ['CLAUDE_CONFIG_DIR'] = str(absent / 'claude')

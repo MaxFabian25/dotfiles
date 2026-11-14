@@ -10,6 +10,10 @@ plain. Everything after `--` is passed to TEST as its arguments. In each of them
 folder that does not exist yet, a new one for each run, for a TEST that writes its results to a folder it must
 create itself. The folder goes when its run ends.
 
+TEST runs at low priority where the system allows it. On stderr, the script warns at start when the machine's
+1-minute load is above its number of CPUs, and once the unchanged copy has passed it gives that run's wall and CPU
+time multiplied by the number of plants, an estimate of the whole run. The run goes on either way.
+
 Prints CAUGHT, MISSED, TIMED OUT or NOT APPLIED for each plant, after the unchanged copy has passed. A CAUGHT
 line names the tests that failed. In a run that holds unittest's `Ran N tests` line, those are its `FAIL: name`
 and `ERROR: name` headings. In any other run, they are the lines that a TEST of its own making prints as `FAIL`,
@@ -26,6 +30,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+
+try:
+    import resource
+except ImportError:  # Windows, which has no CPU time of finished child processes
+    resource = None
 
 LIMIT = 1800  # seconds for one run of TEST
 FAILED = re.compile(r'^(?:FAIL|ERROR): (\S+)', re.MULTILINE)  # unittest's heading of a failed test
@@ -67,6 +77,40 @@ def failures(output):
     return f'no test named, the run ended with: {last[0].strip()}'
 
 
+def children_cpu():
+    """The CPU seconds of this process's finished child processes, or None where the system counts none."""
+    if resource is None:
+        return None
+    usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+    return usage.ru_utime + usage.ru_stime
+
+
+def overload():
+    """A warning when the 1-minute load is above the number of CPUs, or None, also when either cannot be read."""
+    try:
+        load, cpus = os.getloadavg()[0], os.cpu_count()
+    except (AttributeError, OSError):  # Windows has no load average, and a Unix may fail to give one
+        return None
+    if cpus is None or load <= cpus:
+        return None
+    return (f'The 1-minute load is {load:.1f} on {cpus} CPUs, so each plant runs slowly and slows the other work here. '
+            'Run this on the Omarchy laptop with omarchy-run instead, or under nice -n 19 with fewer workers beside it.')
+
+
+def applies(original, old, new):
+    return original.count(old) == 1 and old != new
+
+
+def estimate(wall, cpu, count, listed):
+    """The unchanged run's wall and CPU seconds, None where unknown, scaled to the count of plants that apply out of
+    the listed ones. Each figure is rounded before it is multiplied, so the printed sums add up."""
+    wall, cpu = round(wall, 1), None if cpu is None else round(cpu, 1)
+    return (f'The unchanged copy took {wall:.1f} s, so {count} plants should take about {wall * count:.1f} s'
+            + (f' ({listed - count} more will not apply)' if listed > count else '')
+            + ('. This system counts no CPU time of child processes.' if cpu is None
+               else f'. It used {cpu:.1f} CPU seconds, so they should use about {cpu * count:.1f}.'))
+
+
 def load(path):
     """The plants in a JSON file, or a stop that says what is wrong with it."""
     try:
@@ -98,9 +142,15 @@ def main(argv):
     except SystemExit as stop:
         print(stop, file=sys.stderr)
         return 2
+    if hasattr(os, 'nice'):  # Windows has none
+        os.nice(10)
+    if warning := overload():
+        print(warning, file=sys.stderr, flush=True)
     try:
         original = source.read_bytes().decode('utf-8')
+        began, cpu = time.perf_counter(), children_cpu()
         status, output = run(root, source, test, original, arguments)
+        wall = time.perf_counter() - began
     except (OSError, UnicodeDecodeError) as error:  # a SOURCE that is not UTF-8, or a ROOT that cannot be copied
         print(f'no copy of {root} could run with {source}: {error}', file=sys.stderr)
         return 2
@@ -109,9 +159,11 @@ def main(argv):
               + (output if status is None else f'exited {status} and ended with:\n'
                  + '\n'.join(output.splitlines()[-TAIL:])), file=sys.stderr)
         return 2
+    print(estimate(wall, None if cpu is None else children_cpu() - cpu,
+                   sum(applies(original, old, new) for _, old, new in plants), len(plants)), file=sys.stderr, flush=True)
     caught = 0
     for label, old, new in plants:
-        if original.count(old) != 1 or old == new:
+        if not applies(original, old, new):
             print(f'NOT APPLIED {label}: the text to replace occurs {original.count(old)} times'
                   + (' and the plant changes nothing' if old == new else ''), flush=True)
             continue

@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -26,6 +27,15 @@ CHECKS = ('from pathlib import Path\nimport sys\nsys.path.insert(0, str(Path(__f
           'for name, passed, detail in checks:\n'
           '    print(f"{\'PASS\' if passed else \'FAIL\'}  {name}" + ("" if passed else f"  {detail}"))\n'
           'sys.exit(not all(passed for _, passed, _ in checks))\n')
+# Takes at least 0.7 s, 0.2 s of it on the CPU, however busy the machine is.
+SLOW = 'import time\n' + TEST.replace('    def test_double(self):\n', '    def test_double(self):\n        time.sleep(0.5)\n'
+                                      '        began = time.process_time()\n'
+                                      '        while time.process_time() - began < 0.2:\n            pass\n')
+ESTIMATE = re.compile(r'The unchanged copy took (\d+\.\d) s, so (\d+) plants should take about (\d+\.\d) s'
+                      r' \(1 more will not apply\)\. It used (\d+\.\d) CPU seconds, so they should use about (\d+\.\d)\.')
+QUIET = 'import os\nos.getloadavg = lambda: (0.5, 0.5, 0.5)\n'
+TRIPLED, RELABELLED = ['triples', 'number * 2', 'number * 3'], ['relabels', 'n={number}', 'N={number}']
+ABSENT = [['absent', 'number * 4', 'x'], ['also absent', 'number * 5', 'x'], ['still absent', 'number * 6', 'x']]
 
 
 class Plant(unittest.TestCase):
@@ -47,6 +57,75 @@ class Plant(unittest.TestCase):
                                str(self.root / 'code' / test), str(self.root.parent / 'plants.json'), *root],
                               capture_output=True, text=True, timeout=300)
         return done.returncode, done.stdout.splitlines(), done.stderr
+
+    def plant_after(self, prelude, plants, test='test_value.py'):
+        """Run the script's main after prelude, Python that changes what the machine reports, with stdout and stderr
+        in one stream in the order they were written."""
+        (self.root.parent / 'plants.json').write_text(json.dumps(plants), encoding='utf-8')
+        argv = [str(self.root / 'code/value.py'), str(self.root / 'code' / test), str(self.root.parent / 'plants.json')]
+        program = f'{prelude}\nimport runpy, sys\nsys.exit(runpy.run_path({str(SCRIPT)!r})["main"]({argv!r}))\n'
+        done = subprocess.run([sys.executable, '-I', '-B', '-c', program], stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, text=True, timeout=300)
+        return done.returncode, done.stdout.splitlines()
+
+    @unittest.skipIf(sys.platform == 'win32', 'Windows has no resource module, so plant.py gives no CPU time')
+    def test_before_the_first_plant_the_unchanged_runs_wall_and_cpu_time_are_scaled_to_every_plant(self):
+        (self.root / 'code/test_value.py').write_text(SLOW, encoding='utf-8')
+        status, lines = self.plant_after(QUIET, [TRIPLED, RELABELLED, ABSENT[0]])
+        self.assertEqual(status, 1, lines)
+        self.assertEqual([line.split(':')[0] for line in lines[1:]],
+                         ['CAUGHT triples', 'MISSED relabels', 'NOT APPLIED absent', '1 of 3 plants caught'])
+        match = ESTIMATE.fullmatch(lines[0])
+        self.assertIsNotNone(match, lines[0])
+        wall, count, all_wall, cpu, all_cpu = (float(figure) for figure in match.groups())
+        self.assertEqual(count, 2)
+        self.assertGreaterEqual(wall, 0.7)
+        self.assertGreaterEqual(cpu, 0.2)
+        self.assertLess(cpu, wall)
+        self.assertAlmostEqual(all_wall, 2 * wall, delta=0.05)
+        self.assertAlmostEqual(all_cpu, 2 * cpu, delta=0.05)
+
+    def test_a_system_that_counts_no_child_cpu_time_still_gets_the_wall_time_estimate(self):
+        (self.root / 'code/test_value.py').write_text(SLOW, encoding='utf-8')
+        status, lines = self.plant_after(QUIET + 'import sys\nsys.modules["resource"] = None\n', [TRIPLED, RELABELLED])
+        self.assertEqual(status, 1, lines)
+        match = re.fullmatch(r'The unchanged copy took (\d+\.\d) s, so 2 plants should take about (\d+\.\d) s\. '
+                             r'This system counts no CPU time of child processes\.', lines[0])
+        self.assertIsNotNone(match, lines[0])
+        self.assertGreaterEqual(float(match[1]), 0.7)
+        self.assertAlmostEqual(float(match[2]), 2 * float(match[1]), delta=0.05)
+
+    def test_a_load_above_the_cpu_count_warns_once_at_start_and_the_run_goes_on(self):
+        tripled = [['triples', 'number * 2', 'number * 3']]
+        status, lines = self.plant_after('import os\nos.getloadavg = lambda: (23.5, 9.0, 9.0)\nos.cpu_count = lambda: 22',
+                                         tripled)
+        self.assertEqual((status, lines[2:]), (0, ['CAUGHT triples: test_double failed', '1 of 1 plants caught']), lines)
+        self.assertIn('The 1-minute load is 23.5 on 22 CPUs', lines[0])
+        self.assertIn('omarchy-run', lines[0])
+        self.assertIn('nice -n 19 with fewer workers', lines[0])
+        self.assertRegex(lines[1], r'^The unchanged copy took ')
+        for case, prelude in (
+                ('a load at the cpu count', 'os.getloadavg = lambda: (22.0, 30.0, 30.0)\nos.cpu_count = lambda: 22'),
+                ('no load average', 'del os.getloadavg' if hasattr(os, 'getloadavg') else ''),
+                ('an unreadable load average', 'def unreadable():\n    raise OSError("no load")\n'
+                                               'os.getloadavg = unreadable'),
+                ('no cpu count', 'os.getloadavg = lambda: (99.0, 9.0, 9.0)\nos.cpu_count = lambda: None')):
+            with self.subTest(case):
+                status, lines = self.plant_after('import os\n' + prelude, tripled)
+                self.assertEqual((status, lines[1:]), (0, ['CAUGHT triples: test_double failed', '1 of 1 plants caught']),
+                                 lines)
+                self.assertRegex(lines[0], r'^The unchanged copy took ')
+
+    @unittest.skipUnless(hasattr(os, 'nice'), 'Windows has no nice')
+    def test_the_test_runs_at_a_priority_ten_steps_lower_than_the_scripts_caller(self):
+        expected = os.nice(0) + 10
+        if expected > 19:
+            self.skipTest('this process cannot drop ten more steps, so no change of priority can show')
+        (self.root / 'code/test_priority.py').write_text('import os\nimport sys\nsys.exit(os.nice(0) != int(sys.argv[1]))\n',
+                                                        encoding='utf-8')
+        status, lines, error = self.plant(ABSENT[:1], '--', str(expected), test='test_priority.py')
+        self.assertEqual((status, lines), (1, ['NOT APPLIED absent: the text to replace occurs 0 times',
+                                               '0 of 1 plants caught']), error)
 
     def test_each_plant_is_caught_missed_or_not_applied_and_the_source_stays_as_it_was(self):
         tripled, relabelled = ['triples', 'number * 2', 'number * 3'], ['relabels', 'n={number}', 'N={number}']
@@ -139,12 +218,12 @@ class Plant(unittest.TestCase):
             os.mkfifo(self.root / 'code/pipe')
             status, lines, error = self.plant([tripled])
             self.assertEqual((status, lines), (2, []))
-            self.assertRegex(error, r'^no copy of .*/code could run with .*value\.py: .*pipe')
+            self.assertRegex(error, r'(?m)^no copy of .*/code could run with .*value\.py: .*pipe')
             (self.root / 'code/pipe').unlink()
         (self.root / 'code/value.py').write_bytes(b'# caf\xe9\n' + SOURCE.encode())
         status, lines, error = self.plant([tripled])
         self.assertEqual((status, lines), (2, []))
-        self.assertRegex(error, r"^no copy of .* could run with .*value\.py: 'utf-8' codec can't decode")
+        self.assertRegex(error, r"(?m)^no copy of .* could run with .*value\.py: 'utf-8' codec can't decode")
 
     def test_a_plants_file_that_is_missing_malformed_or_empty_stops_with_the_reason(self):
         for plants, reason in (([], 'must hold a list of at least one [label, old, new]'),

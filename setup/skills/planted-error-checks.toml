@@ -2,7 +2,7 @@ public = true
 
 [source]
 local = "skills/planted-error-checks"
-tree = "sha256:e750cef566005239e46423b55803597675d83d131a4e7047d690e31b21fe3056"
+tree = "sha256:5fbb96e1d86789d0a3eb8ff5a883f2561b94b722eaa0bb34e148a5e4d86fbcde"
 
 [place]
 agents = true
