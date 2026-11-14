@@ -19,6 +19,10 @@ import portable
 
 EXITED = 'Native app-server exited before replying'
 EXIT_WAIT_SECONDS = 5
+# A fresh app-server lists an account's remote plugins only once the account has loaded: on the Omarchy laptop on
+# 2026-11-14 their skills appeared 3.6 and 9.8 s after the start in two runs, so a listing taken at once lacked them.
+SOURCE_WAIT_SECONDS = 20
+SOURCE_POLL_SECONDS = 0.5
 # Ten, because when Codex's npm wrapper fails, Node's report puts the error's line seventh from the end.
 STDERR_LINES = 10
 STDERR_WIDTH = 400
@@ -136,11 +140,18 @@ class Client:
                 raise RuntimeError(f'{method}: {message["error"]}')
             return message['result']
 
-    def skills(self):
-        listing = self.call('skills/list', {'cwds': [str(Path.home())], 'forceReload': True})
-        if any(group.get('errors') for group in listing['data']):
-            raise RuntimeError('Native skill discovery reported errors')
-        return [skill for group in listing['data'] for skill in group['skills']]
+    def skills(self, wanted=()):
+        """The native inventory, listed again until it holds a publisher skill for each wanted name, or until
+        SOURCE_WAIT_SECONDS have passed, when it is returned as it is for select_source to refuse."""
+        deadline = time.monotonic() + SOURCE_WAIT_SECONDS
+        while True:
+            listing = self.call('skills/list', {'cwds': [str(Path.home())], 'forceReload': True})
+            if any(group.get('errors') for group in listing['data']):
+                raise RuntimeError('Native skill discovery reported errors')
+            skills = [skill for group in listing['data'] for skill in group['skills']]
+            if all(publisher_skills(skills, name) for name in wanted) or time.monotonic() >= deadline:
+                return skills
+            time.sleep(SOURCE_POLL_SECONDS)
 
     def close(self):
         self.stderr.close()
@@ -164,11 +175,20 @@ class Client:
         self.process.stdout.close()
 
 
-def select_source(skills, name):
+def publisher_skills(skills, name):
+    """The skills named name that the account's remote plugin of that name supplies."""
+    plugin = name.split(':', 1)[0] + '@openai-curated-remote'
+    return [s for s in skills if s['name'] == name and s.get('pluginId') == plugin]
+
+
+def check_name(name):
     if not re.fullmatch(r'[a-z0-9-]+:[a-z0-9-]+', name):
         raise ValueError('Expected a qualified account skill name: plugin:skill')
-    plugin = name.split(':', 1)[0] + '@openai-curated-remote'
-    matches = [s for s in skills if s['name'] == name and s.get('pluginId') == plugin]
+
+
+def select_source(skills, name):
+    check_name(name)
+    matches = publisher_skills(skills, name)
     if len(matches) != 1:
         raise RuntimeError(f'Expected one installed publisher skill for {name}; found {len(matches)}')
     path = Path(matches[0]['path'])
@@ -205,11 +225,13 @@ def main(argv=None):
     args = parser.parse_args(argv)
     profile = args.profile or os.environ.get('CODEX_HOME')
     try:
+        # Before the app-server starts, because a name no publisher skill can have would wait out SOURCE_WAIT_SECONDS.
+        check_name(args.name)
         if command := windows_handoff(profile, 'read_account_skill.py'):
             return subprocess.run([*command, args.name], timeout=120).returncode
         client = Client(profile)
         try:
-            path = select_source(client.skills(), args.name)
+            path = select_source(client.skills((args.name,)), args.name)
             content = portable.read_utf8(path)
         finally:
             client.close()

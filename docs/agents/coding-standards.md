@@ -67,7 +67,11 @@ that rule with its date. Read those answers as part of the rule, and raise no ho
   such as `APPDATA` and `LOCALAPPDATA` included, and checks the real home before and after. In November 2026 a
   probe passed the real pool key to Codex, which wrote it into a snapshot; a reviewer broke a task's "no web
   request" rule about a dozen times through the binary under test; a test that set only `HOME` still read the
-  laptop's system mise config; and a probe on Windows wrote 35 launchers into the real home.
+  laptop's system mise config; and a probe on Windows wrote 35 launchers into the real home. One exception, the
+  user's choice on 2026-11-14: a probe that measures something only the real account shows, such as when
+  Codex's `skills/list` first holds the account's remote plugin skills, may start the real binary with the real
+  home and network, if it only reads, runs on WSL or Omarchy and never on Windows, and its report says that it
+  ran against the real account. The binary may refresh its own caches while it runs.
 - **A timing test waits on the event.** A test records the order of events with a fake clock, or waits on the
   event itself, such as a file a helper writes or a process that exits, rather than on a margin of wall-clock
   time. In November 2026 a released test with fixed sleeps and sub-second timeouts stopped other sessions'

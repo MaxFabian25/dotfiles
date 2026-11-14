@@ -14,7 +14,8 @@ import os
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, NewType
 
-from host_state import ALIGNED_MARKETPLACE, ENGINE_MARKETPLACE, Commit, Digest, ENGINE, EntryName, FactKey, Host, Platform, SkillMode, bytes_digest
+from host_state import (ALIGNED_MARKETPLACE, ENGINE_MARKETPLACE, Commit, DeviceList, Digest, ENGINE, EntryName, FactKey, Host,
+                        Platform, SkillMode, bytes_digest)
 from runtime_pin import RuntimePin
 
 RepoName = NewType('RepoName', str)
@@ -366,11 +367,11 @@ class Setup:
     note_rules: tuple[NoteRule, ...]
     public_repositories: frozenset[str]
     lock: Mapping[EntryName, Lock]
-    # Unmanaged items each platform's device is known to carry, from the private devices/<platform>.toml.
-    expected_unmanaged: Mapping[Platform, frozenset[FactKey]] = field(default_factory=dict)
+    # Unmanaged items each device is known to carry, from the private devices/<device list>.toml.
+    expected_unmanaged: Mapping[DeviceList, frozenset[FactKey]] = field(default_factory=dict)
     runtime: RuntimePin | None = None   # the public setup/codex-runtime.toml, kept only on its platform
-    # Other apps' Codex homes on each platform's device, as globs under the home folder, from the same private file.
-    account_homes: Mapping[Platform, tuple[str, ...]] = field(default_factory=dict)
+    # Other apps' Codex homes on each device, as globs under the home folder, from the same private file.
+    account_homes: Mapping[DeviceList, tuple[str, ...]] = field(default_factory=dict)
 
     def for_platform(self, platform: Platform) -> Setup:
         packages = {}

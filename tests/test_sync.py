@@ -279,6 +279,32 @@ class PlanTest(unittest.TestCase):
             self.assertIn(f'  residue       codex   {gone.subject}: listed in devices/linux.toml but no longer an '
                           'unmanaged difference here\n', listed)
 
+    def test_wsl_and_a_linux_laptop_each_keep_only_their_own_list(self):
+        """WSL's list names an app WSL carries; the laptop's list names one it supplies. Each device folds only its
+        own items into a note, and an item on the other list neither hides a difference nor reads as gone."""
+        from description import Roots, Setup
+        from device import Device
+        from device_sync import plan
+        from host_state import (DeviceList, DeviceRoots, Fact, FactKey, Host, NoteKind, Observation, Platform,
+                                PluginValue, Surface, Unpinned)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            wsl_app = FactKey(Host.CODEX, Surface.LOOSE_SKILL, '{agents_home}/skills/wsl-app')
+            laptop_app = FactKey(Host.CODEX, Surface.LOOSE_SKILL, '{agents_home}/skills/laptop-app')
+            setup = Setup(Roots(root / 'public', None), {}, {}, {}, {}, None, (), frozenset(), {},
+                          {DeviceList.WSL: frozenset({wsl_app}), DeviceList.LINUX: frozenset({laptop_app})})
+            for wsl, here, other, source in ((True, wsl_app, laptop_app, 'devices/wsl.toml'),
+                                             (False, laptop_app, wsl_app, 'devices/linux.toml')):
+                with self.subTest(source=source):
+                    facts = {key: Fact(key, PluginValue(True, Unpinned())) for key in (here, other)}
+                    observation = Observation(Host.CODEX, 'test', facts, frozenset(k.subject for k in facts), ())
+                    state = SimpleNamespace(host=Host.CODEX, project=lambda setup: {}, observe=lambda request: observation)
+                    result = plan(setup, Device(Platform.LINUX, DeviceRoots.current(root), (state,), (), wsl))
+                    self.assertEqual([d.key for d in result.expected], [here])
+                    self.assertEqual([d.key for d in result.unmanaged], [other])
+                    self.assertEqual([(n.kind, n.detail) for n in result.result.notes],
+                                     [(NoteKind.DEVICE_LOCAL, f'1 named in {source}; sync leaves them alone')])
+
 
 def git(root, *args):
     return subprocess.run(['git', '-C', str(root), *args], check=True, capture_output=True, text=True).stdout.strip()

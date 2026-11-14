@@ -19,7 +19,7 @@ from accepted_installations import image
 from description import CodexPlacement, EngineInstall, Hooks, LocalSource, Lock, LockedTree, Package, Roots, Setup
 from description import MarketplaceInstall, ToolNotes, Visibility
 from host_observation import Unread
-from host_state import Host, Platform
+from host_state import DeviceList, Host, Platform
 import portable
 import profile_plugins
 from sync_files import ConcurrentEdit, Files
@@ -237,8 +237,9 @@ class ProfilePluginsTest(unittest.TestCase):
                 kit.record = {'path': str(kit.canonical), 'image': image(kit.canonical)}
 
             operation = sync_hosts.Apply.__new__(sync_hosts.Apply)
-            operation.setup, operation.roots = replace(kit.setup, account_homes={Platform.LINUX: ACCOUNT_HOMES}), home.roots
-            operation.device = SimpleNamespace(platform=Platform.LINUX)
+            # On WSL the homes come from devices/wsl.toml, though the platform is Linux.
+            operation.setup, operation.roots = replace(kit.setup, account_homes={DeviceList.WSL: ACCOUNT_HOMES}), home.roots
+            operation.device = SimpleNamespace(platform=Platform.LINUX, device_list=DeviceList.WSL)
             operation.current = SimpleNamespace(profile_mirrors=planned)
             operation.files = Files(home.roots.home / 'backup')
             operation.owner = SimpleNamespace(preflight=lambda prepared: None, apply=release, accepted=kit.accepted)

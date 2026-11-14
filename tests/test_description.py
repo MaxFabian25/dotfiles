@@ -735,9 +735,9 @@ class LeakTest(unittest.TestCase):
                 'account_homes = [".local/share/orca/codex-accounts/*/home"]\n'
                 '[codex]\nplugin = ["chrome@openai-bundled"]\n[claude]\nloose_skill = ["{claude_home}/skills/orca-cli"]\n')
             setup = description_toml.load(roots.roots())
-            self.assertEqual(setup.account_homes, {host_state.Platform.MACOS: ('.local/share/orca/codex-accounts/*/home',)})
+            self.assertEqual(setup.account_homes, {host_state.DeviceList.MACOS: ('.local/share/orca/codex-accounts/*/home',)})
             listed = setup.expected_unmanaged
-            self.assertEqual(listed, {host_state.Platform.MACOS: frozenset({
+            self.assertEqual(listed, {host_state.DeviceList.MACOS: frozenset({
                 host_state.FactKey(H.CODEX, host_state.Surface.PLUGIN, 'chrome@openai-bundled'),
                 host_state.FactKey(H.CLAUDE, host_state.Surface.LOOSE_SKILL, '{claude_home}/skills/orca-cli')})})
             for outside in ('/home/x/*/home', 'C:/Users/x/*/home', '~/x/*/home', '../x/*/home', 'x/../../y', '', '.'):
@@ -747,6 +747,14 @@ class LeakTest(unittest.TestCase):
             (roots.private / 'devices/linux.toml').write_text('[codex]\nplugins = ["x"]\n')
             self.assertEqual(roots.problems(), [f'{roots.private / "devices/linux.toml"}:codex.plugins: unknown key'])
             (roots.private / 'devices/linux.toml').unlink()
+            (roots.private / 'devices/wsl.toml').write_text('[claude]\nloose_skill = ["{claude_home}/skills/cua-driver"]\n')
+            self.assertEqual(description_toml.load(roots.roots()).expected_unmanaged[host_state.DeviceList.WSL], frozenset(
+                {host_state.FactKey(H.CLAUDE, host_state.Surface.LOOSE_SKILL, '{claude_home}/skills/cua-driver')}))
+            (roots.private / 'devices/omarchy.toml').write_text('[claude]\nloose_skill = ["{claude_home}/skills/omarchy"]\n')
+            self.assertEqual(roots.problems(), [f'{roots.private / "devices/omarchy.toml"}:: no device reads this list; '
+                                                'name it macos, wsl, linux, windows'])
+            (roots.private / 'devices/omarchy.toml').unlink()
+            (roots.private / 'devices/wsl.toml').unlink()
             shutil.move(roots.private / 'devices', roots.public / 'devices')
             self.assertIn(f'{roots.public / "devices/macos.toml"}:: device lists are private',
                           roots.problems(private=False))

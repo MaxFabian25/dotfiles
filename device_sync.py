@@ -10,7 +10,7 @@ import profile_plugins
 from description import Setup
 from device import Device
 from drift import Diff, Difference, Kind, Verdict, diff
-from host_state import FactKey, Host, Note, NoteKind, Observation, Platform, Request, Surface
+from host_state import DeviceList, FactKey, Host, Note, NoteKind, Observation, Request, Surface
 
 if TYPE_CHECKING:
     from accepted_installations import HeldCache, HeldMove
@@ -49,7 +49,7 @@ def plan(setup: Setup, device: Device, *, configurations=True) -> Plan:
     codex = next((state for state in device.hosts if state.host == Host.CODEX), None)
     approved = (lambda home: codex_host._approved_hooks(codex.cli, device.roots.home, codex_home=home)) if codex else None
     profile_mirrors, profile_differences, profile_notes = profile_plugins.inspect(
-        projected, device.roots, setup.account_homes.get(device.platform, ()), owner.accepted, approved)
+        projected, device.roots, setup.account_homes.get(device.device_list, ()), owner.accepted, approved)
     owned += profile_differences
     stale = setup.stale()
     managed = {key for facts in projects.values() for key, fact in facts.items()
@@ -89,8 +89,8 @@ def plan(setup: Setup, device: Device, *, configurations=True) -> Plan:
 
     retained = tuple(d for d in result.differences if d.key not in managed and not deferred_skill(d))
     unmanaged = tuple(d for d in retained + owned if d.kind == Kind.EXTRA and d.entry is None)
-    expected, notes = _expected(setup.expected_unmanaged.get(device.platform, frozenset()), unmanaged,
-                                device.platform, observations.keys())
+    expected, notes = _expected(setup.expected_unmanaged.get(device.device_list, frozenset()), unmanaged,
+                                device.device_list, observations.keys())
     result = replace(result, differences=tuple(d for d in retained + owned if d not in expected),
                      notes=result.notes + notes + profile_notes)
     blocked = tuple(d for d in result.differences if d.kind.verdict == Verdict.ATTENTION)
@@ -99,12 +99,12 @@ def plan(setup: Setup, device: Device, *, configurations=True) -> Plan:
     return Plan(result, observations, changes, blocked, unmanaged, configurations, expected, profile_mirrors)
 
 
-def _expected(listed: frozenset[FactKey], unmanaged: tuple[Difference, ...], platform: Platform,
+def _expected(listed: frozenset[FactKey], unmanaged: tuple[Difference, ...], device: DeviceList,
               hosts) -> tuple[tuple[Difference, ...], tuple[Note, ...]]:
     """The unmanaged differences the device list names, with the notes that replace them: a count per host, and
     one per listed item that is no longer an unmanaged difference, so the list cannot hide a stale entry."""
     known = tuple(d for d in unmanaged if d.key in listed or d.follows in listed)
-    source = f'devices/{platform.value}.toml'
+    source = f'devices/{device.value}.toml'
     notes = [Note(NoteKind.DEVICE_LOCAL, host, 'expected unmanaged items', f'{count} named in {source}; sync leaves them alone')
              for host, count in sorted(Counter(d.key.host for d in known).items())]
     notes += [Note(NoteKind.RESIDUE, key.host, key.subject, f'listed in {source} but no longer an unmanaged difference here')

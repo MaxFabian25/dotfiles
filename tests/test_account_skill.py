@@ -132,6 +132,18 @@ class SourceSelectionTest(unittest.TestCase):
         with patch('portable.WINDOWS', True):
             self.assertIsNone(windows_handoff('C:/Users/test/.codex', 'read_account_skill.py'))
 
+    def test_a_malformed_name_is_refused_before_the_app_server_starts(self):
+        for name in ('Power-BI', 'power_bi:power-bi', 'power-bi'):
+            buffer = io.BytesIO()
+            errors = io.TextIOWrapper(buffer, encoding='utf-8')
+            with patch('read_account_skill.Client') as client, patch('read_account_skill.windows_handoff') as handoff, \
+                    patch('sys.stdout', io.TextIOWrapper(io.BytesIO(), encoding='utf-8')), patch('sys.stderr', errors):
+                self.assertEqual(main([name]), 1)
+                errors.flush()
+            client.assert_not_called()
+            handoff.assert_not_called()
+            self.assertIn('Expected a qualified account skill name', buffer.getvalue().decode('utf-8'))
+
     def test_publisher_unicode_is_utf8_even_under_a_legacy_console_encoding(self):
         with tempfile.TemporaryDirectory() as temporary:
             skill = Path(temporary) / 'SKILL.md'
@@ -144,6 +156,7 @@ class SourceSelectionTest(unittest.TestCase):
                 client.return_value.skills.return_value = [{'name': 'example:task',
                     'pluginId': 'example@openai-curated-remote', 'path': str(skill)}]
                 self.assertEqual(main(['example:task']), 0)
+                client.return_value.skills.assert_called_once_with(('example:task',))
                 output.flush()
                 self.assertIn('Publisher café 🚀', buffer.getvalue().decode('utf-8').splitlines())
             output.close()
@@ -167,6 +180,54 @@ class ClientTest(unittest.TestCase):
                     client.close()
             self.assertEqual(skills, [{'name': 'example:task'}])
             self.assertEqual(json.loads(Path(f'{server}.seen').read_text()), {'CODEX_HOME': str(root / 'profile'), 'CODEX_SQLITE_HOME': None})
+
+    def test_a_wanted_publisher_skill_is_listed_again_until_it_appears_and_no_longer_than_the_wait(self):
+        """A fresh app-server adds the account's remote plugin skills a few seconds after it starts. The stand-in
+        lists the publisher skill from its third listing on, or never; a fake clock advances only when the client
+        sleeps."""
+        late = """import json, os, sys
+listed = 0
+for line in sys.stdin:
+    message = json.loads(line)
+    if 'id' not in message:
+        continue
+    result = {}
+    if message['method'] == 'skills/list':
+        listed += 1
+        if listed > 100:
+            sys.exit('listed past any wait')
+        skills = [{'name': 'example:task', 'pluginId': None, 'path': '/managed/SKILL.md'}]
+        if 0 < int(os.environ['APPEARS_AT']) <= listed:
+            skills.append({'name': 'example:task', 'pluginId': 'example@openai-curated-remote', 'path': '/p/SKILL.md'})
+        result = {'data': [{'errors': [], 'skills': skills}]}
+    print(json.dumps({'id': message['id'], 'result': result}), flush=True)
+"""
+        for appears_at, wanted, sleeps, publisher in ((3, ('example:task',), 2, True), (0, ('example:task',), 40, False),
+                                                      (3, ('example:task', 'other:job'), 40, True), (0, (), 0, False)):
+            with self.subTest(appears_at=appears_at, wanted=wanted), tempfile.TemporaryDirectory() as temporary:
+                server = Path(temporary) / 'codex'
+                server.write_text(f'#!{sys.executable}\n' + late)
+                server.chmod(0o755)
+                clock = SimpleNamespace(now=0.0, slept=[])
+                fake_time = SimpleNamespace(monotonic=lambda: clock.now,
+                                            sleep=lambda seconds: (clock.slept.append(seconds),
+                                                                   setattr(clock, 'now', clock.now + seconds)))
+                with patch('read_account_skill.portable.codex_cli', return_value=str(server)), \
+                        patch.dict(os.environ, {'APPEARS_AT': str(appears_at)}), \
+                        patch('read_account_skill.time', fake_time):
+                    client = Client(Path(temporary) / 'profile')
+                    try:
+                        skills = client.skills(wanted)
+                    finally:
+                        client.close()
+                self.assertEqual(clock.slept, [0.5] * sleeps)
+                found = [s for s in skills if s['pluginId']]
+                self.assertEqual(bool(found), publisher)
+                if publisher:
+                    self.assertEqual(select_source(skills, 'example:task'), Path('/p/SKILL.md'))
+                else:
+                    self.assertRaisesRegex(RuntimeError, 'Expected one installed publisher skill', select_source,
+                                           skills, 'example:task')
 
     def test_an_app_server_that_exits_before_replying_stops_the_read(self):
         with tempfile.TemporaryDirectory() as temporary:

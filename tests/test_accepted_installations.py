@@ -26,8 +26,8 @@ from device import Device
 from device_sync import apply, plan
 from homes import hold_built_trees_once, isolate_git
 from host_observation import Observer, Unread
-from host_state import (Approved, DeviceRoots, EngineMarketplace, FactKey, FileValue, Host, InstallDetail, Pinned,
-                        Platform, PluginValue, Released, SkillMode, Surface, TreeValue, Unknown, bytes_digest)
+from host_state import (Approved, DeviceList, DeviceRoots, EngineMarketplace, FactKey, FileValue, Host, InstallDetail,
+                        Pinned, Platform, PluginValue, Released, SkillMode, Surface, TreeValue, Unknown, bytes_digest)
 import portable
 from sync_files import ConcurrentEdit
 from sync_sources import BuildError, Builder, Sources
@@ -321,6 +321,11 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual([path.name for path in (profile / 'plugins/cache/personal/kit').iterdir()], ['0.9.0'])
         self.setup = replace(self.setup, account_homes={Platform.LINUX: ('.local/share/orca/codex-accounts/*/home',)})
         self.assertEqual([mirror.profile for mirror in plan(self.setup, self.device).profile_mirrors], [profile])
+        # WSL is Platform.LINUX too, but its homes come from devices/wsl.toml only.
+        self.assertEqual(plan(self.setup, replace(self.device, wsl=True)).profile_mirrors, ())
+        self.setup = replace(self.setup, account_homes={DeviceList.WSL: ('.local/share/orca/codex-accounts/*/home',)})
+        self.assertEqual([mirror.profile for mirror in plan(self.setup, replace(self.device, wsl=True)).profile_mirrors],
+                         [profile])
 
     def test_a_release_that_changes_only_intent_keeps_the_backup_an_account_home_is_matched_against(self):
         self.assertEqual(self.run_apply().exit_code, 0)

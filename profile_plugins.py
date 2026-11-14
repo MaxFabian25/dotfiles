@@ -1,7 +1,7 @@
 """Keep the plugins of the account homes on this device on the copies ~/.codex accepted.
 
 An account home is a separate Codex home that another app keeps, such as each account of the Orca desktop app,
-with its own plugin cache. The private devices/<platform>.toml lists them as account_homes, and a device whose
+with its own plugin cache. The private devices/<device list>.toml lists them as account_homes, and a device whose
 file lists none has none. Codex refreshes a plugin there from the catalog, which lacks the install overlay and
 harness adaptation the accepted ~/.codex copy carries. Sync replaces that native copy, an older version, its own
 earlier copy, or the ~/.codex copy a release replaced at the same version with the accepted ~/.codex copy, for

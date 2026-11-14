@@ -19,8 +19,8 @@ from description import (Adaptation, AlignedInstall, BUILDS, BuildSource, Claude
                          RepoSource, Roots, Rules, SCHEMA, Setup, SkillRoot, SnapshotRecipe, SnapshotSource, Source,
                          TextReplace, ToolNotes, Visibility, entry_path, via, WindowsReplace)
 from description_checks import check_invariants, check_placement, check_privacy, check_references
-from host_state import (ALIGNED_MARKETPLACE, ENGINE_MARKETPLACE, Commit, EntryName, FactKey, Host, Platform, SkillMode, Surface,
-                        parse_commit, parse_digest)
+from host_state import (ALIGNED_MARKETPLACE, ENGINE_MARKETPLACE, Commit, DeviceList, EntryName, FactKey, Host, Platform,
+                        SkillMode, Surface, parse_commit, parse_digest)
 import portable
 import runtime_pin
 
@@ -377,9 +377,9 @@ class _Root:
     public_repositories: frozenset[str] = frozenset()
     lock: dict[EntryName, Lock] = field(default_factory=dict)
     lock_path: Path | None = None
-    expected_unmanaged: dict[Platform, frozenset[FactKey]] = field(default_factory=dict)
+    expected_unmanaged: dict[DeviceList, frozenset[FactKey]] = field(default_factory=dict)
     runtime: runtime_pin.RuntimePin | None = None
-    account_homes: dict[Platform, tuple[str, ...]] = field(default_factory=dict)
+    account_homes: dict[DeviceList, tuple[str, ...]] = field(default_factory=dict)
 
 
 def _toml(path: Path, errors: list[str]) -> dict | None:
@@ -434,10 +434,13 @@ def _read_root(root: Path, visibility: Visibility, errors: list[str]) -> _Root:
         path = root / 'hosts' / f'{host.value}.toml'
         if path.is_file() and (data := _toml(path, errors)) is not None:
             found.host_skills[host] = _parse_host_skills(path, data, errors)
-    for platform in Platform:
-        path = root / 'devices' / f'{platform.value}.toml'
+    for device in DeviceList:
+        path = root / 'devices' / f'{device.value}.toml'
         if path.is_file() and (data := _toml(path, errors)) is not None:
-            found.expected_unmanaged[platform], found.account_homes[platform] = _parse_device(path, data, errors)
+            found.expected_unmanaged[device], found.account_homes[device] = _parse_device(path, data, errors)
+    for path in sorted((root / 'devices').glob('*.toml')):
+        if path.stem not in set(DeviceList):
+            errors.append(f'{path}:: no device reads this list; name it {", ".join(d.value for d in DeviceList)}')
     rules_path = root / 'rules/AGENTS.md'
     if rules_path.is_file():
         found.rules = Rules(rules_path.read_bytes())

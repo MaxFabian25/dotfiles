@@ -34,6 +34,26 @@ class CurrentDeviceTest(unittest.TestCase):
                     mock.patch.object(host_state, 'sys', SimpleNamespace(platform=name)):
                 self.assertEqual(Platform.native(), expected)
 
+    def test_wsl_and_a_linux_laptop_read_different_device_lists(self):
+        """Both are Platform.LINUX for packages; the kernel release, which names Microsoft only under WSL, picks the
+        devices/<list>.toml, and only on Linux."""
+        cases = ((Platform.LINUX, '6.18.58.1-microsoft-standard-WSL2', host_state.DeviceList.WSL),
+                 (Platform.LINUX, '6.17.7-arch1-1', host_state.DeviceList.LINUX),
+                 (Platform.MACOS, '25.1.0', host_state.DeviceList.MACOS),
+                 (Platform.WINDOWS, None, host_state.DeviceList.WINDOWS))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            environment = {'CODEX_HOME': str(root / 'codex'), 'CLAUDE_CONFIG_DIR': str(root / 'claude'),
+                           'CODEX_CLI': str(root / 'no-codex'), 'CLAUDE_CLI': str(root / 'no-claude')}
+            for platform, release, expected in cases:
+                uname = (mock.Mock(side_effect=AssertionError('only Linux reads its kernel release')) if release is None
+                         else mock.Mock(return_value=SimpleNamespace(release=release)))
+                with self.subTest(expected=expected), mock.patch.dict(os.environ, environment), \
+                        mock.patch.object(Platform, 'native', return_value=platform), \
+                        mock.patch('device.os.uname', uname, create=True):
+                    device = Device.current()
+                self.assertEqual((device.platform, device.device_list), (platform, expected))
+
     def test_a_cli_that_exists_gives_its_host_with_the_device_homes(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -89,6 +89,20 @@ class Platform(enum.StrEnum):
         return cls.WINDOWS if portable.WINDOWS else cls.MACOS if sys.platform == 'darwin' else cls.LINUX
 
 
+class DeviceList(enum.StrEnum):
+    """The private devices/<name>.toml that lists what a device is meant to carry beyond the description. WSL and
+    a Linux laptop share Platform.LINUX for packages, but carry different apps' skills, so each has its own list."""
+    MACOS = 'macos'
+    WSL = 'wsl'
+    LINUX = 'linux'          # Linux outside WSL
+    WINDOWS = 'windows'
+
+    @classmethod
+    def of(cls, platform: Platform, wsl: bool) -> DeviceList:
+        """wsl is set only on Linux, by Device.current."""
+        return cls.WSL if wsl else cls(platform.value)
+
+
 def _matches(relative: str, pattern: str) -> bool:
     parts, wanted = PurePosixPath(relative).parts, PurePosixPath(pattern).parts
     return len(parts) == len(wanted) and all(fnmatch.fnmatchcase(p, w) for p, w in zip(parts, wanted))
