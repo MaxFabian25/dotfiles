@@ -12,8 +12,16 @@ to every changed function. Report each finding with its file and line, the input
 what then happens. Write "No findings" when there are none.
 
 The reviewer writes the `Reviewed:` lines into the review file, each on a line of its own with nothing else on
-it, and only when it has read the code and no finding of its own should hold the release back. The author does
-not write them. Say for each finding whether it holds the release back.
+it, and only when it has read the code and no finding of its own holds the release back. The author does not
+write them. Say for each finding whether it holds the release back.
+
+A finding holds the release back only when the reviewer shows a wrong result on an input or state that occurs
+in use, or a regression against the released code; in the first review, so does a finding under a rule below.
+From the second review on, a missing test, a reading of a rule's wording, or a failure only on an input the
+reviewer built is listed under "Listed, not holding" in the review file and does not hold. For a security
+defence, the first brief names which attacks count, and a later review holds only on those. From 12 to 14
+November 2026, of 34 findings that held a release from the second review on, 3 showed a wrong result in use,
+and 22 were in code that an earlier round's fix had added.
 
 The author names the review file without "report" or "findings" in its name, such as `review-1.md`. Claude Code
 refuses a helper agent's Write to some file names and tells it to return its findings as text, and the reviewer
@@ -39,8 +47,9 @@ The stop counts files by suffix, by name, by folder and by a `#!` first line. Tw
 it, so read them too when the release makes them: hook commands inside JSON and TOML files, and scripts in a
 newly stored copy under the private `setup/snapshots/`.
 
-A hold that rests on how a rule here reads goes to the user, and the author writes the user's answer under
-that rule with its date. Read those answers as part of the rule, and raise no hold they settle.
+A hold in the first review that rests on how a rule here reads goes to the user, and the author writes the
+user's answer under that rule with its date. Read those answers as part of the rule, and raise no hold they
+settle.
 
 ## Rules
 
