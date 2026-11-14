@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import fnmatch
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
+import re
 import shutil
 import subprocess
-import tempfile
 
 from description import (AlignedInstall, BuildSource, CourseRecipe, EngineInstall,
                          GenericRecipe, LocalSource, Package, PublicEmilRecipe,
-                         RepoRoles, RepoSource, Setup, SnapshotRecipe, ToolNotes, plugin_id, via)
+                         RepoSource, Setup, SnapshotRecipe, ToolNotes, plugin_id, via)
 from host_state import DeviceRoots, Digest, Host, Platform, SkillMode, bytes_digest, clone_url, parse_commit
 from portable import GIT, WINDOWS, extract_tar, read_utf8, replace, staging_directory, staging_folder
 
@@ -26,6 +25,36 @@ def run_git(repository: Path | None, *arguments: str) -> bytes:
     if result.returncode:
         raise BuildError(f'git {arguments[0]} failed: {result.stderr.decode("utf-8", "replace").strip()}')
     return result.stdout
+
+
+def forbidden_text(package: Package, identity: str, root: Path, writes) -> None:
+    """Stop when a skill file, as the overlay's writes leave it, matches a pattern the package forbids. Skill files
+    are the files under root's skills/ and under each skill folder the plugin's manifest names."""
+    from invocation_overrides import skill_paths
+
+    root = root.resolve()                                # the overlay names each write by its resolved path
+    edited = {Path(path).resolve(): new for path, _, new, *_ in writes}
+    paths = set()
+    for folder in {root / 'skills', *(skill.parent for skill in skill_paths(root).values())}:
+        for path in folder.rglob('*') if folder.is_dir() else ():
+            if path.is_symlink() and path.is_dir():
+                raise BuildError(f'{identity}: {path.relative_to(root).as_posix()} is a symlinked folder, '
+                                 'which the forbid check does not read through')
+            if path.is_file():
+                paths.add(path)
+        paths |= {path for path in edited if path.is_relative_to(folder)}  # with the files the overlay creates
+    if not paths:
+        raise BuildError(f'{identity}: no skill file to check against the forbid patterns')
+    for path in sorted(paths):
+        # Every file is read as UTF-8 text, an image too, so that a file which is not valid UTF-8 is still read.
+        text = edited[path.resolve()] if path.resolve() in edited else path.read_bytes().decode('utf-8', 'replace')
+        if text is None:
+            continue                                     # the overlay deletes this file
+        for pattern in package.forbid:
+            if found := re.search(pattern, text):
+                line = text.count('\n', 0, found.start()) + 1
+                raise BuildError(f'{identity}: {path.relative_to(root).as_posix()}:{line} still holds {found[0]!r}, '
+                                 f'which the package forbids with {pattern!r}; extend its edits to cover it')
 
 
 def child(root: Path, relative: str) -> Path:
@@ -293,7 +322,9 @@ class Builder:
                 identity = plugin_id(package.name, install, host)
                 root = codex.root if host == Host.CODEX else claude[identity].root
                 for windows in {platform == Platform.WINDOWS for platform in package.platforms or Platform}:
-                    self.overlay(package, host, identity, root, windows=windows)
+                    writes = self.overlay(package, host, identity, root, windows=windows)
+                    if package.forbid:
+                        forbidden_text(package, identity, root, writes)
 
     def effective(self, package: Package, built: Built) -> Path:
         placement = next((i for i in package.codex.installs if i.managed), None) if package.codex else None
@@ -382,31 +413,10 @@ class Builder:
         return result
 
     def roles(self, package: Package, codex: Built, *, verify: bool = True) -> dict[str, bytes]:
-        from codex_agents import rewrite
-
         if package.codex is None or package.codex.roles is None:
             return {}
-        role_spec = package.codex.roles
-        output = {}
-        if isinstance(role_spec, RepoRoles):
-            if not isinstance(package.source, RepoSource):
-                raise BuildError(f'{package.name}: repository roles require a repository source')
-            provider = next(i for i in package.codex.installs if i.enabled)
-            installed = self.roots.codex_home / 'plugins/cache' / via(provider, Host.CODEX) / package.name / codex.version
-            header_source = self.roots.engine / 'codex_agents.py'
-            repo = self.setup.repos[package.source.repo]
-            with tempfile.TemporaryDirectory(prefix='roles-') as temp:
-                tree = self.sources.tree(repo.url, repo.commit, Path(temp), role_spec.directory)
-                for path in sorted(tree.iterdir()):
-                    if path.is_file() and fnmatch.fnmatch(path.name, role_spec.pattern):
-                        text = rewrite(read_utf8(path), role_spec.rewrite, installed / role_spec.skill,
-                                       child(codex.root, role_spec.skill))
-                        label = clone_url(repo.url).removeprefix('https://github.com/').removesuffix('.git')
-                        header = f'# Generated by {header_source} from {label}@{repo.commit}. Do not edit.\n'
-                        output[path.name] = (header + text).encode()
-        else:
-            directory = child(self.effective(package, codex), role_spec.directory)
-            output = {p.name: p.read_bytes() for p in sorted(directory.glob('*.toml'))}
+        directory = child(self.effective(package, codex), package.codex.roles.directory)
+        output = {p.name: p.read_bytes() for p in sorted(directory.glob('*.toml'))}
         if verify:
             expected = self.setup.lock[package.name].roles
             actual = {name: bytes_digest(self.roots.neutral(data)) for name, data in output.items()}

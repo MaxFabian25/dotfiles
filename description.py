@@ -195,19 +195,8 @@ class Hooks(enum.StrEnum):
 
 
 @dataclass(frozen=True)
-class RepoRoles:                     # Impeccable: TOML roles in the source repo, outside the plugin folder
-    directory: str
-    pattern: str
-    skill: str
-    rewrite: tuple[tuple[str, str], ...]
-
-
-@dataclass(frozen=True)
 class PluginRoles:                   # pstack: TOML roles shipped inside the installed, adapted plugin
     directory: str
-
-
-CodexRoles = RepoRoles | PluginRoles
 
 
 @dataclass(frozen=True)
@@ -233,7 +222,7 @@ class WindowsReplace(TextReplace):
 class CodexPlacement:
     installs: tuple[EngineInstall | MarketplaceInstall, ...]
     hooks: Hooks = Hooks.OFF
-    roles: CodexRoles | None = None
+    roles: PluginRoles | None = None
     adaptation: Adaptation | None = None
     # The commandWindows a pull on Windows gives the plugin's hooks. Absent from the intent of every other package.
     windows_hook_command: str | None = field(default=None, metadata={'intent': 'when-set'})
@@ -269,6 +258,9 @@ class Package:
     codex: CodexPlacement | None
     claude: ClaudePlacement | None
     platforms: frozenset[Platform] = field(default_factory=frozenset, metadata={'intent': 'when-set'})
+    # Regular expressions that no skill file of the plugin may match once the package's edits apply, which
+    # check_overlays enforces on each managed install, so an upstream update cannot bring back text the edits removed.
+    forbid: tuple[str, ...] = field(default=(), metadata={'intent': 'when-set'})
 
     def placement(self, host: Host) -> CodexPlacement | ClaudePlacement | None:
         return self.codex if host == Host.CODEX else self.claude

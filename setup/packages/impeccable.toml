@@ -6,6 +6,14 @@ path = "plugin"
 
 [skills]
 tool_notes = "apply"
+# The replace entries below make the skill spawn its four agents as built-in agents. These patterns stop a lock or
+# build whose skill text still names one of them as an agent type, or as "the shipped" agent, which is how an
+# upstream update would bring back a spawn by name. The first lets the edits' paths `agents/impeccable-<agent>.md`
+# stand, and the second new-work.md's "the shipped documenter (section 7)", because it points at the patched step.
+forbid = [
+  '(?i)(?<!agents/)impeccable[-_:](?:asset[-_\s]+producer|documenter|finish[-_\s]+reviewer|manual[-_\s]+edit[-_\s]+applier)|impeccable[-_:](?:asset[-_\s]+producer|documenter|finish[-_\s]+reviewer|manual[-_\s]+edit[-_\s]+applier)(?!\.md)',
+  '(?i)(?<![^\W_])shipped[\s*_`]+(?:asset[-_\s]+producer|documenter|finish[-_\s]+reviewer|manual[-_\s]+edit[-_\s]+applier)(?![^\W_])(?!\s+\(section 7\))',
+]
 
 [codex]
 install = [{ via = "personal", enabled = true }]

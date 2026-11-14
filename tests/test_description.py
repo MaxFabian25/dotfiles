@@ -64,7 +64,7 @@ class LoadTest(unittest.TestCase):
         impeccable = setup.packages['impeccable']
         self.assertEqual(impeccable.source, description.RepoSource('impeccable', 'plugin'))
         self.assertEqual(impeccable.codex.hooks, description.Hooks.TRUSTED)
-        self.assertEqual(impeccable.codex.roles.rewrite[1], ('](../reference/', ']({skill}/reference/'))
+        self.assertIsNone(impeccable.codex.roles)
         self.assertEqual(impeccable.tool_notes, description.ToolNotes.APPLY)
         self.assertEqual(setup.repos['impeccable'].claude,
                          description.HostMarketplace('impeccable', sparse=('.claude-plugin', 'plugin')))
@@ -206,11 +206,36 @@ class RenderTest(unittest.TestCase):
             path.write_text(path.read_text().replace('\n[claude]\n', "\n[[codex.replace]]\npath = 'a'\nfind = 'b'\n\n[claude]\n"))
             self.assertEqual(roots.problems(), [f'{path}:codex.replace[0]: expected path, find and replace strings'])
 
-    def test_a_role_source_other_than_repo_or_plugin_is_refused(self):
+    def test_forbidden_skill_text_round_trips_changes_intent_and_must_compile(self):
         with Roots() as roots:
             path = roots.public / 'packages/impeccable.toml'
-            path.write_text(path.read_text().replace('from = "repo"', 'from = "generated"'))
-            self.assertIn(f'{path}:codex.roles.from: expected repo or plugin', roots.problems())
+            before = description_toml.load(roots.roots()).packages['impeccable']
+            self.assertEqual(before.forbid, ())
+            path.write_text(path.read_text().replace('tool_notes = "apply"\n',
+                                                     "tool_notes = \"apply\"\nforbid = ['\\bshipped reviewer\\b', 'old-agent']\n"))
+            setup = description_toml.load(roots.roots())
+            package = setup.packages['impeccable']
+            self.assertEqual(package.forbid, (r'\bshipped reviewer\b', 'old-agent'))
+            self.assertNotEqual(description.intent(before, setup.repos), description.intent(package, setup.repos))
+            files = description_toml.render_root(setup, description.Visibility.PUBLIC, None)
+            path.write_bytes(files['packages/impeccable.toml'])
+            self.assertEqual(description_toml.load(roots.roots()).packages['impeccable'], package)
+            path.write_text(path.read_text().replace('old-agent', 'old-(agent'))
+            problems = roots.problems()
+            self.assertEqual(len(problems), 1)
+            self.assertRegex(problems[0], r"skills\.forbid: 'old-\(agent' is not a regular expression")
+            path.write_text(path.read_text().replace('old-(agent', 'old-agent')
+                            .replace('[source]\nrepo = "impeccable"\npath = "plugin"\n', ''))
+            self.assertIn(f'{path}:skills.forbid: needs a [source], because only a package the engine builds is checked',
+                          roots.problems())
+
+    def test_a_role_source_other_than_plugin_is_refused(self):
+        # "generated" left on 2026-11-14 with the generator, and "repo" with Impeccable's role files.
+        for source in ('repo', 'generated'):
+            with self.subTest(source=source), Roots() as roots:
+                path = roots.public / 'packages/impeccable.toml'
+                path.write_text(path.read_text() + f'\n[codex.roles]\nfrom = "{source}"\n')
+                self.assertIn(f'{path}:codex.roles.from: expected plugin', roots.problems())
 
     def test_a_kept_current_install_round_trips_and_changes_intent(self):
         with Roots() as roots:
@@ -853,13 +878,15 @@ class InvariantTest(unittest.TestCase):
                 self.assertEqual(roots.problems(), [f'{path}:{problem}'])
 
     def test_a_kept_current_codex_install_takes_neither_roles_nor_trusted_hooks(self):
+        roles = '[codex.roles]\nfrom = "plugin"\ndirectory = "agents/codex"\n\n'
         for keeps in ('roles', 'hooks'):
             with Roots() as roots, self.subTest(keeps=keeps):
                 path = self.edit(roots, 'packages/impeccable.toml', 'install = [{ via = "personal", enabled = true }]',
                                  'install = [{ via = "personal", enabled = false, keep_current = true }]')
                 text = path.read_text()
-                dropped = 'hooks = "trusted"\n' if keeps == 'roles' else text[text.index('[codex.roles]'):text.index('[claude]')]
-                path.write_text(text.replace(dropped, ''))
+                if keeps == 'roles':
+                    text = text.replace('hooks = "trusted"\n', '').replace('[claude]\n', roles + '[claude]\n', 1)
+                path.write_text(text)
                 self.assertEqual(roots.problems(), [f'{path}:codex.install[0].keep_current: a kept-current install gets no '
                                                     'Codex roles or hook approval; enable it, or drop its roles and trusted hooks'])
 

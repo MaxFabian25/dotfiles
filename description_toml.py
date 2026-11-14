@@ -13,9 +13,9 @@ import tomllib
 from typing import Any, Mapping
 
 from description import (Adaptation, AlignedInstall, BUILDS, BuildSource, ClaudePlacement, CodexPlacement,
-                         CodexRoles, CourseRecipe, DescriptionError, EngineInstall, Frozen, GenericRecipe,
+                         CourseRecipe, DescriptionError, EngineInstall, Frozen, GenericRecipe,
                          Hooks, HostMarketplace, Install, Lock, LockedTree, LocalSource, LooseSkill, MarketplaceInstall, MarketplaceMode,
-                         NoteRule, Origin, Package, PluginRoles, PublicEmilRecipe, Recipe, Repo, RepoName, RepoRoles,
+                         NoteRule, Origin, Package, PluginRoles, PublicEmilRecipe, Recipe, Repo, RepoName,
                          RepoSource, Roots, Rules, SCHEMA, Setup, SkillRoot, SnapshotRecipe, SnapshotSource, Source,
                          TextReplace, ToolNotes, Visibility, entry_path, via, WindowsReplace)
 from description_checks import check_invariants, check_placement, check_privacy, check_references
@@ -174,21 +174,13 @@ def _parse_replace(table: _Table, key: str) -> tuple[TextReplace, ...]:
     return tuple(replaces)
 
 
-def _parse_roles(table: _Table | None) -> CodexRoles | None:
+def _parse_roles(table: _Table | None) -> PluginRoles | None:
     if table is None:
         return None
-    kind = table.get('from', str)
-    if kind == 'repo':
-        rewrite = table.get('rewrite', list, [])
-        if not all(isinstance(pair, list) and len(pair) == 2 and all(isinstance(s, str) for s in pair) for pair in rewrite):
-            table.error('rewrite', 'expected pairs of strings')
-            rewrite = []
-        roles = RepoRoles(table.get('directory', str), table.get('pattern', str), table.get('skill', str),
-                          tuple(tuple(pair) for pair in rewrite))
-    elif kind == 'plugin':
+    if table.get('from', str) == 'plugin':
         roles = PluginRoles(table.get('directory', str))
     else:
-        table.error('from', 'expected repo or plugin')
+        table.error('from', 'expected plugin')
         roles = None
     table.done()
     return roles
@@ -225,6 +217,7 @@ def _parse_package(path: Path, data: Mapping, visibility: Visibility, errors: li
         source_table.done()
     modes: dict[str, SkillMode] = {}
     tool_notes = ToolNotes.AUDIT
+    forbid: tuple[str, ...] = ()
     skills = table.sub('skills')
     if skills:
         for mode in SkillMode:
@@ -233,6 +226,14 @@ def _parse_package(path: Path, data: Mapping, visibility: Visibility, errors: li
                     skills.error(mode.value, f'{skill} already has mode {modes[skill].value}')
                 modes[skill] = mode
         tool_notes = skills.parse('tool_notes', ToolNotes, skills.get('tool_notes', str, ToolNotes.AUDIT.value))
+        forbid = skills.strings('forbid')
+        for pattern in forbid:
+            try:
+                re.compile(pattern)
+            except re.error as error:
+                skills.error('forbid', f'{pattern!r} is not a regular expression: {error}')
+        if forbid and source is None:
+            skills.error('forbid', 'needs a [source], because only a package the engine builds is checked')
         skills.done()
     codex = claude = None
     codex_table = table.sub('codex')
@@ -255,7 +256,7 @@ def _parse_package(path: Path, data: Mapping, visibility: Visibility, errors: li
                                  _parse_replace(claude_table, 'windows_replace'), _parse_replace(claude_table, 'replace'))
         claude_table.done()
     table.done()
-    return Package(EntryName(path.stem), visibility, note, source, modes, tool_notes, codex, claude, platforms)
+    return Package(EntryName(path.stem), visibility, note, source, modes, tool_notes, codex, claude, platforms, forbid)
 
 
 def _parse_marketplace(table: _Table | None) -> HostMarketplace | None:
@@ -626,6 +627,8 @@ def _dump_package(package: Package) -> dict:
             skills[mode.value] = names
     if package.tool_notes != ToolNotes.AUDIT:
         skills['tool_notes'] = package.tool_notes.value
+    if package.forbid:
+        skills['forbid'] = list(package.forbid)
     if skills:
         out['skills'] = skills
     if package.codex:
@@ -642,11 +645,7 @@ def _dump_package(package: Package) -> dict:
         for key in ('windows_replace', 'replace'):
             if replaces := getattr(package.codex, key):
                 codex[key] = [_Inline({'path': r.path, 'find': r.find, 'replace': r.replace}) for r in replaces]
-        roles = package.codex.roles
-        if isinstance(roles, RepoRoles):
-            codex['roles'] = {'from': 'repo', 'directory': roles.directory, 'pattern': roles.pattern,
-                              'skill': roles.skill, 'rewrite': [list(pair) for pair in roles.rewrite]}
-        elif isinstance(roles, PluginRoles):
+        if roles := package.codex.roles:
             codex['roles'] = {'from': 'plugin', 'directory': roles.directory}
         out['codex'] = codex
     if package.claude:

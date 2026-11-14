@@ -28,7 +28,7 @@ ENGINE = Path(__file__).resolve().parent
 # Files the engine writes with this device's paths inside, as (anchor, pattern). 'tree' anchors at the
 # root of any hashed tree; a root name anchors at that DeviceRoots field.
 GENERATED = (
-    ('codex_home', 'agents/*.toml'),                   # codex_agents.py roles
+    ('codex_home', 'agents/*.toml'),                   # Codex role files
     ('tree', '.claude-plugin/codex-alignment.json'),   # align_with_codex.py receipts in aligned copies
     ('tree', '.codex-plugin/upstream.json'),
     ('tree', '.claude-plugin/upstream.json'),
