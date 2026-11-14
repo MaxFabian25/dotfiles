@@ -139,7 +139,7 @@ tool_notes = "exempt"
 
 [codex]
 install = [{ via = "personal", enabled = true }]
-adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "5568d87290548bcf913bce23dcd313e5d29ba796", adapted = "cb5e38f95d5e90ebd25074d39afbb072215a8a9b", harness = "skills/poteto-mode/references/harnesses.md" }
+adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "5568d87290548bcf913bce23dcd313e5d29ba796", adapted = "e0250f457cc6f587e44102ec8ce8a1f58f9a862a", harness = "skills/poteto-mode/references/harnesses.md" }
 
 # Reflect keeps a finding's text and its check in one row, so a cheap check ships in the same release as its text
 # (user, 2026-11-14), after the 13 November pass split 43 rows into a text part and a check left in an issue.
