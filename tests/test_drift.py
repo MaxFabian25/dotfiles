@@ -416,6 +416,21 @@ class DiffTest(unittest.TestCase):
         self.assertIn(f'\n  {"mine (private)":<30} stale-lock  skills/mine changed after its tree was pinned; '
                       'run lock_setup.py --entry mine --refresh-owned --write\n', drift.render(edited))
 
+    def test_an_entry_with_an_enable_row_expects_its_path_row_and_one_without_reports_it_extra(self):
+        for enable_row, expected in ((True, []), (False, [(K.EXTRA, 'codex', '{agents_home}/skills/entry/SKILL.md')])):
+            with self.subTest(enable_row=enable_row), Device() as device:
+                source = device.roots.home / 'private/skills/entry'
+                installed = device.roots.agents_home / 'skills/entry'
+                for folder in (source, installed):
+                    device.write(folder / 'SKILL.md', '---\nname: entry\n---\nEntry\n')
+                digest = device.roots.tree_digest(source)
+                entry = d.LooseSkill('entry', d.Visibility.PRIVATE, '', d.LocalSource('skills/entry', digest),
+                                     {d.SkillRoot.AGENTS: True}, codex_enable_row=enable_row)
+                device.setup = replace(device.setup, loose={'entry': entry}, lock={
+                    **device.setup.lock, 'entry': d.Lock(d.intent(entry, {}), placements={d.SkillRoot.AGENTS: digest})})
+                device.toggles += f'\n[[skills.config]]\npath = {json.dumps(str(installed / "SKILL.md"))}\nenabled = true\n'
+                self.assertEqual(kinds(device.diff()), expected)
+
 
 if __name__ == '__main__':
     unittest.main()

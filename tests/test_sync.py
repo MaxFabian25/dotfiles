@@ -145,6 +145,27 @@ class FileSafetyTest(unittest.TestCase):
             operation._skills()
             self.assertEqual(json.loads(path.read_text())['skillOverrides'], {'unrelated': 'off'})
 
+    def test_an_entry_path_row_turning_it_on_lands_after_the_name_row_that_turns_the_publisher_off(self):
+        import tomllib
+        from host_state import FactKey, Host, SkillMode, Surface
+        from sync_files import Files
+        from sync_hosts import Apply
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'config.toml').write_text('')
+            operation = object.__new__(Apply)
+            operation.roots = SimpleNamespace(codex_home=root, agents_home=root / 'agents')
+            operation.files = Files(root / 'backups')
+            # In drift's order: the entry sorts before the package whose skill it stands in for.
+            operation.current = SimpleNamespace(changes=[
+                SimpleNamespace(key=FactKey(Host.CODEX, Surface.SKILL, '{agents_home}/skills/invocation-kit/SKILL.md'),
+                                expected=SkillMode.ON),
+                SimpleNamespace(key=FactKey(Host.CODEX, Surface.SKILL, 'kit:kit'), expected=SkillMode.OFF)])
+            operation._skills()
+            rows = tomllib.loads((root / 'config.toml').read_text())['skills']['config']
+        self.assertEqual(rows, [{'name': 'kit:kit', 'enabled': False},
+                                {'path': str(root / 'agents/skills/invocation-kit/SKILL.md'), 'enabled': True}])
+
     def test_concurrent_edit_is_not_overwritten(self):
         from sync_files import ConcurrentEdit, Files
         with tempfile.TemporaryDirectory() as temp:

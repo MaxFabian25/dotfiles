@@ -732,6 +732,17 @@ class LeakTest(unittest.TestCase):
                 if extra:
                     self.assertIn(f'{path}:{extra}', problems)
 
+    def test_an_enable_row_needs_the_skill_placed_on_for_codex(self):
+        for place in ('claude = true\n', 'agents = false\n', 'agents = true\n'):
+            with self.subTest(place=place), Roots() as roots:
+                path = roots.private / 'skills/entry.toml'
+                path.write_text(f'codex_enable_row = true\n[source]\nlocal = "skills/entry"\ntree = "sha256:{"a" * 64}"\n'
+                                f'[place]\n{place}')
+                if place == 'agents = true\n':
+                    self.assertTrue(description_toml.load(roots.roots()).loose['entry'].codex_enable_row)
+                else:
+                    self.assertIn(f'{path}:codex_enable_row: needs the skill placed on under codex or agents', roots.problems())
+
     def test_without_flags_the_private_root_is_the_sibling_dotfiles_private_checkout_and_nothing_else(self):
         with tempfile.TemporaryDirectory() as folder, mock.patch.object(description, 'ENGINE', Path(folder) / 'dotfiles'), \
                 mock.patch.dict(os.environ):
