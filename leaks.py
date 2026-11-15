@@ -69,8 +69,6 @@ def leaks(public, private, message=None, pushed=None):
 
 
 def unpublished(public, patterns, pushed=None):
-    """Check unpublished HEAD history, or the tips and known destination history from pre-push input. Removed
-    strings remain in an earlier commit. Other remotes exempt no commit in pre-push mode."""
     def run(*arguments, allowed=(0,)):
         done = subprocess.run([*GIT, '-C', str(public), *arguments], capture_output=True, text=True, encoding='utf-8',
                               errors='replace', timeout=300)
@@ -81,7 +79,7 @@ def unpublished(public, patterns, pushed=None):
     hits = []
     if pushed is None:
         if not run('rev-parse', '--verify', '--quiet', 'HEAD', allowed=(0, 1)).strip():
-            return []  # no commit yet, so the working tree is all a push could send
+            return []
         commits = run('rev-list', 'HEAD', '--not', '--remotes').split()
     else:
         tips = pushed.tips
