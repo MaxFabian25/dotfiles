@@ -111,9 +111,8 @@ readings that a 4.5-hour pass had chosen without asking.
 
 For a generated deck with its own checks, keep the design, the renders and the logged result lines
 in your own context, and have a worker write the page code and check code, one committed unit at a
-time. Offer the user a new thread once a pass is pushed. In November 2026 a deck thread that held
-page code, renders and check output compacted nine times, and none once it handed each unit to a
-worker.
+time. In November 2026 a deck thread that held page code, renders and check output compacted nine
+times, and none once it handed each unit to a worker.
 
 Complete the work when every slide meets each rule above and Charts and Prose govern their parts,
 you have looked at each changed page as the presenting app draws it, and the user has seen the
