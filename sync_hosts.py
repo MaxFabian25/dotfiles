@@ -262,7 +262,9 @@ class Apply:
                             lambda data: data.setdefault('enabledPlugins', {}).__setitem__(identity, enabled))
 
     def _skills(self):
-        for difference in self.current.changes:
+        # Codex applies the last row that matches a skill, so a path row that turns an entry on goes after the name rows.
+        for difference in sorted(self.current.changes, key=lambda d: d.key is not None and d.key.host == Host.CODEX
+                                 and d.key.subject.startswith('{') and d.expected == SkillMode.ON):
             if difference.key is None or difference.key.surface != Surface.SKILL:
                 continue
             host, subject, mode = difference.key.host, difference.key.subject, difference.expected

@@ -304,6 +304,9 @@ class LooseSkill:
     note: str
     source: SnapshotSource | LocalSource
     place: Mapping[SkillRoot, bool]  # placed under that root -> on there
+    # An entry that keeps a publisher skill's qualified name also matches the name row that turns the publisher's copy
+    # off, and Codex applies the last matching row, so the entry needs a path row of its own turning it on.
+    codex_enable_row: bool = field(default=False, metadata={'intent': 'when-set'})
 
 
 @dataclass(frozen=True)

@@ -276,6 +276,7 @@ def _parse_loose(path: Path, data: Mapping, visibility: Visibility, errors: list
     table = _Table(path, data, errors)
     table.get('public', bool, False)
     note = table.get('note', str, '')
+    codex_enable_row = table.get('codex_enable_row', bool, False)
     source_table = table.sub('source', required=True)
     source = None
     if source_table:
@@ -300,7 +301,7 @@ def _parse_loose(path: Path, data: Mapping, visibility: Visibility, errors: list
                 place[root] = value
         place_table.done()
     table.done()
-    return LooseSkill(EntryName(path.stem), visibility, note, source, place)
+    return LooseSkill(EntryName(path.stem), visibility, note, source, place, codex_enable_row)
 
 
 def _parse_host_skills(path: Path, data: Mapping, errors: list[str]) -> dict[str, SkillMode]:
@@ -670,6 +671,8 @@ def _dump_loose(skill: LooseSkill) -> dict:
     out: dict[str, Any] = {'public': True} if skill.visibility == Visibility.PUBLIC else {}
     if skill.note:
         out['note'] = skill.note
+    if skill.codex_enable_row:
+        out['codex_enable_row'] = True
     source = skill.source
     out['source'] = (_dump_local(source) if isinstance(source, LocalSource) else
                      {'snapshot': _Inline({root.value: digest for root, digest in sorted(source.snapshots.items())})})

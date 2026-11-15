@@ -294,6 +294,8 @@ class CodexState:
                     key = add(Surface.LOOSE_SKILL, subject, FileValue(lock.placements[root]), skill.name)
                 if not skill.place[root]:
                     add(Surface.SKILL, f'{subject}/SKILL.md', SkillMode.OFF, skill.name, key)
+                elif skill.codex_enable_row:
+                    add(Surface.SKILL, f'{subject}/SKILL.md', SkillMode.ON, skill.name, key)
         for subject, mode in setup.host_skills.get(_HOST, {}).items():
             add(Surface.SKILL, subject, mode, HOST_TOGGLES[_HOST])
         if setup.rules is not None:

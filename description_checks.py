@@ -240,6 +240,9 @@ def check_invariants(setup: Setup, errors: list[str]) -> None:
         if isinstance(skill.source, SnapshotSource) and set(skill.source.snapshots) != set(skill.place):
             errors.append(f'{entry_path(roots.of(skill.visibility), "skills", name)}:source.snapshot: '
                           'names a snapshot for each place the skill goes, and only those')
+        if skill.codex_enable_row and not any(skill.place.get(root) for root in _SKILL_ROOTS[Host.CODEX]):
+            errors.append(f'{entry_path(roots.of(skill.visibility), "skills", name)}:codex_enable_row: '
+                          'needs the skill placed on under codex or agents')
     for name in sorted(set(setup.packages) & set(setup.loose)):
         errors.append(f'{name}:: a package and a loose skill share the name, and the lock keys both by name')
 
