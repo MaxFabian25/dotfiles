@@ -81,6 +81,7 @@ class ProjectTest(unittest.TestCase):
             key(S.AGENT, 'impeccable_documenter.toml'): (hs.FileValue(D2), 'impeccable', impeccable),
             connector: (hs.PluginValue(False, hs.Unpinned()), 'connector', None),
             key(S.SKILL, 'connector:search'): (M.ON, 'connector', connector),
+            key(S.SKILL, 'connector:*'): (M.OFF, 'connector', connector),
             loose: (hs.FileValue(D3), 'define-goal', None),
             key(S.SKILL, '{codex_home}/skills/define-goal/SKILL.md'): (M.OFF, 'define-goal', loose),
             key(S.SKILL, 'plugin-creator'): (M.OFF, 'hosts/codex.toml', None),
@@ -147,6 +148,18 @@ class ProjectTest(unittest.TestCase):
         self.assertEqual(granted(d.EngineInstall(True)), {key(S.AGENT, 'reviewer.toml'): hs.FileValue(D2),
                                                          key(S.HOOK, 'kit@personal'): hs.Approved(3)})
         self.assertEqual(granted(d.EngineInstall(False, keep_current=True)), {})
+
+    def test_only_a_package_whose_every_install_is_off_and_one_through_the_account_wants_every_skill_off(self):
+        account, curated, bundled = (d.MarketplaceInstall(m, False) for m in ('openai-curated-remote', 'openai-curated', 'openai-bundled'))
+        on = d.MarketplaceInstall('openai-bundled', True)
+        state = codex_host.CodexState(homes.projection_roots(), 'codex')
+        for installs, follows in (((account,), 'tools@openai-curated-remote'), ((curated, account), 'tools@openai-curated-remote'),
+                                  ((curated,), None), ((bundled,), None), ((on, account), None)):
+            with self.subTest(installs=[(i.marketplace, i.enabled) for i in installs]):
+                facts = state.project(setup([package('tools', None, d.CodexPlacement(installs))]))
+                fact = facts.get(key(S.SKILL, 'tools:*'))
+                self.assertEqual((fact.value, fact.entry, fact.follows) if fact else None,
+                                 (M.OFF, 'tools', key(S.PLUGIN, follows)) if follows else None)
 
 
 def plugin(home, plugin_id, enabled, version, source):
@@ -475,6 +488,168 @@ class ObserveTest(unittest.TestCase):
             device.inventory = [p for p in device.inventory if p['pluginId'] != identity]
             observation = device.state().observe(hs.Request())
             self.assertNotIn(key(S.PLUGIN, identity), observation.facts)
+
+    GONE = '[[skills.config]]\nname = "gone:x"\nenabled = false\n\n'
+
+    def account_plugin_turned_off(self, device, *, account_on=True, rows=GONE):
+        """An account plugin Codex reports on, with skills a, b and own, whose config.toml switch is off, beside an
+        account plugin that stays on, and a row for a plugin Codex no longer has."""
+        roots = device.roots
+        device.inventory = [plugin(device, 'tools@openai-curated-remote', account_on, '1', {'source': 'remote'}),
+                            plugin(device, 'kept@openai-curated-remote', True, '1', {'source': 'remote'})]
+        for name in ('a', 'b', 'own'):
+            device.skill(roots.codex_home / 'plugins/cache/openai-curated-remote/tools/1', name)
+        device.skill(roots.codex_home / 'plugins/cache/openai-curated-remote/kept/1', 'y')
+        config = roots.codex_home / 'config.toml'
+        config.write_text('[skills]\nmax_context_tokens = 10000\n\n' + rows
+                          + '[plugins."tools@openai-curated-remote"]\nenabled = false\n')
+        return config
+
+    @staticmethod
+    def tools(enabled, own=M.OFF, host_skills=None, installs=()):
+        """Package tools through the account, which gives skill own a mode of its own."""
+        placement = d.CodexPlacement((d.MarketplaceInstall('openai-curated-remote', enabled), *installs))
+        return setup([package('tools', None, placement, {'own': own})],
+                     host_skills={hs.Host.CODEX: host_skills} if host_skills else None)
+
+    def sync_skills(self, device, enabled, own=M.OFF, host_skills=None, installs=()):
+        """The SKILL differences a check reports for package tools, then what sync's skill step writes for them."""
+        from types import SimpleNamespace
+        from sync_files import Files
+        from sync_hosts import Apply
+        desired = self.tools(enabled, own, host_skills, installs)
+        state = device.state()
+        observation = state.observe(hs.Request.of(state.project(desired)))
+        result = diff(desired, HostDevice(hs.Platform.LINUX, device.roots, (state,), ()), observations={hs.Host.CODEX: observation})
+        operation = Apply.__new__(Apply)
+        operation.roots, operation.setup, operation.files = device.roots, desired, Files(device.roots.home / 'backups')
+        operation.current = SimpleNamespace(changes=result.drift(), observations={hs.Host.CODEX: observation})
+        operation._skills()
+        return {c.key.subject: c.kind for c in result.differences if c.key and c.key.surface == S.SKILL}
+
+    def test_an_account_plugin_turned_off_gets_an_off_row_per_skill_and_loses_them_when_turned_back_on(self):
+        import tomllib
+        with Device() as device:
+            config = self.account_plugin_turned_off(device)
+            before = config.read_text()
+            self.assertEqual(self.sync_skills(device, False), {'tools:*': Kind.MISSING, 'tools:own': Kind.MISSING})
+            after = config.read_text()
+            rows = tomllib.loads(after)['skills']['config']
+            self.assertEqual(rows, [{'name': n, 'enabled': False} for n in ('gone:x', 'tools:a', 'tools:b', 'tools:own')])
+            self.assertEqual(after.count('\n\n[[skills.config]]\n'), 4, 'four tables, each after a blank line')
+            self.assertEqual([line for line in before.splitlines() if line not in after.splitlines()], [])
+            self.assertEqual(self.sync_skills(device, False), {}, 'in step once the rows are written')
+            self.assertEqual(config.read_text(), after)
+            self.assertEqual(self.sync_skills(device, True), {'tools:a': Kind.EXTRA, 'tools:b': Kind.EXTRA})
+            self.assertEqual([row['name'] for row in tomllib.loads(config.read_text())['skills']['config']],
+                             ['gone:x', 'tools:own'])
+            self.assertEqual(self.sync_skills(device, True), {})
+
+    def test_every_skill_off_needs_no_row_while_the_account_has_the_plugin_off_and_turns_an_enable_row_off(self):
+        import tomllib
+        with Device() as device:
+            config = self.account_plugin_turned_off(device, account_on=False)
+            self.assertEqual(self.sync_skills(device, False), {'tools:own': Kind.MISSING})
+            self.assertEqual([row['name'] for row in tomllib.loads(config.read_text())['skills']['config']], ['gone:x', 'tools:own'])
+        with Device() as device:
+            on = ''.join(f'[[skills.config]]\nname = "tools:{name}"\nenabled = true\n\n' for name in ('a', 'b'))
+            config = self.account_plugin_turned_off(device, rows=self.GONE + on)
+            self.assertEqual(self.sync_skills(device, False), {'tools:*': Kind.MISSING, 'tools:own': Kind.MISSING})
+            rows = [row for row in tomllib.loads(config.read_text())['skills']['config'] if row['name'] in ('tools:a', 'tools:b')]
+            self.assertEqual(rows, [{'name': 'tools:a', 'enabled': False}, {'name': 'tools:b', 'enabled': False}])
+            self.assertEqual(self.sync_skills(device, False), {})
+        with Device() as device:
+            rows = ''.join(f'[[skills.config]]\nname = "tools:{name}"\nenabled = {value}\n\n'
+                           for name, value in (('a', 'false'), ('b', 'false'), ('own', 'false'), ('a', 'true')))
+            config = self.account_plugin_turned_off(device, rows=rows)
+            self.assertEqual(self.sync_skills(device, False), {'tools:*': Kind.MISSING}, 'a later row turns tools:a on')
+            self.assertEqual([(row['name'], row['enabled']) for row in tomllib.loads(config.read_text())['skills']['config']],
+                             [('tools:a', False), ('tools:b', False), ('tools:own', False), ('tools:a', False)])
+            self.assertEqual(self.sync_skills(device, False), {})
+
+    def test_every_skill_off_leaves_a_skill_the_hosts_file_gives_a_mode_and_reads_only_the_copies_codex_lists(self):
+        import tomllib
+        with Device() as device:
+            config = self.account_plugin_turned_off(device, rows='[[skills.config]]\nname = "tools:a"\nenabled = true\n\n')
+            # A copy Codex lists as off, whose skill c Codex does not list.
+            device.inventory.append(plugin(device, 'tools@openai-curated', False, '2', {'source': 'local', 'path': 'x'}))
+            device.skill(device.roots.codex_home / 'plugins/cache/openai-curated/tools/2', 'c')
+            installs = (d.MarketplaceInstall('openai-curated', False),)
+            self.assertEqual(self.sync_skills(device, False, host_skills={'tools:a': M.ON}, installs=installs),
+                             {'tools:*': Kind.MISSING, 'tools:own': Kind.MISSING})
+            self.assertEqual([(row['name'], row['enabled']) for row in tomllib.loads(config.read_text())['skills']['config']],
+                             [('tools:a', True), ('tools:b', False), ('tools:own', False)])
+            self.assertEqual(self.sync_skills(device, False, host_skills={'tools:a': M.ON}, installs=installs), {})
+
+    def test_every_skill_off_leaves_the_row_of_a_skill_the_package_gives_its_own_mode(self):
+        import tomllib
+        with Device() as device:
+            config = self.account_plugin_turned_off(device, rows=self.GONE.replace('\nname', '\n# set by hand\nname')
+                                                    + '[[skills.config]]\nname = "tools:own"\nenabled = true\n\n')
+            before = config.read_text()
+            self.assertEqual(self.sync_skills(device, False, own=M.ON), {'tools:*': Kind.MISSING})
+            after = config.read_text()
+            self.assertEqual([(row['name'], row['enabled']) for row in tomllib.loads(after)['skills']['config']],
+                             [('gone:x', False), ('tools:own', True), ('tools:a', False), ('tools:b', False)])
+            self.assertTrue(after.startswith(before.split('[plugins.')[0]), after)
+            self.assertIn('enabled = false\n\n[[skills.config]]\nname = "tools:b"\nenabled = false\n\n[plugins.', after)
+            self.assertEqual(self.sync_skills(device, False, own=M.ON), {})
+
+    def test_an_unreadable_copy_of_a_turned_off_account_plugin_leaves_every_skill_off_unknown(self):
+        with Device() as device:
+            config = self.account_plugin_turned_off(device)
+            device.write(device.roots.codex_home / 'plugins/cache/openai-curated-remote/tools/1/skills/a-again/SKILL.md',
+                         '---\nname: a\ndescription: a\n---\n')
+            # A readable copy Codex lists first, which the unknown must not name.
+            device.inventory.insert(0, plugin(device, 'tools@openai-curated', False, '2', {'source': 'local', 'path': 'x'}))
+            device.skill(device.roots.codex_home / 'plugins/cache/openai-curated/tools/2', 'c')
+            before = config.read_text()
+            self.assertEqual(self.sync_skills(device, False), {'tools:*': Kind.INCOMPLETE, 'tools:own': Kind.MISSING})
+            self.assertNotIn('tools:a', config.read_text())
+            self.assertIn(before.split('[plugins.')[0].strip(), config.read_text())
+            state = device.state()
+            observation = state.observe(hs.Request.of(state.project(self.tools(False))))
+        self.assertEqual([(u.source, u.reason) for u in observation.unknown],
+                         [('{codex_home}/plugins/cache/openai-curated-remote/tools/1', 'Duplicate exported skill: a')])
+
+    def test_off_rows_go_in_as_tables_after_the_last_row_is_removed_or_into_an_array_on_one_line(self):
+        import tomllib
+        for label, rows, changes, kept in (
+                ('last row removed', '[[skills.config]]\nname = "kept:y"\nenabled = false\n\n', {'kept:y': Kind.EXTRA}, []),
+                ('one line', 'config = [{ name = "gone:x", enabled = false }]\n\n', {}, ['gone:x'])):
+            with self.subTest(label), Device() as device:
+                config = self.account_plugin_turned_off(device, rows=rows)
+                self.assertEqual(self.sync_skills(device, False), changes | {'tools:*': Kind.MISSING, 'tools:own': Kind.MISSING})
+                text = config.read_text()
+                self.assertEqual([row['name'] for row in tomllib.loads(text)['skills']['config']],
+                                 kept + ['tools:a', 'tools:b', 'tools:own'])
+                self.assertNotIn('config = [', text)
+                self.assertEqual(self.sync_skills(device, False), {})
+
+    def test_off_rows_follow_a_last_table_without_a_final_newline_and_stop_before_a_write_they_cannot_make(self):
+        import tomllib
+        with Device() as device:
+            config = self.account_plugin_turned_off(device, rows='')
+            config.write_text(config.read_text() + '\n[[skills.config]]\nname = "gone:x"\nenabled = false')
+            self.assertEqual(self.sync_skills(device, False), {'tools:*': Kind.MISSING, 'tools:own': Kind.MISSING})
+            self.assertEqual([row['name'] for row in tomllib.loads(config.read_text())['skills']['config']],
+                             ['gone:x', 'tools:a', 'tools:b', 'tools:own'])
+            self.assertEqual(self.sync_skills(device, False), {})
+        with Device() as device:
+            # Another table between two [[skills.config]] tables, as a row added by hand at the end of the file leaves.
+            config = self.account_plugin_turned_off(device, rows='[[skills.config]]\nname = "tools:own"\nenabled = true\n\n')
+            config.write_text(config.read_text() + '\n' + self.GONE)
+            before = config.read_text()
+            with self.assertRaisesRegex(ValueError, 'the off rows did not land'):
+                self.sync_skills(device, False, own=M.ON)
+            self.assertEqual(config.read_text(), before)
+        with Device() as device:
+            config = self.account_plugin_turned_off(device, rows='')
+            config.write_text('skills = { max_context_tokens = 10000 }\n' + config.read_text().split('\n\n', 1)[1])
+            before = config.read_text()
+            with self.assertRaisesRegex(ValueError, 'would leave TOML that does not parse'):
+                self.sync_skills(device, False)
+            self.assertEqual(config.read_text(), before)
 
     def test_approvals_count_only_hooks_the_installed_plugin_defines(self):
         with Device() as device:

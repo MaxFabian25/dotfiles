@@ -5,9 +5,12 @@ import subprocess
 import sys
 import tomllib
 
+import tomlkit
+
 import portable
 from accepted_installations import AcceptedInstallations, HeldMove, copy_tree, image
 from claude_host import native_marketplace
+from codex_host import EVERY_SKILL
 import codex_runtime
 import profile_plugins
 from description import EngineInstall, plugin_id, via
@@ -263,7 +266,9 @@ class Apply:
             if difference.key is None or difference.key.surface != Surface.SKILL:
                 continue
             host, subject, mode = difference.key.host, difference.key.subject, difference.expected
-            if host == Host.CODEX:
+            if host == Host.CODEX and subject.endswith(':' + EVERY_SKILL):
+                self._every_skill_off(self.current.observations[host].details[difference.key].names)
+            elif host == Host.CODEX:
                 is_path = subject.startswith('{')
                 name = str(self.expand(subject)) if is_path else subject
                 field = 'path' if is_path else 'name'
@@ -295,6 +300,34 @@ class Apply:
                     else:
                         overrides[name] = 'user-invocable-only' if mode == SkillMode.EXPLICIT else mode.value
                 self.files.json(self.roots.claude_home / 'settings.json', change)
+
+    def _every_skill_off(self, names):
+        """An off row for each name the check gave a plugin's `:*` fact, and every other row of that name switched off.
+        Each new row is a [[skills.config]] table added to the others, which stay as they are."""
+        path = self.roots.codex_home / 'config.toml'
+
+        def change(data):
+            rows = skill_tables(data)
+            for name in sorted(names):
+                matching = [row for row in rows if row.get('name') == name]
+                for row in matching:
+                    if row.get('enabled') is not False:
+                        row['enabled'] = False
+                if not matching:
+                    row = tomlkit.table()
+                    row.add('name', name)
+                    row.add('enabled', False)
+                    row.add(tomlkit.nl())
+                    rows.append(row)
+            # Read back before the write: tomlkit 0.15.2 loses edits to [[skills.config]] tables that another table
+            # splits, and an inline skills table cannot take tables (both tried on 2026-11-14).
+            try:
+                written = tomllib.loads(data.as_string()).get('skills', {}).get('config', [])
+            except tomllib.TOMLDecodeError as error:
+                raise ValueError(f'{path}: the off rows would leave TOML that does not parse: {error}') from error
+            if any({row.get('enabled') for row in written if row.get('name') == name} != {False} for name in names):
+                raise ValueError(f'{path}: the off rows did not land; put the [[skills.config]] tables together')
+        self.files.toml(path, change)
 
     def expand(self, value):
         for token in ('home', 'codex_home', 'claude_home', 'agents_home', 'engine'):
@@ -336,6 +369,28 @@ def set_plugin_enabled(data, identity, enabled):
         plugins[identity]['enabled'] = enabled
     else:
         plugins[identity] = {'enabled': enabled}
+
+
+def skill_tables(data):
+    """config.toml's skills.config as [[skills.config]] tables to add rows to. An array written on one line, such as
+    the `config = []` a write of an empty list leaves, becomes tables first, because a table added to it cannot be
+    written back as TOML."""
+    skills = data.setdefault('skills', {})
+    rows = skills.get('config')
+    if isinstance(rows, tomlkit.items.AoT):
+        # The last table of a file without a final newline has none, and a table added after it would start on
+        # its last line.
+        if rows and not rows[-1].as_string().endswith('\n'):
+            rows[-1].add(tomlkit.nl())
+        return rows
+    tables = tomlkit.aot()
+    for row in rows or ():
+        table = tomlkit.table()
+        for field, value in row.items():
+            table.add(field, value)
+        tables.append(table)
+    skills['config'] = tables
+    return tables
 
 
 def merge_catalog(data, name, entries, managed=None):

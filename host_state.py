@@ -404,7 +404,12 @@ class FolderDetail:
     within: str | None = None        # and the folder's path inside it
 
 
-Detail = InstallDetail | MarketplaceDetail | FolderDetail
+@dataclass(frozen=True)
+class OffRows:
+    names: frozenset[str]            # Codex: the skills.config names a plugin's `<plugin>:*` fact needs an off row for
+
+
+Detail = InstallDetail | MarketplaceDetail | FolderDetail | OffRows
 
 
 @dataclass(frozen=True)

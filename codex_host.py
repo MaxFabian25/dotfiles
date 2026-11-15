@@ -1,7 +1,8 @@
 """Every Codex encoding: plugin ids, skills.config, marketplaces, sidecars, agent roles, hooks.
 
-Codex resolves account installations itself. Remote inventory reports account enablement;
-the native loader also honors each profile's local plugin disable switch.
+Codex resolves account installations itself. Remote inventory reports account enablement, and the profile's own
+switch does not hide an account plugin's skills: with Codex 0.169.0-alpha.6 on 2026-11-14, a fresh session listed 16
+data-analytics skills under `enabled = false`, and none once each skill had an off row in skills.config.
 """
 from __future__ import annotations
 
@@ -25,7 +26,7 @@ from host_observation import Observer, Unread, checkout, observe_loose, observe_
 from invocation_overrides import skill_paths
 from host_state import (CATALOGS as ALL_CATALOGS, ENGINE_MARKETPLACE, PRIMARY_RUNTIME, Approved, CheckoutMarketplace, DeviceRoots,
                         Commit, EngineMarketplace, Fact, FactKey, FactSet, FileValue, GitMarketplace, Host, InstallDetail,
-                        NoteKind, Observation, Pinned, PluginValue, Released, Request, SkillMode, Surface,
+                        NoteKind, Observation, OffRows, Pinned, PluginValue, Released, Request, SkillMode, Surface,
                         TreeValue, Unpinned, bytes_digest, clone_url, parse_commit, upstream_version)
 import portable
 
@@ -37,6 +38,11 @@ _FETCHED = '.codex-marketplace-install.json'
 # A listing with no warm cache downloads Codex's whole remote catalog. On 2026-11-10 that took 167 to 200 seconds on
 # two machines, and at the general limit every Codex fact came back unread, which stopped each pull and release.
 PLUGIN_LISTING_SECONDS = 300
+# The catalog of the plugins Codex installs through the user's account.
+ACCOUNT = 'openai-curated-remote'
+# The subject `<plugin>:*`, a SKILL fact for an account plugin turned off: an off row for every skill Codex lists from
+# it, other than the skills the description gives a mode of their own. Its observation's OffRows names those rows.
+EVERY_SKILL = '*'
 
 
 def _key(surface: Surface, subject: str) -> FactKey:
@@ -269,6 +275,12 @@ class CodexState:
                     add(Surface.AGENT, role, FileValue(digest), package.name, key)
             for skill, mode in package.modes.items():
                 add(Surface.SKILL, f'{package.name}:{skill}', mode, package.name, owner)
+            # Rows are keyed by plugin name, so they would also hide an enabled install of the same name.
+            if not any(install.enabled for install in placement.installs):
+                account = next((install for install in placement.installs if via(install, _HOST) == ACCOUNT), None)
+                if account is not None:
+                    add(Surface.SKILL, f'{package.name}:{EVERY_SKILL}', SkillMode.OFF, package.name,
+                        _key(Surface.PLUGIN, plugin_id(package.name, account, _HOST)))
         if catalog is not None:
             add(Surface.MARKETPLACE, ENGINE, EngineMarketplace(frozenset(catalog)), None)
         for skill in setup.loose.values():
@@ -313,6 +325,8 @@ class CodexState:
             seen.unread(config_path, error, {Surface.MARKETPLACE, Surface.PLUGIN, Surface.SKILL, Surface.HOOK})
             config = {}
 
+        # The plugins whose skills Codex lists: what it reports, before the profile's switch is applied below.
+        listing_skills = [plugin for plugin in inventory if plugin['enabled']]
         inventory = [plugin | {'enabled': False}
                      if (plugin.get('source') or {}).get('source') == 'remote'
                      and config.get('plugins', {}).get(plugin['pluginId'], {}).get('enabled') is False
@@ -493,6 +507,8 @@ class CodexState:
             for child in _children(folder):
                 loose_homes[child.name].append(roots.tokens(child / 'SKILL.md'))
         stale_toggles, redundant, local_toggles = Counter(), 0, 0
+        every = {subject.removesuffix(':' + EVERY_SKILL) for subject in request.disables if subject.endswith(':' + EVERY_SKILL)}
+        modes = defaultdict(set)
         for entry in config.get('skills', {}).get('config', []):
             mode = SkillMode.ON if entry.get('enabled') else SkillMode.OFF
             if 'path' in entry:
@@ -511,12 +527,30 @@ class CodexState:
                 continue
             elif plugin not in named:
                 stale_toggles[plugin] += 1
+            elif plugin in every and name not in request.skills:
+                # One of the rows the plugin's `:*` fact stands for.
+                modes[name].add(mode)
             elif mode == SkillMode.OFF:
                 seen.add(Surface.SKILL, name, mode, owner(plugin))
             elif any(p['marketplaceName'] in CATALOGS for p in named[plugin]):
                 seen.add(Surface.SKILL, name, mode, owner(plugin))
             else:
                 redundant += 1
+        for plugin in sorted(every):
+            subject = f'{plugin}:{EVERY_SKILL}'
+            needed = set()
+            for copy in (p for p in listing_skills if p['name'] == plugin):
+                try:
+                    needed |= skill_paths(self._cache(copy)).keys()
+                except (OSError, ValueError, yaml.YAMLError) as error:
+                    seen.unread(self._cache(copy), error, {Surface.SKILL}, {subject})
+                    break
+            else:
+                names = frozenset(f'{plugin}:{skill}' for skill in needed) - request.skills
+                seen.details[seen.key(Surface.SKILL, subject)] = OffRows(names)
+                # Every row for such a skill is off, so no order of the rows turns it on.
+                if all(modes.get(name) == {SkillMode.OFF} for name in names):
+                    seen.add(Surface.SKILL, subject, SkillMode.OFF, owner(plugin))
         if stale_toggles:
             seen.note(NoteKind.RESIDUE, 'skills.config', f'{sum(stale_toggles.values())} toggles for {len(stale_toggles)} plugins '
                                                          f'Codex no longer has: {", ".join(sorted(stale_toggles))}')
