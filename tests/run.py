@@ -1,4 +1,4 @@
-"""Run the public test suite as CI and release.py do: without writing bytecode, and with Codex's and Claude's config
+"""Run the public test suite as CI does: without writing bytecode, and with Codex's and Claude's config
 roots at a missing folder, because agent sessions export CODEX_HOME and CLAUDE_CONFIG_DIR at the device's real
 config. With no arguments, each test module runs in its own process, up to 8 at a time, so no module can lean on what
 another imported; the failing modules' output, each module's count of skips and a combined count follow. unittest
@@ -36,7 +36,7 @@ MODULE_TIMEOUT_SECONDS = 900
 # suite 11 failures and errors that way, so each run's temporary folders sit under the home folder instead. That
 # holds while no Codex session works in the home folder itself or in its .cache.
 TEMPORARY_PARENT = Path.home() / '.cache' / 'dotfiles-tests'
-# A run stopped part-way leaves its folder there. A module stops at 15 minutes and release.py's whole suite at 30,
+# A run stopped part-way leaves its folder there. A module stops at 15 minutes,
 # so a run's folder untouched for a day is a stopped run's.
 STALE_SECONDS = 24 * 60 * 60
 # Agent sessions export their thread, their session and API keys, and a test that passes them on to a program it

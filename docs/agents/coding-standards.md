@@ -1,19 +1,13 @@
 # Coding standards
 
-For the reviewer of a release. `release.py finish` stops on changed code until `--reviewed FILE` names a review
-made against this file. Each rule here is a judgement call. A rule that a program could check belongs in a test
-or in `release.py`.
+For whoever reviews a pull request here. No tool requires a review: ask for one when a change is risky enough
+to want a second reader. Each rule here is a judgement call. A rule that a program could check belongs in a test.
 
 ## How to review
 
-`release.py review NAME` prints, for each of the two release worktrees, the code files the branch changes, the
-command that shows its changes, and one `Reviewed:` line. Read those changes and the new files. Apply every rule
-to every changed function. Report each finding with its file and line, the input or state that breaks it, and
-what then happens. Write "No findings" when there are none.
-
-The reviewer writes the `Reviewed:` lines into the review file, each on a line of its own with nothing else on
-it, and only when it has read the code and no finding of its own holds the release back. The author does not
-write them. Say for each finding whether it holds the release back.
+Read the pull request's changes and its new files. Apply every rule to every changed function. Report each
+finding with its file and line, the input or state that breaks it, and what then happens. Write "No findings"
+when there are none. Say for each finding whether it holds the release back.
 
 A finding holds the release back only when the reviewer shows a wrong result on an input or state that occurs
 in use, or a regression against the released code; in the first review, so does a finding under a rule below.
@@ -40,8 +34,7 @@ counted: read it when the release changes one.
 
 The author takes fixed code to a fresh reviewer that did not write it, for a closure check. A closure check
 reads the earlier review file, the author's answer to each finding and the changes since that review. It answers only whether each fix closed its finding and whether the changes
-add a finding that holds the release back. It writes the `Reviewed:` lines when neither holds the release back,
-and lists any other finding as one that does not.
+add a finding that holds the release back. It lists any other finding as one that does not.
 
 The stop counts files by suffix, by name, by folder and by a `#!` first line. Two kinds of change are outside
 it, so read them too when the release makes them: hook commands inside JSON and TOML files, and scripts in a
@@ -67,8 +60,7 @@ settle.
   known secret form, and asserts that the new one withholds everything the old one did. In November 2026 a
   change to `ci_log.py` approved as about two lines removed control characters before the credential check
   read the line, let credentials through in two review rounds, and ended in a redesign.
-- **A probe isolates its subject.** A probe outside the test suites that `tests/run.py` and `release.py finish`
-  run starts its subject with `HOME` and the working folder at throwaway folders and an environment built from an
+- **A probe isolates its subject.** A probe outside the test suite that `tests/run.py` runs starts its subject with `HOME` and the working folder at throwaway folders and an environment built from an
   allowlist, with no thread ID, pool key or real lock in it and no credential tool such as `agent-op` on `PATH`.
   A binary that can reach the network runs in a loopback-only namespace from the probe's first run, such as the
   `bwrap ... --unshare-all` line of the `planted-error-checks` skill. A test or probe that gives an outside tool

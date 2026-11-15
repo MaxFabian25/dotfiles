@@ -1,6 +1,6 @@
 ## Paired checkout
 
-The paired private checkout is the sibling `dotfiles-private`, or `private` beside this `public` folder in a `release.py` worktree.
+The paired private checkout is the sibling `dotfiles-private`, or the `dotfiles-private` worktree you made for the same change.
 
 ## Agent skills
 
