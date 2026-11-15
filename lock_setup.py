@@ -10,6 +10,7 @@ import yaml
 from description import LocalSource, Lock, LockedTree, Package, Roots, Visibility, intent
 from description_toml import load, render_root
 from host_state import DeviceRoots, Host
+from package import files
 from portable import read_utf8
 from sync_files import Files, contents
 from sync_sources import BuildError, Builder, Sources, child
@@ -28,7 +29,22 @@ def check_descriptions(tree):
                              f'{DESCRIPTION_LIMIT}, so shorten it before locking')
 
 
-def refresh(setup, builder, names, *, owned=False):
+def check_release_folder(name, built, output, installed):
+    """Refuse a build whose release folder this device already holds with other files. The folder's name carries
+    only the version, the commit and the packaging number, so every pull would stop on it."""
+    if installed is None:
+        return
+    release = built.pristine or built.root
+    if not release.is_relative_to(output):
+        return
+    held = installed / release.relative_to(output)
+    if held.is_dir() and files(held) != files(release):
+        raise BuildError(f'{name}: this build differs from the installed release {held}, which has the same name, '
+                         f'so every pull would stop with "Existing release differs"; raise `packaging` in the '
+                         f"package's file and lock again")
+
+
+def refresh(setup, builder, names, *, owned=False, installed=None):
     packages, loose, locks = dict(setup.packages), dict(setup.loose), dict(setup.lock)
     for name in names:
         entry = packages.get(name) or loose[name]
@@ -42,6 +58,7 @@ def refresh(setup, builder, names, *, owned=False):
             trees, roles, hooks = dict(previous.trees), previous.roles, previous.hooks
             if entry.source is not None and any(p and any(i.managed for i in p.installs) for p in (entry.codex, entry.claude)):
                 built = builder.codex(entry, verify=False)
+                check_release_folder(name, built, builder.directory, installed)
                 trees[Host.CODEX] = LockedTree(built.version, built.digest)
                 claude = builder.claude(entry, built, verify=False)
                 for built_claude in claude.values():
@@ -81,9 +98,11 @@ def main():
     setup = load(Roots(args.public, args.private))
     if unknown := set(args.entry) - (setup.packages.keys() | setup.loose.keys()):
         parser.error('unknown entries: ' + ', '.join(sorted(unknown)))
-    roots = replace(DeviceRoots.current(), engine=args.output)
+    device = DeviceRoots.current()
+    roots = replace(device, engine=args.output)
     builder = Builder(setup, roots, args.output, sources=Sources(args.output / '.sync/sources', seeds=tuple(args.seed)))
-    result = refresh(setup, builder, args.entry, owned=args.refresh_owned)
+    result = refresh(setup, builder, args.entry, owned=args.refresh_owned,
+                     installed=device.installed_engine() or device.engine)
     writes = []
     for visibility in Visibility:
         root = setup.roots.of(visibility)
