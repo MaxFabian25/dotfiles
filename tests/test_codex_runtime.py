@@ -31,8 +31,11 @@ def setUpModule():
 
 
 BUILD = '/tmp/codex-primary-runtime-AbC123/python-download/python'
+# Without maintenance.auto=false the fixture's commit starts `git maintenance run --auto --detach`, which runs
+# `git worktree prune` while the next `worktree add` holds a half-made entry, and a prune then makes the add fail with
+# "could not open '.git/worktrees/NAME/locked'", as seen with git 2.56 on 2026-11-15.
 GIT = ('git', '-c', 'user.name=Runtime Test', '-c', 'user.email=runtime-test@example.invalid',
-       '-c', 'commit.gpgsign=false')
+       '-c', 'commit.gpgsign=false', '-c', 'maintenance.auto=false')
 
 
 def pack(members) -> bytes:

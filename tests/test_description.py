@@ -587,8 +587,9 @@ class PlacementTest(unittest.TestCase):
             base = Path(folder).resolve()
             main, linked = base / 'main', base / 'linked'
             self.git('init', '-q', main)
+            # maintenance.auto=false, as test_codex_runtime.py's GIT says why.
             self.git('-C', main, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
-                     'commit', '--allow-empty', '-qm', 'Initial fixture')
+                     '-c', 'maintenance.auto=false', 'commit', '--allow-empty', '-qm', 'Initial fixture')
             self.git('-C', main, 'worktree', 'add', '--detach', '-q', linked)
             public, private = main / 'setup', linked / 'setup'
             public.mkdir()
