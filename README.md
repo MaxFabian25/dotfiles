@@ -129,17 +129,14 @@ The private checkout's `release.toml` identifies the exact reviewed public commi
 public_commit = "<full 40-character public commit>"
 ```
 
-Publish the public commit before its private release pointer. A device fetches both histories and
-selects the public commit named by the private release, even if a newer public commit exists.
-Dirty checkouts and non-fast-forward changes stop the pull. The two Git merges are not an atomic
-transaction, but installed reconciliation cannot start until the selected pair matches.
+`release.py finish` still writes that pointer, but a pull no longer reads it. A device fetches both
+histories and fast-forwards each checkout to its `origin/main`, so it can install a public commit before
+the private commit that goes with it. Dirty checkouts and non-fast-forward changes stop the pull.
 
-Every commit a pull would add, in either repository, must carry an SSH signature from a key in this
-device's `~/.config/dotfiles/allowed_signers` (Git's allowed-signers format, restricted to
-`namespaces="git"`). The file lives outside both checkouts, so a pushed commit cannot add its own
-signer. A missing file, an unsigned commit, an OpenPGP or GitHub web signature, or a key the device
-does not pin stops the pull before either checkout moves. Sign release commits with
-`gpg.format = ssh`. Changing who may sign is a per-device edit, never a pushed change.
+A pull trusts what GitHub holds on `main`, a merged pull request included, and checks no signature.
+Whoever can write to either repository on GitHub can therefore change what every device installs. The
+user chose this on 15 November 2026, over an SSH signature pinned on each device, so that changes can
+land through GitHub's merge button.
 
 ```sh
 uv run --locked python pull.py --root . --private ../dotfiles-private --update --apply

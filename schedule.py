@@ -1,4 +1,4 @@
-"""Render or install this device's half-hourly pull schedule, after a paired release passes sync."""
+"""Render or install this device's half-hourly pull schedule, after a release passes sync."""
 from __future__ import annotations
 
 import argparse
@@ -11,7 +11,7 @@ import subprocess
 import sys
 from xml.sax.saxutils import escape
 
-from pull import paired, signers
+from pull import clean
 from sync_files import Files, backup_directory, contents
 from host_state import DeviceRoots
 from sync_ending import run_sync
@@ -74,9 +74,7 @@ def main():
         for path in render(sys.platform, Path.home(), argv):
             print(f'would install {path}')
         return 0
-    if not signers().is_file():
-        raise RuntimeError(f'{signers()}: pin trusted release signers before enabling automatic pulls')
-    paired(root, private)
+    clean(root, private)
     state = Path.home() / '.local/state/dotfiles'
     if run_sync(root, private, state=state, apply=False):
         raise RuntimeError('Resolve device drift before enabling its automatic pull schedule')

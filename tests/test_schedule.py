@@ -44,18 +44,6 @@ class WindowsScheduleTest(unittest.TestCase):
                           task.findtext('t:Actions/t:Exec/t:Arguments', namespaces=NS)),
                          ('python.exe', 'pull.py --private "C:\\my repo"'))
 
-    def test_install_refuses_without_pinned_release_signers(self):
-        with tempfile.TemporaryDirectory() as directory:
-            home = Path(directory)
-            argv = ['schedule.py', '--root', str(home / 'repo'), '--private', str(home / 'private'), '--install']
-            with patch.object(sys, 'argv', argv), patch('schedule.Path.home', return_value=home), \
-                    patch('schedule.command', return_value=['python.exe', 'pull.py']), \
-                    patch('schedule.subprocess.run') as run, patch('schedule.Files') as writer:
-                with self.assertRaisesRegex(RuntimeError, 'pin trusted release signers'):
-                    schedule.main()
-            run.assert_not_called()
-            writer.assert_not_called()
-
     def test_install_stops_when_the_task_cannot_be_registered(self):
         def refuse_the_task(command, check=False, **kwargs):
             code = int(command[0] == 'schtasks.exe')
@@ -65,12 +53,10 @@ class WindowsScheduleTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
-            (home / '.config/dotfiles').mkdir(parents=True)
-            (home / '.config/dotfiles/allowed_signers').write_text('')
             argv = ['schedule.py', '--root', str(home / 'repo'), '--private', str(home / 'private'), '--install']
             with patch.object(sys, 'argv', argv), patch.object(sys, 'platform', 'win32'), \
                     patch('schedule.Path.home', return_value=home), \
-                    patch('schedule.command', return_value=['python.exe', 'pull.py']), patch('schedule.paired'), \
+                    patch('schedule.command', return_value=['python.exe', 'pull.py']), patch('schedule.clean'), \
                     patch('schedule.run_sync', return_value=0), \
                     patch('schedule.subprocess.run', side_effect=refuse_the_task), \
                     patch('schedule.DeviceRoots.current'), patch('schedule.backup_directory'), patch('schedule.Files'), \
@@ -81,8 +67,6 @@ class WindowsScheduleTest(unittest.TestCase):
     def test_install_anchors_the_timer_after_the_drift_check(self):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory).resolve()  # as the install resolves its roots; macOS keeps its temp folder behind a link
-            (home / '.config/dotfiles').mkdir(parents=True)
-            (home / '.config/dotfiles/allowed_signers').write_text('')
             argv = ['schedule.py', '--root', str(home / 'repo'), '--private', str(home / 'private'), '--install']
             with patch('schedule.datetime') as clock:
                 clock.now.return_value = datetime(2026, 10, 15, 19, 0, tzinfo=timezone.utc)
@@ -94,7 +78,7 @@ class WindowsScheduleTest(unittest.TestCase):
                 with patch.object(sys, 'argv', argv), patch.object(sys, 'platform', 'win32'), \
                         patch('schedule.Path.home', return_value=home), \
                         patch('schedule.command', return_value=['python.exe', 'pull.py']), \
-                        patch('schedule.paired') as paired, patch('schedule.run_sync', side_effect=finish), \
+                        patch('schedule.clean') as clean, patch('schedule.run_sync', side_effect=finish), \
                         patch('schedule.subprocess.run'), \
                         patch('schedule.DeviceRoots.current'), patch('schedule.backup_directory'), \
                         patch('schedule.Files') as writer, redirect_stdout(io.StringIO()) as output:
@@ -102,7 +86,7 @@ class WindowsScheduleTest(unittest.TestCase):
                 self.assertEqual(output.getvalue(), 'Local pull schedule enabled; daily source review remains on the '
                                                     'maintainer machine.\n')
                 task = ElementTree.fromstring(writer.return_value.write.call_args.args[1])
-            paired.assert_called_once_with(home / 'repo', home / 'private')
+            clean.assert_called_once_with(home / 'repo', home / 'private')
             self.assertEqual(task.findtext('t:Triggers/t:TimeTrigger/t:StartBoundary', namespaces=NS),
                              '2026-10-15T19:06:00+00:00')
 
@@ -120,14 +104,12 @@ class WindowsScheduleTest(unittest.TestCase):
 
             with tempfile.TemporaryDirectory() as directory:
                 home = Path(directory).resolve()
-                (home / '.config/dotfiles').mkdir(parents=True)
-                (home / '.config/dotfiles/allowed_signers').write_text('')
                 (home / 'repo').mkdir()
                 (home / 'repo/sync.py').write_text(sync, encoding='utf-8')
                 argv = ['schedule.py', '--root', str(home / 'repo'), '--private', str(home / 'private'), '--install']
                 with patch.object(sys, 'argv', argv), patch.object(sys, 'platform', 'win32'), \
                         patch('schedule.Path.home', return_value=home), \
-                        patch('schedule.command', return_value=['python.exe', 'pull.py']), patch('schedule.paired'), \
+                        patch('schedule.command', return_value=['python.exe', 'pull.py']), patch('schedule.clean'), \
                         patch('schedule.DeviceRoots.current'), \
                         patch('schedule.backup_directory', return_value=home / 'backups'), \
                         patch('schedule.subprocess.run', register), redirect_stdout(io.StringIO()), \

@@ -272,7 +272,7 @@ class PullDeliversHomeFilesTest(unittest.TestCase):
         args = SimpleNamespace(root=self.public, private=self.private, update=False, apply=apply, notes=False, wait=0)
         out, err = io.StringIO(), io.StringIO()
         with patch('pull.Path.home', return_value=self.home), patch('home_files.Path.home', return_value=self.home), \
-                patch('pull.paired'), patch('pull.install_tools'), patch.object(pull.sys, 'platform', platform), \
+                patch('pull.clean'), patch('pull.install_tools'), patch.object(pull.sys, 'platform', platform), \
                 patch('pull.git', return_value='0' * 40), \
                 contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             return pull.run(args), out.getvalue(), err.getvalue()
@@ -320,7 +320,7 @@ class PullDeliversHomeFilesTest(unittest.TestCase):
     def test_a_failed_tool_install_holds_back_no_home_file(self):
         (self.public / 'sync.py').write_text(recording_sync(0), encoding='utf-8')
         args = SimpleNamespace(root=self.public, private=self.private, update=False, apply=True, notes=False, wait=0)
-        with patch('pull.Path.home', return_value=self.home), patch('pull.paired'), patch('pull.git', return_value='0' * 40), \
+        with patch('pull.Path.home', return_value=self.home), patch('pull.clean'), patch('pull.git', return_value='0' * 40), \
                 patch('pull.install_tools', side_effect=RuntimeError('mise install exited 1')), \
                 patch.object(pull.sys, 'platform', 'linux'), \
                 contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(RuntimeError, 'mise install'):
@@ -330,7 +330,7 @@ class PullDeliversHomeFilesTest(unittest.TestCase):
     def test_a_pull_without_a_private_checkout_delivers_nothing(self):
         (self.public / 'sync.py').write_text(recording_sync(0), encoding='utf-8')
         args = SimpleNamespace(root=self.public, private=None, update=False, apply=True, notes=False, wait=0)
-        with patch('pull.Path.home', return_value=self.home), patch('pull.paired'), patch('pull.install_tools'), \
+        with patch('pull.Path.home', return_value=self.home), patch('pull.clean'), patch('pull.install_tools'), \
                 patch('pull.git', return_value='0' * 40), patch.object(pull.sys, 'platform', 'linux'):
             self.assertEqual(pull.run(args), 0)
         self.assertFalse((self.home / '.local/bin').exists())
