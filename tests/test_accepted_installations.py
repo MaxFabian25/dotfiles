@@ -2082,6 +2082,58 @@ class InstallationTest(unittest.TestCase):
                 self.assertEqual(self.snapshot(), before)
                 marker.write_bytes(original)
 
+    def test_aligned_migration_accepts_a_recorded_pending_build_before_a_newer_release(self):
+        from accepted_installations import image
+
+        loaded, cache, previous = self.legacy_aligned_receipt()
+        release2 = loaded.with_name('2.0.0')
+        shutil.copytree(loaded, release2)
+        for relative in ('.codex-plugin/plugin.json', '.claude-plugin/plugin.json'):
+            (release2 / relative).write_text('{"name":"kit","version":"2.0.0"}')
+        cache2 = cache.with_name('2.0.0')
+        shutil.copytree(release2, cache2)
+        work = cache2.parent / ('.sync-2.0.0-' + 'cd' * 16)
+        target = {**previous['accepted'], 'path': str(cache2), 'image': image(cache2),
+                  'bindings': [{'path': str(cache2), 'physical': str(cache2.resolve()), 'links': []}],
+                  'intent': 'interrupted-version-two'}
+        previous['pending'] = {'before': image(cache), 'before_path': str(cache),
+                               'bindings': target['bindings'], 'destination_before': image(cache2),
+                               'target': target, 'pristine': image(cache2),
+                               'staged': str(work / 'staged'), 'displaced': str(work / 'displaced'),
+                               'swap_before': image(cache2)}
+        self._claude_receipt().write_text(json.dumps(previous))
+        catalog = loaded.parents[2] / '.claude-plugin/marketplace.json'
+        data = json.loads(catalog.read_bytes())
+        data['plugins'][0].update(source='./plugins/kit/2.0.0', version='2.0.0')
+        catalog.write_text(json.dumps(data))
+        self.point_claude_at(cache2)
+        for relative in ('.codex-plugin/plugin.json', '.claude-plugin/plugin.json'):
+            (self.source / relative).write_text('{"name":"kit","version":"3.0.0"}')
+        digest = self.roots.tree_digest(self.source)
+        kit = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
+        lock = replace(self.setup.lock['kit'], intent=intent(kit, {}), trees={Host.CLAUDE: LockedTree('3.0.0', digest)})
+        self.setup = replace(self.setup, packages={'kit': kit}, lock={'kit': lock})
+        for folder in (release2, cache2):
+            with self.subTest(folder=folder):
+                marker = folder / 'ordinary.txt'
+                original = marker.read_bytes()
+                marker.write_bytes(b'local edit to pending release')
+                edited = self.snapshot()
+                current = plan(self.setup, self.device)
+                self.assertEqual(current.exit_code, 2)
+                self.assertTrue(any(item.kind.value == 'local-edit' for item in current.blocked))
+                with self.assertRaises(RuntimeError):
+                    self.run_apply(current)
+                self.assertEqual(self.snapshot(), edited)
+                marker.write_bytes(original)
+        before = self.state_of(loaded), self.state_of(release2), self.state_of(cache), self.state_of(cache2)
+        records = claude_records(self.roots).read_bytes()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(self.claude_loads().name, '3.0.0')
+        self.assertEqual((self.state_of(loaded), self.state_of(release2), self.state_of(cache), self.state_of(cache2)), before)
+        self.assertEqual(claude_records(self.roots).read_bytes(), records)
+        self.assertEqual(json.loads(self._claude_receipt().read_bytes())['accepted']['legacy'], previous)
+
     def test_aligned_update_and_rollback_leave_prior_session_bytes_and_native_records(self):
         loaded, cache, _ = self.legacy_aligned_receipt()
         first_setup = self.setup

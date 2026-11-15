@@ -173,6 +173,16 @@ def _left_by_swap(pending):
             (path, pending.get('pristine')), (path, pending['target']['image']), (path, {'kind': 'tree', 'entries': {}})]
 
 
+def _directory_baselines(receipt):
+    accepted, pending = (receipt or {}).get('accepted'), (receipt or {}).get('pending')
+    known = [accepted['image']] if accepted else []
+    if pending:
+        known.append(pending['target']['image'])
+        if pending.get('pristine') is not None:
+            known.append(pending['pristine'])
+    return known
+
+
 def _fields_image(values, syntax):
     return {'kind': f'{syntax}-fields', 'fields': [{'path': list(key), **value} for key, value in sorted(values.items())]}
 
@@ -469,7 +479,8 @@ class AcceptedInstallations:
             accepted = receipt and receipt.get('accepted')
             actual = self._read(artifact)
             if accepted and not _missing(actual):
-                if not _same(actual, accepted['image']) and self.roots.tree_digest(artifact.current) != artifact.expected.digest:
+                if (not any(_same(actual, known) for known in _directory_baselines(receipt))
+                        and self.roots.tree_digest(artifact.current) != artifact.expected.digest):
                     raise ConcurrentEdit(f'Loaded aligned build differs from its accepted image: {artifact.identity}')
                 if (accepted.get('delivery') == 'directory' and accepted['path'] == str(artifact.destination)
                         and artifact.current == artifact.destination and accepted['intent'] == artifact.intent
@@ -729,9 +740,7 @@ class AcceptedInstallations:
         accepted, read, verified = receipt and receipt.get('accepted'), partial(self._read, artifact), []
         if artifact.kind == 'directory':
             retained = self._directory_evidence(receipt)
-            verified = [(artifact.current, target)]
-            if accepted:
-                verified.append((artifact.current, accepted['image']))
+            verified = [(artifact.current, known) for known in (target, *_directory_baselines(receipt))]
             before = self._baseline(artifact, accepted, read, verified)
             destination = read(artifact.destination)
             if not _missing(destination) and not _same(destination, target):
