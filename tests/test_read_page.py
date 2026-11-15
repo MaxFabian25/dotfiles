@@ -382,6 +382,16 @@ class HyprlandTest(unittest.TestCase):
                          'hl.dsp.window.close({ window = "address:0x20" })')
         self.assert_turns_off_only_its_own_rule([argv[2] for argv in run.calls if argv[1] == 'eval'])
 
+    def test_keeps_both_errors_when_its_window_will_not_close_either(self):
+        run = FakeHyprctl([[], [hypr_window('0x20', 7)]],
+                          answers={'set_prop': 'error: Invalid prop name', 'window.close': 'error: no such window'})
+        with mock.patch.object(read_page.subprocess, 'run', side_effect=run), \
+                mock.patch.object(read_page.shutil, 'which', return_value='/usr/bin/google-chrome-stable'):
+            with self.assertRaisesRegex(RuntimeError, 'Invalid prop name; closing window address:0x20 also failed: '
+                                                      'hyprctl dispatch: error: no such window; ask the user'):
+                hyprland().open('Default', 'https://example.com/')
+        self.assert_turns_off_only_its_own_rule([argv[2] for argv in run.calls if argv[1] == 'eval'])
+
     def assert_turns_off_only_its_own_rule(self, evals):
         """Both the minute's timer and the cleanup turn the rule off only while it is still this run's."""
         generation = re.search(r'READ_PAGE_GENERATION = "(\w+)"', evals[0])[1]
@@ -496,6 +506,12 @@ class HyprlandTest(unittest.TestCase):
                 mock.patch.object(read_page.time, 'sleep') as sleep:
             self.assertEqual(desktop.wait_for_address(driver, 7, 1), '')
         self.assertEqual((address.call_count, sleep.call_count), (8, 7))
+        # The title is read on each try, because a loading page changes it, and an empty title stops the frame match.
+        driver.windows.side_effect = [{1: ''}, {1: 'Loading'}, {1: 'The Economist'}]
+        with mock.patch.object(read_page.Hyprland, 'address', side_effect=['', '', 'https://www.economist.com/']) as address, \
+                mock.patch.object(read_page.time, 'sleep'):
+            desktop.wait_for_address(driver, 7, 1)
+        self.assertEqual([c.args for c in address.call_args_list], [(7, ''), (7, 'Loading'), (7, 'The Economist')])
         for stderr in ('jeepney.wrappers.DBusErrorResponse: no bus', 'no accessible application for pid 7'):
             with self.subTest(stderr=stderr), mock.patch.object(
                     read_page.subprocess, 'run', return_value=mock.Mock(returncode=1, stdout='', stderr=stderr)):
@@ -507,7 +523,9 @@ class HyprlandTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as runtime:
             desktop = hyprland()
             desktop.env['XDG_RUNTIME_DIR'] = runtime
-            desktop.lock()
+            with contextlib.redirect_stderr(io.StringIO()) as said:
+                desktop.lock()
+            self.assertEqual(said.getvalue(), '')  # a run that didn't wait says nothing
             with open(Path(runtime) / 'read-page.lock') as other:
                 import fcntl
                 with self.assertRaises(BlockingIOError):
@@ -517,17 +535,21 @@ class HyprlandTest(unittest.TestCase):
     @unittest.skipIf(sys.platform == 'win32', 'fcntl exists only on Linux and macOS')
     def test_waits_for_the_run_that_holds_the_lock_and_says_so(self):
         import fcntl
-        import threading
         with tempfile.TemporaryDirectory() as runtime:
             desktop = hyprland()
             desktop.env['XDG_RUNTIME_DIR'] = runtime
             other = open(Path(runtime) / 'read-page.lock', 'w')
             fcntl.flock(other, fcntl.LOCK_EX)
-            release = threading.Timer(0.3, other.close)  # the other run ends; lock() waits however long it takes
-            release.start()
-            with contextlib.redirect_stderr(io.StringIO()) as said:
+
+            class Said(io.StringIO):
+                """The other run ends once this one says it waits, so lock() has to wait and then succeed."""
+                def write(self, text):
+                    if 'waiting for another run to end' in text:
+                        other.close()
+                    return super().write(text)
+            with contextlib.redirect_stderr(Said()) as said:
                 desktop.lock()
-            release.join()
+            self.assertTrue(other.closed, 'lock() returned without waiting for the other run')
             self.assertIn('waiting for another run to end', said.getvalue())
             with open(Path(runtime) / 'read-page.lock') as third, self.assertRaises(BlockingIOError):
                 fcntl.flock(third, fcntl.LOCK_SH | fcntl.LOCK_NB)
@@ -711,6 +733,7 @@ class HyprlandMainTest(unittest.TestCase):
                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as said:
             self.assertEqual(read_page.main(), 5)
         self.assertIn('shows no address (its page has no address yet)', said.getvalue())
+        desktop.wait_for_address.assert_called_once()  # a page with no address isn't settled and waited for again
 
     def test_stops_when_the_chrome_it_started_is_automations(self):
         desktop = mock.Mock()

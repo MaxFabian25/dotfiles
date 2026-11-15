@@ -10,7 +10,8 @@ of each matching page document instead, which Chrome's address bar leaves out of
 
 Run it with one D-Bus connection for the whole walk:
   uv run --with jeepney python -I atspi_do.py --pid PID --role 'push button' --name '^Save$' --action press
-Exit status 1 means no single match or a refused action, or with --uri no frame of that name.
+Exit status 1 means, without --uri, no match, more than one for --action, or a refused action; with --uri it means
+no frame of that name, and a frame with no page document yet exits 0 and prints nothing.
 """
 
 import argparse
