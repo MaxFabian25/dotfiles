@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/browser-and-computer-use/scripts'))
 import ab_session  # noqa: E402
@@ -182,6 +183,38 @@ class SessionTest(unittest.TestCase):
         self.assertIsNone(ab_session.daemon_pid('reused', self.root, self.proc(4712, 'someone-else')))
         (self.root / 'gone.pid').write_text('4713\n')
         self.assertIsNone(ab_session.daemon_pid('gone', self.root, self.root / 'proc'))  # no such process
+
+    def test_failed_close_selects_the_same_socket_namespace_as_its_command(self):
+        runtime = self.root / 'runtime'
+        default = runtime / 'agent-browser'
+        pinned = self.root / 'pinned'
+        default.mkdir(parents=True)
+        pinned.mkdir()
+        (default / 'mine.pid').write_text('4711')
+        (pinned / 'mine.pid').write_text('4712')
+        self.proc(4711, 'mine')
+        proc = self.proc(4712, 'mine')
+        path = self.root / 'saved.json'
+        for override, expected in ((None, 4711), (str(pinned), 4712)):
+            with self.subTest(override=override):
+                path.write_text('{}')
+                selected = []
+
+                def stop(name, directory):
+                    selected.append(ab_session.daemon_pid(name, directory, proc))
+                    return selected[-1] == expected
+
+                environment = {'XDG_RUNTIME_DIR': str(runtime)}
+                if override is not None:
+                    environment['AGENT_BROWSER_SOCKET_DIR'] = override
+                with mock.patch.dict(os.environ, environment, clear=True), \
+                        mock.patch.object(ab_session.subprocess, 'run',
+                                          return_value=subprocess.CompletedProcess([], 42)), \
+                        mock.patch.object(ab_session, 'stop_daemon', side_effect=stop):
+                    result = ab_session.close('mine', [], path)
+                self.assertEqual(selected, [expected])
+                self.assertEqual(result, 0)
+                self.assertFalse(path.exists())
 
     @unittest.skipUnless(Path('/proc/self/environ').exists(), 'needs /proc')
     def test_a_daemon_that_ignores_close_is_stopped_and_another_sessions_is_left_running(self):
