@@ -12,7 +12,7 @@ import tomllib
 import yaml
 
 from configuration import BlockedConfiguration, Configuration, FileConfiguration, JsonConfiguration, read_fields
-from description import EngineInstall, LooseSkill, Package, Setup, SkillRoot, LocalSource, _canonical
+from description import LooseSkill, Package, Setup, SkillRoot, LocalSource, _canonical
 from host_state import DeviceRoots, Digest, EntryName, Host, Platform, SkillMode, bytes_digest
 from invocation_overrides import collect_skills, frontmatter, skill_paths
 from sync_sources import Builder, BuildError, child
@@ -269,11 +269,7 @@ def materialise(plan: OpenCodePlan, builder: Builder, destination: Path) -> Path
         built = builder.codex(package)
         effective = builder.effective(package, built)
         paths = skill_paths(effective)
-        installs = [install for install in package.codex.installs if install.enabled]
-        selected = (set(paths) if any(not isinstance(install, EngineInstall) or install.skills is None for install in installs)
-                    else {name for install in installs for name in install.skills})
-        required = selected | {item.source_skill for item in plan.skills if item.package == package.name
-                               and item.mode != SkillMode.OFF}
+        required = {item.source_skill for item in plan.skills if item.package == package.name and item.mode != SkillMode.OFF}
         if missing := required - paths.keys():
             raise BuildError(f'{package.name}: missing selected OpenCode skills: {sorted(missing)}')
         relative_root = Path('payload') / _id(package.name)
@@ -282,8 +278,6 @@ def materialise(plan: OpenCodePlan, builder: Builder, destination: Path) -> Path
         payloads.append((effective, relative_root, builder.roots.tree_digest(effective)))
         modes = {item.source_skill: item.mode for item in plan.skills if item.package == package.name}
         for name, path in sorted(paths.items()):
-            if name not in selected:
-                continue
             relative = relative_root / path.resolve().relative_to(effective.resolve())
             wrapper(_id(package.name + '-' + name), package.name, name, path, modes.get(name), built.digest, relative)
     for export in plan.loose:

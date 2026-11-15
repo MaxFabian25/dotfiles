@@ -614,43 +614,22 @@ class NativeCatalogTest(unittest.TestCase):
                 (Host.CLAUDE, 'plugin', 'marketplace', 'add', str(operation.roots.claude_home / 'marketplaces/codex-aligned'),
                  '--scope', 'user', '--json')])
 
-    def test_claude_registers_an_exact_checkout_without_treating_the_pin_as_a_branch(self):
-        from dataclasses import replace
-        from description import HostMarketplace, MarketplaceMode
-        from host_state import DeviceRoots, FactKey, GitMarketplace, Host, Surface
+    def test_codex_registers_a_repo_marketplace_at_its_pinned_commit(self):
+        from description import HostMarketplace
+        from host_state import FactKey, GitMarketplace, Host, Surface
         from sync_hosts import Apply
-        from sync_sources import Sources
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            upstream = root / 'upstream'
-            upstream.mkdir()
-            git(upstream, 'init', '-b', 'main')
-            git(upstream, 'config', 'user.name', 'Test')
-            git(upstream, 'config', 'user.email', 'test@example.invalid')
-            git(upstream, 'remote', 'add', 'origin', 'https://github.com/example/skills.git')
-            (upstream / 'source').write_text('Pinned bytes')
-            git(upstream, 'add', '.')
-            git(upstream, 'commit', '-m', 'Pinned source')
-            commit = git(upstream, 'rev-parse', 'HEAD')
-            (upstream / 'source').write_text('Moved upstream')
-            git(upstream, 'commit', '-am', 'Upstream moved')
-            operation = Apply.__new__(Apply)
-            operation.roots = replace(DeviceRoots.current(root), engine=root / 'engine')
-            operation.builder = SimpleNamespace(sources=Sources(root / 'sources', seeds=(upstream,)))
-            repo = SimpleNamespace(name='skills', url='https://github.com/example/skills.git', commit=commit,
-                                   marketplace=lambda host: HostMarketplace('skills', MarketplaceMode.CHECKOUT))
-            operation.setup = SimpleNamespace(repos={'skills': repo})
-            operation.current = SimpleNamespace(changes=[SimpleNamespace(
-                key=FactKey(Host.CLAUDE, Surface.MARKETPLACE, 'skills'),
-                expected=GitMarketplace(repo.url, commit), entry=SimpleNamespace(name='skills'))])
-            commands = []
-            operation.command = lambda *args: commands.append(args)
-            operation._marketplaces()
-            checkout = operation.roots.engine / '.sync/checkouts/skills'
-            self.assertEqual(commands, [(Host.CLAUDE, 'plugin', 'marketplace', 'add', str(checkout), '--scope', 'user', '--json')])
-            self.assertEqual(git(checkout, 'rev-parse', 'HEAD'), commit)
-            self.assertEqual(git(checkout, 'remote', 'get-url', 'origin'), 'https://github.com/example/skills.git')
-            self.assertEqual((checkout / 'source').read_text(), 'Pinned bytes')
+        commit = 'a' * 40
+        repo = SimpleNamespace(name='skills', url='https://github.com/example/skills.git', commit=commit,
+                               marketplace=lambda host: HostMarketplace('skills'))
+        operation = Apply.__new__(Apply)
+        operation.setup = SimpleNamespace(repos={'skills': repo})
+        operation.current = SimpleNamespace(changes=[SimpleNamespace(
+            key=FactKey(Host.CODEX, Surface.MARKETPLACE, 'skills'), expected=GitMarketplace(repo.url, commit),
+            entry=SimpleNamespace(name='skills'))])
+        commands = []
+        operation.command = lambda *args: commands.append(args)
+        operation._marketplaces()
+        self.assertEqual(commands, [(Host.CODEX, 'plugin', 'marketplace', 'add', repo.url, '--ref', commit, '--json')])
 
 
 class RuntimeCatalogPluginTest(unittest.TestCase):

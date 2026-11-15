@@ -77,10 +77,9 @@ class PublicEmilRecipe:              # public_emil_package.py
     repository: str
     commit: Commit
     select: tuple[str, ...]          # skill folders in the repository
-    rename: Mapping[str, str] = field(default_factory=dict)   # folder name -> installed name, where they differ
 
     def skills(self) -> tuple[str, ...]:
-        return tuple(self.rename.get(name, name) for name in (PurePosixPath(path).name for path in self.select))
+        return tuple(PurePosixPath(path).name for path in self.select)
 
 
 @dataclass(frozen=True)
@@ -143,8 +142,6 @@ Source = BuildSource | RepoSource | LocalSource | None   # None: every install n
 class EngineInstall:
     """via 'personal' in Codex, 'personal-collections' in Claude."""
     enabled: bool
-    name: str | None = None                  # a Claude split's own plugin name
-    skills: tuple[str, ...] | None = None    # that split's share of the selected skills
     keep_current: bool = field(default=False, metadata={'intent': 'when-set'})
 
     @property
@@ -185,8 +182,8 @@ def via(install: Install, host: Host) -> str:
 
 
 def plugin_id(package_name: str, install: Install, host: Host) -> str:
-    """The id the host gives an install: its plugin name, a Claude split's own name, at its marketplace."""
-    return f'{(isinstance(install, EngineInstall) and install.name) or package_name}@{via(install, host)}'
+    """The id the host gives an install: the package's name at the install's marketplace."""
+    return f'{package_name}@{via(install, host)}'
 
 
 class Hooks(enum.StrEnum):
@@ -266,15 +263,9 @@ class Package:
         return self.codex if host == Host.CODEX else self.claude
 
 
-class MarketplaceMode(enum.StrEnum):
-    GIT = 'git'
-    CHECKOUT = 'checkout'            # a local clone registered by path
-
-
 @dataclass(frozen=True)
 class HostMarketplace:
     name: str
-    mode: MarketplaceMode = MarketplaceMode.GIT
     sparse: tuple[str, ...] = ()
 
 

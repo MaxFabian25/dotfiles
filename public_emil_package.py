@@ -1,6 +1,6 @@
 """Package Emil's public skills with the recorded Codex compatibility metadata."""
 import json
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import re
 
 from description import BuildSource, PublicEmilRecipe
@@ -10,9 +10,9 @@ from portable import extract_tar, read_utf8, replace, staging_directory, write_u
 
 def build(name: str, recipe: PublicEmilRecipe, source: BuildSource, checkout: Path, *, output_root: Path):
     require_clean(checkout)
-    extras = source.metadata.get('skillMetadata', {})
-    selected = [{'sourcePath': path, 'sourceName': PurePosixPath(path).name, 'installedName': installed,
-                 **extras.get(installed, {})} for path, installed in zip(recipe.select, recipe.skills())]
+    # Each skill keeps its folder's name; the receipt still records both names, as releases built before did.
+    selected = [{'sourcePath': path, 'sourceName': skill, 'installedName': skill}
+                for path, skill in zip(recipe.select, recipe.skills())]
     commit = git(checkout, 'rev-parse', recipe.commit).decode().strip()
     version = f"0.1.0+upstream.{commit[:12]}.codex{source.packaging}"
     release_root = output_root / name
@@ -40,41 +40,14 @@ def build(name: str, recipe: PublicEmilRecipe, source: BuildSource, checkout: Pa
                 destination = target / relative
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_bytes((original / relative).read_bytes())
-            skill = target / 'SKILL.md'
-            prefix, header, body = read_utf8(skill).split('---', 2)
-            source_name = selection['sourceName']
-            if not re.search(r'^name:\s*' + re.escape(source_name) + r'\s*$', header, re.M):
-                raise RuntimeError(f'Upstream skill identity changed: {source_name}')
-            if installed_name != source_name:
-                header = re.sub(r'^(name:\s*)' + re.escape(source_name) + r'\s*$',
-                                lambda m: m[1] + installed_name, header, flags=re.M)
-            if selection.get('removeDisableModelInvocation'):
-                header = re.sub(r'^disable-model-invocation:\s*true\n', '', header, flags=re.M)
-            write_utf8(skill, prefix + '---' + header + '---' + body)
+            header = read_utf8(target / 'SKILL.md').split('---', 2)[1]
+            if not re.search(r'^name:\s*' + re.escape(installed_name) + r'\s*$', header, re.M):
+                raise RuntimeError(f'Upstream skill identity changed: {installed_name}')
             (target / 'LICENSE.txt').write_bytes(license_bytes)
-            if 'openaiYaml' in selection:
-                sidecar = target / 'agents/openai.yaml'
-                if sidecar.exists() and read_utf8(sidecar) != selection['openaiYaml']:
-                    raise RuntimeError(f'Upstream added conflicting invocation metadata: {installed_name}')
-                sidecar.parent.mkdir(exist_ok=True)
-                write_utf8(sidecar, selection['openaiYaml'])
-            if selection.get('legacyProvenance'):
-                legacy = {
-                    'source': source.metadata['url'] + '.git', 'ref': source.metadata['branch'], 'commit': commit,
-                    'sourceDirectory': selection['sourcePath'], 'licenseSource': 'LICENSE',
-                    'sourceName': source_name, 'localName': installed_name,
-                    'normalizations': {
-                        'removedFrontmatter': ['disable-model-invocation'],
-                        'codexInvocationPolicy': 'explicit-only',
-                    },
-                    'files': sorted(files(target)),
-                }
-                write_utf8(target / '.emil-upstream.json', json.dumps(legacy, indent=2) + '\n')
             packaged = files(target)
             compatibility_changes[installed_name] = [
                 path for path, digest in packaged.items() if source_files.get(path) != digest
             ]
-            assert read_utf8(skill).split('---', 2)[2] == body, 'Instruction body changed'
 
         interface = {
             'displayName': source.display_name, 'shortDescription': source.metadata['description'],

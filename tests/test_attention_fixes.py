@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import device_sync
 import drift
 from description import Visibility
-from host_state import Approved, FactKey, Host, Platform, Surface
+from host_state import Approved, DeviceList, FactKey, Host, Platform, Surface
 
 IMPECCABLE = drift.EntryRef('impeccable', Visibility.PUBLIC)
 KEYED = drift.Difference(drift.Kind.APPROVAL, FactKey(Host.CODEX, Surface.HOOK, 'impeccable@personal'), Approved(3), None,
@@ -33,7 +33,7 @@ REREAD = 'fix the read this names, then pull again'
 
 
 def report(*differences):
-    return drift.render(drift.Diff(Platform.LINUX, {Visibility.PUBLIC: None, Visibility.PRIVATE: None},
+    return drift.render(drift.Diff(Platform.LINUX, DeviceList.LINUX, {Visibility.PUBLIC: None, Visibility.PRIVATE: None},
                                    {Host.CODEX: '0.169'}, {Visibility.PUBLIC: 1, Visibility.PRIVATE: 0}, {Host.CODEX: 1}, 0,
                                    differences, ()))
 

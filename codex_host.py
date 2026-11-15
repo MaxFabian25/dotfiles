@@ -19,7 +19,7 @@ from typing import Sequence
 
 import yaml
 
-from description import (HOST_TOGGLES, RULES, BuildSource, EngineInstall, Hooks, LocalSource, MarketplaceMode, RepoSource, Setup, SkillRoot,
+from description import (HOST_TOGGLES, RULES, BuildSource, EngineInstall, Hooks, LocalSource, RepoSource, Setup, SkillRoot,
                          plugin_id, via)
 from host_observation import Observer, Unread, checkout, observe_loose, observe_trees, run
 from invocation_overrides import skill_paths
@@ -226,9 +226,7 @@ class CodexState:
 
         for repo in setup.repos.values():
             if repo.codex:
-                value = (CheckoutMarketplace(repo.url, repo.commit) if repo.codex.mode == MarketplaceMode.CHECKOUT
-                         else GitMarketplace(repo.url, repo.commit))
-                add(Surface.MARKETPLACE, repo.codex.name, value, repo.name)
+                add(Surface.MARKETPLACE, repo.codex.name, GitMarketplace(repo.url, repo.commit), repo.name)
         catalog = None                   # the plugins the engine's catalog lists, once any install names it
         for package in setup.packages.values():
             placement = package.codex
@@ -244,9 +242,7 @@ class CodexState:
                         catalog.add(package.name)
                 plugin = plugin_id(package.name, install, _HOST)
                 repo = setup.repos[package.source.repo] if isinstance(package.source, RepoSource) else None
-                # Codex records no commit for a copy taken from a checkout, only its version.
-                copied = repo is not None and repo.codex is not None and repo.codex.mode == MarketplaceMode.CHECKOUT
-                if isinstance(install, EngineInstall) or isinstance(package.source, (BuildSource, LocalSource)) or copied:
+                if isinstance(install, EngineInstall) or isinstance(package.source, (BuildSource, LocalSource)):
                     pin = Released(tree.version) if install.managed and tree else Unpinned()
                 elif repo is not None:
                     pin = Pinned(repo.commit)

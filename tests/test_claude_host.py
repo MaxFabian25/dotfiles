@@ -32,15 +32,6 @@ def key(surface, subject):
 class ProjectTest(unittest.TestCase):
     maxDiff = None
 
-    def test_explicit_checkout_mode_is_not_projected_as_git_registration(self):
-        repo = d.Repo('interfaces', d.Visibility.PUBLIC, '', 'https://github.com/example/interfaces.git', NEW,
-                      None, d.HostMarketplace('interfaces', d.MarketplaceMode.CHECKOUT))
-        setup = d.Setup(roots=d.Roots(Path('/p'), None), packages={}, repos={'interfaces': repo}, loose={},
-                        host_skills={}, rules=None, note_rules=(), public_repositories=frozenset(), lock={})
-        facts = claude_host.ClaudeState(homes.projection_roots(), 'claude').project(setup)
-        self.assertEqual(facts[key(S.MARKETPLACE, 'interfaces')].value,
-                         hs.CheckoutMarketplace('https://github.com/example/interfaces.git', NEW))
-
     def test_aligned_expectations_come_from_the_codex_placement(self):
         interfaces = d.Package('interfaces', d.Visibility.PUBLIC, '', d.RepoSource('interfaces'),
                                {'Better Interface': M.EXPLICIT, 'variant': M.OFF}, d.ToolNotes.AUDIT,
@@ -50,7 +41,7 @@ class ProjectTest(unittest.TestCase):
                            d.BuildSource(d.CourseRecipe('https://github.com/example/course.git', NEW, ('s/a', 's/b'), ''), 1, 'C'),
                            {'a': M.EXPLICIT, 'b': M.EXPLICIT}, d.ToolNotes.APPLY,
                            d.CodexPlacement((d.EngineInstall(True),)),
-                           d.ClaudePlacement((d.EngineInstall(True, 'course', ('a',)), d.EngineInstall(False, 'course-extra', ('b',)))))
+                           d.ClaudePlacement((d.EngineInstall(True),)))
         repo = d.Repo('interfaces', d.Visibility.PUBLIC, '', 'https://github.com/example/interfaces.git', NEW,
                       None, d.HostMarketplace('interfaces'))
         lock = {'interfaces': d.Lock(D1, {hs.Host.CLAUDE: d.LockedTree('1.0+codex-aligned.x', D1)}),
@@ -60,7 +51,7 @@ class ProjectTest(unittest.TestCase):
                         note_rules=(), public_repositories=frozenset(), lock=lock)
         facts = claude_host.ClaudeState(homes.projection_roots(), 'claude').project(setup)
         aligned, native = key(S.PLUGIN, 'interfaces@codex-aligned'), key(S.PLUGIN, 'interfaces@interfaces')
-        split = key(S.PLUGIN, 'course@personal-collections')
+        engine = key(S.PLUGIN, 'course@personal-collections')
         self.assertEqual({k: (f.value, f.follows) for k, f in facts.items()}, {
             key(S.MARKETPLACE, 'interfaces'): (hs.GitMarketplace('https://github.com/example/interfaces.git', NEW), None),
             key(S.MARKETPLACE, 'codex-aligned'): (hs.EngineMarketplace(frozenset({'interfaces'})), None),
@@ -71,11 +62,10 @@ class ProjectTest(unittest.TestCase):
             key(S.SKILL, 'interfaces@codex-aligned:variant'): (M.OFF, aligned),
             native: (hs.PluginValue(False, hs.Pinned(NEW)), None),
             key(S.SKILL, 'interfaces@interfaces:Better Interface'): (M.EXPLICIT, native),
-            split: (hs.PluginValue(True, hs.Released('0.1.claude1')), None),
-            key(S.TREE, 'course@personal-collections'): (hs.TreeValue(D1), split),
-            key(S.SKILL, 'course@personal-collections:a'): (M.EXPLICIT, split),
-            key(S.PLUGIN, 'course-extra@personal-collections'): (hs.PluginValue(False, hs.Unpinned()), None),
-            key(S.SKILL, 'course-extra@personal-collections:b'): (M.EXPLICIT, key(S.PLUGIN, 'course-extra@personal-collections')),
+            engine: (hs.PluginValue(True, hs.Released('0.1.claude1')), None),
+            key(S.TREE, 'course@personal-collections'): (hs.TreeValue(D1), engine),
+            key(S.SKILL, 'course@personal-collections:a'): (M.EXPLICIT, engine),
+            key(S.SKILL, 'course@personal-collections:b'): (M.EXPLICIT, engine),
             key(S.SKILL, 'playwright'): (M.ON, None),
         })
 
@@ -360,7 +350,7 @@ class ObserveTest(unittest.TestCase):
         catalog = 'marketplaces/codex-aligned/.claude-plugin/marketplace.json'
         kit = {'name': 'kit', 'source': './plugins/kit/1'}
         for plugins in ([kit, {'source': './plugins/hand-made/1'}], [kit, dict(kit, source='./plugins/kit/2')], ['kit'],
-                        {'kit': {}}):
+                        {'kit': {}}, {}, None, 5, [kit, {'name': 1}]):
             with self.subTest(plugins=plugins), Device() as device:
                 device.write(device.roots.claude_home / catalog, json.dumps({'name': 'codex-aligned', 'plugins': plugins}))
                 observation = device.state().observe(hs.Request())

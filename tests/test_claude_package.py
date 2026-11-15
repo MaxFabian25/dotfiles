@@ -20,7 +20,6 @@ class ClaudePublicationTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.catalog = self.root / 'catalog'
-        self.definitions = [{'name': 'sample', 'skills': ['workflow'], 'description': 'Test workflow'}]
 
     def build(self, version='1.0.0', body='Original instructions.\n',
               sidecar='policy:\n  allow_implicit_invocation: false\n', explicit=frozenset()):
@@ -34,11 +33,13 @@ class ClaudePublicationTests(unittest.TestCase):
         (skill / 'agents/openai.yaml').write_text(sidecar)
         write_json(source / '.codex-plugin/upstream.json', {'repository': 'https://github.com/example/skills',
                    'commit': version, 'version': version})
-        return cp.build('sample', source, self.definitions, 1, self.catalog, explicit)
+        return cp.build('sample', source, 'Test workflow', 1, self.catalog, explicit)
 
     def test_preserves_body_resources_and_explicit_invocation(self):
-        packages = self.build()
-        release = Path(packages[0]['release'])
+        release = self.build()
+        self.assertEqual(release, self.catalog / 'plugins/sample/1.0.0.claude1')
+        self.assertEqual(cp.read(release / '.claude-plugin/plugin.json')['description'], 'Test workflow')
+        self.assertEqual(cp.read(release / '.claude-plugin/upstream.json')['selectedSkills'], ['workflow'])
         self.assertTrue(cp.contract(release)['workflow']['disable-model-invocation'])
         self.assertEqual(cp.contract(release)['workflow']['allowed-tools'], 'Read')
         self.assertEqual((release / 'skills/workflow/SKILL.md').read_text().split('---', 2)[2], '\nOriginal instructions.\n')
@@ -46,15 +47,14 @@ class ClaudePublicationTests(unittest.TestCase):
 
     def test_a_skill_the_setup_makes_explicit_is_explicit_in_the_release_and_its_version(self):
         implicit = 'interface:\n  display_name: Workflow\n'
-        plain = Path(self.build('2.0.0', sidecar=implicit)[0]['release'])
+        plain = self.build('2.0.0', sidecar=implicit)
         self.assertEqual(plain.name, '2.0.0.claude1')
         self.assertFalse(cp.contract(plain)['workflow']['disable-model-invocation'])
         self.assertNotIn('explicitInvocationPoliciesSet', cp.read(plain / '.claude-plugin/upstream.json'))
 
-        chosen = self.build('2.0.1', sidecar=implicit, explicit=frozenset({'workflow'}))[0]
-        release = Path(chosen['release'])
-        self.assertRegex(chosen['version'], r'^2\.0\.1\.claude1\.explicit\.[0-9a-f]{12}$')
-        self.assertEqual(release.name, chosen['version'])
+        release = self.build('2.0.1', sidecar=implicit, explicit=frozenset({'workflow'}))
+        self.assertRegex(release.name, r'^2\.0\.1\.claude1\.explicit\.[0-9a-f]{12}$')
+        self.assertEqual(cp.read(release / '.claude-plugin/plugin.json')['version'], release.name)
         self.assertTrue(cp.contract(release)['workflow']['disable-model-invocation'])
         sidecar = (release / 'skills/workflow/agents/openai.yaml').read_text()
         self.assertEqual(cp.yaml.safe_load(sidecar), {'interface': {'display_name': 'Workflow'},
@@ -66,10 +66,17 @@ class ClaudePublicationTests(unittest.TestCase):
                          (['workflow'], ['workflow']))
         self.assertEqual((release / 'skills/workflow/SKILL.md').read_text().split('---', 2)[2], '\nOriginal instructions.\n')
 
+    def test_the_release_keeps_the_codex_releases_licence_files(self):
+        source = self.root / 'source-1.0.0'
+        (source / 'LICENSE.upstream').parent.mkdir(parents=True)
+        (source / 'LICENSE.upstream').write_text('Licence text.\n')
+        release = self.build()
+        self.assertEqual((release / 'LICENSE.upstream').read_text(), 'Licence text.\n')
+
     def test_an_explicit_choice_upstream_already_makes_changes_neither_release_nor_version(self):
-        packages = self.build(explicit=frozenset({'workflow'}))
-        self.assertEqual(packages[0]['version'], '1.0.0.claude1')
-        self.assertNotIn('explicitInvocationPoliciesSet', cp.read(Path(packages[0]['release']) / '.claude-plugin/upstream.json'))
+        release = self.build(explicit=frozenset({'workflow'}))
+        self.assertEqual(release.name, '1.0.0.claude1')
+        self.assertNotIn('explicitInvocationPoliciesSet', cp.read(release / '.claude-plugin/upstream.json'))
 
 
 if __name__ == '__main__':

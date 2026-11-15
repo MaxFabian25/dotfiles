@@ -7,7 +7,7 @@ import subprocess
 
 from description import (AlignedInstall, BuildSource, CourseRecipe, EngineInstall, GenericRecipe, Hooks, MarketplaceInstall,
                          LocalSource, Package, RepoSource, Roots, Setup, SkillRoot, SnapshotRecipe, SnapshotSource, ToolNotes,
-                         Visibility, entry_path)
+                         Visibility, entry_path, via)
 from host_state import ANTHROPIC_SKILLS, CATALOGS, PRIMARY_RUNTIME, Host, SkillMode
 import portable
 
@@ -189,6 +189,9 @@ def check_invariants(setup: Setup, errors: list[str]) -> None:
             installs = placement.installs if placement else ()
             if sum(install.managed for install in installs) > 1:
                 errors.append(f'{path}:{host.value}.install: at most one enabled or kept-current install per host')
+            if len({via(install, host) for install in installs}) != len(installs):
+                # Each marketplace gives the package one plugin id, so a second install there would override the first.
+                errors.append(f'{path}:{host.value}.install: at most one install through each marketplace')
             for index, install in enumerate(installs):
                 key = f'{host.value}.install[{index}]'
                 if isinstance(install, EngineInstall) and package.source is None:
@@ -219,11 +222,6 @@ def check_invariants(setup: Setup, errors: list[str]) -> None:
                     errors.append(f'{path}:{key}.keep_current: a kept-current install gets no Codex roles or hook '
                                   'approval; enable it, or drop its roles and trusted hooks')
         selected = package.source.recipe.skills() if isinstance(package.source, BuildSource) and package.source.recipe else ()
-        splits = [i for i in (package.claude.installs if package.claude else ()) if isinstance(i, EngineInstall) and i.skills]
-        if splits:
-            shares = [skill for split in splits for skill in split.skills]
-            if len(shares) != len(set(shares)) or (selected and set(shares) != set(selected)):
-                errors.append(f'{path}:claude.install: split installs must partition the selected skills exactly')
         if selected and not isinstance(package.source.recipe, GenericRecipe):
             for skill in sorted(set(package.modes) - set(selected)):
                 errors.append(f'{path}:skills: {skill} is not a selected skill')
@@ -250,12 +248,9 @@ def _check_claude_off(package: Package, path: Path, errors: list[str]) -> None:
     """Claude Code 2.1.319 kept offering a personal-collections skill that skillOverrides turned off, with no drift
     reported, so the only way to drop one is to leave it out of the build."""
     off = {skill for skill, mode in package.modes.items() if mode == SkillMode.OFF}
-    stuck = set()
-    for install in package.claude.installs if package.claude else ():
-        if isinstance(install, EngineInstall) and install.managed:
-            stuck |= off & set(install.skills) if install.skills else off
-    if stuck:
-        errors.append(f'{path}:skills.off: {", ".join(sorted(stuck))} stay offered in Claude Code, which ignores '
+    if off and any(isinstance(install, EngineInstall) and install.managed
+                   for install in (package.claude.installs if package.claude else ())):
+        errors.append(f'{path}:skills.off: {", ".join(sorted(off))} stay offered in Claude Code, which ignores '
                       'skillOverrides for a personal-collections install; remove them from source.select and raise '
                       'source.packaging')
 

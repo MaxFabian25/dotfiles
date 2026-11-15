@@ -87,15 +87,6 @@ class ProjectTest(unittest.TestCase):
             key(S.RULES, 'AGENTS.md'): (hs.FileValue(hs.bytes_digest(b'')), 'rules/AGENTS.md', None),
         })
 
-    def test_a_plugin_from_a_checkout_marketplace_is_pinned_by_its_locked_version(self):
-        local = d.Repo('local', d.Visibility.PRIVATE, '', 'https://github.com/example/local.git', C1,
-                       d.HostMarketplace('local', d.MarketplaceMode.CHECKOUT), None)
-        prose = package('prose', d.RepoSource('local'), d.CodexPlacement((d.MarketplaceInstall('local', True),)))
-        lock = {'prose': d.Lock(D1, {hs.Host.CODEX: d.LockedTree('0.2.0+codex.1', D2)})}
-        facts = codex_host.CodexState(homes.projection_roots(), 'codex').project(setup([prose], [local], lock=lock))
-        self.assertEqual(facts[key(S.MARKETPLACE, 'local')].value, hs.CheckoutMarketplace('https://github.com/example/local.git', C1))
-        self.assertEqual(facts[key(S.PLUGIN, 'prose@local')].value, hs.PluginValue(True, hs.Released('0.2.0+codex.1')))
-
     def test_a_repository_engine_install_uses_its_verified_release_while_native_installs_keep_the_git_pin(self):
         source = d.RepoSource('skills')
         package = d.Package('rpi', d.Visibility.PUBLIC, '', source, {}, d.ToolNotes.AUDIT,
@@ -502,7 +493,7 @@ class ObserveTest(unittest.TestCase):
 
     def test_an_engine_catalog_entry_without_a_name_of_its_own_leaves_the_catalog_unread(self):
         for plugins in ([{'name': 'kit'}, {'source': {'source': 'local', 'path': './hand-made'}}], [{'name': 'kit'}] * 2,
-                        ['kit'], {'kit': {}}):
+                        ['kit'], {'kit': {}}, {}, None, 5, [{'name': 'kit'}, {'name': 1}]):
             with self.subTest(plugins=plugins), Device() as device:
                 catalog = device.roots.agents_home / 'plugins/marketplace.json'
                 catalog.write_text(json.dumps({'name': 'personal', 'plugins': plugins}))
@@ -538,8 +529,10 @@ class ObserveTest(unittest.TestCase):
             observation = device.state().observe(hs.Request())
         notes = [(n.kind.value, n.subject, n.detail) for n in observation.notes]
         self.assertIn(('residue', 'hooks.state', '3 approvals of hooks no installed plugin or hooks file defines'), notes)
-        self.assertIn(('residue', 'hooks.state', 'approvals name {home}/Documents/broken/.codex/hooks.json, which cannot be '
-                       'read: JSONDecodeError: Expecting value: line 1 column 11 (char 10)'), notes)
+        self.assertEqual([n for n in notes if n[1] == 'hooks.state'], [
+            ('residue', 'hooks.state', '3 approvals of hooks no installed plugin or hooks file defines'),
+            ('residue', 'hooks.state', 'approvals name {home}/Documents/broken/.codex/hooks.json, which cannot be '
+             'read: JSONDecodeError: Expecting value: line 1 column 11 (char 10)')])
 
     def test_each_kind_of_approval_key_is_stray_or_not_on_its_own(self):
         with Device() as device:

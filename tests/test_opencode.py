@@ -85,18 +85,18 @@ class OpenCodeTests(unittest.TestCase):
         with Home() as home:
             setup, _, source = self.fixture(home)
             home.write(source / '.codex-plugin/plugin.json', '{"name":"kit","version":"1.0.0","skills":["./catalog"]}\n')
-            for name in ('selected', 'not-selected'):
+            for name in ('first', 'second'):
                 home.write(source / f'catalog/category/{name}/SKILL.md',
                            f'---\nname: {name}\ndescription: Selectable.\n---\nRead ../../../references/shared.md.\n')
             package = replace(setup.packages['kit'], source=LocalSource('source', home.roots.tree_digest(source)),
-                              codex=CodexPlacement((EngineInstall(True, skills=('selected',)),)))
+                              codex=CodexPlacement((EngineInstall(True),)))
             setup = replace(setup, packages={'kit': package}, lock={})
             builder = Builder(setup, home.roots, home.roots.engine)
             built = builder.codex(package, verify=False)
             setup = replace(setup, lock={'kit': Lock(intent(package, {}), {Host.CODEX: LockedTree(built.version, built.digest)})})
             _, output, receipt = self.generated(home, setup, Builder(setup, home.roots, home.roots.engine))
-            self.assertEqual([record['id'] for record in receipt['skills']], ['kit-selected'])
-            self.assertTrue((output / 'payload/kit/catalog/category/not-selected/SKILL.md').is_file())
+            self.assertEqual([record['id'] for record in receipt['skills']], ['kit-first', 'kit-second'])
+            self.assertTrue((output / 'payload/kit/catalog/category/second/SKILL.md').is_file())
             self.assertTrue((output / 'payload/kit/references/shared.md').is_file())
 
     def test_kept_current_disabled_and_other_platform_packages_are_not_exposed(self):
@@ -144,8 +144,8 @@ class OpenCodeTests(unittest.TestCase):
     def test_colliding_ids_fail_before_writing_the_projection(self):
         with Home() as home:
             setup, builder, _ = self.fixture(home)
-            first = replace(setup.packages['kit'], codex=CodexPlacement((EngineInstall(True, skills=('auto',)),)))
-            collision = replace(first, name='KIT', codex=CodexPlacement((EngineInstall(True, skills=('manual',)),)))
+            first = replace(setup.packages['kit'], codex=CodexPlacement((EngineInstall(True),)))
+            collision = replace(first, name='KIT')
             setup = replace(setup, packages={'kit': first, 'KIT': collision},
                             lock={'kit': replace(setup.lock['kit'], intent=intent(first, {})),
                                   'KIT': replace(setup.lock['kit'], intent=intent(collision, {}))})
@@ -247,11 +247,9 @@ class OpenCodeTests(unittest.TestCase):
     def test_a_missing_selection_malformed_metadata_and_existing_stage_are_rejected(self):
         with Home() as home:
             setup, builder, _ = self.fixture(home)
-            package = replace(setup.packages['kit'], codex=CodexPlacement((EngineInstall(True, skills=('missing',)),)))
-            setup = replace(setup, packages={'kit': package},
-                            lock={'kit': replace(setup.lock['kit'], intent=intent(package, {}))})
+            setup = replace(setup, host_skills={Host.CODEX: {'kit:missing': SkillMode.ON}})
             plan = opencode.plan(setup, home.roots, Platform.LINUX)
-            with self.assertRaisesRegex(BuildError, 'missing selected OpenCode skills'):
+            with self.assertRaisesRegex(BuildError, r"^kit: missing selected OpenCode skills: \['missing'\]$"):
                 opencode.materialise(plan, builder, home.roots.home / 'missing')
             self.assertFalse((home.roots.home / 'missing').exists())
             metadata = home.write(home.roots.home / 'malformed/SKILL.md',
