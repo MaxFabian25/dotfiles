@@ -3,7 +3,7 @@ public = true
 [source]
 build = "generic"
 repository = "https://github.com/cursor/plugins.git"
-commit = "1ba91fc25c0977741dd0e267849e6234b037ed0a"
+commit = "bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7"
 subdirectory = "pstack"
 manifest = ".cursor-plugin/plugin.json"
 packaging = 3
@@ -139,7 +139,7 @@ tool_notes = "exempt"
 
 [codex]
 install = [{ via = "personal", enabled = true }]
-adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "5568d87290548bcf913bce23dcd313e5d29ba796", adapted = "3a36fda1642b0c8dc454bbd9af7653afb970c24b", harness = "skills/poteto-mode/references/harnesses.md" }
+adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "c8d2305bea0c541dbc76d38efa2a7af1c9ebba67", adapted = "ddb79749fd84cc767d6a0ffd9b16335c914599dc", harness = "skills/poteto-mode/references/harnesses.md" }
 
 # Reflect keeps a finding's text and its check in one row, so a cheap check ships in the same release as its text
 # (user, 2026-11-14), after the 13 November pass split 43 rows into a text part and a check left in an issue.
