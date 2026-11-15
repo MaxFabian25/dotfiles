@@ -161,10 +161,8 @@ prints `Home file left as it is` with its path, applies the rest, records the pa
 has no record, so it takes over only the copies that already match. A pull removes no file that a release
 dropped from that folder. Without `--apply` it prints `Home file to deliver` for each file and exits 1.
 
-`release.py` ran a whole delivery from this checkout until 15 November 2026: it tested, rebased, pushed and
-pulled under a lock on the machine. It now only prints the steps above. A private test file runs by
-itself, as `python -I -B FILE`, so it needs its own `sys.path` line for a module beside it, and
-`unittest.main()` at its end.
+A private test file runs by itself, as `python -I -B FILE`, so it needs its own `sys.path` line for a module
+beside it, and `unittest.main()` at its end.
 
 After a pull that changed skills or packages, run `skill_listing.py`, which checks that Claude Code lists
 skills with their descriptions. For a skill description change, `skill_triggers.py` counts how often the installed skills load in Claude Code for a
@@ -231,7 +229,7 @@ uv run --locked python tests/native_policy_smoke.py
 The smoke test uses temporary application homes and real native plugin loaders. It does not use a
 live installation as its test fixture. It retains its isolated evidence on failure.
 
-Only `build_setup.py`, `codex_runtime.py`, `codex_triggers.py`, `lock_setup.py`, `sync.py`, `pull.py`, `release.py`, `schedule.py`, `skill_draft.py`, `skill_listing.py`, and `skill_triggers.py` are supported public
+Only `build_setup.py`, `codex_runtime.py`, `codex_triggers.py`, `lock_setup.py`, `sync.py`, `pull.py`, `schedule.py`, `skill_draft.py`, `skill_listing.py`, and `skill_triggers.py` are supported public
 command entry points. Lower-level packaging modules contain compatibility helpers, not a second
 configuration authority. Do not recreate historical JSON registries to drive them.
 
