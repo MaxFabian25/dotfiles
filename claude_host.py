@@ -289,10 +289,10 @@ class ClaudeState:
                         raise Unread(f'Aligned catalog source is not a relative path: {identity}')
                     loaded = _loaded(catalogs, identity, directory)
                     manifest = json.loads(portable.read_utf8(loaded / '.claude-plugin/plugin.json'))
-                    version = manifest['version']
-                    if manifest.get('name') != entry['name'] or not isinstance(version, str) or not version:
+                    release_version = manifest['version']
+                    if manifest.get('name') != entry['name'] or not isinstance(release_version, str) or not release_version:
                         raise Unread(f'Aligned plugin manifest does not identify its build: {identity}')
-                    aligned[identity] = {'id': identity, 'version': version, 'installPath': str(loaded),
+                    aligned[identity] = {'id': identity, 'version': release_version, 'installPath': str(loaded),
                                          'enabled': settings.get('enabledPlugins', {}).get(identity, False)}
                 except (Unread, OSError, ValueError, KeyError, TypeError) as error:
                     seen.unread(directory, error, {Surface.PLUGIN, Surface.TREE, Surface.SKILL}, {identity})
@@ -407,7 +407,6 @@ class ClaudeState:
 
     def _explicit(self, root: Path, wanted: set[str] | None, catalogs: dict[str, tuple[Path, dict]] | None = None,
                   plugin_id: str = '') -> set[str]:
-        """Read invocation flags from the loaded directory or the ordinary installation's cache."""
         try:
             mode = root.stat().st_mode
         except FileNotFoundError as error:

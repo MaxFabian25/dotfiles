@@ -218,6 +218,7 @@ class ObserveTest(unittest.TestCase):
                 trees=frozenset({'kit@codex-aligned'}),
                 skills=frozenset('kit@codex-aligned:' + name for name in ('automatic', 'explicit', 'removed'))))
             self.assertEqual(observation.unknown, ())
+            self.assertEqual(observation.version, 'test')
             self.assertIn(key(S.PLUGIN, 'kit@codex-aligned'), observation.facts)
             self.assertEqual(observation.facts[key(S.PLUGIN, 'kit@codex-aligned')].value,
                              hs.PluginValue(True, hs.Released('2.0.0')))

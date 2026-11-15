@@ -2014,7 +2014,6 @@ class InstallationTest(unittest.TestCase):
                     if json.loads(path.read_bytes())['identity'] == f'plugin:claude:{self.claude_plugin}')
 
     def claude_loads(self):
-        """Aligned content comes from the catalog; copied installs come from their native record."""
         if self.claude_plugin.endswith('@codex-aligned'):
             catalog = self.roots.claude_home / 'marketplaces/codex-aligned'
             entry, = json.loads((catalog / '.claude-plugin/marketplace.json').read_bytes())['plugins']

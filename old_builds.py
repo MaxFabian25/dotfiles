@@ -1,7 +1,3 @@
-"""Retire superseded aligned marketplace builds after a reboot proves their sessions ended.
-
-Historical install caches remain native-owned. Track them without deleting their bytes or scoped records.
-"""
 from __future__ import annotations
 
 import json

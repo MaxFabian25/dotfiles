@@ -914,9 +914,6 @@ class AcceptedInstallations:
         self._save(artifact, record)
 
     def _plugin(self, prepared, files, native):
-        """Give a plugin a folder of its own for the target and point its host there. The folder it loaded stays as it
-        is, so a session that started on it reads it to the end. A copied Claude installation uses its native record,
-        and Codex loads the highest version folder."""
         artifact = prepared.artifact
         loaded = artifact.current
         if artifact.native:
