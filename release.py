@@ -20,6 +20,9 @@ Without --push it retains the tested candidates and applies nothing. Logs record
 their owning threads and running finishes. `wait` waits for machine locks, not concurrent candidate tests.
 `finish --detach` uses a systemd user unit; `result NAME --timeout SECONDS` waits for it and returns its status.
 Uncaught errors and a disappeared unit without a status return 70. Windows allows only status and wait.
+
+`start` refuses while the newest finished tests run on main failed, unless `--repairs RUN` names that run.
+Each published pair adds one row to `releases.tsv` in this machine's state folder, which names the run it repairs.
 """
 from __future__ import annotations
 
@@ -27,6 +30,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 import contextlib
 from dataclasses import asdict, dataclass
+from datetime import datetime
 import hashlib
 import itertools
 import json
@@ -664,6 +668,24 @@ def unchanged(public, private, commits):
                                'the edit is preserved; finish again once the edits are done')
 
 
+def write_replacing(path, data):
+    """Write the bytes to a file beside path and rename it over path, so that a stop part way leaves path as it
+    was."""
+    with tempfile.NamedTemporaryFile(mode='wb', dir=path.parent, delete=False) as output:
+        temporary = Path(output.name)
+        try:
+            output.write(data)
+            output.flush()
+            os.fsync(output.fileno())
+        except BaseException:
+            temporary.unlink(missing_ok=True)
+            raise
+    try:
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def tested(draft, base):
     unchanged(draft.public, draft.private, draft.commits)
     note, passed = tests_passed(base), read_receipt(draft.public, draft.private, base)
@@ -680,20 +702,7 @@ def tested(draft, base):
     saved = {field: asdict(getattr(draft, field)) for field in ('source', 'commits', 'trees')}
     saved.update(version=2, paired=draft.paired, workspace=draft.public.parent.name)
     note.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=note.parent, delete=False) as output:
-        temporary = Path(output.name)
-        try:
-            json.dump(saved, output)
-            output.write('\n')
-            output.flush()
-            os.fsync(output.fileno())
-        except BaseException:
-            temporary.unlink(missing_ok=True)
-            raise
-    try:
-        temporary.replace(note)
-    finally:
-        temporary.unlink(missing_ok=True)
+    write_replacing(note, (json.dumps(saved) + '\n').encode())
     print(f'Exact trees tested: public {draft.trees.public}; private {draft.trees.private}; no files excluded', flush=True)
     return TestedCandidate(draft)
 
@@ -1300,8 +1309,132 @@ def push(root, commit):
     git(root, *CREDENTIALS, 'push', '-q', push_url(root), f'{commit}:main')
 
 
+TESTS_WORKFLOW = 'tests.yml'
+RED = frozenset({'failure', 'timed_out', 'startup_failure'})
+RUNS_READ = 20  # newest runs on main that start reads to find a finished one
+RELEASES_COLUMNS = ('finished', 'machine', 'name', 'public', 'private', 'repairs', 'thread')
+
+
+@dataclass(frozen=True)
+class PassedRun:
+    run: int
+    commit: str
+
+
+@dataclass(frozen=True)
+class RedRun:
+    run: int
+    commit: str
+    url: str
+    jobs: tuple[str, ...]
+
+
+def gh_json(public_repo, *args):
+    """What gh prints for args, read as JSON, from the public repository on GitHub."""
+    command = ['gh', *args, '-R', push_url(public_repo)]
+    try:
+        done = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', errors='replace',
+                              timeout=120)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise RuntimeError(f'gh could not read main\'s tests on GitHub ({error}); check gh auth status and the '
+                           'network') from error
+    if done.returncode:
+        raise RuntimeError(f'gh {" ".join(args[:2])} exited {done.returncode}: {done.stderr.strip()[-400:]}; check gh '
+                           'auth status and the network')
+    try:
+        return json.loads(done.stdout)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(f'gh {" ".join(args[:2])} printed no JSON ({error}): {done.stdout[:200]!r}; check gh auth '
+                           'status and the network') from error
+
+
+def attempt_view(public_repo, run, attempt):
+    """One attempt of a run: its conclusion and its jobs."""
+    return gh_json(public_repo, 'run', 'view', str(run), '--attempt', str(attempt), '--json', 'conclusion,jobs')
+
+
+def failed_jobs(jobs):
+    """Each job that failed, with the steps in it that failed."""
+    named = []
+    for job in jobs:
+        if job['conclusion'] in RED:
+            steps = [step['name'] for step in job['steps'] if step['conclusion'] in RED]
+            named.append(f'{job["name"]}, step {", ".join(steps)}' if steps else f'{job["name"]}, {job["conclusion"]}')
+    return tuple(named)
+
+
+def main_ci(public_repo):
+    """The newest tests run on main that passed or failed, each run judged by its newest attempt that did. An
+    attempt that was cancelled or still runs, whose conclusion GitHub leaves empty, says nothing either way. A gate
+    that read past a rerun to an older run would open for as long as the rerun the refusal suggests runs."""
+    runs = gh_json(public_repo, 'run', 'list', '--workflow', TESTS_WORKFLOW, '--branch', 'main', '--limit',
+                   str(RUNS_READ), '--json', 'databaseId,attempt,conclusion,headSha,url')
+    for run in runs:
+        attempt, view, conclusion = run['attempt'], None, run['conclusion']
+        while conclusion not in RED | {'success'} and attempt > 1:
+            attempt -= 1
+            view = attempt_view(public_repo, run['databaseId'], attempt)
+            conclusion = view['conclusion']
+        if conclusion == 'success':
+            return PassedRun(run['databaseId'], run['headSha'])
+        if conclusion in RED:
+            view = view or attempt_view(public_repo, run['databaseId'], attempt)
+            jobs = failed_jobs(view['jobs']) or (f'no job failed; the run ended {conclusion}',)
+            return RedRun(run['databaseId'], run['headSha'], run['url'], jobs)
+    raise RuntimeError(f'none of the newest {RUNS_READ} tests runs on main passed or failed; read them with gh run '
+                       f'list --workflow {TESTS_WORKFLOW} --branch main')
+
+
+def ci_stop(latest, repairs, repairing):
+    """Why start refuses while main's tests are red, or None. repairing names each open release, with its thread,
+    whose start noted that it repairs the newest red run. --repairs names only that run, so that each repair the
+    releases' rows count is one that main's tests showed."""
+    if not isinstance(latest, RedRun):
+        return None if repairs is None else (f"--repairs names run {repairs}, but main's tests passed in run "
+                                             f'{latest.run}; start without --repairs')
+    if repairs == latest.run:
+        return None
+    run, repo = latest.run, '/'.join(latest.url.split('/')[3:5])
+    lines = [f"main's tests failed in run {run} at commit {latest.commit[:7]}: {'; '.join(latest.jobs)}; {latest.url}"]
+    if repairs is not None:
+        lines.append(f'--repairs names run {repairs}, but the newest red run on main is {run}')
+    lines += [f'Read what failed with python3 -I ~/dotfiles-private/maintenance/ci-census/ci_log.py {repo} {run}',
+              f'A flake: gh run rerun {run} --failed --repo {repo}, wait with gh run watch {run} --repo {repo} '
+              '--exit-status, then start again',
+              f'A real failure: release.py start NAME --repairs {run}, which fixes it in this release']
+    lines += [f'Open release {name} already repairs run {run} ({thread or "it noted no T3 thread"}); wait for its finish, '
+              'then start again' for name, thread in repairing]
+    return '\n'.join(lines)
+
+
+def repairs_note(base):
+    """Where start notes the red run on main that the release repairs, beside the release's worktrees."""
+    return base / 'repairs'
+
+
+def note_text(path):
+    try:
+        return path.read_text(encoding='utf-8', errors='replace').strip()
+    except FileNotFoundError:
+        return ''
+
+
 def start(args, public_repo, private_repo):
     base, public, private = places(args)
+    # Before any fetch or worktree, so that a refusal leaves nothing behind.
+    try:
+        latest = main_ci(public_repo)
+    except RuntimeError as error:
+        raise RuntimeError(f'{error}; nothing was started') from error
+    repairing = []
+    if isinstance(latest, RedRun):
+        names = sorted({row[0] for row in releases(args, public_repo, private_repo)} - {args.name})
+        repairing = [(name, noted_thread(args.worktrees / name)) for name in names
+                     if note_text(repairs_note(args.worktrees / name)) == str(latest.run)]
+    if stop := ci_stop(latest, args.repairs, repairing):
+        raise RuntimeError(f'{stop}; nothing was started')
+    if isinstance(latest, PassedRun):
+        print(f"main's tests passed in run {latest.run} at commit {latest.commit[:7]}")
     for repo, tree in ((public_repo, public), (private_repo, private)):
         fetch(repo)
         git(repo, 'worktree', 'add', '-q', '-b', args.name, str(tree), 'origin/main')
@@ -1315,6 +1448,10 @@ def start(args, public_repo, private_repo):
         thread_note(base).write_text(thread + '\n', encoding='utf-8')
     else:  # a note left by an abandoned release of the same name
         thread_note(base).unlink(missing_ok=True)
+    if args.repairs is not None:
+        repairs_note(base).write_text(f'{args.repairs}\n', encoding='utf-8')
+    else:
+        repairs_note(base).unlink(missing_ok=True)
     print(f'Edit {public} and {private}, then run release.py finish {args.name} --message FILE')
     others = release_lines(args.worktrees, [row for row in releases(args, public_repo, private_repo)
                                             if row[0] != args.name and row[2] != 'on origin/main and clean'])
@@ -1401,6 +1538,23 @@ def source_commits(args, public, private, written, *, generated=False):
             commit(tree, message)
 
 
+def log_release(args, draft):
+    """Add the published pair's row to this machine's releases.tsv. The file is written whole and renamed into
+    place, so a stop part way, as on a full disk, leaves no row cut short. A finish run again after publication
+    finds the row and adds none."""
+    path, base = STATE / 'releases.tsv', args.worktrees / args.name
+    public = draft.commits.public if draft.paired else ''
+    # Bytes, so that the rows already there are written back exactly as they were, whatever they hold.
+    rows = path.read_bytes() if path.is_file() else '\t'.join(RELEASES_COLUMNS).encode() + b'\n'
+    pair = [public.encode(), draft.commits.private.encode()]
+    if any(line.split(b'\t')[3:5] == pair for line in rows.splitlines()[1:]):
+        return
+    row = (datetime.now().astimezone().isoformat(timespec='seconds'), platform.node(), args.name, public,
+           draft.commits.private, note_text(repairs_note(base)), note_text(thread_note(base)))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_replacing(path, rows + '\t'.join(row).encode() + b'\n')
+
+
 def finish_tail(args, public_repo, private_repo, draft, *, published, origins=None):
     superseded = published and origins is not None and not all(
         holds(root, getattr(draft.commits, side), getattr(origins, side))
@@ -1416,6 +1570,11 @@ def finish_tail(args, public_repo, private_repo, draft, *, published, origins=No
         print(f'Origin trees now: public {actual.public}; private {actual.private}', flush=True)
     else:
         print(f'Exact trees pushed: public {draft.trees.public}; private {draft.trees.private}', flush=True)
+    try:
+        log_release(args, draft)
+    except OSError as error:
+        print(f'The release is pushed, but its row in {STATE / "releases.tsv"} was not written: {error}',
+              file=sys.stderr, flush=True)
     if not args.push:
         return 0
     for line in other_machines(tailnet(), windows_side()):
@@ -1819,6 +1978,8 @@ def dispatch(argv, report):
     parser.add_argument('--detach', action='store_true',
                         help='finish: run as a systemd user unit and return at once, with absolute paths for the '
                              'message files and --reviewed; read it with result NAME')
+    parser.add_argument('--repairs', type=int, metavar='RUN',
+                        help="start although main's tests failed in this run, which the release then fixes")
     parser.add_argument('--report', type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     # Releases are made on WSL or Omarchy. status and wait only read the machine they run on, such as its locks,

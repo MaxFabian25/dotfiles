@@ -78,6 +78,10 @@ class ReleaseCase(unittest.TestCase):
         tailnet = patch.object(release, 'tailnet', return_value=None)  # no test asks the machine's own Tailscale
         tailnet.start()
         self.addCleanup(tailnet.stop)
+        # no start asks GitHub for main's tests; test_release_ci_gate.py names its own runs
+        main_ci = patch.object(release, 'main_ci', return_value=release.PassedRun(1, '0' * 40))
+        main_ci.start()
+        self.addCleanup(main_ci.stop)
         environment = patch.dict(os.environ)  # start notes the T3 thread it runs in, so no test inherits one
         environment.start()
         self.addCleanup(environment.stop)
