@@ -215,8 +215,12 @@ class Hyprland:
                     try:
                         self.hyprctl('dispatch', f'hl.dsp.window.set_prop({{ window = "{address}", '
                                                  'prop = "render_unfocused", value = "1" })')
-                    except RuntimeError:
-                        self.hyprctl('dispatch', f'hl.dsp.window.close({{ window = "{address}" }})')
+                    except RuntimeError as error:
+                        try:
+                            self.hyprctl('dispatch', f'hl.dsp.window.close({{ window = "{address}" }})')
+                        except RuntimeError as closing:
+                            raise RuntimeError(f'{error}; closing window {address} also failed: {closing}; ask the '
+                                               'user to close it') from None
                         raise
                     return window, client['pid']
                 if new:
@@ -579,10 +583,13 @@ def main():
             time.sleep(args.wait)
             if desktop is not None:
                 # Once the page has an address it has loaded, so read its tree, then its address once more, in
-                # case the page's own script sent it to another site meanwhile.
-                desktop.wait_for_address(driver, pid, window)
-                data = settled_tree(driver, pid, window)
+                # case the page's own script sent it to another site meanwhile. A page that never showed an
+                # address is skipped without that second wait.
                 shown = desktop.wait_for_address(driver, pid, window)
+                data = {}
+                if shown:
+                    data = settled_tree(driver, pid, window)
+                    shown = desktop.wait_for_address(driver, pid, window)
             else:
                 data = driver.tree(pid, window)
                 shown = address_bar(driver, pid, window)[1]
