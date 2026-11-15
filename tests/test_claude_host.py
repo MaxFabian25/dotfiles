@@ -198,6 +198,39 @@ class Device(homes.Home):
 
 
 class ObserveTest(unittest.TestCase):
+    def test_aligned_directory_content_needs_neither_cache_nor_native_record(self):
+        with homes.Home() as device:
+            roots = device.roots
+            catalog = roots.claude_home / 'marketplaces/codex-aligned'
+            loaded = catalog / 'plugins/kit/2.0.0'
+            device.skill(loaded, 'automatic', body='Adapted release content.\n')
+            device.skill(loaded, 'explicit', frontmatter_explicit=True)
+            device.write(loaded / '.claude-plugin/plugin.json', '{"name":"kit","version":"2.0.0"}')
+            device.write(loaded / '.claude-plugin/codex-alignment.json', '{"excludedSkillNames":["kit:removed"]}')
+            device.write(catalog / '.claude-plugin/marketplace.json', json.dumps({
+                'name': 'codex-aligned', 'plugins': [{'name': 'kit', 'source': './plugins/kit/2.0.0'}]}))
+            device.write(roots.claude_home / 'settings.json', json.dumps({
+                'enabledPlugins': {'kit@codex-aligned': True},
+                'extraKnownMarketplaces': {'codex-aligned': {'source': {'source': 'directory', 'path': str(catalog)}}}}))
+            cli = device.cli('claude', {'--version': 'test', 'plugin list --available --json':
+                                     '{"installed":[],"available":[]}'})
+            observation = claude_host.ClaudeState(roots, cli).observe(hs.Request(
+                trees=frozenset({'kit@codex-aligned'}),
+                skills=frozenset('kit@codex-aligned:' + name for name in ('automatic', 'explicit', 'removed'))))
+            self.assertEqual(observation.unknown, ())
+            self.assertEqual(observation.version, 'test')
+            self.assertIn(key(S.PLUGIN, 'kit@codex-aligned'), observation.facts)
+            self.assertEqual(observation.facts[key(S.PLUGIN, 'kit@codex-aligned')].value,
+                             hs.PluginValue(True, hs.Released('2.0.0')))
+            self.assertEqual(observation.facts[key(S.TREE, 'kit@codex-aligned')].value,
+                             hs.TreeValue(roots.tree_digest(loaded)))
+            self.assertEqual({name: observation.facts[key(S.SKILL, 'kit@codex-aligned:' + name)].value
+                              for name in ('automatic', 'explicit', 'removed')},
+                             {'automatic': M.ON, 'explicit': M.EXPLICIT, 'removed': M.OFF})
+            self.assertEqual(observation.details[key(S.PLUGIN, 'kit@codex-aligned')].root, loaded)
+            self.assertFalse((roots.claude_home / 'plugins/cache').exists())
+            self.assertFalse((roots.claude_home / 'plugins/installed_plugins.json').exists())
+
     def test_a_version_that_is_not_utf8_is_unknown_without_stopping_observation(self):
         with Device() as device:
             state = device.state()
@@ -346,6 +379,14 @@ class ObserveTest(unittest.TestCase):
                     observation = device.state().observe(hs.Request())
                     self.assertNotIn(key(S.MARKETPLACE, 'codex-aligned'), observation.facts)
 
+    def test_an_empty_directory_catalog_can_omit_its_plugin_list(self):
+        with Device() as device:
+            device.write(device.roots.claude_home / 'marketplaces/codex-aligned/.claude-plugin/marketplace.json',
+                         '{"name":"codex-aligned"}')
+            observation = device.state().observe(hs.Request())
+        self.assertEqual(observation.facts[key(S.MARKETPLACE, 'codex-aligned')].value, hs.EngineMarketplace(frozenset()))
+        self.assertEqual(observation.unknown, ())
+
     def test_an_engine_catalog_entry_without_a_name_of_its_own_leaves_the_catalog_unread(self):
         catalog = 'marketplaces/codex-aligned/.claude-plugin/marketplace.json'
         kit = {'name': 'kit', 'source': './plugins/kit/1'}
@@ -388,7 +429,7 @@ class ObserveTest(unittest.TestCase):
         self.assertEqual(observation.offered, frozenset({'kit@codex-aligned', 'old@codex-aligned', 'interfaces@interfaces',
                                                          'skill-creator@claude-plugins-official', 'playwright@claude-plugins-official'}))
         self.assertEqual(observation.unknown, ())
-        self.assertEqual([(n.kind.value, n.subject, n.detail) for n in observation.notes], [
+        self.assertCountEqual([(n.kind.value, n.subject, n.detail) for n in observation.notes], [
             ('device-local', 'project installs', '1 project-scoped installs'),
             ('residue', 'enabledPlugins', '1 entries for plugins that are not installed'),
             ('unmodeled', 'extraKnownMarketplaces.personal-collections', 'directory source'),
@@ -503,10 +544,14 @@ class ObserveTest(unittest.TestCase):
                 {'name': 'kit', 'source': './plugins/kit/1.0+codex-aligned.x', 'version': '1.0+codex-aligned.x'}]}))
             loaded = device.roots.claude_home / 'marketplaces/codex-aligned/plugins/kit/1.0+codex-aligned.x'
             device.skill(loaded, 'poteto-mode')
+            device.write(loaded / '.claude-plugin/plugin.json', '{"name":"kit","version":"1.0+codex-aligned.x"}')
+            device.write(loaded / '.claude-plugin/codex-alignment.json', '{"excludedSkillNames": []}')
             observation = device.state().observe(hs.Request())
         self.assertNotIn(poteto, observation.facts)
         self.assertEqual(observation.unknown, ())
         self.assertEqual(observation.details[key(S.PLUGIN, 'kit@codex-aligned')].loaded, loaded)
+        self.assertEqual(observation.facts[key(S.PLUGIN, 'kit@codex-aligned')].value.pin,
+                         hs.Released('1.0+codex-aligned.x'))
         self.assertIsNone(observation.details[key(S.PLUGIN, 'interfaces@interfaces')].loaded)
 
     def test_a_catalog_source_outside_its_marketplace_or_missing_is_unknown(self):

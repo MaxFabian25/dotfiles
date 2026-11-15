@@ -1630,6 +1630,9 @@ class InstallationTest(unittest.TestCase):
         """After a first sync installed kit 1.0.0 on Claude Code, kit 2.0.0 as the next release describes it."""
         self.assertEqual(self.run_apply().exit_code, 0)
         (self.source / '.codex-plugin/plugin.json').write_text('{"name":"kit","version":"2.0.0"}')
+        manifest = self.source / '.claude-plugin/plugin.json'
+        if manifest.exists():
+            manifest.write_text('{"name":"kit","version":"2.0.0"}')
         digest = self.roots.tree_digest(self.source)
         kit = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
         lock = replace(self.setup.lock['kit'], intent=intent(kit, {}), trees={Host.CLAUDE: LockedTree('2.0.0', digest)})
@@ -1959,6 +1962,7 @@ class InstallationTest(unittest.TestCase):
             alignment = self.source / '.claude-plugin/codex-alignment.json'
             alignment.parent.mkdir()
             alignment.write_text('{"excludedSkillNames": []}')
+            (alignment.parent / 'plugin.json').write_text('{"name":"kit","version":"1.0.0"}')
         # The kit's tool notes make the installed image differ from the release, so the engine writes a folder of its
         # own. A real description refuses tool notes for an engine install, since Claude Code runs the release.
         package = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', self.roots.tree_digest(self.source)), codex=None,
@@ -1993,7 +1997,7 @@ class InstallationTest(unittest.TestCase):
 
         def build_claude(builder, package, codex, *, verify=True):
             version = builder.setup.lock['kit'].trees[Host.CLAUDE].version
-            release = marketplace / 'plugins/kit' / version
+            release = (self.roots.engine / '.sync/claude-aligned' if aligned else marketplace) / 'plugins/kit' / version
             release.parent.mkdir(parents=True, exist_ok=True)
             if release.exists():
                 shutil.rmtree(release)
@@ -2010,8 +2014,237 @@ class InstallationTest(unittest.TestCase):
                     if json.loads(path.read_bytes())['identity'] == f'plugin:claude:{self.claude_plugin}')
 
     def claude_loads(self):
-        """The folder Claude Code loads the kit from: the one its install record's user-scope entry names."""
+        if self.claude_plugin.endswith('@codex-aligned'):
+            catalog = self.roots.claude_home / 'marketplaces/codex-aligned'
+            entry, = json.loads((catalog / '.claude-plugin/marketplace.json').read_bytes())['plugins']
+            return catalog / entry['source']
         return Path(claude_entry(self.roots, self.claude_plugin)['installPath'])
+
+    def test_aligned_delivery_accepts_the_loaded_tree_without_installing_a_cache(self):
+        self._claude_kit(aligned=True)
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertFalse((self.roots.claude_home / 'plugins/cache').exists())
+        self.assertFalse(claude_records(self.roots).exists())
+        self.assertEqual([args for host, args in self.calls if args[:2] in
+                          (('plugin', 'install'), ('plugin', 'update'))], [])
+        loaded = self.claude_loads()
+        self.assertEqual((loaded / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
+        self.assertIn('disable-model-invocation: true', (loaded / 'skills/one/SKILL.md').read_text())
+        accepted = json.loads(self._claude_receipt().read_bytes())['accepted']
+        self.assertEqual(accepted['path'], str(loaded))
+        before = self.snapshot()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(self.snapshot(), before)
+
+    def legacy_aligned_receipt(self):
+        from accepted_installations import _bindings
+        from sync_sources import Built
+
+        loaded = self._installed_claude(aligned=True)
+        receipt = self._claude_receipt()
+        value = json.loads(receipt.read_bytes())
+        cache = claude_install(self.roots, self.claude_plugin,
+                               Built('kit', loaded, '1.0.0', self.roots.tree_digest(loaded)))
+        accepted = value['accepted']
+        accepted.pop('delivery')
+        accepted['path'] = str(cache)
+        accepted['bindings'] = _bindings((cache,))
+        receipt.write_text(json.dumps(value))
+        return loaded, cache, value
+
+    def test_aligned_receipt_migration_preserves_cache_records_and_old_evidence(self):
+        loaded, cache, previous = self.legacy_aligned_receipt()
+        records = json.loads(claude_records(self.roots).read_bytes())
+        records['plugins'][self.claude_plugin].append({'scope': 'project', 'installPath': str(cache), 'version': '0.9.0'})
+        claude_records(self.roots).write_text(json.dumps(records))
+        before = self.state_of(cache), claude_records(self.roots).read_bytes(), self.state_of(loaded)
+        self.assertEqual(self.run_apply().exit_code, 0)
+        accepted = json.loads(self._claude_receipt().read_bytes())['accepted']
+        self.assertEqual((accepted['path'], accepted['delivery'], accepted['legacy']),
+                         (str(loaded), 'directory', previous))
+        self.assertEqual((self.state_of(cache), claude_records(self.roots).read_bytes(), self.state_of(loaded)), before)
+        self.assertEqual(self.calls, [])
+        shutil.rmtree(cache)
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
+    def test_aligned_migration_refuses_an_edited_cache_or_loaded_build(self):
+        loaded, cache, _ = self.legacy_aligned_receipt()
+        for folder in (cache, loaded):
+            with self.subTest(folder=folder):
+                marker = folder / 'ordinary.txt'
+                original = marker.read_bytes()
+                marker.write_text('local edit\n')
+                before = self.snapshot()
+                current = plan(self.setup, self.device)
+                self.assertEqual(current.exit_code, 2)
+                self.assertTrue(any(d.kind.value == 'local-edit' for d in current.blocked))
+                with self.assertRaises(RuntimeError):
+                    self.run_apply(current)
+                self.assertEqual(self.snapshot(), before)
+                marker.write_bytes(original)
+
+    def test_aligned_migration_accepts_a_recorded_pending_build_before_a_newer_release(self):
+        from accepted_installations import _bindings, image
+
+        loaded, cache, previous = self.legacy_aligned_receipt()
+        release2 = loaded.with_name('2.0.0')
+        shutil.copytree(loaded, release2)
+        for relative in ('.codex-plugin/plugin.json', '.claude-plugin/plugin.json'):
+            (release2 / relative).write_text('{"name":"kit","version":"2.0.0"}')
+        cache2 = cache.with_name('2.0.0')
+        shutil.copytree(release2, cache2)
+        work = cache2.parent / ('.sync-2.0.0-' + 'cd' * 16)
+        target = {**previous['accepted'], 'path': str(cache2), 'image': image(cache2),
+                  'bindings': _bindings((cache2,)),
+                  'intent': 'interrupted-version-two'}
+        previous['pending'] = {'before': image(cache), 'before_path': str(cache),
+                               'bindings': target['bindings'], 'destination_before': image(cache2),
+                               'target': target, 'pristine': image(cache2),
+                               'staged': str(work / 'staged'), 'displaced': str(work / 'displaced'),
+                               'swap_before': image(cache2)}
+        self._claude_receipt().write_text(json.dumps(previous))
+        catalog = loaded.parents[2] / '.claude-plugin/marketplace.json'
+        data = json.loads(catalog.read_bytes())
+        data['plugins'][0].update(source='./plugins/kit/2.0.0', version='2.0.0')
+        catalog.write_text(json.dumps(data))
+        self.point_claude_at(cache2)
+        for relative in ('.codex-plugin/plugin.json', '.claude-plugin/plugin.json'):
+            (self.source / relative).write_text('{"name":"kit","version":"3.0.0"}')
+        digest = self.roots.tree_digest(self.source)
+        kit = replace(self.setup.packages['kit'], source=LocalSource('owned/kit', digest))
+        lock = replace(self.setup.lock['kit'], intent=intent(kit, {}), trees={Host.CLAUDE: LockedTree('3.0.0', digest)})
+        self.setup = replace(self.setup, packages={'kit': kit}, lock={'kit': lock})
+        for folder in (release2, cache2):
+            with self.subTest(folder=folder):
+                marker = folder / 'ordinary.txt'
+                original = marker.read_bytes()
+                marker.write_bytes(b'local edit to pending release')
+                edited = self.snapshot()
+                current = plan(self.setup, self.device)
+                self.assertEqual(current.exit_code, 2)
+                self.assertTrue(any(item.kind.value == 'local-edit' for item in current.blocked))
+                with self.assertRaises(RuntimeError):
+                    self.run_apply(current)
+                self.assertEqual(self.snapshot(), edited)
+                marker.write_bytes(original)
+        before = self.state_of(loaded), self.state_of(release2), self.state_of(cache), self.state_of(cache2)
+        records = claude_records(self.roots).read_bytes()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(self.claude_loads().name, '3.0.0')
+        self.assertEqual((self.state_of(loaded), self.state_of(release2), self.state_of(cache), self.state_of(cache2)), before)
+        self.assertEqual(claude_records(self.roots).read_bytes(), records)
+        self.assertEqual(json.loads(self._claude_receipt().read_bytes())['accepted']['legacy'], previous)
+
+    def test_aligned_update_and_rollback_leave_prior_session_bytes_and_native_records(self):
+        loaded, cache, _ = self.legacy_aligned_receipt()
+        first_setup = self.setup
+        first_source = {path.relative_to(self.source): path.read_bytes() for path in self.source.rglob('*') if path.is_file()}
+        before = self.state_of(loaded), self.state_of(cache), claude_records(self.roots).read_bytes()
+        self.release_kit_2_on_claude()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        second = self.claude_loads()
+        self.assertNotEqual(second, loaded)
+        self.assertEqual(json.loads((second / '.claude-plugin/plugin.json').read_bytes())['version'], '2.0.0')
+        second_before = self.state_of(second)
+        self.assertEqual((self.state_of(loaded), self.state_of(cache), claude_records(self.roots).read_bytes()), before)
+        self.setup = first_setup
+        for relative, data in first_source.items():
+            (self.source / relative).write_bytes(data)
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(self.claude_loads(), loaded)
+        self.assertEqual(self.state_of(second), second_before)
+        self.assertEqual([args for host, args in self.calls if args[:2] in
+                          (('plugin', 'install'), ('plugin', 'update'))], [])
+
+    def test_aligned_preparation_rejects_catalog_cache_and_loaded_source_races(self):
+        from sync_hosts import Apply
+
+        loaded, cache, _ = self.legacy_aligned_receipt()
+        catalog = loaded.parents[2] / '.claude-plugin/marketplace.json'
+        for path in (catalog, cache / 'ordinary.txt', loaded / 'ordinary.txt'):
+            with self.subTest(path=path):
+                current = plan(self.setup, self.device)
+                operation = Apply(self.setup, self.device, current, Builder(self.setup, self.roots, self.roots.engine))
+                with operation.owner.staging:
+                    operation.prepare()
+                    original, receipt = path.read_bytes(), self._claude_receipt().read_bytes()
+                    path.write_bytes(original + b' ')
+                    with self.assertRaises(ConcurrentEdit):
+                        operation.run()
+                    self.assertEqual(self._claude_receipt().read_bytes(), receipt)
+                    self.assertEqual(path.read_bytes(), original + b' ')
+                    path.write_bytes(original)
+
+    def test_aligned_disabled_kept_current_retains_project_and_local_switches(self):
+        self._claude_kit(aligned=True)
+        kit = replace(self.setup.packages['kit'], claude=ClaudePlacement((AlignedInstall(False, keep_current=True),)))
+        self.setup = replace(self.setup, packages={'kit': kit}, lock={
+            'kit': replace(self.setup.lock['kit'], intent=intent(kit, {}))})
+        settings = self.claude_settings()
+        data = json.loads(settings.read_bytes())
+        data['enabledPlugins'] = {self.claude_plugin: False}
+        settings.write_text(json.dumps(data))
+        scoped = self.roots.home / 'project/.claude'
+        scoped.mkdir(parents=True)
+        for name in ('settings.json', 'settings.local.json'):
+            (scoped / name).write_text(json.dumps({'enabledPlugins': {self.claude_plugin: True}}))
+        before = self.state_of(scoped)
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIs(self.claude_switches()[self.claude_plugin], False)
+        self.assertEqual(self.state_of(scoped), before)
+        self.assertEqual((self.claude_loads() / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
+        self.assertFalse(claude_records(self.roots).exists())
+
+    def test_aligned_catalog_change_during_publication_preserves_the_other_writer(self):
+        from sync_hosts import Apply
+
+        loaded = self._installed_claude(aligned=True)
+        self.release_kit_2_on_claude()
+        catalog = loaded.parents[2] / '.claude-plugin/marketplace.json'
+        previous = self._claude_receipt().read_bytes()
+        stage = Apply._stage_source
+        raced = []
+
+        def competing_writer(source, destination):
+            stage(source, destination)
+            data = json.loads(catalog.read_bytes())
+            data['another_writer'] = True
+            catalog.write_text(json.dumps(data))
+            raced.append(catalog.read_bytes())
+
+        with patch.object(Apply, '_stage_source', staticmethod(competing_writer)), self.assertRaisesRegex(
+                ConcurrentEdit, 'Changed during sync'):
+            self.run_apply()
+        self.assertEqual(len(raced), 1)
+        self.assertEqual(catalog.read_bytes(), raced[0])
+        self.assertEqual(self._claude_receipt().read_bytes(), previous)
+        self.assertEqual(self.claude_loads(), loaded)
+
+    def test_aligned_catalog_or_build_change_after_publication_prevents_acceptance(self):
+        from sync_hosts import Apply
+
+        loaded = self._installed_claude(aligned=True)
+        self.release_kit_2_on_claude()
+        catalog = loaded.parents[2] / '.claude-plugin/marketplace.json'
+        before_catalog, before_receipt = catalog.read_bytes(), self._claude_receipt().read_bytes()
+        command = Apply.command
+        for edit in ('catalog', 'build'):
+            with self.subTest(edit=edit):
+                def competing_writer(operation, host, *args):
+                    result = command(operation, host, *args)
+                    if args[:3] == ('plugin', 'marketplace', 'add'):
+                        if edit == 'catalog':
+                            catalog.write_bytes(before_catalog)
+                        else:
+                            (self.claude_loads() / 'ordinary.txt').write_text('concurrent edit\n')
+                    return result
+
+                with patch.object(Apply, 'command', competing_writer), self.assertRaisesRegex(
+                        ConcurrentEdit, 'no longer selects|differs from preparation'):
+                    self.run_apply()
+                self.assertEqual(self._claude_receipt().read_bytes(), before_receipt)
+                self.assertEqual((loaded / 'ordinary.txt').read_text(), 'ordinary release bytes\n')
+                self.assertFalse(claude_records(self.roots).exists())
 
     def _installed_claude(self, **kit):
         self._claude_kit(**kit)
@@ -2042,7 +2275,11 @@ class InstallationTest(unittest.TestCase):
 
     def legacy_claude_swap_aside(self, **kit):
         """left_aside_by_an_earlier_engine for the Claude cache, whose install record names the release folder."""
-        release, work = self.left_aside_by_an_earlier_engine(self._installed_claude(**kit), self._claude_receipt())
+        if kit.get('aligned'):
+            _, cached, _ = self.legacy_aligned_receipt()
+        else:
+            cached = self._installed_claude(**kit)
+        release, work = self.left_aside_by_an_earlier_engine(cached, self._claude_receipt())
         self.point_claude_at(release)
         return release, work
 
@@ -3162,13 +3399,26 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual(plan(self.setup, self.device).exit_code, 0)
         return folder
 
-    def test_aligned_claude_missing_cache_defers_alignment_and_skill_reads(self):
-        folder = self.legacy_missing_cache_gets_a_folder_of_its_own(aligned=True)
-        (folder / '.claude-plugin/codex-alignment.json').write_text('{bad json')
+    def test_aligned_claude_missing_legacy_cache_accepts_the_loaded_build_and_preserves_pending_evidence(self):
+        cache, work = self.legacy_claude_swap_aside(aligned=True)
+        previous = json.loads(self._claude_receipt().read_bytes())
+        before = self.state_of(work), claude_records(self.roots).read_bytes()
+        current = plan(self.setup, self.device)
+        self.assertEqual((current.exit_code, current.observations[Host.CLAUDE].unknown), (1, ()))
+        self.assertEqual(self.run_apply(current).exit_code, 0)
+        self.assertFalse(cache.exists())
+        self.assertEqual((self.state_of(work), claude_records(self.roots).read_bytes()), before)
+        accepted = json.loads(self._claude_receipt().read_bytes())['accepted']
+        self.assertEqual(accepted['legacy'], previous)
+        self.assertEqual(accepted['path'], str(self.claude_loads()))
+        (self.claude_loads() / '.claude-plugin/codex-alignment.json').write_text('{bad json')
         self.assertEqual(plan(self.setup, self.device).exit_code, 3)
 
-    def test_aligned_claude_implicit_skills_missing_cache_recovers(self):
-        self.legacy_missing_cache_gets_a_folder_of_its_own(aligned=True, implicit=True)
+    def test_aligned_claude_implicit_skills_load_without_a_cache(self):
+        self._claude_kit(aligned=True, implicit=True)
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertNotIn('disable-model-invocation', (self.claude_loads() / 'skills/one/SKILL.md').read_text())
+        self.assertFalse((self.roots.claude_home / 'plugins/cache').exists())
 
     def test_a_claude_cache_an_earlier_engine_left_moved_aside_gets_a_folder_of_its_own(self):
         self.legacy_missing_cache_gets_a_folder_of_its_own()

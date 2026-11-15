@@ -45,24 +45,40 @@ Personal Codex catalog exports carry explicit-only policy in their files. A chan
 `codex-exports/`; the upstream snapshot stays untouched. Fresh profile installs therefore receive the
 same policy as the canonical cache. Harness adaptations remain a separate installation overlay.
 
-A sync never moves or writes a plugin folder that Claude Code or Codex loads from `~/.claude` or `~/.codex`.
-When a plugin's installed bytes change, as the release or its installation overlay does, the sync writes them
-to a new folder beside the old one in the plugin's cache folder and points the app there
-(`accepted_installations.py`). On Codex the folder is named
+A sync leaves previously loaded plugin folders intact. Aligned Claude plugins load the immutable build selected
+by `~/.claude/marketplaces/codex-aligned/.claude-plugin/marketplace.json`. The build still contains the reviewed
+adaptations, selected skills, agents, and invocation policies. Sync publishes that build, registers the directory
+marketplace through Claude's native CLI, and applies the user-scope enable switch. Project and local overrides
+stay native-owned. A disabled, kept-current plugin receives the new build without being enabled during delivery.
+
+Aligned delivery requires neither an install cache nor an installation record. Sync reads the selected build's
+manifest version, tree, exclusions, and invocation flags, even when native inventory omits the plugin or reports
+an older installation. It accepts the loaded tree without running native install or update, copying a cache,
+or changing `installed_plugins.json`. When migrating an earlier cache receipt, sync verifies the old evidence
+and the loaded source, preserves the old receipt inside the new one, and leaves the historical files intact.
+Local edits and concurrent source or catalog changes stop acceptance (`accepted_installations.py`).
+
+Ordinary copied installations retain their cache delivery. When a release or its installation overlay changes,
+sync writes a new folder beside the old one and points the app there. On Codex the folder is named
 `<version>+notes.<UTC time>.<first 12 hex digits of its content's digest>` (`.notes.` after existing build
 metadata), with a time later than every earlier such folder, so it sorts above every folder of that version and
-Codex loads it. On Claude Code the name has `-` for `+`, and the sync changes only the `installPath` of the
+Codex loads it. For copied Claude installations the name has `-` for `+`, and sync changes only the `installPath` of the
 plugin's user-scope entry in `~/.claude/plugins/installed_plugins.json`, keeping the upstream `version` and every
 other entry. An isolated probe on 14 November 2026 showed `claude plugin update` putting an entry whose version is
 not the upstream one back on the upstream folder. A session that started on the old folder reads it to the
 end, except on Codex when the upstream version changes: the native `codex plugin add` that the sync runs first
 removes the plugin's other version folders, as Codex 0.169.0-alpha.6 did in an isolated probe on 14 November
-2026. The folders that a `codex-aligned` plugin's earlier releases leave in
-`~/.claude/marketplaces/codex-aligned/plugins` and `~/.claude/plugins/cache/codex-aligned` go once no session can
-read them (`old_builds.py`). An applied pull that ended well notes each folder that neither the catalog nor any
+2026.
+
+Superseded builds under `~/.claude/marketplaces/codex-aligned/plugins` go once no session can read them
+(`old_builds.py`). An applied pull that ended well notes each folder that neither the catalog nor any
 entry of the install record names, in `~/.local/state/dotfiles/builds-out-of-use.json`, and a later pull removes
 the ones noted before the machine last started, since every running session started after that. The start is read
-from `/proc/stat` on Linux and from the tick count on Windows; on macOS nothing is removed. A rerun that finds the app loading a folder with the reviewed bytes writes no folder. A loaded folder whose
+from `/proc/stat` on Linux and from the tick count on Windows. On macOS nothing is removed. Historical folders
+under `~/.claude/plugins/cache/codex-aligned` remain tracked in those notes, but sync does not delete them or their
+scoped native records.
+
+A rerun that finds the app loading a folder with the reviewed bytes writes no folder. A copied installation whose
 name carries the digest of the bytes it holds counts as the sync's own unedited output, so a sync that stopped
 before saving its receipt leaves a folder the next sync builds on, whatever release that sync brings. An edit
 changes the digest, and the sync then stops rather than build on it. The sync stages the new folder outside the plugin's folder and

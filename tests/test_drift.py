@@ -45,20 +45,23 @@ class Device(homes.Home):
         self.write(r.agents_home / 'plugins/marketplace.json', '{"name": "personal", "plugins": [{"name": "kit"}]}')
 
         claude_cache = r.claude_home / 'plugins/cache'
-        aligned = claude_cache / 'codex-aligned/kit/1.0-codex-aligned.x'
+        aligned = r.claude_home / 'marketplaces/codex-aligned/plugins/kit/1.0-codex-aligned.x'
         self.skill(aligned, 'deslop', frontmatter_explicit=True)
         self.skill(aligned, 'weekly-review')
         self.write(aligned / '.claude-plugin/codex-alignment.json',
                    json.dumps({'codexSource': str(codex_cache), 'excludedSkillNames': ['kit:fix-ci']}))
+        self.write(aligned / '.claude-plugin/plugin.json', '{"name":"kit","version":"1.0-codex-aligned.x"}')
         self.skill(claude_cache / 'interfaces/interfaces/1.10.3', 'better-interface', frontmatter_explicit=True)
         self.claude_inventory = [
-            {'id': 'kit@codex-aligned', 'version': '1.0-codex-aligned.x', 'scope': 'user', 'enabled': True, 'installPath': str(aligned)},
+            {'id': 'kit@codex-aligned', 'version': 'stale-record', 'scope': 'user', 'enabled': True,
+             'installPath': str(claude_cache / 'codex-aligned/kit/stale-record')},
             {'id': 'interfaces@interfaces', 'version': '1.10.3', 'scope': 'user', 'enabled': False,
              'installPath': str(claude_cache / 'interfaces/interfaces/1.10.3')}]
         self.write(r.claude_home / 'plugins/installed_plugins.json', json.dumps({'plugins': {
             'interfaces@interfaces': [{'scope': 'user', 'gitCommitSha': OLD}]}}))
         self.write(r.claude_home / 'marketplaces/codex-aligned/.claude-plugin/marketplace.json',
-                   json.dumps({'name': 'codex-aligned', 'plugins': [{'name': 'kit'}]}))
+                   json.dumps({'name': 'codex-aligned', 'plugins': [
+                       {'name': 'kit', 'source': './plugins/kit/1.0-codex-aligned.x', 'version': '1.0-codex-aligned.x'}]}))
         marketplace = r.claude_home / 'plugins/marketplaces/interfaces'
         self.write(marketplace / '.claude-plugin/marketplace.json', json.dumps({'name': 'interfaces', 'plugins': []}))
         git = ['git', '-c', 'user.name=t', '-c', 'user.email=t@t', '-C', str(marketplace)]
@@ -137,7 +140,7 @@ class DiffTest(unittest.TestCase):
 
     def test_a_claude_mode_is_in_step_with_an_aligned_copy_that_keeps_the_skill(self):
         with Device() as device:
-            aligned = device.roots.claude_home / 'plugins/cache/codex-aligned/kit/1.0-codex-aligned.x'
+            aligned = device.roots.claude_home / 'marketplaces/codex-aligned/plugins/kit/1.0-codex-aligned.x'
             device.skill(aligned, 'fix-ci', frontmatter_explicit=True)
             (aligned / '.claude-plugin/codex-alignment.json').write_text(json.dumps({'excludedSkillNames': []}))
             kit = device.setup.packages['kit']
@@ -190,6 +193,14 @@ class DiffTest(unittest.TestCase):
             result = device.diff()
         self.assertEqual(kinds(result), [(K.TREE, 'codex', 'kit@personal')])
         self.assertEqual(result.exit_code, 1)
+
+    def test_aligned_tree_drift_reads_the_loaded_build_with_the_recorded_cache_absent(self):
+        with Device() as device:
+            self.assertEqual(device.diff().exit_code, 0)
+            skill = device.roots.claude_home / 'marketplaces/codex-aligned/plugins/kit/1.0-codex-aligned.x/skills/weekly-review/SKILL.md'
+            skill.write_text(skill.read_text() + 'A hand edit.\n')
+            result = device.diff()
+        self.assertEqual(kinds(result), [(K.TREE, 'claude', 'kit@codex-aligned')])
 
     def test_an_undeclared_enabled_plugin_is_extra_and_a_disabled_one_is_residue(self):
         with Device() as device:
@@ -338,6 +349,10 @@ class DiffTest(unittest.TestCase):
         for plugin in device.codex_inventory + device.claude_inventory:
             if plugin.get('pluginId', plugin.get('id')).startswith('kit@'):
                 plugin['enabled'] = False
+        settings = device.roots.claude_home / 'settings.json'
+        data = json.loads(settings.read_bytes())
+        data['enabledPlugins']['kit@codex-aligned'] = False
+        settings.write_text(json.dumps(data))
 
     def plugins(self, result):
         return [(x.kind, x.key.host.value, x.key.subject) for x in result.differences if x.key and x.key.surface == S.PLUGIN]
@@ -382,7 +397,7 @@ class DiffTest(unittest.TestCase):
                           for d in json.loads(drift.to_json(plain))['differences']},
                          {('codex-aligned', (), ('kit',)), ('personal', (), ('kit',))})
 
-    def test_a_missing_kept_current_plugin_is_drift_and_a_missing_plain_disabled_one_is_dormant(self):
+    def test_a_missing_native_record_is_not_missing_aligned_directory_content(self):
         def diff(keep_current):
             with Device() as device:
                 self.switched_off(device, keep_current)
@@ -390,13 +405,13 @@ class DiffTest(unittest.TestCase):
                 device.claude_inventory.pop(0)
                 return device.diff()
         kept, plain = diff(True), diff(False)
-        self.assertEqual(self.plugins(kept), [(K.MISSING, 'claude', 'kit@codex-aligned'), (K.MISSING, 'codex', 'kit@personal')])
+        self.assertEqual(self.plugins(kept), [(K.MISSING, 'codex', 'kit@personal')])
         self.assertEqual({x.kind.verdict for x in kept.differences}, {drift.Verdict.DRIFT})
         self.assertEqual(kept.exit_code, 1)
         self.assertEqual(self.dormant(kept), [])
         self.assertEqual(self.plugins(plain), [])
         self.assertEqual(self.dropped(plain), [('claude', 'codex-aligned', ['kit']), ('codex', 'personal', ['kit'])])
-        self.assertEqual(self.dormant(plain), [('claude', 'kit@codex-aligned'), ('codex', 'kit@personal')])
+        self.assertEqual(self.dormant(plain), [('codex', 'kit@personal')])
 
     def test_an_owned_source_edited_after_its_pin_needs_a_person(self):
         with Device() as device:
