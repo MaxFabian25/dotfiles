@@ -18,7 +18,7 @@ ACCOUNT = drift.Difference(drift.Kind.APPROVAL, None, None, None, IMPECCABLE, ho
 STALE = drift.Difference(drift.Kind.STALE_LOCK, None, None, None, IMPECCABLE,
                          detail='its lock is missing or no longer matches the entry; run lock_setup.py --entry impeccable --write')
 HOW = ('approve them only for a change the user approved, as dotfiles-private\'s '
-       'skills/release-dotfiles/references/finish-stops.md says under "Trusted Codex hooks"')
+       'skills/release-dotfiles/references/pulls.md says under "Trusted Codex hooks"')
 ABSENT = drift.Difference(drift.Kind.HOST_ABSENT, None, None, None, None, host=Host.CODEX)
 EDITED = drift.Difference(drift.Kind.LOCAL_EDIT, FactKey(Host.CLAUDE, Surface.PLUGIN, 'impeccable@personal'), None, None,
                           IMPECCABLE, detail='plugin:impeccable: Installed bytes differ from the accepted image')

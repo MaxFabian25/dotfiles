@@ -46,6 +46,38 @@ class LeaksTest(unittest.TestCase):
         message.write_text('Reach Secret-Host over SSH\n', encoding='utf-8')
         self.assertEqual(leaks(self.public, self.private, message), ['the public commit message'])
 
+    def commit(self, message):
+        subprocess.run(['git', '-C', str(self.public), 'add', '-A'], check=True)
+        subprocess.run(['git', '-C', str(self.public), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                        'commit', '-q', '--allow-empty', '-m', message], check=True)
+        return subprocess.check_output(['git', '-C', str(self.public), 'rev-parse', 'HEAD'], text=True)[:12]
+
+    def test_a_string_that_a_later_commit_removed_is_still_a_hit_because_a_push_sends_the_earlier_commit(self):
+        self.write('notes.md', 'fine\nssh secret-host\n')
+        leaked = self.commit('Add the notes')
+        self.write('notes.md', 'fine\n')
+        self.commit('Take the host out')
+        self.assertEqual(leaks(self.public, self.private), [f'commit {leaked}: notes.md:2'])
+
+    def test_a_listed_string_in_a_commits_own_message_is_a_hit(self):
+        self.write('notes.md', 'fine\n')
+        named = self.commit('Reach Secret-Host over SSH')
+        self.assertEqual(leaks(self.public, self.private), [f'commit {named}: its message'])
+
+    def test_a_commit_that_a_remote_branch_already_holds_is_not_read_again(self):
+        self.write('notes.md', 'ssh secret-host\n')
+        self.commit('Already public')
+        origin = self.public.parent / 'origin.git'
+        subprocess.run(['git', 'init', '-q', '--bare', str(origin)], check=True)
+        subprocess.run(['git', '-C', str(self.public), 'remote', 'add', 'origin', str(origin)], check=True)
+        subprocess.run(['git', '-C', str(self.public), 'push', '-q', 'origin', 'main'], check=True)
+        self.write('notes.md', 'fine\n')
+        self.commit('Take the host out')
+        self.assertEqual(leaks(self.public, self.private), [])
+        self.write('more.md', 'ssh secret-host\n')
+        added = self.commit('Add more')
+        self.assertEqual(leaks(self.public, self.private), ['more.md:1', f'commit {added}: more.md:1'])
+
     def test_a_string_is_read_behind_a_byte_order_mark_before_a_comment_and_with_a_number_sign_inside(self):
         self.write('notes.md', 'one seeded-host\ntwo team#seeded\n')
         self.denylist.write_text('﻿seeded-host  # the laptop\nteam#seeded\n', encoding='utf-8')

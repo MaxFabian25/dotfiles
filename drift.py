@@ -21,7 +21,7 @@ class Verdict(enum.StrEnum):
 
 # Trusting changed hook content is the user's decision (dotfiles-private config/impeccable-hooks/README.md).
 APPROVE = (' · approve them only for a change the user approved, as dotfiles-private\'s '
-           'skills/release-dotfiles/references/finish-stops.md says under "Trusted Codex hooks"')
+           'skills/release-dotfiles/references/pulls.md says under "Trusted Codex hooks"')
 # README: local edits are not permission to overwrite their files.
 KEEP = ' · sync never overwrites an edit, so ask the user whether to keep it or move it aside, then pull again'
 REREAD = ' · fix the read this names, then pull again'

@@ -137,9 +137,10 @@ adding `--refresh-owned` for an owned skill or package whose files changed. `pyt
 --public setup --private ../dotfiles-private/setup` then says whether this device's pull would stop on the
 change, which nothing checks after the merge until a device pulls.
 
-A device fetches both histories and fast-forwards each checkout to its `origin/main`, so it can install a
-public commit before the private commit that goes with it. Dirty checkouts and non-fast-forward changes
-stop the pull. The private `release.toml` named the public commit to install until 15 November 2026, and
+A device fetches the private history, then the public one, and fast-forwards each checkout's `main` to
+`origin/main`. A change's public half is merged first, so a pull never installs a private commit without
+the public commit it needs, though it can install a public commit before the private commit that goes with
+it. Dirty checkouts, a checkout on another branch and non-fast-forward changes stop the pull. The private `release.toml` named the public commit to install until 15 November 2026, and
 nothing reads it now.
 
 A pull trusts what GitHub holds on `main`, a merged pull request included, and checks no signature.

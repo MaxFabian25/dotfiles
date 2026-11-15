@@ -21,6 +21,7 @@ GIT_TIMEOUT = 180
 # A pull that outlasts the wait is named in the stop. A release's own pull passes 0, because finish has waited.
 LOCK_WAIT = 300
 LOCK_POLL = 2
+MAIN = 'refs/remotes/origin/main'
 
 
 def git(root, *args):
@@ -55,17 +56,27 @@ def fetch(root):
 
 def update(public, private):
     """Fast-forward both checkouts to origin/main. A pull trusts what GitHub holds on main, a pull request merged
-    there included, which the user chose on 15 November 2026 over a signature pinned on each device."""
+    there included, which the user chose on 15 November 2026 over a signature pinned on each device.
+
+    The private checkout is fetched first. A change's public half is merged before its private half, so the public
+    main fetched afterwards holds what the private main fetched before it needs. In the other order, a change
+    merged between the two fetches gave a pull the old public half with the new private one.
+
+    Each checkout must be on main, and what is installed is origin/main itself, not the branch's upstream, which
+    can be a branch whose pull request is not merged."""
     roots = [public, *([private] if private else [])]
     heads = {}
     for root in roots:
         if git(root, 'status', '--porcelain', '--untracked-files=normal'):
             raise RuntimeError(f'{root}: local changes; pull left all checkouts untouched')
-        git(root, 'rev-parse', '--abbrev-ref', '@{upstream}')
+        branch = git(root, 'branch', '--show-current')
+        if branch != 'main':
+            raise RuntimeError(f'{root}: is on {branch or "no branch"}, and a pull installs main; run `git switch main` '
+                               'there; pull left all checkouts untouched')
         heads[root] = git(root, 'rev-parse', 'HEAD')
-    for root in roots:
+    for root in reversed(roots):
         fetch(root)
-    selected = {root: git(root, 'rev-parse', '@{upstream}') for root in roots}
+    selected = {root: git(root, 'rev-parse', MAIN) for root in roots}
     for root in roots:
         result = subprocess.run([*GIT, '-C', str(root), 'merge-base', '--is-ancestor', heads[root], selected[root]],
                                 capture_output=True, timeout=30)
