@@ -183,6 +183,79 @@ path = 'skills/reflect/references/synthesizer.md'
 find = '''For each item, describe the pattern, what was hit, and the suggested mechanism.'''
 replace = '''For each item, describe the pattern, what was hit, the text and the check its row would ship together, and why they cannot land in this release.'''
 
+# Four ideas from Matt Pocock's skills that the user chose to fold into pstack on 2026-11-15, after a reading of
+# all of them against the adapted pstack: reflect's environment lens (Matt's retro), hard bugs built to the owned
+# diagnosing-bugs skill's loop, writing-for-agents beside skill-creator, and questions asked in rounds (Matt's
+# grilling). Like the reflect rules above, they are the user's own choices, so they sit here and not in the
+# adaptation.
+[[codex.replace]]
+path = 'skills/reflect/references/tooling-reviewer.md'
+find = '''Read the active transcript at <ABSOLUTE_PATH> (or use the digest below if no path is given).'''
+replace = '''## Lens addition: environment
+
+Flag each place where the repository or setup, not a skill, cost the session time or let a mistake through. Read the repository's check command and CI workflow before you call a check missing. Look for:
+- a fact the agent hunted for that one pointer line in the repository's agent instructions would have given
+- a mistake that an existing check missed, or that a lint, type check, test or CI job would catch, and a repository with no such check at all
+- a judgment call that belongs in the standards file a reviewer reads
+- an always-loaded instruction that changes nothing, repeats another, or should be a check
+- an expensive tool call that a script or flag would cut
+- a log, database or service view the agent needed and lacked
+
+Route each as `environment: <repository-relative path>`, naming the file to change or the check to add.
+
+Read the active transcript at <ABSOLUTE_PATH> (or use the digest below if no path is given).'''
+
+[[codex.replace]]
+path = 'skills/reflect/references/tooling-reviewer.md'
+find = '''Drop any skill that was neither invoked nor a missed-trigger candidate.'''
+replace = '''Drop any skill that was neither invoked nor a missed-trigger candidate. A finding from the environment lens needs no skill use. It routes to a file in the repository the session worked in.'''
+
+[[codex.replace]]
+path = 'skills/reflect/references/tooling-reviewer.md'
+find = '''OR "new skill: <kebab-name>".'''
+replace = '''OR "new skill: <kebab-name>", OR `environment: <repository-relative path>` for a finding from the environment lens.'''
+
+[[codex.replace]]
+path = 'skills/reflect/references/synthesizer.md'
+find = '''If neither, reject as `skill-not-used`.'''
+replace = '''If neither, reject as `skill-not-used`. An `environment: <path>` row passes this check when its path is in a repository the session worked in.'''
+
+[[codex.replace]]
+path = 'skills/reflect/SKILL.md'
+find = '''- `tune description: <skill path>` (the skill exists but didn't trigger when it should have): hand to `skill-creator` and run its description-optimization loop.'''
+replace = '''- `tune description: <skill path>` (the skill exists but didn't trigger when it should have): hand to `skill-creator` and run its description-optimization loop.
+- `environment: <path>`: edit that file, or build the check and its test, in that repository's own clone. Its release follows that repository's own rules.'''
+
+[[codex.replace]]
+path = 'skills/reflect/SKILL.md'
+find = '''and run its draft / test / iterate loop.'''
+replace = '''and run its draft / test / iterate loop. Word the text per the `writing-for-agents` skill.'''
+
+[[codex.replace]]
+path = 'skills/poteto-mode/playbooks/bug-fix.md'
+find = '''Trace every caller and the arguments it passes before you call the flagged code reachable or unreachable.'''
+replace = '''Trace every caller and the arguments it passes before you call the flagged code reachable or unreachable. When the bug resists a first look, comes and goes, or appeared between two known states, build the loop to the **diagnosing-bugs** skill's Phase 1 completion criterion, one command you have already run that goes red on this bug, and minimise the repro per its Phase 2 before step 2.'''
+
+[[codex.replace]]
+path = 'skills/poteto-mode/playbooks/bug-fix.md'
+find = '''When program state is unclear, add instrumentation or logging and read it as the code runs.'''
+replace = '''When program state is unclear, add instrumentation or logging and read it as the code runs. Tag every debug log with one prefix, such as `[DEBUG-a4f2]`, so that one grep removes them all before the fix ships.'''
+
+[[codex.replace]]
+path = 'skills/poteto-mode/playbooks/authoring-a-skill.md'
+find = '''1. Use the **skill-creator** skill (the skill for authoring SKILL.md files).'''
+replace = '''1. Use the **skill-creator** skill (the skill for authoring SKILL.md files), and word the text per the **writing-for-agents** skill.'''
+
+[[codex.replace]]
+path = 'skills/poteto-mode/SKILL.md'
+find = '''Agent-facing prose also follows the **skill-creator** skill (your harness's own skill for authoring SKILL.md files, not bundled with this one).'''
+replace = '''Agent-facing prose also follows the **skill-creator** skill (your harness's own skill for authoring SKILL.md files, not bundled with this one) and the **writing-for-agents** skill.'''
+
+[[codex.replace]]
+path = 'skills/poteto-mode/SKILL.md'
+find = '''Reserve the question for a genuine product or preference call no experiment can settle.'''
+replace = '''Reserve the question for a genuine product or preference call no experiment can settle. When several such calls remain, ask them in rounds. Put every call whose prerequisites are settled in one question-tool call, each with your recommended answer, and hold a call that depends on an answer still open for the next round.'''
+
 [codex.roles]
 from = "plugin"
 directory = "agents/codex"
