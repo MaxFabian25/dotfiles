@@ -20,6 +20,7 @@ import uuid
 from configuration import (BlockedConfiguration, FileConfiguration, JsonConfiguration, NpmrcConfiguration,
                            desired, patch_fields, read_fields, validate_runtime)
 from description import AlignedInstall, LocalSource, RepoSource, SkillRoot, _canonical, plugin_id
+from claude_host import _loaded
 from drift import Difference, EntryRef, Kind
 from host_state import (FactKey, Host, InstallDetail, Released, Surface, Unpinned, bytes_digest, named_for,
                         version_folder)
@@ -230,6 +231,8 @@ class _PreparedArtifact:
     data: bytes | None = None
     pending: dict | None = None
     taken_over: dict | None = None
+    receipt: dict | None = None
+    retained: tuple[tuple[Path, dict], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -237,6 +240,7 @@ class Prepared:
     artifacts: tuple[object, ...]
     built: dict
     claude: dict
+    catalogs: dict[Path, bytes | None]
 
 
 class AcceptedInstallations:
@@ -312,6 +316,12 @@ class AcceptedInstallations:
                     destination = home / 'plugins/cache' / marketplace / name / cache_version
                     current = detail.root if isinstance(detail, InstallDetail) else destination
                     package = self.setup.packages[fact.entry]
+                    install = next(i for i in package.placement(key.host).installs
+                                   if plugin_id(package.name, i, key.host) == key.subject)
+                    directory = isinstance(install, AlignedInstall)
+                    if directory:
+                        destination = self.roots.claude_home / 'marketplaces' / marketplace / 'plugins' / name / version
+                        current = detail.loaded if isinstance(detail, InstallDetail) and detail.loaded else destination
                     plugin_key = FactKey(key.host, Surface.PLUGIN, key.subject)
                     installed = observations[state.host].facts.get(plugin_key)
                     pin = installed and installed.value.pin
@@ -333,8 +343,9 @@ class AcceptedInstallations:
                         fingerprint['repository'] = {'url': repository.url, 'commit': repository.commit,
                                                      'selection': selection}
                     units.append(_Artifact(f'plugin:{key.host}:{key.subject}', key, entry, destination, current,
-                                           (destination,), str(bytes_digest(_encoded(fingerprint))), 'plugin', fact.value,
-                                           native=needs_native, provenance=fingerprint,
+                                           (destination,), str(bytes_digest(_encoded(fingerprint))),
+                                           'directory' if directory else 'plugin', fact.value,
+                                           native=needs_native and not directory, provenance=fingerprint,
                                            loaded=detail.loaded if isinstance(detail, InstallDetail) else None))
                 elif key.surface in (Surface.AGENT, Surface.LOOSE_SKILL):
                     path = self.roots.codex_home / 'agents' / key.subject if key.surface == Surface.AGENT else self.expand(key.subject)
@@ -453,6 +464,18 @@ class AcceptedInstallations:
 
     def _assessment(self, artifact):
         receipt = self._receipt(artifact)
+        if artifact.kind == 'directory':
+            self._directory_evidence(receipt)
+            accepted = receipt and receipt.get('accepted')
+            actual = self._read(artifact)
+            if accepted and not _missing(actual):
+                if not _same(actual, accepted['image']) and self.roots.tree_digest(artifact.current) != artifact.expected.digest:
+                    raise ConcurrentEdit(f'Loaded aligned build differs from its accepted image: {artifact.identity}')
+                if (accepted.get('delivery') == 'directory' and accepted['path'] == str(artifact.destination)
+                        and artifact.current == artifact.destination and accepted['intent'] == artifact.intent
+                        and _same(actual, accepted['image'])):
+                    return None, ''
+            return Kind.CHANGED, 'Verify and accept the catalog-selected aligned build'
         pending = receipt and receipt.get('pending')
         if pending and artifact.kind == 'plugin':
             self._baseline(artifact, receipt.get('accepted'), partial(self._read, artifact), _left_by_swap(pending))
@@ -546,7 +569,10 @@ class AcceptedInstallations:
                 raise ConcurrentEdit(f'{artifact.identity}: {detail}')
             if kind is not None:
                 needed.append(artifact)
-        names = set(packages) | {a.entry.name for a in needed if a.kind in ('plugin', 'role')}
+        catalogs = {self.roots.claude_home / 'marketplaces/codex-aligned/.claude-plugin/marketplace.json':
+                    contents(self.roots.claude_home / 'marketplaces/codex-aligned/.claude-plugin/marketplace.json')
+                    for a in artifacts if a.kind == 'directory'}
+        names = set(packages) | {a.entry.name for a in needed if a.kind in ('plugin', 'directory', 'role')}
         built, claude, roles = {}, {}, {}
         for name in sorted(names):
             package = self.setup.packages[name]
@@ -559,27 +585,28 @@ class AcceptedInstallations:
         prepared = []
         for artifact in needed:
             source, data, pristine = None, artifact.data, None
-            if artifact.kind == 'plugin':
+            if artifact.kind in ('plugin', 'directory'):
                 package = self.setup.packages[artifact.entry.name]
                 release = built[package.name] if artifact.key.host == Host.CODEX else claude[artifact.key.subject]
                 if self.roots.tree_digest(release.root) != self.setup.lock[package.name].trees[artifact.key.host].digest:
                     raise BuildError(f'Prepared plugin differs from its pinned tree: {artifact.identity}')
                 pristine = image(release.root)
+                if artifact.kind == 'directory':
+                    source = release.root
+                    prepared.append(self._prepare_artifact(artifact, self._target(artifact, source, data), source, data, pristine))
+                    continue
                 scratch = self.roots.engine / '.sync/accepted-images'
                 scratch.mkdir(parents=True, exist_ok=True)
                 source = Path(self.staging.enter_context(
                     staging_directory(prefix=package.name + '-', dir=scratch))) / 'tree'
                 copy_tree(release.root, source)
-                install = next(i for i in package.placement(artifact.key.host).installs
-                               if plugin_id(package.name, i, artifact.key.host) == artifact.key.subject)
-                if not isinstance(install, AlignedInstall):
-                    for path, before, after, _, _ in builder.overlay(package, artifact.key.host, artifact.key.subject, source):
-                        if before != after:
-                            if after is None:
-                                path.unlink(missing_ok=True)
-                            else:
-                                path.parent.mkdir(parents=True, exist_ok=True)
-                                path.write_bytes(after.encode('utf-8'))
+                for path, before, after, _, _ in builder.overlay(package, artifact.key.host, artifact.key.subject, source):
+                    if before != after:
+                        if after is None:
+                            path.unlink(missing_ok=True)
+                        else:
+                            path.parent.mkdir(parents=True, exist_ok=True)
+                            path.write_bytes(after.encode('utf-8'))
             elif artifact.kind == 'opencode':
                 scratch = self.roots.engine / '.sync/accepted-images'
                 scratch.mkdir(parents=True, exist_ok=True)
@@ -604,7 +631,7 @@ class AcceptedInstallations:
         validate_runtime(self.configurations, self.roots, proposed=True)
         tokens = tuple(object() for _ in prepared)
         self._prepared.update(zip(tokens, prepared))
-        result = Prepared(tokens, built, claude)
+        result = Prepared(tokens, built, claude, catalogs)
         self.preflight(result)
         return result
 
@@ -700,6 +727,18 @@ class AcceptedInstallations:
         receipt = self._receipt(artifact)
         pending = receipt and receipt.get('pending')
         accepted, read, verified = receipt and receipt.get('accepted'), partial(self._read, artifact), []
+        if artifact.kind == 'directory':
+            retained = self._directory_evidence(receipt)
+            verified = [(artifact.current, target)]
+            if accepted:
+                verified.append((artifact.current, accepted['image']))
+            before = self._baseline(artifact, accepted, read, verified)
+            destination = read(artifact.destination)
+            if not _missing(destination) and not _same(destination, target):
+                raise ConcurrentEdit(f'Immutable aligned build was edited: {artifact.destination}')
+            return _PreparedArtifact(artifact, target, before, artifact.current,
+                                     _bindings((*artifact.aliases, artifact.current)), destination, pristine, source, data,
+                                     receipt=receipt, retained=retained)
         if artifact.kind == 'plugin':
             # The folder the host loads stays as it is, but the host stops loading it, so it has to hold what the
             # receipt, the pinned release, the target or an earlier engine's unfinished replacement put there, or the
@@ -745,8 +784,14 @@ class AcceptedInstallations:
                 raise ConcurrentEdit(f'Changed after preparation: {artifact.identity}')
         if prepared.source is not None and not _same(image(prepared.source), prepared.target):
             raise ConcurrentEdit(f'Prepared source changed: {artifact.identity}')
+        if artifact.kind == 'directory' and (not _same(self._receipt(artifact), prepared.receipt)
+                                            or self._directory_evidence(prepared.receipt) != prepared.retained):
+            raise ConcurrentEdit(f'Aligned receipt evidence changed after preparation: {artifact.identity}')
 
     def preflight(self, prepared):
+        for path, before in prepared.catalogs.items():
+            if contents(path) != before:
+                raise ConcurrentEdit(f'Aligned catalog changed after preparation: {path}')
         for token in prepared.artifacts:
             self._check(self._resolve(token))
 
@@ -769,6 +814,9 @@ class AcceptedInstallations:
 
     def apply(self, token, files, *, native=None):
         prepared = self._resolve(token)
+        if prepared.artifact.kind == 'directory':
+            self._directory(prepared)
+            return
         self._check(prepared)
         artifact = prepared.artifact
         if artifact.kind == 'plugin':
@@ -818,10 +866,57 @@ class AcceptedInstallations:
             raise ConcurrentEdit(f'Effective output failed verification: {artifact.identity}')
         self._accept(artifact, record, accepted, pending)
 
+    def _directory_evidence(self, receipt):
+        if not receipt:
+            return ()
+        accepted, pending = receipt.get('accepted'), receipt.get('pending')
+        known = {}
+        if accepted:
+            known.setdefault(Path(accepted['path']), []).append(accepted['image'])
+        for path, expected in _left_by_swap(pending):
+            if expected is not None:
+                known.setdefault(path, []).append(expected)
+        if pending:
+            for key, expected in (('staged', pending['target']['image']), ('displaced', pending['swap_before'])):
+                known.setdefault(Path(pending[key]), []).append(expected)
+        retained = []
+        for path, expected in known.items():
+            actual = image(path) if accepted and accepted.get('delivery') == 'directory' else _claude_cache_image(path)
+            if not _missing(actual) and not any(_same(actual, value) for value in expected):
+                raise ConcurrentEdit(f'Previously accepted aligned content was edited: {path}')
+            retained.append((path, actual))
+        return tuple(retained)
+
+    def _directory(self, prepared):
+        artifact = prepared.artifact
+        if not _same(self._receipt(artifact), prepared.receipt):
+            raise ConcurrentEdit(f'Aligned receipt changed after preparation: {artifact.identity}')
+        if self._directory_evidence(prepared.receipt) != prepared.retained:
+            raise ConcurrentEdit(f'Previous aligned content changed after preparation: {artifact.identity}')
+        if not _same(prepared.bindings, _bindings(tuple(Path(b['path']) for b in prepared.bindings))):
+            raise ConcurrentEdit(f'Path binding changed after preparation: {artifact.identity}')
+        if artifact.current != artifact.destination and not _same(self._read(artifact), prepared.before):
+            raise ConcurrentEdit(f'Loaded aligned content changed after preparation: {artifact.identity}')
+        directory = self.roots.claude_home / 'marketplaces/codex-aligned'
+        catalog = json.loads((directory / '.claude-plugin/marketplace.json').read_bytes())
+        if _loaded({'codex-aligned': (directory, catalog)}, artifact.key.subject, directory) != artifact.destination:
+            raise ConcurrentEdit(f'Aligned catalog no longer selects the prepared build: {artifact.identity}')
+        if not _same(image(artifact.destination), prepared.target) or not _same(image(prepared.source), prepared.target):
+            raise ConcurrentEdit(f'Published aligned content differs from preparation: {artifact.identity}')
+        record = {'path': str(artifact.destination), 'bindings': _bindings(artifact.aliases), 'intent': artifact.intent,
+                  'image': prepared.target, 'provenance': artifact.provenance, 'delivery': 'directory'}
+        if prepared.receipt:
+            accepted = prepared.receipt.get('accepted') or {}
+            if accepted.get('delivery') != 'directory':
+                record['legacy'] = prepared.receipt
+            elif 'legacy' in accepted:
+                record['legacy'] = accepted['legacy']
+        self._save(artifact, record)
+
     def _plugin(self, prepared, files, native):
         """Give a plugin a folder of its own for the target and point its host there. The folder it loaded stays as it
-        is, so a session that started on it reads it to the end. Claude Code loads the folder its record names, and
-        Codex the highest version folder, which the new folder's name is."""
+        is, so a session that started on it reads it to the end. A copied Claude installation uses its native record,
+        and Codex loads the highest version folder."""
         artifact = prepared.artifact
         loaded = artifact.current
         if artifact.native:

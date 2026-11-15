@@ -231,22 +231,6 @@ class ClaudeState:
             except ValueError:
                 return None
 
-        pinless = set()
-        for plugin in user:
-            value = pin(plugin)
-            if value is None:
-                pinless.add(plugin['id'])
-                continue
-            seen.add(Surface.PLUGIN, plugin['id'], PluginValue(plugin['enabled'], value),
-                     detail=InstallDetail(plugin['version'], Path(plugin['installPath'])))
-        if pinless:
-            seen.unread(records_path, 'no commit is recorded for these installs', {Surface.PLUGIN}, pinless)
-        if listed:
-            ids = {plugin['id'] for plugin in inventory}
-            orphans = sorted(set(settings.get('enabledPlugins', {})) - ids)
-            if orphans:
-                seen.note(NoteKind.RESIDUE, 'enabledPlugins', f'{len(orphans)} entries for plugins that are not installed')
-
         outputs = self.engine_outputs()
         catalogs: dict[str, tuple[Path, dict]] = {}
         for name, entry in settings.get('extraKnownMarketplaces', {}).items():
@@ -273,6 +257,7 @@ class ClaudeState:
                     catalogs[name] = (directory, catalog)
                 if matches and name in outputs:
                     if (catalogued := EngineMarketplace.read(catalog)) is None:
+                        catalogs.pop(name, None)
                         seen.unread(manifest, 'a catalog entry is not a table with a name of its own', {Surface.MARKETPLACE}, {name})
                     else:
                         seen.add(Surface.MARKETPLACE, name, catalogued)
@@ -293,6 +278,44 @@ class ClaudeState:
                 seen.note(NoteKind.UNMODELED, f'extraKnownMarketplaces.{name}', 'directory source')
             else:
                 seen.note(NoteKind.UNMODELED, f'extraKnownMarketplaces.{name}', f'{kind} source')
+
+        aligned = {}
+        if ALIGNED_VIA in catalogs:
+            directory, catalog = catalogs[ALIGNED_VIA]
+            for entry in catalog.get('plugins', []):
+                identity = f'{entry["name"]}@{ALIGNED_VIA}'
+                try:
+                    if not isinstance(entry.get('source'), str):
+                        raise Unread(f'Aligned catalog source is not a relative path: {identity}')
+                    loaded = _loaded(catalogs, identity, directory)
+                    manifest = json.loads(portable.read_utf8(loaded / '.claude-plugin/plugin.json'))
+                    version = manifest['version']
+                    if manifest.get('name') != entry['name'] or not isinstance(version, str) or not version:
+                        raise Unread(f'Aligned plugin manifest does not identify its build: {identity}')
+                    aligned[identity] = {'id': identity, 'version': version, 'installPath': str(loaded),
+                                         'enabled': settings.get('enabledPlugins', {}).get(identity, False)}
+                except (Unread, OSError, ValueError, KeyError, TypeError) as error:
+                    seen.unread(directory, error, {Surface.PLUGIN, Surface.TREE, Surface.SKILL}, {identity})
+            catalog_ids = {f'{entry["name"]}@{ALIGNED_VIA}' for entry in catalog.get('plugins', [])}
+            user = [plugin for plugin in user if plugin['id'] not in catalog_ids] + list(aligned.values())
+            offered.update(catalog_ids)
+
+        pinless = set()
+        for plugin in user:
+            value = pin(plugin)
+            if value is None:
+                pinless.add(plugin['id'])
+                continue
+            root = Path(plugin['installPath'])
+            seen.add(Surface.PLUGIN, plugin['id'], PluginValue(plugin['enabled'], value),
+                     detail=InstallDetail(plugin['version'], root, loaded=root if plugin['id'] in aligned else None))
+        if pinless:
+            seen.unread(records_path, 'no commit is recorded for these installs', {Surface.PLUGIN}, pinless)
+        if listed:
+            ids = {plugin['id'] for plugin in inventory} | aligned.keys()
+            orphans = sorted(set(settings.get('enabledPlugins', {})) - ids)
+            if orphans:
+                seen.note(NoteKind.RESIDUE, 'enabledPlugins', f'{len(orphans)} entries for plugins that are not installed')
 
         enabled = {}
         for plugin in user:
@@ -336,19 +359,7 @@ class ClaudeState:
                 seen.details[follows] = replace(detail, loaded=loaded)
             if marketplace == ALIGNED_VIA and plugin['enabled']:
                 try:
-                    # A session that starts while a sync has the cache moved aside can leave a folder there that
-                    # holds only its lease markers, and no cache.
-                    missing = {entry.name for entry in root.iterdir()} <= {'.in_use'}
-                except FileNotFoundError:
-                    missing = True
-                except OSError:
-                    missing = False
-                if missing:
-                    seen.unread(root, MissingCache(f'cache not on disk: {roots.tokens(root)}'),
-                                {Surface.SKILL}, {plugin['id']}, missing_tree=seen.key(Surface.TREE, plugin['id']))
-                    continue
-                alignment = root / '.claude-plugin/codex-alignment.json'
-                try:
+                    alignment = loaded / '.claude-plugin/codex-alignment.json'
                     excluded = json.loads(portable.read_utf8(alignment)).get('excludedSkillNames', [])
                 except (OSError, ValueError) as error:
                     seen.unread(alignment, error, {Surface.SKILL}, {plugin['id']})
@@ -396,8 +407,7 @@ class ClaudeState:
 
     def _explicit(self, root: Path, wanted: set[str] | None, catalogs: dict[str, tuple[Path, dict]] | None = None,
                   plugin_id: str = '') -> set[str]:
-        """Skills whose SKILL.md frontmatter sets disable-model-invocation, read from the folder Claude Code runs the
-        plugin from once its install cache is known to be there."""
+        """Read invocation flags from the loaded directory or the ordinary installation's cache."""
         try:
             mode = root.stat().st_mode
         except FileNotFoundError as error:

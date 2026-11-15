@@ -609,6 +609,7 @@ class NativeCatalogTest(unittest.TestCase):
         from host_state import DeviceRoots
         from sync_files import Files
         from sync_hosts import Apply
+        from accepted_installations import Prepared
         home = root / 'home'
         operation = Apply.__new__(Apply)
         operation.roots = DeviceRoots(home, home / '.codex', home / '.claude', home / '.agents', root / 'engine')
@@ -623,6 +624,7 @@ class NativeCatalogTest(unittest.TestCase):
             path.write_text(json.dumps({'name': name, **head, 'plugins': [
                 {'name': plugin, 'source': f'./plugins/{plugin}/1', 'version': '1'} for plugin in listed]}))
         operation.commands = []
+        operation.prepared = Prepared((), {}, {}, {paths['codex-aligned']: paths['codex-aligned'].read_bytes()})
         operation.command = lambda *args: operation.commands.append(args)
         return operation, paths
 

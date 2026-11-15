@@ -44,12 +44,27 @@ class SweepTest(unittest.TestCase):
         started = BOOT if now > BOOT else BOOT - 5_000
         return old_builds.sweep(self.home, self.notes, now, started if readable else None)
 
-    def test_a_replaced_build_goes_once_the_machine_has_started_since_a_pull_found_it_replaced(self):
+    def test_a_replaced_catalog_build_goes_after_reboot_but_its_historical_cache_stays(self):
         old = [self.build(CATALOG, '1.0.0+codex-aligned.aaaaaaaaaaaa'), self.build(CACHE, '1.0.0-codex-aligned.aaaaaaaaaaaa')]
         self.assertEqual(self.sweep(now=BOOT - 50), [])
-        self.assertEqual(self.sweep(now=BOOT + 50), old)
-        self.assertEqual([build.exists() for build in old], [False, False])
-        self.assertEqual(json.loads(self.notes.read_text(encoding='utf-8')), {})
+        self.assertEqual(self.sweep(now=BOOT + 50), old[:1])
+        self.assertEqual([build.exists() for build in old], [False, True])
+        self.assertEqual(json.loads(self.notes.read_text(encoding='utf-8')), {str(old[1]): BOOT - 50})
+
+    def test_native_and_engine_named_historical_caches_are_retained_and_tracked(self):
+        caches = [self.build(CACHE, '0.9.0'), self.build(CACHE, '0.9.0-notes.20261114T190000Z.aaaaaaaaaaaa')]
+        self.sweep(now=BOOT - 50)
+        self.assertEqual(self.sweep(now=BOOT + 50), [])
+        self.assertTrue(all(path.exists() for path in caches))
+        self.assertEqual(json.loads(self.notes.read_text(encoding='utf-8')),
+                         {str(path): BOOT - 50 for path in caches})
+
+    def test_catalog_retirement_needs_no_native_install_record(self):
+        old = self.build(CATALOG, '0.9.0')
+        (self.home / 'plugins/installed_plugins.json').unlink()
+        self.sweep(now=BOOT - 50)
+        self.assertEqual(self.sweep(now=BOOT + 50), [old])
+        self.assertTrue((self.home / CATALOG / 'pstack/1.0.0+codex-aligned.bbbbbbbbbbbb').is_dir())
 
     def test_a_build_replaced_since_the_machine_started_stays_however_many_pulls_see_it(self):
         old = self.build(CACHE, '1.0.0-codex-aligned.aaaaaaaaaaaa')

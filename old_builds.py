@@ -1,13 +1,6 @@
-"""Remove the aligned plugin builds that no running Claude Code session can read.
+"""Retire superseded aligned marketplace builds after a reboot proves their sessions ended.
 
-Each release of an aligned plugin gets a version folder of its own, in the catalog under
-`marketplaces/codex-aligned/plugins` and in Claude Code's copy under `plugins/cache/codex-aligned`, and the folder
-it replaces stays, because a session reads the build that was current when it started until it ends. Nothing
-removed those folders: on 15 November 2026 one machine held 41 builds of one plugin in three weeks.
-
-A pull cannot see which sessions run. It can see when this machine started, and every session running now started
-after that. So a pull notes when it first finds a build that is no longer current, which is at or after the moment
-the build was replaced, and a later pull removes the build once the machine has started since that note.
+Historical install caches remain native-owned. Track them without deleting their bytes or scoped records.
 """
 from __future__ import annotations
 
@@ -54,11 +47,15 @@ def current(claude_home: Path) -> set[Path] | None:
     each one Claude Code's install record names at any scope. None when either file cannot be read as expected."""
     try:
         catalog = json.loads((claude_home / CATALOG / '.claude-plugin/marketplace.json').read_bytes())
-        record = json.loads((claude_home / 'plugins/installed_plugins.json').read_bytes())
+        records = claude_home / 'plugins/installed_plugins.json'
+        record = json.loads(records.read_bytes()) if records.exists() else {'plugins': {}}
         kept = set()
         for plugin in catalog['plugins']:
             name, version = plugin['name'], plugin['version']
-            kept.add(claude_home / TREES[0] / name / version)
+            source = Path(plugin['source'])
+            if source.is_absolute() or '..' in source.parts:
+                return None
+            kept.add(claude_home / CATALOG / source)
             kept.add(claude_home / TREES[1] / name / version.replace('+', '-'))
         for entries in record['plugins'].values():
             kept.update(Path(entry['installPath']) for entry in entries)
@@ -84,7 +81,7 @@ def sweep(claude_home: Path, notes: Path, now: float, machine_started: float | N
         at = noted.get(str(build)) if isinstance(noted, dict) else None
         if not isinstance(at, (int, float)) or isinstance(at, bool):
             at = now
-        if machine_started is not None and at < machine_started:
+        if build.is_relative_to(claude_home / TREES[0]) and machine_started is not None and at < machine_started:
             try:
                 shutil.rmtree(build)
             except OSError as error:

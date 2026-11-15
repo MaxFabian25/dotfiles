@@ -45,6 +45,7 @@ class Apply:
         profile_plugins.preflight(self.current.profile_mirrors)
         self._marketplaces()
         self._runtime()
+        self.owner.preflight(self.prepared)
         self._catalogs()
         for artifact in self.prepared.artifacts:
             try:
@@ -186,8 +187,17 @@ class Apply:
             if not entries and managed is None:
                 continue
             directory = directories[name]
-            changed = self.files.json(directory / '.claude-plugin/marketplace.json',
-                                      lambda data, n=name, e=entries, m=managed: merge_catalog(data, n, e, m))
+            path = directory / '.claude-plugin/marketplace.json'
+            if name == 'codex-aligned' and path in self.prepared.catalogs:
+                before = self.prepared.catalogs[path]
+                data = json.loads(before) if before is not None else {}
+                original = json.dumps(data, sort_keys=True)
+                merge_catalog(data, name, entries, managed)
+                after = (before if json.dumps(data, sort_keys=True) == original else
+                         (json.dumps(data, indent=2, ensure_ascii=False) + '\n').encode())
+                changed = self.files.write(path, after, expected=before)
+            else:
+                changed = self.files.json(path, lambda data, n=name, e=entries, m=managed: merge_catalog(data, n, e, m))
             if changed or managed is not None:
                 self.command(Host.CLAUDE, 'plugin', 'marketplace', 'add', str(directory), '--scope', 'user', '--json')
 
