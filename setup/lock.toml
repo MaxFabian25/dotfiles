@@ -21,7 +21,7 @@ placements = { claude = "sha256:3eeebddff685b9ac62063a0dd93f698473c60ba93d8c0051
 intent = "sha256:31768ccdb8852caff58d0db5329109e7ed2d4f292e9a3024df2bad725c82f7f8"
 
 [cursor-team-kit]
-intent = "sha256:c2127aa0fca72498e46e674a7b407d07ef68d182f994796b1f4fc5d1d439f7c3"
+intent = "sha256:8cd56d6db7842f86a4b09f529b1ce0826d86b17eea157135cb19f70b058f799c"
 codex = { version = "1.2.0+upstream.e5136d82418d.codex3.explicit.5d8a4bd8a94bfd1f", tree = "sha256:43ab0a2f31d982c9c8a96571bc0f293d8f6ebbf51323d6c84f22f85c86b34df1" }
 claude = { version = "1.2.0+codex-aligned.e6ab3daf2e21", tree = "sha256:db5152cb76a7ff6ca9f01e359fdea69293b143f364d58ab4cd0b5c0aaffab69d" }
 
@@ -31,12 +31,12 @@ codex = { version = "1.0.0", tree = "sha256:8eff7791a0b3efdec3ba926a64d727ef3ffd
 claude = { version = "1.0.0", tree = "sha256:8eff7791a0b3efdec3ba926a64d727ef3ffde57f43f0a24f522c791f0ad8efd8" }
 
 [emil-motion-skills]
-intent = "sha256:e144dc9d2785d29cc562f2daefc1ea56247e4732940c0fbd312cb276c95018be"
+intent = "sha256:ec5a4f148493474646765001aa63623c11e72382249af3b7da0fd0d395398b80"
 codex = { version = "0.1.0+upstream.5206a950b715.codex1", tree = "sha256:c1435560eca36e89813482447a95be829464011cc21ad1c0601b1944ec49b95f" }
 claude = { version = "0.1.0+codex-aligned.244cc31955af", tree = "sha256:11c2feeb5450097f24d79a232992fc288c64217f0e8767c22c6b179b3b21db79" }
 
 [equity-research]
-intent = "sha256:85ccbfe1f66b4f148f98c9c57b5c33bb184d09d9693d0ecf490142a59bd3015b"
+intent = "sha256:631a5da12b61bdb0d8c17505d7261408b9d35ae3d445e30fc2e78589b463cf07"
 
 [example-skills]
 intent = "sha256:6f472bab5405540be5140cb16d982cc89f3ff3518b4fde3074e3a41ab0c8926a"
@@ -46,20 +46,20 @@ intent = "sha256:73152ea27ebbaa06884f8220cacac31e04c197e78d04082e74670850692e207
 placements = { agents = "sha256:62b48657983d3493356ecbee10abf9271cfc009e24b09150555bcee20b7984ff", claude = "sha256:62b48657983d3493356ecbee10abf9271cfc009e24b09150555bcee20b7984ff" }
 
 [financial-analysis]
-intent = "sha256:c7c9fa4611a3202288e998f3ba6f129c1e69de7be44ce6b36df98599110bd7ea"
+intent = "sha256:1bfca8d696fcf219546f3bdda4239b23b68b1b88147a3bf57e3821a57947d67c"
 
 [imagegen]
 intent = "sha256:ed9b4e1ffc6e9c36aa9009416a911d273642e54ad35496eb2d504618bf05aa49"
 placements = { claude = "sha256:22be6347ed411af38c82124e9147d3fa2f4ebe692f4f41fec34eb85dd04f7a3f" }
 
 [impeccable]
-intent = "sha256:393f7c5e6493c8e589468550d8e5e8c9fa0c4359ac6d750c4f22ad5011dcc1de"
+intent = "sha256:fee120b465ef2f6db1dd9ea7884b2fed7550555d8a197d1f64123da4c2d59700"
 codex = { version = "4.9.1", tree = "sha256:5e4e2e673036a38b36d848a3684b5660ffd0980fa6ccfcf6b8561a9b2ea79ed0" }
 claude = { version = "4.9.1", tree = "sha256:5e4e2e673036a38b36d848a3684b5660ffd0980fa6ccfcf6b8561a9b2ea79ed0" }
 hooks = 3
 
 [improve]
-intent = "sha256:ad44d6dcd85e8b9c17c26be5f3ed4ebd71c7a76edf8da3fce665cc6e30b704cb"
+intent = "sha256:2e8bff9133886d1c027e2529698b62ef24130c6f9eaba7c5bc0cd7ceace86d99"
 
 [improve-claude-md]
 intent = "sha256:bf8a2c50006a8b28c171ed21c0cfc36d2526bb84e03f22248392fb2f32e803f8"
@@ -67,13 +67,13 @@ codex = { version = "1.0.0", tree = "sha256:a5fed7c30445e6de4576f1e8815418880bad
 claude = { version = "1.0.0", tree = "sha256:a5fed7c30445e6de4576f1e8815418880bad4cbf72f5fb3cea4a95718d43653a" }
 
 [investment-banking]
-intent = "sha256:f96e3fcb12086e815b17687cd745722cf9beefa5950c1cec3bfe45769a302ffa"
+intent = "sha256:8715a3a0dfcf58db315c7ac92f2d27bbe786cd571f8ca975abb80c14cb697339"
 
 [lseg]
-intent = "sha256:ee4aaa9f84683e296b8a98f79ca5ad19a7ba260a0024caeb5a9b889a7c86c19b"
+intent = "sha256:02d68f5d51e66b709db8cbf4a4cd9fdc24982b25d781607bcaa9c9721925fe16"
 
 [mattpocock-skills]
-intent = "sha256:94396f5b9a8fa0e0b3ae10fccae3ad43acb428c952b897400981d434261b12c0"
+intent = "sha256:51d8182926e6466537a777938ae3401166f19ca44966e5800de8aa5a7d2d6d8f"
 codex = { version = "1.3.2+upstream.4ae2317ddb22.codex5.explicit.4e227093fd540c74", tree = "sha256:eb239ab4bf30100d44bce934c21a0af1640cabf8724a1c202f43be86bbab1bc3" }
 claude = { version = "1.3.2+codex-aligned.3b3d676fadd6", tree = "sha256:53ea9fc6fe3a38adf50bdbfffaaf8a602214e6b5d378d7c1cd8e3aba501c3e4d" }
 
@@ -86,7 +86,7 @@ claude = { version = "1.0.0", tree = "sha256:ec9b227e94e74f23d0dd710e92817b94bde
 intent = "sha256:245b3884eefc0e5aabe7a4cf49182d1ed1bd28ad571fe6db80b44552d7f19691"
 
 [nextjs]
-intent = "sha256:621d7f8619666f01379d7f3269140ac5ff2df30e61ef8e9a59b116cd37846e3f"
+intent = "sha256:951e2f74e276f3f56a389890fee16e0422f645886a7d9810b61b20b4a712a160"
 codex = { version = "0.1.0+upstream.ced39776fdf8.codex1", tree = "sha256:dd58dba4fb75b6bf0844de8a01fa643f8039f0e5dda0825a83f5e35d1986a371" }
 claude = { version = "0.1.0+codex-aligned.f6c9d03c5fcf", tree = "sha256:7f6768983aa85ee443f728165e7065076ccb34b10e442535e68f7380419730fc" }
 
@@ -99,15 +99,15 @@ intent = "sha256:a76daeea53c80acdc78e54e9f9a17d76f8a99c8971b7ba4fbbe81c150ec1d75
 placements = { agents = "sha256:eeeff1bc17719f7c56dfc00ec8dd4a39d4c1197d177b13e8efb2dc746fa68352", claude = "sha256:eeeff1bc17719f7c56dfc00ec8dd4a39d4c1197d177b13e8efb2dc746fa68352" }
 
 [private-equity]
-intent = "sha256:15c4ab6eb8970ddfb7089ef6a94b6bfbf14f09a36a992fa27fa28a546f918838"
+intent = "sha256:0ed2c0e168ba151097399cfcf6e5e064dd1089b87cda571324a89ceb9f30f5d8"
 
 [prose]
-intent = "sha256:d5e72a6cad124389d2b1b2f5e4facd6d383094a357cf3efc7ab593ce79b5b135"
+intent = "sha256:997d2969e75d3bb9e535ed52c3a8703275d7c020c45ce195ac83dda37921b610"
 codex = { version = "0.3.20+dotfiles.20261115", tree = "sha256:4eb0acbe07e793afbaed961f208d5f4a8c5b1bbdbb5a144c4985c5439cd0e473" }
 claude = { version = "0.3.20+codex-aligned.c7159a21f365", tree = "sha256:a63768af0d505c9650248e33d9fb466fd9ae1fd0d0ec575d16688bee94470d01" }
 
 [pstack]
-intent = "sha256:3af73608fd79d60baaaed6b4912caebb06cfed19e121976e4f0212cc2fc1c580"
+intent = "sha256:a3310642349d339e6b3110ec42d2460bfd016a7b0b2c41708eea5cf39510850a"
 codex = { version = "0.15.42+upstream.bf0c7cd80abd.codex3.explicit.76305273a208bc4d", tree = "sha256:2f439a29bce71c7a1ba7cbf0d51ab745e495c8708681108cadcb5c8954c01afa" }
 claude = { version = "0.15.42+codex-aligned.c4bcd958ec08", tree = "sha256:18cd5c3b2e80e67d7edfa1c5d5e64f30deab646490dcc3d0dd72d0c37b56225b" }
 roles = { "comment-sicko.toml" = "sha256:48e7d91b0420f7b04a8ea378a4bd01cc2233d6ca5b6569e444fed27490fabf0a", "poteto-agent.toml" = "sha256:9febd16808fa1a26ba8b5a6ada8510739cc86f2d8640740a85bb4c0471e2b18c" }
@@ -118,7 +118,7 @@ codex = { version = "1.0.1", tree = "sha256:c309b44dd0292b87989c1c9c3691e3c41115
 claude = { version = "1.0.1", tree = "sha256:c309b44dd0292b87989c1c9c3691e3c411151bdeead0527240ada2b4fa19b69f" }
 
 [sp-global]
-intent = "sha256:a93cf37edc4a445f22eb01c98edc53f29bf88b89e85bbe4055a297f2e56bf901"
+intent = "sha256:a790837f0cdd9bd11db9b1424f983eacd31ff011aef97854dff0b40310f708ca"
 
 [visual-pr]
 intent = "sha256:b881b83b72da6087feb238c87763847da2f21acc8e81886e0300e38586ea30e7"
