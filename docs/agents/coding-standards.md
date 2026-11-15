@@ -59,7 +59,10 @@ settle.
   adds checks. A test shows it: it runs the old and the new filter side by side on random input and on each
   known secret form, and asserts that the new one withholds everything the old one did. In November 2026 a
   change to `ci_log.py` approved as about two lines removed control characters before the credential check
-  read the line, let credentials through in two review rounds, and ended in a redesign.
+  read the line, let credentials through in two review rounds, and ended in a redesign. The rule covers a
+  hook that denies tool calls naming credential files too, whose test keeps the copy before the change as a
+  fixture: the user chose this on 15 November 2026, after a side-by-side probe of such a hook found a search
+  path that let keys through.
 - **A probe isolates its subject.** A probe outside the test suite that `tests/run.py` runs starts its subject with `HOME` and the working folder at throwaway folders and an environment built from an
   allowlist, with no thread ID, pool key or real lock in it and no credential tool such as `agent-op` on `PATH`.
   A binary that can reach the network runs in a loopback-only namespace from the probe's first run, such as the
