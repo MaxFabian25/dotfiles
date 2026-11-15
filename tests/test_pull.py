@@ -93,7 +93,7 @@ class PairedPullTest(unittest.TestCase):
 
         with patch('pull.git', every_first_fetch_fails):
             update(self.public, self.private)
-        self.assertEqual(fetches, [self.public, self.public, self.private, self.private])
+        self.assertEqual(fetches, [self.private, self.private, self.public, self.public])
         self.assertEqual(git(self.public, 'rev-parse', 'HEAD'), candidate)
         self.assertEqual(git(self.private, 'rev-parse', 'HEAD'), private_commit)
 
@@ -106,10 +106,64 @@ class PairedPullTest(unittest.TestCase):
         self.assertEqual(git(self.public, 'rev-parse', 'HEAD'), self.initial)
         self.assertEqual((self.private / 'local-work').read_text(), 'keep me')
 
-    def test_a_pull_refuses_uncommitted_code_even_without_update(self):
-        (self.public / 'content').write_text('unreviewed local change')
-        with self.assertRaisesRegex(RuntimeError, 'clean checkouts'):
-            clean(self.public, self.private)
+    def test_a_change_merged_between_the_two_fetches_never_gives_the_old_public_half_with_the_new_private_one(self):
+        merged = {}
+        fetch = pull.fetch
+
+        def a_change_lands_after_the_first_fetch(root):
+            fetch(root)
+            if not merged:  # the public half first, as the release-dotfiles skill has it merged
+                merged['public'] = self.commit(self.public_origin, 'content', 'what the private half needs')
+                merged['private'] = self.commit(self.private_origin, 'note', 'needs the new content')
+
+        with patch('pull.fetch', a_change_lands_after_the_first_fetch):
+            update(self.public, self.private)
+        heads = git(self.public, 'rev-parse', 'HEAD'), git(self.private, 'rev-parse', 'HEAD')
+        self.assertNotEqual(heads, (self.initial, merged['private']))
+        self.assertEqual(heads[0], merged['public'])
+
+    def test_a_pull_installs_origin_main_whatever_branch_main_tracks(self):
+        git(self.public_origin, 'switch', '-q', '-c', 'unmerged')
+        self.commit(self.public_origin, 'content', 'a pull request nobody merged')
+        git(self.public_origin, 'switch', '-q', 'main')
+        git(self.public, 'fetch', '-q', 'origin')
+        git(self.public, 'branch', '-q', '--set-upstream-to=origin/unmerged', 'main')
+        update(self.public, self.private)
+        self.assertEqual(git(self.public, 'rev-parse', 'HEAD'), self.initial)
+        merged = self.commit(self.public_origin, 'content', 'second')
+        update(self.public, self.private)
+        self.assertEqual(git(self.public, 'rev-parse', 'HEAD'), merged)
+
+    def test_a_checkout_on_another_branch_or_on_none_stops_the_pull_before_any_fetch(self):
+        candidate = self.commit(self.public_origin, 'content', 'second')
+        private_head = git(self.private, 'rev-parse', 'HEAD')
+        for leave, where in ((('switch', '-q', '-c', 'topic'), 'is on topic'),
+                             (('switch', '-q', '--detach'), 'is on no branch')):
+            git(self.private, *leave)
+            with self.subTest(where=where), self.assertRaisesRegex(RuntimeError, f'{where}, and a pull installs main'):
+                update(self.public, self.private)
+            self.assert_untouched(private_head)
+            git(self.private, 'switch', '-q', 'main')
+        update(self.public, self.private)
+        self.assertEqual(git(self.public, 'rev-parse', 'HEAD'), candidate)
+
+    def test_a_pull_without_update_refuses_uncommitted_code_before_it_runs_the_sync(self):
+        self.commit(self.public_origin, 'sync.py', recording_sync(0))
+        args = SimpleNamespace(root=self.public, private=self.private, update=True, apply=True, notes=False, wait=0)
+        receipt = self.root / 'home/.local/state/dotfiles/last-applied.json'
+        with patch('pull.Path.home', return_value=self.root / 'home'), patch('pull.install_tools'):
+            self.assertEqual(run(args), 0)
+            before = receipt.read_bytes()
+            args.update = False
+            for dirty in (self.public / 'sync.py', self.private / 'note'):
+                dirty.write_text('raise SystemExit("unreviewed local code ran")\n', encoding='utf-8')
+                with self.subTest(dirty=dirty.name), patch('pull.run_sync') as sync, \
+                        self.assertRaisesRegex(RuntimeError, 'clean checkouts'):
+                    run(args)
+                sync.assert_not_called()
+                self.assertEqual(receipt.read_bytes(), before)
+                git(dirty.parent, 'clean', '-qfd')
+                git(dirty.parent, 'checkout', '-q', '--', '.')
 
     def test_repeated_success_does_not_rewrite_release_receipt(self):
         candidate = self.commit(self.public_origin, 'sync.py', recording_sync(0))
