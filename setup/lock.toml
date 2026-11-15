@@ -1,12 +1,12 @@
 # Generated from the setup description and verified package builds. Do not edit.
 
 [agent-tool-study]
-intent = "sha256:1e3abe3982ab2ad8e9f62d5b6970e1bb3c6d52c595892e0b722e7e5cee06e631"
-placements = { agents = "sha256:8d08adf8d555ccbe24491bb69dc341d0f089c6d808218e0a3e1dd82665172509", claude = "sha256:8d08adf8d555ccbe24491bb69dc341d0f089c6d808218e0a3e1dd82665172509" }
+intent = "sha256:78a1e11c0bc790fbedb011b1f670f6c969a591f44d9a42a72156e0135d8b2984"
+placements = { agents = "sha256:e2c03d3d8a36e6b43d42a953215bfa3cea5fbcb7f6e0cf72cefe426151c195bb", claude = "sha256:e2c03d3d8a36e6b43d42a953215bfa3cea5fbcb7f6e0cf72cefe426151c195bb" }
 
 [browser-and-computer-use]
-intent = "sha256:6bb7ec730dce6a6cce0a3b96e1f0ad8a024369619cff205a316df0a76317c29e"
-placements = { agents = "sha256:3af2a3e46f21b37eeab0f9bee8e1cf42853a8f02cc70ecaf18dbb72702361cd9", claude = "sha256:3af2a3e46f21b37eeab0f9bee8e1cf42853a8f02cc70ecaf18dbb72702361cd9" }
+intent = "sha256:b9f555f8056dad124c554a019d00da81b107faf101ae905ea63d4cd24518677d"
+placements = { agents = "sha256:9e0d7b6857c992dd09a91cc0899e9cd72ae5a097d6471e20d3bd9a0416d497d3", claude = "sha256:9e0d7b6857c992dd09a91cc0899e9cd72ae5a097d6471e20d3bd9a0416d497d3" }
 
 [build-iterated-agentic-loop]
 intent = "sha256:5a5c900801815c2408c103fd71ee14ae6a2231bf9d6cbe2189139c9835872fa7"
@@ -42,8 +42,8 @@ intent = "sha256:631a5da12b61bdb0d8c17505d7261408b9d35ae3d445e30fc2e78589b463cf0
 intent = "sha256:6f472bab5405540be5140cb16d982cc89f3ff3518b4fde3074e3a41ab0c8926a"
 
 [excel-com-wsl]
-intent = "sha256:73152ea27ebbaa06884f8220cacac31e04c197e78d04082e74670850692e2071"
-placements = { agents = "sha256:62b48657983d3493356ecbee10abf9271cfc009e24b09150555bcee20b7984ff", claude = "sha256:62b48657983d3493356ecbee10abf9271cfc009e24b09150555bcee20b7984ff" }
+intent = "sha256:56a4cda85fdf787c9b538c82a0c8f8e2bb832b83f4a4186fdf80f616601e6039"
+placements = { agents = "sha256:24eeee155ba90a9c1ea6e9b494667f17345228bda6591c877109479761b337ec", claude = "sha256:24eeee155ba90a9c1ea6e9b494667f17345228bda6591c877109479761b337ec" }
 
 [financial-analysis]
 intent = "sha256:1bfca8d696fcf219546f3bdda4239b23b68b1b88147a3bf57e3821a57947d67c"
@@ -107,9 +107,9 @@ codex = { version = "0.3.20+dotfiles.20261115", tree = "sha256:4eb0acbe07e793afb
 claude = { version = "0.3.20+codex-aligned.c7159a21f365", tree = "sha256:a63768af0d505c9650248e33d9fb466fd9ae1fd0d0ec575d16688bee94470d01" }
 
 [pstack]
-intent = "sha256:8132fbcaa7fd013adf872507d850c53dc2a86b76b9e6dc7d7ae7d6beed936490"
+intent = "sha256:c23301e1fac37d66bfb36307a788d5c1ee6df4f9c07ce30b2d8e1660754c1436"
 codex = { version = "0.15.42+upstream.bf0c7cd80abd.codex3.explicit.76305273a208bc4d", tree = "sha256:2f439a29bce71c7a1ba7cbf0d51ab745e495c8708681108cadcb5c8954c01afa" }
-claude = { version = "0.15.42+codex-aligned.b2e3798a4ce7", tree = "sha256:5d3531f934d90da7cc9185717d519a5f9afe9dc2697da84e05ae3e633e3e80c5" }
+claude = { version = "0.15.42+codex-aligned.61ffad1d2d98", tree = "sha256:7df5e3c1819f6ce1bd31ba8fde6560a3a03f87035c42692416d2ddfa2935a6d9" }
 roles = { "comment-sicko.toml" = "sha256:48e7d91b0420f7b04a8ea378a4bd01cc2233d6ca5b6569e444fed27490fabf0a", "poteto-agent.toml" = "sha256:9febd16808fa1a26ba8b5a6ada8510739cc86f2d8640740a85bb4c0471e2b18c" }
 
 [show-me]
