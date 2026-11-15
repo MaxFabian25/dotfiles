@@ -2037,6 +2037,7 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual(self.snapshot(), before)
 
     def legacy_aligned_receipt(self):
+        from accepted_installations import _bindings
         from sync_sources import Built
 
         loaded = self._installed_claude(aligned=True)
@@ -2047,7 +2048,7 @@ class InstallationTest(unittest.TestCase):
         accepted = value['accepted']
         accepted.pop('delivery')
         accepted['path'] = str(cache)
-        accepted['bindings'] = [{'path': str(cache), 'physical': str(cache.resolve()), 'links': []}]
+        accepted['bindings'] = _bindings((cache,))
         receipt.write_text(json.dumps(value))
         return loaded, cache, value
 
@@ -2083,7 +2084,7 @@ class InstallationTest(unittest.TestCase):
                 marker.write_bytes(original)
 
     def test_aligned_migration_accepts_a_recorded_pending_build_before_a_newer_release(self):
-        from accepted_installations import image
+        from accepted_installations import _bindings, image
 
         loaded, cache, previous = self.legacy_aligned_receipt()
         release2 = loaded.with_name('2.0.0')
@@ -2094,7 +2095,7 @@ class InstallationTest(unittest.TestCase):
         shutil.copytree(release2, cache2)
         work = cache2.parent / ('.sync-2.0.0-' + 'cd' * 16)
         target = {**previous['accepted'], 'path': str(cache2), 'image': image(cache2),
-                  'bindings': [{'path': str(cache2), 'physical': str(cache2.resolve()), 'links': []}],
+                  'bindings': _bindings((cache2,)),
                   'intent': 'interrupted-version-two'}
         previous['pending'] = {'before': image(cache), 'before_path': str(cache),
                                'bindings': target['bindings'], 'destination_before': image(cache2),

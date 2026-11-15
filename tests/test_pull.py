@@ -167,15 +167,17 @@ class PairedPullTest(unittest.TestCase):
 
     def test_only_an_applied_pull_that_ended_well_removes_the_plugin_builds_no_session_can_read(self):
         home = self.root / 'home'
-        old = home / '.claude/plugins/cache/codex-aligned/pstack/1.0.0-codex-aligned.aaaaaaaaaaaa'
+        old = home / '.claude/marketplaces/codex-aligned/plugins/pstack/1.0.0+codex-aligned.aaaaaaaaaaaa'
         old.mkdir(parents=True)
+        cache = home / '.claude/plugins/cache/codex-aligned/pstack/1.0.0-codex-aligned.aaaaaaaaaaaa'
+        cache.mkdir(parents=True)
         for path, data in (('marketplaces/codex-aligned/.claude-plugin/marketplace.json', {'plugins': []}),
                            ('plugins/installed_plugins.json', {'plugins': {}})):
             (home / '.claude' / path).parent.mkdir(parents=True, exist_ok=True)
             (home / '.claude' / path).write_text(json.dumps(data), encoding='utf-8')
         notes = home / '.local/state/dotfiles/builds-out-of-use.json'
         notes.parent.mkdir(parents=True)
-        notes.write_text(json.dumps({str(old): 1.0}), encoding='utf-8')
+        notes.write_text(json.dumps({str(old): 1.0, str(cache): 1.0}), encoding='utf-8')
         args = SimpleNamespace(root=self.public, private=self.private, update=True, apply=True, notes=False, wait=0)
         environment = {name: value for name, value in os.environ.items() if name != 'CLAUDE_CONFIG_DIR'}
         for code, stays in ((1, True), (0, False)):
@@ -185,6 +187,7 @@ class PairedPullTest(unittest.TestCase):
                     redirect_stderr(io.StringIO()) as errors:
                 run(args)
             self.assertEqual(old.exists(), stays, f'after a sync that ended {code}')
+            self.assertTrue(cache.exists())
         self.assertIn(f'removed the old plugin build {old}', errors.getvalue())
 
     def test_repeated_success_does_not_rewrite_release_receipt(self):
