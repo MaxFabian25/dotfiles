@@ -384,7 +384,9 @@ class PinnedBuildTest(unittest.TestCase):
     def builder(self):
         from unittest.mock import Mock
         builder = Mock()
-        builder.codex.return_value = SimpleNamespace(version='1.0', digest='sha256:' + '1' * 64)
+        builder.directory = Path('/absent-output')
+        builder.codex.return_value = SimpleNamespace(version='1.0', digest='sha256:' + '1' * 64,
+                                                     root=builder.directory / 'kept/1.0', pristine=None)
         builder.claude.return_value = {}
         builder.roles.return_value = {}
         return builder
@@ -411,6 +413,22 @@ class PinnedBuildTest(unittest.TestCase):
         self.assertEqual(self.built(builder), ['kept'])
         self.assertEqual(updated.lock['kept'].trees, {Host.CODEX: LockedTree('1.0', 'sha256:' + '1' * 64),
                                                       Host.CLAUDE: LockedTree('1.0.claude1', 'sha256:' + '2' * 64)})
+
+    def test_locking_refuses_a_build_that_differs_from_the_installed_release_of_the_same_name(self):
+        from lock_setup import check_release_folder
+        from sync_sources import BuildError
+        with tempfile.TemporaryDirectory() as temp:
+            output, installed = Path(temp) / 'out', Path(temp) / 'engine'
+            for root, text in ((output, 'seven skills'), (installed, 'fourteen skills')):
+                (root / 'kit/1.0.codex1').mkdir(parents=True)
+                (root / 'kit/1.0.codex1/upstream.json').write_text(text)
+            built = SimpleNamespace(root=output / 'kit/1.0.codex1.explicit.abc', pristine=output / 'kit/1.0.codex1')
+            with self.assertRaisesRegex(BuildError, 'kit: .*raise `packaging`'):
+                check_release_folder('kit', built, output, installed)
+            (installed / 'kit/1.0.codex1/upstream.json').write_text('seven skills')
+            check_release_folder('kit', built, output, installed)
+            unreleased = SimpleNamespace(root=output / 'kit/1.0.codex2', pristine=None)
+            check_release_folder('kit', unreleased, output, installed)
 
     def test_the_lock_command_lists_the_files_it_would_write_and_writes_none_without_the_flag(self):
         import contextlib
