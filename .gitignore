@@ -12,6 +12,8 @@
 !/.gitattributes
 !/.github/
 !/.github/**
+!/.githooks/
+!/.githooks/**
 !/setup/
 !/setup/**
 !/config/
