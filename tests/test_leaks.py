@@ -103,6 +103,40 @@ class LeaksTest(unittest.TestCase):
                                '--private', str(self.private)], capture_output=True, text=True)
         self.assertEqual((done.returncode, done.stdout), (0, ''))
 
+    def test_malformed_pre_push_input_stops_without_printing_its_contents(self):
+        for line in ('secret-host\n', f'refs/heads/main {"a" * 40} refs/heads/main secret-host\n'):
+            with self.subTest(line=line):
+                done = subprocess.run([sys.executable, '-B', str(ROOT / 'leaks.py'), '--public', str(self.public),
+                                       '--private', str(self.private), '--pre-push', 'unused'], input=line,
+                                      capture_output=True, text=True)
+                self.assertEqual(done.returncode, 3)
+                self.assertIn('Malformed pre-push input at line 1', done.stderr)
+                self.assertNotIn('secret-host', done.stdout + done.stderr)
+
+    def test_an_unknown_destination_object_does_not_exempt_the_pushed_commit(self):
+        self.write('notes.md', 'secret-host\n')
+        leaked = self.commit('Add notes')
+        head = subprocess.check_output(['git', '-C', str(self.public), 'rev-parse', 'HEAD'], text=True).strip()
+        origin = self.public.parent / 'origin.git'
+        subprocess.run(['git', 'init', '-q', '--bare', str(origin)], check=True)
+        done = subprocess.run([sys.executable, '-B', str(ROOT / 'leaks.py'), '--public', str(self.public),
+                               '--private', str(self.private), '--pre-push', str(origin)],
+                              input=f'refs/heads/main {head} refs/heads/main {"a" * 40}\n',
+                              capture_output=True, text=True)
+        self.assertEqual((done.returncode, done.stdout), (1, f'commit {leaked}: notes.md:1\n'))
+        self.assertNotIn('secret-host', done.stdout + done.stderr)
+
+    def test_an_unreadable_push_destination_stops_the_check(self):
+        self.write('notes.md', 'Clean notes\n')
+        self.commit('Clean notes')
+        head = subprocess.check_output(['git', '-C', str(self.public), 'rev-parse', 'HEAD'], text=True).strip()
+        done = subprocess.run([sys.executable, '-B', str(ROOT / 'leaks.py'), '--public', str(self.public),
+                               '--private', str(self.private), '--pre-push', str(self.public.parent / 'absent.git')],
+                              input=f'refs/heads/main {head} refs/heads/main {"0" * 40}\n',
+                              capture_output=True, text=True)
+        self.assertEqual(done.returncode, 3)
+        self.assertIn('Cannot read the push destination refs', done.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()

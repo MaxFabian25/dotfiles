@@ -130,8 +130,10 @@ packages build.
 
 A change lands as a GitHub pull request, in this repository, in the private one, or in both. Work in a
 worktree of `origin/main`, never in the checkout a device pulls into, because a pull needs that one clean.
-Before you push a branch of this repository, run `python -B leaks.py --private ../dotfiles-private`: a
-pushed branch is public at once, and the list of strings to keep out is private. Open the pull request with
+Install the [native pre-push check](.githooks/README.md) in the canonical checkout to check outgoing refs
+against the private denylist. Before opening or editing a pull request, separately run
+`python -B leaks.py --private ../dotfiles-private --message PR_TEXT_FILE` over its title and description.
+Keep GitHub push protection enabled. Open the pull request with
 `gh pr create`, and merge it with `gh pr merge --squash` once its `tests` check has passed, the public half
 first when a change has both. The check runs the suite on Linux, macOS and Windows here, and on a
 self-hosted runner in the private repository.

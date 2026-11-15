@@ -1,0 +1,13 @@
+#!/bin/sh
+public=$(git rev-parse --show-toplevel) || exit 3
+common=$(git rev-parse --path-format=absolute --git-common-dir) || exit 3
+test -n "$public" && test -n "$common" || exit 3
+canonical=$(cd "$common/.." && pwd -P) || exit 3
+
+for python in "$canonical/.venv/bin/python" "$canonical/.venv/Scripts/python.exe"; do
+    if test -x "$python"; then
+        exec "$python" -B "$canonical/leaks.py" --public "$public" --private "$canonical/../dotfiles-private" --pre-push "$2"
+    fi
+done
+printf '%s\n' 'Leak check stopped: run uv sync --locked in the canonical dotfiles checkout to restore its Python environment.' >&2
+exit 3
