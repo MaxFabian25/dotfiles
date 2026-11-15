@@ -313,9 +313,7 @@ class PortableTest(unittest.TestCase):
                 holder = portable.lock_holder(lock)
                 self.assertEqual(holder['pid'], os.getpid())
                 self.assertIn(Path(sys.argv[0]).name, holder['command'])
-                # release.py status prints since's hour and minute as this machine's clock time, and the private CI
-                # census's finish_sampler.py reads when the hold began from it.
-                since = datetime.fromisoformat(holder['since'])
+                since =datetime.fromisoformat(holder['since'])
                 self.assertEqual(since.utcoffset(), datetime.now().astimezone().utcoffset(), holder['since'])
                 self.assertLessEqual(before, since, holder['since'])
                 self.assertLessEqual(since, datetime.now(timezone.utc), holder['since'])
