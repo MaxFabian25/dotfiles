@@ -191,6 +191,11 @@ def run(args):
                 data = {'at': datetime.now(timezone.utc).isoformat(), **commits}
                 Files(state / 'receipt-backups').write(receipt, (json.dumps(data, indent=2) + '\n').encode(), expected=before)
             install_tools(Path.home(), state)
+            import old_builds
+            from portable import claude_home
+            for build in old_builds.sweep(claude_home(Path.home()), state / 'builds-out-of-use.json', time.time(),
+                                          old_builds.started()):
+                print(f'Dotfiles pull: removed the old plugin build {build}', file=sys.stderr)
         # 1 from a pair that is applied and recorded says that a home file still differs from it.
         return status or int(left)
 

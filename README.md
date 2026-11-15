@@ -57,7 +57,12 @@ other entry. An isolated probe on 14 November 2026 showed `claude plugin update`
 not the upstream one back on the upstream folder. A session that started on the old folder reads it to the
 end, except on Codex when the upstream version changes: the native `codex plugin add` that the sync runs first
 removes the plugin's other version folders, as Codex 0.169.0-alpha.6 did in an isolated probe on 14 November
-2026. A rerun that finds the app loading a folder with the reviewed bytes writes no folder. A loaded folder whose
+2026. The folders that a `codex-aligned` plugin's earlier releases leave in
+`~/.claude/marketplaces/codex-aligned/plugins` and `~/.claude/plugins/cache/codex-aligned` go once no session can
+read them (`old_builds.py`). An applied pull that ended well notes each folder that neither the catalog nor any
+entry of the install record names, in `~/.local/state/dotfiles/builds-out-of-use.json`, and a later pull removes
+the ones noted before the machine last started, since every running session started after that. The start is read
+from `/proc/stat` on Linux and from the tick count on Windows; on macOS nothing is removed. A rerun that finds the app loading a folder with the reviewed bytes writes no folder. A loaded folder whose
 name carries the digest of the bytes it holds counts as the sync's own unedited output, so a sync that stopped
 before saving its receipt leaves a folder the next sync builds on, whatever release that sync brings. An edit
 changes the digest, and the sync then stops rather than build on it. The sync stages the new folder outside the plugin's folder and
