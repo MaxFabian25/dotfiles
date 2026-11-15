@@ -10,15 +10,9 @@ from skill_help_copies import COPIED_WORDS, copies, describe
 
 REPO = Path(__file__).resolve().parents[1]
 ROOTS = ('skills', 'packages')
-# The copies found on 2026-11-14 that releases open that day hold the files of, so this release cannot fix them.
-# Delete an entry once its copy is gone, and add none: fix a new copy instead.
+# Copies found on 2026-11-14 that wait for issue 238. Delete an entry once its copy is gone, and add none: fix a new
+# copy instead.
 ALLOWED = {
-    ('skills/browser-and-computer-use', 'scripts/ab_session.py', 'SKILL.md'):
-        'D 1; waits for the never-block-waits and read-page-linux releases, which hold this SKILL.md',
-    ('skills/browser-and-computer-use', 'scripts/approve_attach.py', 'SKILL.md'):
-        'D 1; waits for the never-block-waits and read-page-linux releases, which hold this SKILL.md',
-    ('skills/browser-and-computer-use', 'scripts/read_page.py', 'SKILL.md'):
-        'D 1; waits for read-page-linux, which changes read_page.py and this SKILL.md',
     ('skills/excel-com-wsl', 'scripts/excel.py', 'SKILL.md'):
         'not in the review: the REF and exit-status paragraphs restate the docstring; on issue 238',
     ('skills/excel-com-wsl', 'scripts/office-logs.ps1', 'references/office-logs.md'):
