@@ -47,7 +47,7 @@ class Plant(unittest.TestCase):
         (self.root / 'code/value.py').write_bytes(SOURCE.encode())
         (self.root / 'code/test_value.py').write_text(TEST, encoding='utf-8')
 
-    def plant(self, plants, *root, test='test_value.py'):
+    def plant(self, plants, *root, test='test_value.py', creationflags=0):
         """Run the script on a plants file that holds this list, this text or, for None, on a missing file."""
         file = self.root.parent / 'plants.json'
         file.unlink(missing_ok=True)
@@ -55,7 +55,7 @@ class Plant(unittest.TestCase):
             file.write_text(plants if isinstance(plants, str) else json.dumps(plants), encoding='utf-8')
         done = subprocess.run([sys.executable, '-I', '-B', str(SCRIPT), str(self.root / 'code/value.py'),
                                str(self.root / 'code' / test), str(self.root.parent / 'plants.json'), *root],
-                              capture_output=True, text=True, timeout=300)
+                              capture_output=True, text=True, timeout=300, creationflags=creationflags)
         return done.returncode, done.stdout.splitlines(), done.stderr
 
     def plant_after(self, prelude, plants, test='test_value.py'):
@@ -84,6 +84,16 @@ class Plant(unittest.TestCase):
         self.assertLess(cpu, wall)
         self.assertAlmostEqual(all_wall, 2 * wall, delta=0.05)
         self.assertAlmostEqual(all_cpu, 2 * cpu, delta=0.05)
+
+    def test_the_estimate_multiplies_the_figures_it_prints(self):
+        program = (f'import runpy; print(runpy.run_path({str(SCRIPT)!r})["estimate"](0.26, 0.14, 2, 3)); '
+                   f'print(runpy.run_path({str(SCRIPT)!r})["estimate"](0.26, None, 2, 2))')
+        done = subprocess.run([sys.executable, '-I', '-B', '-c', program], capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.stdout.splitlines(), [
+            'The unchanged copy took 0.3 s, so 2 plants should take about 0.6 s (1 more will not apply). '
+            'It used 0.1 CPU seconds, so they should use about 0.2.',
+            'The unchanged copy took 0.3 s, so 2 plants should take about 0.6 s. '
+            'This system counts no CPU time of child processes.'], done.stderr)
 
     def test_a_system_that_counts_no_child_cpu_time_still_gets_the_wall_time_estimate(self):
         (self.root / 'code/test_value.py').write_text(SLOW, encoding='utf-8')
@@ -124,6 +134,19 @@ class Plant(unittest.TestCase):
         (self.root / 'code/test_priority.py').write_text('import os\nimport sys\nsys.exit(os.nice(0) != int(sys.argv[1]))\n',
                                                         encoding='utf-8')
         status, lines, error = self.plant(ABSENT[:1], '--', str(expected), test='test_priority.py')
+        self.assertEqual((status, lines), (1, ['NOT APPLIED absent: the text to replace occurs 0 times',
+                                               '0 of 1 plants caught']), error)
+
+    @unittest.skipUnless(sys.platform == 'win32', 'only Windows has priority classes')
+    def test_on_windows_the_test_runs_below_normal_priority(self):
+        (self.root / 'code/test_priority.py').write_text(
+            'import ctypes\nimport sys\nkernel = ctypes.windll.kernel32\n'
+            'kernel.GetCurrentProcess.restype = ctypes.c_void_p\nkernel.GetPriorityClass.argtypes = [ctypes.c_void_p]\n'
+            'seen = kernel.GetPriorityClass(kernel.GetCurrentProcess())\nprint(f"priority class {seen:#x}")\n'
+            'sys.exit(seen != 0x4000)\n', encoding='utf-8')
+        # A child of a below-normal process starts below normal too, as this test does inside a plant run.
+        status, lines, error = self.plant(ABSENT[:1], test='test_priority.py',
+                                          creationflags=subprocess.NORMAL_PRIORITY_CLASS)
         self.assertEqual((status, lines), (1, ['NOT APPLIED absent: the text to replace occurs 0 times',
                                                '0 of 1 plants caught']), error)
 

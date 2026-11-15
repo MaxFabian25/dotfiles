@@ -53,8 +53,9 @@ blind to it.
   edited during the run changes every copy at once.
 - Before a run of more than a handful of plants, read the estimate that `plant.py` prints once the
   unchanged copy passes, its wall and CPU time multiplied by the number of plants, and the load
-  warning it prints at start. With another tool, time one plant yourself and multiply. Choose the number of workers, the machine, and whether to
-  start the run with `agent-job`, from that total.
+  warning it prints at start. With another tool, time one plant yourself and multiply. Choose the
+  number of workers and the machine from that total, and, for another tool, whether to start the
+  run with `agent-job`.
 - Run copies in parallel where the tools and the machine's load allow it, and one at a time for a
   tool that holds one instance, such as desktop PowerPoint. On a machine that other sessions or CI
   runners share, cap the number of workers and run them at low priority, such as under
@@ -68,10 +69,10 @@ blind to it.
   are in, and no open question, probe or answer you wait for can change the files.
 - Write the results to a folder that survives a restart, such as the project's verification folder.
   On WSL, `/tmp` is emptied at every boot. A restart of the agent app also cancels the shell tool's
-  background jobs, so start a run longer than a few minutes with `agent-job start NAME -- COMMAND`
-  and wait with `agent-job wait NAME --timeout SECONDS` in background mode, as
-  `~/dotfiles-private/config/agent-rules/waiting.md` says, or run it on the laptop with
-  `omarchy-run`.
+  background jobs, so start every `plant.py` run, and any other run longer than a few minutes, with
+  `agent-job start NAME -- COMMAND` and wait with `agent-job wait NAME --timeout SECONDS` in
+  background mode, as `~/dotfiles-private/config/agent-rules/waiting.md` says, or run it on the
+  laptop with `omarchy-run start`.
 - For a new check, first plant its error with the check absent and see it pass, then add the check
   and see it fail. A check you never saw fail may be unable to.
 - When you brief a builder or subagent to prove its tests or checks, give it this skill's
@@ -101,9 +102,12 @@ faults go, and each test is a check.
   cannot read as success; and, for each new guard, a swapped argument of the same type, a changed
   constant, a member dropped from a list the code reads, a statement moved past its neighbour, and a
   secret added to an output.
-- For the faults you choose yourself, run `python3 -I scripts/plant.py` from this skill's folder;
-  with no arguments or with `--help` it prints its usage, the plant file's format and its outcomes.
-  It runs each plant without a sandbox of its own.
+- For the faults you choose yourself, run `scripts/plant.py` from this skill's folder. Start the run
+  with `agent-job start NAME -- python3 -I scripts/plant.py SOURCE TEST PLANTS_JSON ...` and wait
+  with `agent-job wait NAME --timeout SECONDS` in background mode, because a restart of the agent
+  app cancels a plant run, and a Claude Code hook refuses one outside `agent-job` or
+  `omarchy-run start`. With no arguments or with `--help`, `python3 -I scripts/plant.py` prints its
+  usage, the plant file's format and its outcomes. It runs each plant without a sandbox of its own.
 
 ## Report
 
