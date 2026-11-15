@@ -17,7 +17,7 @@ defence, the first brief names which attacks count, and a later review holds onl
 November 2026, of 34 findings that held a release from the second review on, 3 showed a wrong result in use,
 and 22 were in code that an earlier round's fix had added.
 
-The author names the review file without "report" or "findings" in its name, such as `review-1.md`. Claude Code
+The author names the review file without "report", "summary", "findings" or "analysis" in its name, such as `review-1.md`. Claude Code
 refuses a helper agent's Write to some file names and tells it to return its findings as text, and the reviewer
 then cannot write its lines: in a test on 12 November 2026, version 2.1.322 refused `findings.md` and
 `report-values-review-1.md` and wrote `values-review-1.md` and `report-values.txt`.

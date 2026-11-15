@@ -76,7 +76,7 @@ A method change the text has to leave out, because the user asked or because say
 
 Give parallel setups the same term, and keep the term the user designed the study with. Ask before you switch to a product's own label.
 
-Before the user sees a post, thread or reply about the study as ready, a reviewer who hasn't seen it answers four questions for each post or section, because the user sent a finished thread back on each of them in November 2026:
+Before the user sees a post, thread or reply about the study as ready, a reviewer who hasn't seen it answers four questions for each post or section, because the user has sent a finished thread back on each of them ([incidents](references/incidents.md)):
 
 1. Does it say why the result came out as it did?
 2. Does it repeat what its chart or card already shows?

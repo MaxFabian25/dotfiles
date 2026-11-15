@@ -139,7 +139,7 @@ tool_notes = "exempt"
 
 [codex]
 install = [{ via = "personal", enabled = true }]
-adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "c8d2305bea0c541dbc76d38efa2a7af1c9ebba67", adapted = "8eefa4b3806899f8c23922bd25c2e369c89b9d79", harness = "skills/poteto-mode/references/harnesses.md" }
+adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "c8d2305bea0c541dbc76d38efa2a7af1c9ebba67", adapted = "46d3dde68c76e09ece94aee8e76e0632a6093693", harness = "skills/poteto-mode/references/harnesses.md" }
 
 # Reflect keeps a finding's text and its check in one row, so a cheap check ships in the same release as its text
 # (user, 2026-11-14), after the 13 November pass split 43 rows into a text part and a check left in an issue.
@@ -147,7 +147,7 @@ adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adapt
 [[codex.replace]]
 path = 'skills/reflect/SKILL.md'
 find = '''Move any Accepted item that a lint rule, script, metadata flag, or runtime check would enforce more reliably to Backlog. See the **encode-lessons-in-structure** principle skill.'''
-replace = '''Read each Accepted row's Check cell, which `references/synthesizer.md` defines. A row with a cheap check ships that check and its test in the same release as its text, so the user approves both at once. When that release cannot carry the check, the text waits for it, and the whole row goes to Backlog as one item. A row whose check is not cheap stays text-only, and its Check cell names the check and why it does not fit. Keep each finding's text and check in one row. On 13 November 2026 a pass instead split 43 rows into a text part and a check part that went into an issue or an issue comment, and a day later 25 of the 26 issues that name a text half or an Accepted row were still open. See the **encode-lessons-in-structure** principle skill.'''
+replace = '''Read each Accepted row's Check cell, which `references/synthesizer.md` defines. A row with a cheap check ships that check and its test in the same release as its text, so the user approves both at once. When that release cannot carry the check, the text waits for it, and the whole row goes to Backlog as one item. A row whose check is not cheap stays text-only, and its Check cell names the check and why it does not fit. Keep each finding's text and check in one row, because a check split off into an issue tends to stay open long after its text ships. See the **encode-lessons-in-structure** principle skill.'''
 
 [[codex.replace]]
 path = 'skills/reflect/references/synthesizer.md'
