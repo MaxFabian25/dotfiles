@@ -45,6 +45,8 @@ FAILED_CHECK = re.compile(r'^FAIL  (\S.*?)(?:  |$)', re.MULTILINE)
 FRESH = '{fresh}'  # in a TEST argument, the path of a folder that does not exist yet
 TAIL = 40  # lines of a failed unchanged run that stderr shows
 NAMED = 3  # failed tests a CAUGHT line names
+# Windows has no os.nice, so TEST starts below normal priority there instead; elsewhere the flags must be 0.
+PRIORITY = getattr(subprocess, 'BELOW_NORMAL_PRIORITY_CLASS', 0)
 
 
 def run(root, source, test, text, arguments=()):
@@ -61,7 +63,8 @@ def run(root, source, test, text, arguments=()):
         try:
             passed = [argument.replace(FRESH, str(Path(folder) / f'{root.name}.fresh')) for argument in arguments]
             done = subprocess.run([sys.executable, '-I', '-B', test.name, *passed], cwd=copy / test.parent.relative_to(root),
-                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=LIMIT, env=environment)
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=LIMIT, env=environment,
+                                  creationflags=PRIORITY)
         except subprocess.TimeoutExpired:
             return None, f'ran past {LIMIT} s'
         return done.returncode, done.stdout.decode(errors='replace')

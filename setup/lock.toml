@@ -91,8 +91,8 @@ codex = { version = "0.1.0+upstream.ced39776fdf8.codex1", tree = "sha256:dd58dba
 claude = { version = "0.1.0+codex-aligned.f6c9d03c5fcf", tree = "sha256:7f6768983aa85ee443f728165e7065076ccb34b10e442535e68f7380419730fc" }
 
 [planted-error-checks]
-intent = "sha256:1162bf63c8fda7a629e12560df6f7d57d19a5dbe83e0cf8b926ad779a3574536"
-placements = { agents = "sha256:12b71bd47059e94695eb5feb8a33f9e3af8a03363352474d3c77f40caeb75551", claude = "sha256:12b71bd47059e94695eb5feb8a33f9e3af8a03363352474d3c77f40caeb75551" }
+intent = "sha256:846e306b11868aece437cd347b5c069dd6a2a8e3e9fb7104e082a14277da4004"
+placements = { agents = "sha256:42f2ad496d8025918717dc1bbb5e65ef9bdcef7c2f3d6fc669d15c1673f38945", claude = "sha256:42f2ad496d8025918717dc1bbb5e65ef9bdcef7c2f3d6fc669d15c1673f38945" }
 
 [powerpoint-com-wsl]
 intent = "sha256:a76daeea53c80acdc78e54e9f9a17d76f8a99c8971b7ba4fbbe81c150ec1d75c"
