@@ -116,15 +116,15 @@ def install_tools(home, state):
 
 
 def home_files(private, state, apply):
-    """Deliver the private checkout's home files on Linux, the platform of the machines that use them, and name
-    each one written and each one left as it is. Whether any still differs from the release: one left as it is,
-    or without --apply one waiting to be delivered."""
-    if private is None or not sys.platform.startswith('linux'):
+    if private is None or not (sys.platform.startswith('linux') or sys.platform == 'win32'):
         return False
-    from home_files import deliver
+    if sys.platform == 'win32':
+        from windows_hooks import deliver
+    else:
+        from home_files import deliver
     try:
         delivery = deliver(private, Path.home(), state, apply=apply)
-    except (RuntimeError, OSError) as error:
+    except (RuntimeError, OSError, ValueError, KeyError, TypeError) as error:
         print(f'Home files not delivered: {error}', file=sys.stderr, flush=True)
         return True
     for line in delivery.lines(apply):

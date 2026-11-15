@@ -92,7 +92,8 @@ def _record(path: Path, files: dict[str, list[str]]):
         temporary.unlink(missing_ok=True)
 
 
-def deliver(private: Path, home: Path, state: Path, *, apply: bool) -> Delivery:
+def deliver(private: Path, home: Path, state: Path, *, apply: bool,
+            sources: dict[str, Path] | None = None) -> Delivery:
     """The record lists, for each path, the digests a copy there may hold and still be the pull's own: what was
     last delivered and, from just before a replacement until the next delivery finds it done, what replaces it.
     So a pull that is killed between the two leaves a copy the next pull still knows. A path keeps its entry
@@ -102,7 +103,7 @@ def deliver(private: Path, home: Path, state: Path, *, apply: bool) -> Delivery:
     saved = {path: list(digests) for path, digests in known.items()}
     written, left = [], []
     files = Files(state / 'home-file-backups' / datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ'))
-    for relative, source in source_files(private).items():
+    for relative, source in (source_files(private) if sources is None else sources).items():
         destination = home / relative
         try:
             data, executable = source.read_bytes(), os.access(source, os.X_OK)
