@@ -123,15 +123,24 @@ packages build.
 
 ## Deliver a paired release
 
-The private checkout's `release.toml` identifies the exact reviewed public commit.
+A change lands as a GitHub pull request, in this repository, in the private one, or in both. Work in a
+worktree of `origin/main`, never in the checkout a device pulls into, because a pull needs that one clean.
+Before you push a branch of this repository, run `python -B leaks.py --private ../dotfiles-private`: a
+pushed branch is public at once, and the list of strings to keep out is private. Open the pull request with
+`gh pr create`, and merge it with `gh pr merge --squash` once its `tests` check has passed, the public half
+first when a change has both. The check runs the suite on Linux, macOS and Windows here, and on a
+self-hosted runner in the private repository.
 
-```toml
-public_commit = "<full 40-character public commit>"
-```
+A change to a setup entry also writes `setup/lock.toml` anew before the commit, with
+`python -B lock_setup.py --public setup --private ../dotfiles-private/setup --output OUT --entry NAME --write`,
+adding `--refresh-owned` for an owned skill or package whose files changed. `python -B sync.py --candidate
+--public setup --private ../dotfiles-private/setup` then says whether this device's pull would stop on the
+change, which nothing checks after the merge until a device pulls.
 
-`release.py finish` still writes that pointer, but a pull no longer reads it. A device fetches both
-histories and fast-forwards each checkout to its `origin/main`, so it can install a public commit before
-the private commit that goes with it. Dirty checkouts and non-fast-forward changes stop the pull.
+A device fetches both histories and fast-forwards each checkout to its `origin/main`, so it can install a
+public commit before the private commit that goes with it. Dirty checkouts and non-fast-forward changes
+stop the pull. The private `release.toml` named the public commit to install until 15 November 2026, and
+nothing reads it now.
 
 A pull trusts what GitHub holds on `main`, a merged pull request included, and checks no signature.
 Whoever can write to either repository on GitHub can therefore change what every device installs. The
@@ -151,87 +160,17 @@ prints `Home file left as it is` with its path, applies the rest, records the pa
 has no record, so it takes over only the copies that already match. A pull removes no file that a release
 dropped from that folder. Without `--apply` it prints `Home file to deliver` for each file and exits 1.
 
-`release.py` runs a whole delivery from this checkout. `start NAME` makes a worktree of each repository
-at `origin/main` under `~/worktrees/NAME`. After editing there, `finish NAME --message FILE --push --pull`
-locks and builds any `--entry` and `--package`, runs the tests, commits both worktrees, rebases them onto a
-newer `origin/main` if another session pushed meanwhile, pairs `release.toml`, pushes, and pulls, once any
-other pull on the machine has ended.
+`release.py` ran a whole delivery from this checkout until 15 November 2026: it tested, rebased, pushed and
+pulled under a lock on the machine. It now only prints the steps above. A private test file runs by
+itself, as `python -I -B FILE`, so it needs its own `sys.path` line for a module beside it, and
+`unittest.main()` at its end.
 
-Several finishes run their checks and tests at the same time on one machine. A finish takes the machine's
-release lock only after its tests, for the steps from the commit to the pull, once no other release, pull or
-sync runs there. On 12 November 2026, when a finish still held the lock through its tests, two releases held
-it for 305 and 360 seconds, of which the tests took 88 and 78 per cent. A finish notes the worktrees whose
-tests passed in `build/tests-passed` under the release's folder, and a later finish of the same files does
-not run the tests again; delete that note to run them. A worktree without work of its own counts as
-`origin/main` there, wherever that stands, as no rebase is tested again either. A finish starts again from
-the engine as it is now when a pull or sync runs as it starts, once that has ended, and when a pull changed
-the engine before it takes the lock. It then runs its checks, locks and builds again, but not the tests, and
-`--timeout` counts anew. When it gives the lock up it prints how long it held it and how long it waited
-for it, and before it starts again how long it had waited by then. One finish runs per release, and a second one stops and names the first.
-
-It stops first in each of these cases:
-
-- The release changes code that `--reviewed FILE` does not show another agent reviewed. `release.py review NAME`
-  prints the files, the command that shows their changes and the lines the reviewer writes, against
-  `docs/agents/coding-standards.md`. It checks again just before the push, because the commit takes whatever
-  the worktree holds by then.
-- Another release, pull or sync still runs on this machine `--timeout` seconds after the tests, 1800 unless
-  given. It names that run's process and command. Finish again, which does not run the tests a second time.
-  A pull or sync that runs as the finish starts is waited for as long, before any check.
-- A file changed while the tests ran, or between the tests and the commit. Finish again, which tests the
-  files as they are then.
-- A test fails, or the suite writes into the worktree's `.sync/`, the engine cache that real pulls use
-  in the canonical checkout. It runs the whole public suite, in about 75 seconds, with the output in the
-  release's `build/tests.log`, and each private test file by itself, as `python -I -B FILE`, which is how
-  an agent runs one, with their output in `build/private-tests.log`. A private test file therefore needs
-  its own `sys.path` line for a module beside it, and `unittest.main()` at its end.
-  Each run moves the logs of the run before aside as `tests.DATE-TIME.log` and `private-tests.DATE-TIME.log`,
-  named for when they were written, and `finish --detach` does the same with `finish.log`, so a failed
-  attempt can still be read after a retry. `CODEX_HOME` and `CLAUDE_CONFIG_DIR` point at a missing folder, as
-  in CI, so no test reads this device's config.
-- A new file would be left out of the commit by this allowlist `.gitignore`. It names the file.
-- Origin changed a file this branch also changed. Read those commits, then pass `--overlap-reviewed`.
-  It asks this before the tests, through a trial merge of the worktree as it stands, and again after the
-  commit. A conflict stops it the same way: commit the worktree and rebase it by hand. `setup/lock.toml`,
-  and a `setup/skills` or `setup/packages` file in which the branch changed only the pinned `tree`, count
-  for neither stop when `--entry` or `--entry NAME --refresh-owned` writes them anew. On a worktree that is
-  committed, as after such a hand rebase, and holds nothing else uncommitted, `finish` amends what that
-  writes into the branch's newest commit and needs no message for it, unless that commit is a merge or a pair.
-- This device's pull would stop on the pair. It runs the pull's check on the worktrees
-  (`sync.py --candidate`), plus two checks a pull otherwise reaches only while applying: the settings
-  validation, and the comparison of each rule and configuration file with the copy it last accepted.
-  So it catches a model alias the engine rejects, an owned skill edited without `--refresh-owned`, or
-  a configuration change the apply step would refuse. Plugins, roles and loose skills need a build
-  before that comparison, so the check leaves them to the pull. It takes up to half a minute.
-- A push would be refused. It checks both pushes with `--dry-run`, so a refused login publishes
-  neither half.
-
-When the private push fails after the public commit went out, `finish` says so and keeps a note of that commit
-in `build/public-pushed` under the release's folder. Run the same `finish` again: it pairs the private half
-with the public commit then on origin, which is the one it pushed or another session's commit on top of it.
-The note is the only record that the public half went out. A rerun without it, after `build/` was deleted,
-leaves the private origin naming the public commit before: it pushes a private commit of its own unpaired, or
-stops with "nothing to release" when the release changed only the public side. Writing the pushed commit's
-full id into `build/public-pushed` and finishing again pairs it. So `clean` without `--force` stops on that
-note, as it does on a branch that is not on origin, and removes nothing. A `start` under the name of a release
-whose branches are gone deletes a note it finds, because that note is another release's.
-
-After a pull that changed skills or packages, it runs `skill_listing.py`, which checks that Claude Code
-lists skills with their descriptions, and exits with that check's status when the pull passed and the check did
-not. `clean NAME` removes the worktrees once `origin/main` has them.
-`status` names the release that holds the machine's lock and any pull or sync that runs, and lists every open
-release worktree with its commits, uncommitted files and the files it changes, with a line under each release
-whose finish runs, which covers one that is still in its checks and tests; `start` lists the other open releases. Under each release both name the T3 Code
-thread it was started in, which `start` notes in `t3-thread` beside the worktrees when `T3CODE_THREAD_ID` is set.
-For a skill description change, `skill_triggers.py` counts how often the installed skills load in Claude Code for a
+After a pull that changed skills or packages, run `skill_listing.py`, which checks that Claude Code lists
+skills with their descriptions. For a skill description change, `skill_triggers.py` counts how often the installed skills load in Claude Code for a
 set of prompts, and `codex_triggers.py` does the same in Codex. Measure the draft first, then release, then run the
 same prompts again after the pull. On Linux, `skill_draft.py DRAFT_SKILL.md -- COMMAND` runs either tool with the
 draft in place of the installed copy and changes no file; with `--new` it adds a skill that is not installed
 yet.
-
-```sh
-uv run --locked python release.py finish NAME --message msg.txt --entry prose --refresh-owned --push --pull
-```
 
 `schedule.py` previews a half-hourly local pull schedule. `--install` enables it only after the pair
 and the device check pass. macOS uses a LaunchAgent, Windows a per-user Scheduled Task, and Linux

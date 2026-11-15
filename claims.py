@@ -5,8 +5,7 @@
     python -B claims.py release windows-desktop --who "THREAD TITLE OR ID"
     python -B claims.py status
 
-A pull and a sync each hold a file lock for as long as their process runs, a release finish holds one from its
-commit to its pull, and `release.py status` names them. Work that spans many commands has no one process to hold a lock: driving a desktop app, a run of
+A pull and a sync each hold a file lock for as long as their process runs. Work that spans many commands has no one process to hold a lock: driving a desktop app, a run of
 writes to a machine's agent config, or pulls on another machine started from this one. A task records a claim on a
 name for that work instead, and other tasks read it here rather than asking each thread.
 
@@ -14,7 +13,7 @@ name for that work instead, and other tasks read it here rather than asking each
 A claim ends when it is released or after --hours, two by default, so a task that died blocks nobody for long.
 A claim is advice between tasks: it stops no pull and no program. Claims are files under
 ~/.local/state/dotfiles/claims on the machine where the tasks run, so a claim on another machine's resource is
-kept where its agents' threads run. `release.py status` lists the claims that are running.
+kept where its agents' threads run. `status` lists the claims that are running.
 """
 import argparse
 from datetime import datetime, timedelta, timezone

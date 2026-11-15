@@ -331,26 +331,6 @@ class GitOutputDecodingTest(unittest.TestCase):
                     self.assertEqual(str(failure.exception), f'{root.name}: git status failed: {expected}')
                     self.assertEqual(errors.getvalue(), '')
 
-    @unittest.skipIf(os.name == 'nt' or sys.platform == 'darwin', 'Requires non-UTF-8 filenames')
-    def test_malformed_filename_stops_private_test_discovery_and_review_fingerprinting(self):
-        import release
-
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            pull_git(root, 'init', '-q', '-b', 'main')
-            pull_git(root, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
-                     '-c', 'commit.gpgsign=false', 'commit', '-q', '--allow-empty', '-m', 'fixture')
-            pull_git(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
-            path = root / os.fsdecode(b'test_\xff.py')
-            for content in (b'raise AssertionError("must not skip")\n', b'raise SystemExit(7)\n'):
-                path.write_bytes(content)
-                checks = [('private tests', lambda: release.test_suite(root, root, root / 'logs' / 'suite.log')),
-                          ('review fingerprint', lambda: release.code_changes(root))]
-                for name, check in checks:
-                    with self.subTest(content=content, check=name), patch.object(release, 'public_suite'):
-                        with self.assertRaisesRegex(RuntimeError, 'output is not valid UTF-8'):
-                            check()
-
 
 class PullEnvironmentTest(unittest.TestCase):
     def test_git_helpers_receive_windows_executable_extensions_when_parent_has_none(self):
