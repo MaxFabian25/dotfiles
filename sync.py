@@ -5,7 +5,6 @@ from pathlib import Path
 import subprocess
 import sys
 
-from candidate_result import CandidateResult, dump
 from description import DescriptionError, Roots
 from description_toml import load
 from device import Device
@@ -22,9 +21,8 @@ def main(argv=None):
     mode.add_argument('--apply', action='store_true', help='apply verified changes, with local backups')
     mode.add_argument('--check', action='store_true', help='report the plan without installing anything (default)')
     mode.add_argument('--candidate', action='store_true',
-                      help="check from a release worktree's engine before the release is pushed")
-    parser.add_argument('--json', action='store_true',
-                        help='print the plan as JSON; with --candidate, only the result release.py reads')
+                      help="check from a worktree's engine before its pull request is merged")
+    parser.add_argument('--json', action='store_true', help='print the plan as JSON')
     parser.add_argument('--notes', action='store_true', help='list each note in full instead of counting them')
     parser.add_argument(sync_ending.FLAG, dest='ending', type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
@@ -56,11 +54,6 @@ def run(args):
             owner.rehearse(current.observations)
             from sync_hosts import Rehearsal
             Rehearsal(setup.for_platform(device.platform), device, current).run()
-            if args.json:
-                if current.blocked:  # release.py shows these rows, which name each blocker and its fix
-                    print(render(current.result, notes=args.notes), end='', file=sys.stderr)
-                print(dump(CandidateResult(len(current.blocked))))
-                return current.exit_code
         if args.apply:
             if current.blocked and not args.json:
                 print(render(current.result, notes=args.notes), end='')  # its attention rows name each blocker and its fix
