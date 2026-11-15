@@ -5,8 +5,8 @@ intent = "sha256:78a1e11c0bc790fbedb011b1f670f6c969a591f44d9a42a72156e0135d8b298
 placements = { agents = "sha256:e2c03d3d8a36e6b43d42a953215bfa3cea5fbcb7f6e0cf72cefe426151c195bb", claude = "sha256:e2c03d3d8a36e6b43d42a953215bfa3cea5fbcb7f6e0cf72cefe426151c195bb" }
 
 [browser-and-computer-use]
-intent = "sha256:b9f555f8056dad124c554a019d00da81b107faf101ae905ea63d4cd24518677d"
-placements = { agents = "sha256:9e0d7b6857c992dd09a91cc0899e9cd72ae5a097d6471e20d3bd9a0416d497d3", claude = "sha256:9e0d7b6857c992dd09a91cc0899e9cd72ae5a097d6471e20d3bd9a0416d497d3" }
+intent = "sha256:771dd200aa330bde7b28884983307cce49b24cb6c478ad085db3f38ea45bbacb"
+placements = { agents = "sha256:6c8dceb18861d96e2092d7c025dcb538d011085f6bc50c1ed6901735d330903e", claude = "sha256:6c8dceb18861d96e2092d7c025dcb538d011085f6bc50c1ed6901735d330903e" }
 
 [build-iterated-agentic-loop]
 intent = "sha256:5a5c900801815c2408c103fd71ee14ae6a2231bf9d6cbe2189139c9835872fa7"
@@ -107,9 +107,9 @@ codex = { version = "0.3.20+dotfiles.20261115", tree = "sha256:4eb0acbe07e793afb
 claude = { version = "0.3.20+codex-aligned.c7159a21f365", tree = "sha256:a63768af0d505c9650248e33d9fb466fd9ae1fd0d0ec575d16688bee94470d01" }
 
 [pstack]
-intent = "sha256:c23301e1fac37d66bfb36307a788d5c1ee6df4f9c07ce30b2d8e1660754c1436"
+intent = "sha256:b12b1cbc5f6081048f04683b20321b339a9a90ad95ec6fd71679bec0bda9947a"
 codex = { version = "0.15.42+upstream.bf0c7cd80abd.codex3.explicit.76305273a208bc4d", tree = "sha256:2f439a29bce71c7a1ba7cbf0d51ab745e495c8708681108cadcb5c8954c01afa" }
-claude = { version = "0.15.42+codex-aligned.61ffad1d2d98", tree = "sha256:7df5e3c1819f6ce1bd31ba8fde6560a3a03f87035c42692416d2ddfa2935a6d9" }
+claude = { version = "0.15.42+codex-aligned.6791f39d6400", tree = "sha256:525308f904956e6a38fc035efbfbf2ba1501d4242748a4b1ca6b12c136f5ad65" }
 roles = { "comment-sicko.toml" = "sha256:48e7d91b0420f7b04a8ea378a4bd01cc2233d6ca5b6569e444fed27490fabf0a", "poteto-agent.toml" = "sha256:9febd16808fa1a26ba8b5a6ada8510739cc86f2d8640740a85bb4c0471e2b18c" }
 
 [show-me]
