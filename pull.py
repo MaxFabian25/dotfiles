@@ -116,9 +116,6 @@ def install_tools(home, state):
 
 
 def home_files(private, state, apply):
-    """Deliver Linux home files or the explicit Windows hook selection, and name
-    each one written and each one left as it is. Whether any still differs from the release: one left as it is,
-    or without --apply one waiting to be delivered."""
     if private is None or not (sys.platform.startswith('linux') or sys.platform == 'win32'):
         return False
     if sys.platform == 'win32':

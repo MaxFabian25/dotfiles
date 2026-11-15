@@ -1,4 +1,3 @@
-"""Deliver the private Windows hook selection without enabling the Linux hook set."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
