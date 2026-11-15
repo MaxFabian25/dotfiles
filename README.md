@@ -184,6 +184,13 @@ owner active until the corresponding device handoff is verified, then retire its
 Daily source review and local delivery are separate jobs. Creating these files does not install either
 schedule or authorise publishing private content.
 
+## Dependency updates
+
+[Dependabot](.github/dependabot.yml) checks GitHub Actions and both uv projects, at the repository root
+and in `packages/prose`, weekly. Version-update PRs wait until a release is three days old. Dependabot
+security updates use a separate repository setting and bypass that wait and the weekly schedule.
+The normal PR checks and merge controls apply. Dependabot does not update setup source pins or mise tool pins.
+
 ## Install Linux packages
 
 Pulls do not install system packages, because that needs `sudo`. On a new Linux or WSL installation,
