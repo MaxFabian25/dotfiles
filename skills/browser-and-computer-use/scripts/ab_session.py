@@ -21,6 +21,9 @@ close ends the session's daemon itself when agent-browser's own close fails, as 
 2026 after attaches nobody approved: on Linux it reads the daemon's PID from the session's pid file, checks that
 the process carries this session's name, and stops it.
 
+start also saves DISPLAY and WAYLAND_DISPLAY, and run and close put them back, so a browser that stopped
+starts again on the display it first used, such as the hidden :99, and not on the user's desktop.
+
 The flags live in ~/.local/state/agent-browser-sessions/NAME.json. For macOS and Linux. On Windows, start the
 session with windows-session.ps1 and pass the same flags on every later command.
 """
@@ -49,6 +52,18 @@ def state_file(name: str) -> pathlib.Path:
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", name):
         sys.exit(f"ab_session: unusable session name {name!r}")
     return STATE / f"{name}.json"
+
+
+def display() -> dict[str, str | None]:
+    return {key: os.environ.get(key) for key in ("DISPLAY", "WAYLAND_DISPLAY")}
+
+
+def use_display(saved: dict[str, str | None]) -> None:
+    for key, value in saved.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
 
 
 def run(name: str, flags: list[str], command: list[str]) -> None:
@@ -142,13 +157,14 @@ def main(args: list[str]) -> int:
             sys.exit("ab_session: start needs FLAG... -- [COMMAND...]")
         cut = rest.index("--")
         flags, command = rest[:cut], rest[cut + 1:]
+        record = {"flags": flags, "display": display()}
         if path.exists():
-            saved = json.loads(path.read_text())["flags"]
-            if saved != flags:
+            saved = json.loads(path.read_text())
+            if saved != record:
                 sys.exit(f"ab_session: {name} already runs with {saved}; close it first")
         else:
             STATE.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps({"flags": flags}))
+            path.write_text(json.dumps(record))
         if attach:
             error = attach_error(name, flags)
             if error:
@@ -160,7 +176,9 @@ def main(args: list[str]) -> int:
         return 0
     if not path.exists():
         sys.exit(f"ab_session: no saved flags for {name}; run start first")
-    flags = json.loads(path.read_text())["flags"]
+    saved = json.loads(path.read_text())
+    flags = saved["flags"]
+    use_display(saved.get("display", {}))
     if op == "run":
         if not rest:
             sys.exit("ab_session: run needs a COMMAND")

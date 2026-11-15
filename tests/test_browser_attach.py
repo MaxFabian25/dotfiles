@@ -144,6 +144,31 @@ class SessionTest(unittest.TestCase):
                                 env=environment, capture_output=True, text=True)
         self.assertEqual(pinned.stdout.strip(), 'pinned')
 
+    @unittest.skipIf(sys.platform == 'win32', 'the stand-in tool is a shell script')
+    def test_later_commands_run_on_the_display_the_session_started_on(self):
+        tool = self.root / 'bin/agent-browser'
+        tool.parent.mkdir()
+        tool.write_text('#!/bin/sh\necho "$DISPLAY ${WAYLAND_DISPLAY-unset}"\n')
+        tool.chmod(0o755)
+        base = {key: value for key, value in os.environ.items() if key not in ('DISPLAY', 'WAYLAND_DISPLAY')}
+        base.update(HOME=str(self.root), PATH=f"{tool.parent}{os.pathsep}{os.environ['PATH']}")
+        hidden = {**base, 'DISPLAY': ':99'}
+        desktop = {**base, 'DISPLAY': ':0', 'WAYLAND_DISPLAY': 'wayland-0'}
+
+        def session(environment, *args):
+            return subprocess.run([sys.executable, ab_session.__file__, *args], env=environment, capture_output=True,
+                                  text=True)
+
+        self.assertEqual(session(hidden, 'start', 'hid', '--headed', '--', 'open', 'about:blank').stdout, ':99 unset\n')
+        self.assertEqual(session(desktop, 'run', 'hid', 'get', 'url').stdout, ':99 unset\n')
+        self.assertEqual(session(desktop, 'close', 'hid').stdout, ':99 unset\n')
+        self.assertEqual(session(desktop, 'start', 'top', '--headed', '--', 'open', 'about:blank').stdout,
+                         ':0 wayland-0\n')
+        self.assertEqual(session(hidden, 'run', 'top', 'get', 'url').stdout, ':0 wayland-0\n')
+        moved = session(hidden, 'start', 'top', '--headed', '--', 'open', 'about:blank')
+        self.assertEqual((moved.returncode, moved.stdout), (1, ''))
+        self.assertIn('close it first', moved.stderr)
+
     def proc(self, pid, session):
         (self.root / 'proc' / str(pid)).mkdir(parents=True)
         (self.root / 'proc' / str(pid) / 'environ').write_bytes(f'HOME=/x\0AGENT_BROWSER_SESSION={session}\0'.encode())
