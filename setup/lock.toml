@@ -53,9 +53,9 @@ intent = "sha256:ed9b4e1ffc6e9c36aa9009416a911d273642e54ad35496eb2d504618bf05aa4
 placements = { claude = "sha256:22be6347ed411af38c82124e9147d3fa2f4ebe692f4f41fec34eb85dd04f7a3f" }
 
 [impeccable]
-intent = "sha256:fee120b465ef2f6db1dd9ea7884b2fed7550555d8a197d1f64123da4c2d59700"
-codex = { version = "4.9.1", tree = "sha256:5e4e2e673036a38b36d848a3684b5660ffd0980fa6ccfcf6b8561a9b2ea79ed0" }
-claude = { version = "4.9.1", tree = "sha256:5e4e2e673036a38b36d848a3684b5660ffd0980fa6ccfcf6b8561a9b2ea79ed0" }
+intent = "sha256:1cf91f5eeb79c64f0a7cdee0b4147ac606af86b78fb796adc49a607413d6d265"
+codex = { version = "4.9.2", tree = "sha256:19ba68d15ebc41bfbfb18c7ffbc81c1040fea49dd328693cc2c9ea8f7128da2c" }
+claude = { version = "4.9.2", tree = "sha256:19ba68d15ebc41bfbfb18c7ffbc81c1040fea49dd328693cc2c9ea8f7128da2c" }
 hooks = 3
 
 [improve]

@@ -1,6 +1,6 @@
 public = true
 url = "https://github.com/pbakaus/impeccable.git"
-commit = "fb46cc6e356253a5d9945c4e3667c20c3d699cc8"
+commit = "d41d9860b0094dcb68030657da63461212835aaa"
 
 [claude]
 marketplace = "impeccable"
