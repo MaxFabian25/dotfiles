@@ -139,7 +139,7 @@ tool_notes = "exempt"
 
 [codex]
 install = [{ via = "personal", enabled = true }]
-adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "c8d2305bea0c541dbc76d38efa2a7af1c9ebba67", adapted = "8748849217ec333dd2f99cec6d81303e16025f6a", harness = "skills/poteto-mode/references/harnesses.md" }
+adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "c8d2305bea0c541dbc76d38efa2a7af1c9ebba67", adapted = "9377624dffa304fbf6df873d3cc8c19772282727", harness = "skills/poteto-mode/references/harnesses.md" }
 
 # Reflect keeps a finding's text and its check in one row, so a cheap check ships in the same release as its text
 # (user, 2026-11-14), after the 13 November pass split 43 rows into a text part and a check left in an issue.
@@ -165,17 +165,17 @@ find = '''| Problem | Proposal | Routing |
 |---|---|---|
 | <failure mode in a skill the parent used> | <change to that skill's body> | <skill path + section> |
 | <skill existed but didn't trigger> | <tune the skill's description so it fires next time> | <tune description: <skill path>> |
-| <new pattern, no existing skill is a real home> | <draft a new skill via skill-creator> | <new skill via skill-creator: <kebab-name>> |'''
+| <new pattern, no existing skill is a real home> | <draft a new skill through the harness's authoring route> | <new skill: <kebab-name>> |'''
 replace = '''| Problem | Proposal | Routing | Check |
 |---|---|---|---|
 | <failure mode in a skill the parent used> | <change to that skill's body> | <skill path + section> | <the check and its test, or `none:`, the check that would enforce the rule and why it does not fit> |
 | <skill existed but didn't trigger> | <tune the skill's description so it fires next time> | <tune description: <skill path>> | <the check and its test, or `none:`, the check that would enforce the rule and why it does not fit> |
-| <new pattern, no existing skill is a real home> | <draft a new skill via skill-creator> | <new skill via skill-creator: <kebab-name>> | <the check and its test, or `none:`, the check that would enforce the rule and why it does not fit> |'''
+| <new pattern, no existing skill is a real home> | <draft a new skill through the harness's authoring route> | <new skill: <kebab-name>> | <the check and its test, or `none:`, the check that would enforce the rule and why it does not fit> |'''
 
 [[codex.replace]]
 path = 'skills/reflect/SKILL.md'
-find = '''- `new skill via skill-creator: <kebab-name>`: hand creation to `skill-creator`, and place the new skill where both harnesses discover it, per [harnesses.md](../poteto-mode/references/harnesses.md) (Skills). Do not invent the shape ad hoc.'''
-replace = '''- `new skill via skill-creator: <kebab-name>`: hand creation to `skill-creator`, and place the new skill where both harnesses discover it, per [harnesses.md](../poteto-mode/references/harnesses.md) (Skills). Do not invent the shape ad hoc.
+find = '''- `new skill: <kebab-name>`: follow that authoring route, and place the new skill where both harnesses discover it, per that file's Skills section. Do not invent the shape ad hoc.'''
+replace = '''- `new skill: <kebab-name>`: follow that authoring route, and place the new skill where both harnesses discover it, per that file's Skills section. Do not invent the shape ad hoc.
 - A Check cell that names a check: build the check and its test in the repository that runs it, in the same release as the row's text, and list the check in step 6's summary beside the edit.'''
 
 [[codex.replace]]
@@ -222,14 +222,14 @@ replace = '''If neither, reject as `skill-not-used`. An `environment: <path>` ro
 
 [[codex.replace]]
 path = 'skills/reflect/SKILL.md'
-find = '''- `tune description: <skill path>` (the skill exists but didn't trigger when it should have): hand to `skill-creator` and run its description-optimization loop.'''
-replace = '''- `tune description: <skill path>` (the skill exists but didn't trigger when it should have): hand to `skill-creator` and run its description-optimization loop.
+find = '''- `tune description: <skill path>` (the skill exists but didn't trigger when it should have): follow that route's description-tuning procedure.'''
+replace = '''- `tune description: <skill path>` (the skill exists but didn't trigger when it should have): follow that route's description-tuning procedure.
 - `environment: <path>`: edit that file, or build the check and its test, in that repository's own clone. Its release follows that repository's own rules.'''
 
 [[codex.replace]]
 path = 'skills/reflect/SKILL.md'
-find = '''and run its draft / test / iterate loop.'''
-replace = '''and run its draft / test / iterate loop. Word the text per the `writing-for-agents` skill.'''
+find = '''and run its draft, test, and iterate procedure.'''
+replace = '''and run its draft, test, and iterate procedure. Word the text per the `writing-for-agents` skill.'''
 
 [[codex.replace]]
 path = 'skills/poteto-mode/playbooks/bug-fix.md'
@@ -243,13 +243,13 @@ replace = '''When program state is unclear, add instrumentation or logging and r
 
 [[codex.replace]]
 path = 'skills/poteto-mode/playbooks/authoring-a-skill.md'
-find = '''1. Use the **skill-creator** skill (the skill for authoring SKILL.md files).'''
-replace = '''1. Use the **skill-creator** skill (the skill for authoring SKILL.md files), and word the text per the **writing-for-agents** skill.'''
+find = '''1. Use the authoring route in [harnesses.md](../references/harnesses.md) (Skill authoring and description tuning).'''
+replace = '''1. Use the authoring route in [harnesses.md](../references/harnesses.md) (Skill authoring and description tuning), and word the text per the **writing-for-agents** skill.'''
 
 [[codex.replace]]
 path = 'skills/poteto-mode/SKILL.md'
-find = '''Agent-facing prose also follows the **skill-creator** skill (your harness's own skill for authoring SKILL.md files, not bundled with this one).'''
-replace = '''Agent-facing prose also follows the **skill-creator** skill (your harness's own skill for authoring SKILL.md files, not bundled with this one) and the **writing-for-agents** skill.'''
+find = '''Agent-facing prose also follows the authoring route in [harnesses.md](references/harnesses.md) (Skill authoring and description tuning).'''
+replace = '''Agent-facing prose also follows the authoring route in [harnesses.md](references/harnesses.md) (Skill authoring and description tuning) and the **writing-for-agents** skill.'''
 
 [[codex.replace]]
 path = 'skills/poteto-mode/SKILL.md'
