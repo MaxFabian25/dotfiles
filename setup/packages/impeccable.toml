@@ -6,13 +6,9 @@ path = "plugin"
 
 [skills]
 tool_notes = "apply"
-# The replace entries below make the skill spawn its four agents as built-in agents. These patterns stop a lock or
-# build whose skill text still names one of them as an agent type, or as "the shipped" agent, which is how an
-# upstream update would bring back a spawn by name. The first lets the edits' paths `agents/impeccable-<agent>.md`
-# stand, and the second new-work.md's "the shipped documenter (section 7)", because it points at the patched step.
 forbid = [
-  '(?i)(?<!agents/)impeccable[-_:](?:asset[-_\s]+producer|documenter|finish[-_\s]+reviewer|manual[-_\s]+edit[-_\s]+applier)|impeccable[-_:](?:asset[-_\s]+producer|documenter|finish[-_\s]+reviewer|manual[-_\s]+edit[-_\s]+applier)(?!\.md)',
-  '(?i)(?<![^\W_])shipped[\s*_`]+(?:asset[-_\s]+producer|documenter|finish[-_\s]+reviewer|manual[-_\s]+edit[-_\s]+applier)(?![^\W_])(?!\s+\(section 7\))',
+  '(?i)(?<!agents/)impeccable[-_:](?:asset[-_\s]+producer|documenter|finish[-_\s]+reviewer|motion[-_\s]+reviewer|manual[-_\s]+edit[-_\s]+applier)|impeccable[-_:](?:asset[-_\s]+producer|documenter|finish[-_\s]+reviewer|motion[-_\s]+reviewer|manual[-_\s]+edit[-_\s]+applier)(?!\.md)',
+  '(?i)(?<![^\W_])shipped[\s*_`]+(?:asset[-_\s]+producer|documenter|finish[-_\s]+reviewer|motion[-_\s]+reviewer|manual[-_\s]+edit[-_\s]+applier)(?![^\W_])(?!\s+\(section 7\))',
 ]
 
 [codex]
@@ -61,8 +57,16 @@ path = 'skills/impeccable/reference/live.md'
 find = '''A tag alone never lands on the first match: when the tag repeats and `--text` does not single out one element, or the element shares a source line with other markup (`reason: "shared_line"`), wrap exits `element_ambiguous`; follow the fallback flow as above.'''
 replace = '''When the tag repeats and `--text` does not single out one element, wrap exits `element_ambiguous`; follow the fallback flow as above. If wrap reports `reason: "shared_line"`, use that same fallback; sharing a line does not always prevent a wrap (engine 0.1.24 normalised a plain-HTML fixture on 14 November 2026).'''
 
-# Impeccable's four agents run as built-in agents at a pstack seat, as pstack's roles do (user, 2026-11-14), so the
-# plugin's agent types stay out of every session's agent list: Claude's settings deny them and Codex gets no role files.
+[[codex.replace]]
+path = 'skills/impeccable/reference/animate.md'
+find = '''Spawn the shipped `impeccable-motion-reviewer` fresh (`impeccable_motion_reviewer` in Codex; `/impeccable-motion-reviewer` in Cursor; on GitHub Copilot say "Use the impeccable-motion-reviewer agent"), with no forked conversation history.'''
+replace = '''Spawn the motion reviewer fresh as a built-in agent: `general-purpose` in Claude Code, or `spawn_agent` with no `agent_type` and with `fork_turns` `none` in Codex, at the model and effort of the first seat on the `judgment and prose` line in your harness's section of `~/.config/pstack/models.md` (a seat reads `model@effort`; skip one prefixed `codex:` or `claude:`). Begin its brief with "Read PATH, skip its frontmatter and follow the rest. Do not edit, write or delete any file.", where PATH is the absolute path of `agents/impeccable-motion-reviewer.md` in this plugin's root, two folders above this skill's folder.'''
+
+[[codex.replace]]
+path = 'skills/impeccable/reference/animate.md'
+find = '''Never read its agent definition before spawning; the harness loads it.'''
+replace = '''Never read the agent's file yourself before spawning; the agent reads it.'''
+
 [[codex.replace]]
 path = 'skills/impeccable/reference/live.md'
 find = '''delegate source edits to `impeccable_manual_edit_applier` / `impeccable-manual-edit-applier`.'''
@@ -117,6 +121,16 @@ replace = '''drop both; keep separate `--tag` and `--text`'''
 path = 'skills/impeccable/reference/live.md'
 find = '''A tag alone never lands on the first match: when the tag repeats and `--text` does not single out one element, or the element shares a source line with other markup (`reason: "shared_line"`), wrap exits `element_ambiguous`; follow the fallback flow as above.'''
 replace = '''When the tag repeats and `--text` does not single out one element, wrap exits `element_ambiguous`; follow the fallback flow as above. If wrap reports `reason: "shared_line"`, use that same fallback; sharing a line does not always prevent a wrap (engine 0.1.24 normalised a plain-HTML fixture on 14 November 2026).'''
+
+[[claude.replace]]
+path = 'skills/impeccable/reference/animate.md'
+find = '''Spawn the shipped `impeccable-motion-reviewer` fresh (`impeccable_motion_reviewer` in Codex; `/impeccable-motion-reviewer` in Cursor; on GitHub Copilot say "Use the impeccable-motion-reviewer agent"), with no forked conversation history.'''
+replace = '''Spawn the motion reviewer fresh as a built-in agent: `general-purpose` in Claude Code, or `spawn_agent` with no `agent_type` and with `fork_turns` `none` in Codex, at the model and effort of the first seat on the `judgment and prose` line in your harness's section of `~/.config/pstack/models.md` (a seat reads `model@effort`; skip one prefixed `codex:` or `claude:`). Begin its brief with "Read PATH, skip its frontmatter and follow the rest. Do not edit, write or delete any file.", where PATH is the absolute path of `agents/impeccable-motion-reviewer.md` in this plugin's root, two folders above this skill's folder.'''
+
+[[claude.replace]]
+path = 'skills/impeccable/reference/animate.md'
+find = '''Never read its agent definition before spawning; the harness loads it.'''
+replace = '''Never read the agent's file yourself before spawning; the agent reads it.'''
 
 [[claude.replace]]
 path = 'skills/impeccable/reference/live.md'
