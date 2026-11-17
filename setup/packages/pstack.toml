@@ -3,7 +3,7 @@ public = true
 [source]
 build = "generic"
 repository = "https://github.com/cursor/plugins.git"
-commit = "bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7"
+commit = "e1cc03121a0e71129a4fb730d7c5528a0a3e43c8"
 subdirectory = "pstack"
 manifest = ".cursor-plugin/plugin.json"
 packaging = 3
@@ -139,98 +139,13 @@ tool_notes = "exempt"
 
 [codex]
 install = [{ via = "personal", enabled = true }]
-adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "c8d2305bea0c541dbc76d38efa2a7af1c9ebba67", adapted = "9377624dffa304fbf6df873d3cc8c19772282727", harness = "skills/poteto-mode/references/harnesses.md" }
+adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "ed35dd45bb70ec9e507a192ba2e2719c7edec6f5", adapted = "7966f9dfb7bd5b6706d2481313899101c4d7512b", harness = "skills/poteto-mode/references/harnesses.md" }
 
-# Reflect keeps a finding's text and its check in one row, so a cheap check ships in the same release as its text
-# (user, 2026-11-14), after the 13 November pass split 43 rows into a text part and a check left in an issue.
-# These are the user's own rules, so they sit here rather than in the adaptation, which maps harnesses.
-[[codex.replace]]
-path = 'skills/reflect/SKILL.md'
-find = '''Move any Accepted item that a lint rule, script, metadata flag, or runtime check would enforce more reliably to Backlog. See the **encode-lessons-in-structure** principle skill.'''
-replace = '''Read each Accepted row's Check cell, which `references/synthesizer.md` defines. A row with a cheap check ships that check and its test in the same release as its text, so the user approves both at once. When that release cannot carry the check, the text waits for it, and the whole row goes to Backlog as one item. A row whose check is not cheap stays text-only, and its Check cell names the check and why it does not fit. Keep each finding's text and check in one row, because a check split off into an issue tends to stay open long after its text ships. See the **encode-lessons-in-structure** principle skill.'''
-
-[[codex.replace]]
-path = 'skills/reflect/references/synthesizer.md'
-find = '''- Structural-mechanism check: route to Backlog when a lint rule, script, metadata flag, or runtime check already enforces the rule or could enforce it cheaply. Skill prose is for things mechanisms cannot enforce.'''
-replace = '''- Structural-mechanism check: when a lint rule, script, metadata flag, or runtime check already enforces the rule, reject the finding as `already-covered`, or make fixing that check the row's edit when it failed to fire. When one could enforce the rule cheaply, make that check the row's edit, with only the text it still needs beside it, and name the check and its test in the row's Check cell. Cheap means the check and its test fit in the release that carries the row's text, such as a pattern in an existing hook, a new hook or script with its test, an assertion in an existing test, or a lint over files the release already changes, even when the check reaches only one harness. Otherwise write `none:` in the Check cell, then the check that would enforce the rule and why it does not fit, such as a tool that needs its own design or release, a CI job the repository lacks, a change on another machine or upstream, or a judgment no check can make, and keep the row text-only. One finding is one row, so its text and its check ship together.'''
-
-[[codex.replace]]
-path = 'skills/reflect/references/synthesizer.md'
-find = '''Accept the finding in a stronger form, such as a hook, script or check in Backlog, and name the earlier row in its Problem.'''
-replace = '''Accept the finding in a stronger form, such as a hook, script or check that ships as the row's edit, and name the earlier row in its Problem.'''
-
-[[codex.replace]]
-path = 'skills/reflect/references/synthesizer.md'
-find = '''| Problem | Proposal | Routing |
-|---|---|---|
-| <failure mode in a skill the parent used> | <change to that skill's body> | <skill path + section> |
-| <skill existed but didn't trigger> | <tune the skill's description so it fires next time> | <tune description: <skill path>> |
-| <new pattern, no existing skill is a real home> | <draft a new skill through the harness's authoring route> | <new skill: <kebab-name>> |'''
-replace = '''| Problem | Proposal | Routing | Check |
-|---|---|---|---|
-| <failure mode in a skill the parent used> | <change to that skill's body> | <skill path + section> | <the check and its test, or `none:`, the check that would enforce the rule and why it does not fit> |
-| <skill existed but didn't trigger> | <tune the skill's description so it fires next time> | <tune description: <skill path>> | <the check and its test, or `none:`, the check that would enforce the rule and why it does not fit> |
-| <new pattern, no existing skill is a real home> | <draft a new skill through the harness's authoring route> | <new skill: <kebab-name>> | <the check and its test, or `none:`, the check that would enforce the rule and why it does not fit> |'''
-
-[[codex.replace]]
-path = 'skills/reflect/SKILL.md'
-find = '''- `new skill: <kebab-name>`: follow that authoring route, and place the new skill where both harnesses discover it, per that file's Skills section. Do not invent the shape ad hoc.'''
-replace = '''- `new skill: <kebab-name>`: follow that authoring route, and place the new skill where both harnesses discover it, per that file's Skills section. Do not invent the shape ad hoc.
-- A Check cell that names a check: build the check and its test in the repository that runs it, in the same release as the row's text, and list the check in step 6's summary beside the edit.'''
-
-[[codex.replace]]
-path = 'skills/reflect/references/synthesizer.md'
-find = '''For each item, describe the pattern, what was hit, and the suggested mechanism.'''
-replace = '''For each item, describe the pattern, what was hit, the text and the check its row would ship together, and why they cannot land in this release.'''
-
-# Four ideas from Matt Pocock's skills that the user chose to fold into pstack on 2026-11-15, after a reading of
-# all of them against the adapted pstack: reflect's environment lens (Matt's retro), hard bugs built to the owned
-# diagnosing-bugs skill's loop, writing-for-agents beside skill-creator, and questions asked in rounds (Matt's
-# grilling). Like the reflect rules above, they are the user's own choices, so they sit here and not in the
-# adaptation.
-[[codex.replace]]
-path = 'skills/reflect/references/tooling-reviewer.md'
-find = '''Read the active transcript at <ABSOLUTE_PATH> (or use the digest below if no path is given).'''
-replace = '''## Lens addition: environment
-
-Flag each place where the repository or setup, not a skill, cost the session time or let a mistake through. Read the repository's check command and CI workflow before you call a check missing. Look for:
-- a fact the agent hunted for that one pointer line in the repository's agent instructions would have given
-- a mistake that an existing check missed, or that a lint, type check, test or CI job would catch, and a repository with no such check at all
-- a judgment call that belongs in the standards file a reviewer reads
-- an always-loaded instruction that changes nothing, repeats another, or should be a check
-- an expensive tool call that a script or flag would cut
-- a log, database or service view the agent needed and lacked
-
-Route each as `environment: <repository-relative path>`, naming the file to change or the check to add.
-
-Read the active transcript at <ABSOLUTE_PATH> (or use the digest below if no path is given).'''
-
-[[codex.replace]]
-path = 'skills/reflect/references/tooling-reviewer.md'
-find = '''Drop any skill that was neither invoked nor a missed-trigger candidate.'''
-replace = '''Drop any skill that was neither invoked nor a missed-trigger candidate. A finding from the environment lens needs no skill use. It routes to a file in the repository the session worked in.'''
-
-[[codex.replace]]
-path = 'skills/reflect/references/tooling-reviewer.md'
-find = '''OR "new skill: <kebab-name>".'''
-replace = '''OR "new skill: <kebab-name>", OR `environment: <repository-relative path>` for a finding from the environment lens.'''
-
-[[codex.replace]]
-path = 'skills/reflect/references/synthesizer.md'
-find = '''If neither, reject as `skill-not-used`.'''
-replace = '''If neither, reject as `skill-not-used`. An `environment: <path>` row passes this check when its path is in a repository the session worked in.'''
-
-[[codex.replace]]
-path = 'skills/reflect/SKILL.md'
-find = '''- `tune description: <skill path>` (the skill exists but didn't trigger when it should have): follow that route's description-tuning procedure.'''
-replace = '''- `tune description: <skill path>` (the skill exists but didn't trigger when it should have): follow that route's description-tuning procedure.
-- `environment: <path>`: edit that file, or build the check and its test, in that repository's own clone. Its release follows that repository's own rules.'''
-
-[[codex.replace]]
-path = 'skills/reflect/SKILL.md'
-find = '''and run its draft, test, and iterate procedure.'''
-replace = '''and run its draft, test, and iterate procedure. Word the text per the `writing-for-agents` skill.'''
-
+# Three ideas from Matt Pocock's skills that the user chose to fold into pstack on 2026-11-15: hard bugs built to
+# the owned diagnosing-bugs skill's loop, writing-for-agents beside skill authoring, and questions asked in rounds
+# (Matt's grilling). They are the user's own choices, so they sit here and not in the adaptation. The user's
+# reflect rules of 2026-11-14 and 2026-11-15 (a finding's text and check in one row, and the environment lens)
+# ended with Pstack 0.15.43, whose single-pass reflect the user took as upstream wrote it on 2026-11-17.
 [[codex.replace]]
 path = 'skills/poteto-mode/playbooks/bug-fix.md'
 find = '''Trace every caller and the arguments it passes before you call the flagged code reachable or unreachable.'''
@@ -248,13 +163,13 @@ replace = '''1. Use the authoring route in [harnesses.md](../references/harnesse
 
 [[codex.replace]]
 path = 'skills/poteto-mode/SKILL.md'
-find = '''Agent-facing prose also follows the authoring route in [harnesses.md](references/harnesses.md) (Skill authoring and description tuning).'''
-replace = '''Agent-facing prose also follows the authoring route in [harnesses.md](references/harnesses.md) (Skill authoring and description tuning) and the **writing-for-agents** skill.'''
+find = '''- Prose, your reply included → **unslop**.'''
+replace = '''- Prose, your reply included → **unslop**. Agent-facing prose, such as a skill or agent instructions, also follows the **writing-for-agents** skill.'''
 
 [[codex.replace]]
 path = 'skills/poteto-mode/SKILL.md'
-find = '''Reserve the question for a genuine product or preference call no experiment can settle.'''
-replace = '''Reserve the question for a genuine product or preference call no experiment can settle. When several such calls remain, ask them in rounds. Put every call whose prerequisites are settled in one question-tool call, each with your recommended answer, and hold a call that depends on an answer still open for the next round.'''
+find = '''Ask it through the question tool (Claude Code `AskUserQuestion`, Codex `request_user_input`) when the host has one.'''
+replace = '''Ask it through the question tool (Claude Code `AskUserQuestion`, Codex `request_user_input`) when the host has one. When several calls for the user remain, ask them in rounds. Put every call whose prerequisites are settled in one question-tool call, each with your recommended answer, and hold a call that depends on an answer still open for the next round.'''
 
 [codex.roles]
 from = "plugin"
