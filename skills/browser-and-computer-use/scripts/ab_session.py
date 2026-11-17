@@ -132,7 +132,8 @@ def stop_daemon(name: str, runtime: pathlib.Path, proc: pathlib.Path = pathlib.P
 
 def close(name: str, flags: list[str], path: pathlib.Path) -> int:
     result = subprocess.run(["agent-browser", "--session", name, *flags, "close"])
-    runtime = pathlib.Path(os.environ.get("XDG_RUNTIME_DIR", "/nonexistent")) / "agent-browser"
+    runtime = (pathlib.Path(os.environ["AGENT_BROWSER_SOCKET_DIR"]) if os.environ.get("AGENT_BROWSER_SOCKET_DIR")
+               else pathlib.Path(os.environ.get("XDG_RUNTIME_DIR", "/nonexistent")) / "agent-browser")
     if result.returncode == 0 or stop_daemon(name, runtime):
         path.unlink()
         return 0
