@@ -207,27 +207,6 @@ def add_tool_notes(text, rules):
     return text[:start] + body
 
 
-def add_windows_hook_command(text, command):
-    # Codex on Windows reads a hook's commandWindows and ignores the `windows` key other hosts read. An upstream
-    # manifest that sets commandWindows itself keeps its own, because that is the fix this overlay stands in for.
-    if text is None:
-        return text
-    manifest = json.loads(text)
-    for groups in manifest['hooks'].values():
-        for group in groups:
-            for handler in group['hooks']:
-                if handler.get('type') == 'command':
-                    handler.setdefault('commandWindows', command)
-    return json.dumps(manifest, indent=2, ensure_ascii=False) + '\n'
-
-
-def windows_overlay(hook_command, replaces):
-    # The Windows-only Codex edits a caller adds to its adaptations for this plugin, or None when it declares none.
-    if not hook_command and not replaces:
-        return None
-    return {'hookCommand': hook_command, 'replace': [(r.path, r.find, r.replace) for r in replaces]}
-
-
 def replace_once(text, find, replacement, label):
     # A patch to one passage of an upstream file. An upstream that already reads as the patch needs none, and one
     # that changed, moved or removed the passage stops for review.
@@ -351,10 +330,8 @@ def plan(registry, installs, adaptations=None):
                 label = f'{identity}:{relative}'
                 stage(root / relative, lambda text, base=base, adapted=adapted, label=label:
                       merge_adaptation(text, base, adapted, label))
-        windows = adaptations.get('windows', {}).get(plugin, {})
-        if command := windows.get('hookCommand'):
-            stage(root / 'hooks/hooks.json', lambda text, command=command: add_windows_hook_command(text, command))
-        for relative, find, replacement in (*adaptations.get('replace', {}).get(plugin, ()), *windows.get('replace', ())):
+        windows = adaptations.get('windows', {}).get(plugin, ())
+        for relative, find, replacement in (*adaptations.get('replace', {}).get(plugin, ()), *windows):
             stage(root / relative, lambda text, find=find, replacement=replacement, label=f'{identity}:{relative}':
                   replace_once(text, find, replacement, label))
         rules = noted_here(adaptations, identity)

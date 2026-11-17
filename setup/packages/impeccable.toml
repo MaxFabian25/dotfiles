@@ -14,7 +14,6 @@ forbid = [
 [codex]
 install = [{ via = "personal", enabled = true }]
 hooks = "trusted"
-windows_hook_command = 'cmd /c if exist "${CLAUDE_PLUGIN_ROOT}\skills\impeccable\scripts\impeccable.cmd" "${CLAUDE_PLUGIN_ROOT}\skills\impeccable\scripts\impeccable.cmd" hook'
 
 [[codex.windows_replace]]
 path = 'skills/impeccable/scripts/impeccable.cmd'
