@@ -96,6 +96,24 @@ def codex_loads(installed):
     return max(named, key=order) if named else folders[-1] if folders else installed
 
 
+def codex_lists_plugins(roots, plugin='kit'):
+    """What a Codex 0.171.0-alpha.12 app server does for an enabled personal plugin each time a client lists plugins
+    (core-plugins loader.rs, store.rs): it reads the version from the manifest of the source the catalog names, and
+    when that is not the name of the plugin's highest folder it copies the source into a folder of that name and
+    deletes the plugin's other folders, as a probe of that version showed on 17 November 2026. Gives whether it
+    did."""
+    entry, = (entry for entry in json.loads((roots.agents_home / 'plugins/marketplace.json').read_text())['plugins']
+              if entry['name'] == plugin)
+    source = roots.home / entry['source']['path']
+    version = json.loads((source / '.codex-plugin/plugin.json').read_text())['version']
+    cache = roots.codex_home / 'plugins/cache/personal' / plugin
+    if codex_loads(cache / version).name == version:
+        return False
+    shutil.rmtree(cache)
+    shutil.copytree(source, cache / version)
+    return True
+
+
 def moving_aside(tree):
     return lambda source, target: source == tree and target.name == 'displaced'
 
@@ -408,7 +426,9 @@ class InstallationTest(unittest.TestCase):
             self.run_apply()
         self.assertNotEqual(self.installed(), earlier)
         self.assertEqual(self.run_apply().exit_code, 0)
-        self.assertIn('use the first reader', (copy / 'skills/one/SKILL.md').read_text())
+        # Under the name of the folder ~/.codex loads, which the catalog's source gives as its version.
+        self.assertEqual([path.name for path in copy.parent.iterdir()], [self.installed().name])
+        self.assertIn('use the first reader', (copy.parent / self.installed().name / 'skills/one/SKILL.md').read_text())
         self.assertIn('use the local reader', (earlier / 'skills/one/SKILL.md').read_text())
 
     def test_an_account_home_holding_the_copy_an_earlier_engine_kept_as_its_backup_is_brought_up_to_date(self):
@@ -2309,6 +2329,168 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual(list(release.parent.parent.glob('.sync-*')), [])
         self.assertEqual(plan(self.setup, self.device).exit_code, 0)
 
+    def catalog_source(self):
+        """The folder the personal catalog names as the kit's source."""
+        entry, = json.loads((self.roots.agents_home / 'plugins/marketplace.json').read_text())['plugins']
+        return self.roots.home / entry['source']['path']
+
+    def staged_sources(self):
+        folder = self.roots.agents_home / 'plugins/sources/kit'
+        return sorted(path.name for path in folder.iterdir()) if folder.is_dir() else []
+
+    def assert_codex_keeps_the_folder(self, folder):
+        """A client's plugin listing leaves Codex loading folder, and the catalog names a copy of it whose manifest
+        gives the folder's name as its version."""
+        source = self.catalog_source()
+        self.assertEqual(source.parent, self.roots.agents_home / 'plugins/sources/kit')
+        manifest = '.codex-plugin/plugin.json'
+        self.assertEqual(json.loads((source / manifest).read_text()),
+                         {**json.loads((folder / manifest).read_text()), 'version': folder.name})
+        held, staged = accepted_installations.image(folder), accepted_installations.image(source)
+        self.assertEqual({path: value for path, value in staged['entries'].items() if path != manifest},
+                         {path: value for path, value in held['entries'].items() if path != manifest})
+        self.assertFalse(codex_lists_plugins(self.roots))
+        self.assertEqual(self.installed(), folder)
+
+    def test_the_catalog_names_the_adapted_build_so_codex_keeps_its_folder(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        folder = self.installed()
+        self.assertTrue(folder.name.startswith('1.0.0+notes.'))
+        self.assert_codex_keeps_the_folder(folder)
+        self.assertEqual(self.staged_sources(), [self.catalog_source().name])
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+        snapshot, _ = self.snapshot(), self.calls.clear()
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual((self.snapshot(), self.calls), (snapshot, []))
+
+    def test_a_catalog_that_names_the_release_loses_the_adapted_folder_to_codex(self):
+        # The layout before 17 November 2026, kept here to show what the catalog's source decides.
+        self.assertEqual(self.run_apply().exit_code, 0)
+        folder = self.installed()
+        catalog = self.roots.agents_home / 'plugins/marketplace.json'
+        data = json.loads(catalog.read_text())
+        data['plugins'][0]['source']['path'] = './' + self.source.relative_to(self.roots.home, walk_up=True).as_posix()
+        catalog.write_text(json.dumps(data))
+        self.assertTrue(codex_lists_plugins(self.roots))
+        self.assertEqual(self.installed().name, '1.0.0')
+        self.assertFalse(folder.exists())
+        self.assertNotIn('use the local reader', (self.installed() / 'skills/one/SKILL.md').read_text())
+
+    def test_a_device_whose_catalog_names_the_release_beside_an_adapted_folder_is_pointed_at_that_folder(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        folder = self.installed()
+        folders = sorted(folder.parent.iterdir())
+        # What the engine before 17 November 2026 left: a receipt without a source and a catalog naming the release.
+        receipt = self.receipt_of('plugin:')
+        value = json.loads(receipt.read_bytes())
+        del value['accepted']['source']
+        receipt.write_text(json.dumps(value))
+        release = self.roots.agents_home / 'plugins/sources/kit' / str(self.roots.tree_digest(self.source)).removeprefix('sha256:')
+        shutil.copytree(self.source, release)
+        shutil.rmtree(self.catalog_source())
+        catalog = self.roots.agents_home / 'plugins/marketplace.json'
+        data = json.loads(catalog.read_text())
+        data['plugins'][0]['source']['path'] = './' + release.relative_to(self.roots.home).as_posix()
+        catalog.write_text(json.dumps(data))
+        current = plan(self.setup, self.device)
+        self.assertEqual((current.exit_code, [d.detail for d in current.changes]),
+                         (1, ["plugin:codex:kit@personal: Point the personal catalog at the adapted build, with its "
+                              "folder's name as its version"]))
+        self.calls.clear()
+        self.assertEqual(self.run_apply(current).exit_code, 0)
+        self.assertEqual([args[:2] for _, args in self.calls], [('plugin', 'marketplace')])
+        self.assertEqual(sorted(folder.parent.iterdir()), folders)
+        self.assert_codex_keeps_the_folder(folder)
+        self.assertEqual(self.staged_sources(), [self.catalog_source().name])
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
+    def test_a_change_names_the_source_of_its_new_folder_and_removes_the_one_before(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        first, before = self.installed(), self.catalog_source()
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertNotEqual(self.installed(), first)
+        self.assertIn('use the reviewed replacement', (self.catalog_source() / 'skills/one/SKILL.md').read_text())
+        self.assertFalse(before.exists())
+        self.assertEqual(self.staged_sources(), [self.catalog_source().name])
+        self.assert_codex_keeps_the_folder(self.installed())
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
+    def test_an_upstream_release_is_installed_from_the_release_and_then_named_by_its_folder(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.release_version('2.0.0', 'second release bytes\n')
+        named = []
+        self.interrupt = lambda destination: named.append(
+            json.loads((self.catalog_source() / '.codex-plugin/plugin.json').read_text())['version'])
+        self.assertEqual(self.run_apply().exit_code, 0)
+        # `codex plugin add` installs what the catalog names.
+        self.assertEqual(named, ['2.0.0'])
+        self.assertTrue(self.installed().name.startswith('2.0.0+notes.'))
+        self.assert_codex_keeps_the_folder(self.installed())
+        self.assertEqual(self.staged_sources(), [self.catalog_source().name])
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
+    def test_a_folder_codex_replaced_with_its_copy_of_the_catalog_source_is_written_again(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        folder = self.installed()
+        # As Codex's own install of the plugin from its catalog does, to a folder named for the source's version.
+        shutil.rmtree(folder)
+        shutil.copytree(self.catalog_source(), folder)
+        current = plan(self.setup, self.device)
+        self.assertEqual((current.blocked, [d.detail for d in current.changes]),
+                         ((), ['plugin:codex:kit@personal: Write the accepted image again in place of the copy Codex '
+                               'made of its catalog source']))
+        self.assertEqual(self.run_apply(current).exit_code, 0)
+        self.assertNotEqual(self.installed(), folder)
+        self.assertEqual(accepted_installations.image(self.installed()),
+                         json.loads(self.receipt_of('plugin:').read_bytes())['accepted']['image'])
+        self.assert_codex_keeps_the_folder(self.installed())
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+
+    def test_an_edited_catalog_source_blocks_the_pull_and_stays(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        edited = self.catalog_source() / 'ordinary.txt'
+        edited.write_text('edited in the catalog source\n')
+        current = plan(self.setup, self.device)
+        self.assertEqual([d.detail for d in current.blocked],
+                         [f'plugin:codex:kit@personal: The adapted build the personal catalog names was edited: '
+                          f'{self.catalog_source()}'])
+        with self.assertRaisesRegex(RuntimeError, 'Sync is blocked'):
+            self.run_apply(current)
+        self.assertEqual(edited.read_text(), 'edited in the catalog source\n')
+
+    def test_a_catalog_source_windows_refuses_to_move_into_place_leaves_no_new_folder(self):
+        self.assertEqual(self.run_apply().exit_code, 0)
+        first, before = self.installed(), self.catalog_source()
+        self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
+        sources = self.roots.agents_home / 'plugins/sources/kit'
+        with self.refusing(moves=lambda source, target: target.parent == sources) as refusals:
+            result = self.run_apply()
+        self.assertEqual((result.exit_code, result.blocked, len(refusals)), (1, (), ATTEMPTS))
+        [held] = result.held
+        self.assertEqual(held.into.parent, sources)
+        self.assertEqual((self.installed(), self.catalog_source(), sorted(first.parent.iterdir())),
+                         (first, before, [first.parent / '1.0.0', first]))
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assert_codex_keeps_the_folder(self.installed())
+        self.assertIn('use the reviewed replacement', (self.installed() / 'skills/one/SKILL.md').read_text())
+
+    def test_the_catalog_source_gives_the_folder_s_name_in_each_manifest_codex_may_read(self):
+        manifests = {'plugin.json': {'$schema': 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json',
+                                     'name': 'kit', 'version': '1.0.0'},
+                     '.claude-plugin/plugin.json': {'name': 'kit', 'version': '1.0.0'},
+                     'package/plugin.json': {'name': 'kit', 'version': '1.0.0'}}
+        for path, manifest in manifests.items():
+            (self.source / path).parent.mkdir(exist_ok=True)
+            (self.source / path).write_text(json.dumps(manifest))
+        self.release_version('1.0.0', 'ordinary release bytes\n')
+        self.assertEqual(self.run_apply().exit_code, 0)
+        versions = {path: json.loads((self.catalog_source() / path).read_text())['version']
+                    for path in ('.codex-plugin/plugin.json', *manifests)}
+        name = self.installed().name
+        self.assertEqual(versions, {'.codex-plugin/plugin.json': name, 'plugin.json': name,
+                                    '.claude-plugin/plugin.json': name, 'package/plugin.json': '1.0.0'})
+
     def test_a_change_leaves_the_folder_codex_loaded_as_it_was(self):
         self.assertEqual(self.run_apply().exit_code, 0)
         first = self.installed()
@@ -2393,9 +2575,10 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual(self.apply_reporting(),
                          f'Work folders left in place: {work}: an earlier engine replaced plugin:codex:kit@personal in '
                          'place there, and this one leaves those folders as they are\n')
-        self.assertEqual(self.calls, [])
+        self.assertEqual([args for _, args in self.calls if args[:2] == ('plugin', 'add')], [])
         self.assertEqual((self.installed().parent, self.installed().name.startswith('1.0.0+notes.')),
                          (release.parent, True))
+        self.assert_codex_keeps_the_folder(self.installed())
         self.assertIn('use the local reader', (self.installed() / 'skills/one/SKILL.md').read_text())
         self.assertEqual(sorted(path.name for path in work.iterdir()), ['displaced', 'staged'])
         self.assertEqual(plan(self.setup, self.device).exit_code, 0)
@@ -2486,9 +2669,9 @@ class InstallationTest(unittest.TestCase):
         write = AcceptedInstallations._write_folder
 
         def edited(owner, prepared):
-            folder = write(owner, prepared)
+            folder, source = write(owner, prepared)
             (folder / 'ordinary.txt').write_text('edited as it appeared\n')
-            return folder
+            return folder, source
 
         self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
         with patch.object(AcceptedInstallations, '_write_folder', edited), self.assertRaisesRegex(

@@ -232,7 +232,7 @@ class ProfilePluginsTest(unittest.TestCase):
             planned = kit.inspect()[0]
             self.assertEqual(planned, ())
 
-            def release(artifact, files, native):
+            def release(artifact, files, native, catalog):
                 home.write(kit.canonical / 'skills/publish/SKILL.md', '---\nname: publish\ndescription: Released.\n---\nBody.\n')
                 kit.record = {'path': str(kit.canonical), 'image': image(kit.canonical)}
 
@@ -249,6 +249,30 @@ class ProfilePluginsTest(unittest.TestCase):
             operation.run()
             self.assertIn('Released.', (kit.target / 'skills/publish/SKILL.md').read_text())
             self.assertEqual(kit.inspect(), ((), (), ()))
+
+    def test_a_home_holds_the_copy_under_the_name_of_the_folder_whose_source_the_catalog_names(self):
+        for case in ('the release name an earlier engine gave', "Codex's copy of the catalog source"):
+            with self.subTest(case), Home() as home:
+                kit = Fixture(home)
+                # The folder the engine named in ~/.codex, and the source staged for it, which gives that name as
+                # its version.
+                folder = kit.canonical.parent / (VERSION + '.notes.20261117T120000Z.0123456789ab')
+                kit.canonical.rename(folder)
+                kit.canonical = folder
+                source = home.roots.agents_home / 'plugins/sources/kit' / ('0' * 64)
+                shutil.copytree(folder, source)
+                home.write(source / '.codex-plugin/plugin.json', json.dumps({'name': 'kit', 'version': folder.name}))
+                home.write(home.roots.agents_home / 'plugins/marketplace.json', json.dumps({'name': 'personal', 'plugins': [
+                    {'name': 'kit', 'source': {'source': 'local', 'path': './.agents/plugins/sources/kit/' + '0' * 64}}]}))
+                kit.record = {'path': str(folder), 'image': image(folder),
+                              'source': {'path': str(source), 'image': image(source)}}
+                kit.install(VERSION) if case.startswith('the release') else kit.install(folder.name, source)
+                mirrors, differences, _ = kit.inspect()
+                self.assertEqual([d.kind.value for d in differences], ['tree'])
+                kit.apply(mirrors)
+                self.assertEqual([path.name for path in kit.cache.iterdir()], [folder.name])
+                self.assertEqual(image(kit.cache / folder.name), kit.record['image'])
+                self.assertEqual(kit.inspect(), ((), (), ()))
 
     def test_a_kept_current_plugin_a_home_has_on_is_mirrored_there(self):
         with Home() as home:

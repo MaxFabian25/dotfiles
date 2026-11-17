@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -8,7 +10,7 @@ import tomllib
 import tomlkit
 
 import portable
-from accepted_installations import AcceptedInstallations, HeldMove, copy_tree, image
+from accepted_installations import AcceptedInstallations, HeldMove, _linked, copy_tree, image
 from claude_host import native_marketplace
 from codex_host import EVERY_SKILL
 import codex_runtime
@@ -49,7 +51,7 @@ class Apply:
         self._catalogs()
         for artifact in self.prepared.artifacts:
             try:
-                self.owner.apply(artifact, self.files, native=self._install)
+                self.owner.apply(artifact, self.files, native=self._install, catalog=self._point)
             except HeldMove as held:
                 self.held.append(held)
         self._plugins()
@@ -151,18 +153,17 @@ class Apply:
         description wants is rewritten to list exactly its managed plugins, so a package that is no longer managed
         leaves it, even when nothing else changed."""
         entries = []
-        for name, built in self.built.items():
+        for name in self.built:
             package = self.setup.packages[name]
-            if not package.codex or not any(isinstance(i, EngineInstall) and i.managed for i in package.codex.installs):
+            install = next((i for i in package.codex.installs if isinstance(i, EngineInstall) and i.managed), None
+                           ) if package.codex else None
+            if install is None:
                 continue
-            root = built.root
-            if not root.is_relative_to(self.roots.agents_home.parent):
-                root = self.roots.agents_home / 'plugins/sources' / name / str(built.digest).removeprefix('sha256:')
-                self._stage_source(built.root, root)
-            location = {'source': 'local', 'path': './' + root.relative_to(self.roots.agents_home.parent).as_posix()}
-            entries.append({'name': name, 'source': location,
-                            'policy': {'installation': 'AVAILABLE', 'authentication': 'ON_USE'},
-                            'category': 'Developer Tools'})
+            identity = f'plugin:{Host.CODEX}:{plugin_id(name, install, Host.CODEX)}'
+            source = self.owner.catalog_source(identity)
+            if source is None and self.owner.names_later(identity):
+                continue
+            entries.append(self._entry(name, source))
         managed = self.catalogs.get((Host.CODEX, 'personal'))
         if entries or managed is not None:
             changed = self.files.json(self.roots.agents_home / 'plugins/marketplace.json',
@@ -200,6 +201,43 @@ class Apply:
                 changed = self.files.json(path, lambda data, n=name, e=entries, m=managed: merge_catalog(data, n, e, m))
             if changed or managed is not None:
                 self.command(Host.CLAUDE, 'plugin', 'marketplace', 'add', str(directory), '--scope', 'user', '--json')
+
+    def _entry(self, name, source=None):
+        """A personal catalog entry that names source, or, when None, the release built in this run."""
+        if source is None:
+            built = self.built[name]
+            source = built.root
+            if not source.is_relative_to(self.roots.agents_home.parent):
+                source = self.roots.agents_home / 'plugins/sources' / name / str(built.digest).removeprefix('sha256:')
+                self._stage_source(built.root, source)
+        location = {'source': 'local', 'path': './' + source.relative_to(self.roots.agents_home.parent).as_posix()}
+        return {'name': name, 'source': location, 'policy': {'installation': 'AVAILABLE', 'authentication': 'ON_USE'},
+                'category': 'Developer Tools'}
+
+    def _point(self, plugin, source):
+        """Name source, or the release when None, as the plugin's source in the personal catalog, once the plugin's
+        folder is in place. Codex compares the version that source gives with the name of the plugin's highest folder
+        whenever a client lists plugins, and where they differ it installs the source and deletes the plugin's other
+        folders. The plugin's other staged sources go."""
+        name = plugin.split('@', 1)[0]
+        entry = self._entry(name, source)
+        if self.files.json(self.roots.agents_home / 'plugins/marketplace.json',
+                           lambda data: merge_catalog(data, 'personal', [entry])):
+            self.command(Host.CODEX, 'plugin', 'marketplace', 'add', str(self.roots.agents_home.parent), '--json')
+        named = self.roots.agents_home.parent / entry['source']['path']
+        folder = self.roots.agents_home / 'plugins/sources' / name
+        for path in sorted(folder.iterdir()) if folder.is_dir() else ():
+            if path == named or not re.fullmatch('[0-9a-f]{64}', path.name):
+                continue
+            try:
+                if _linked(path) or not path.is_dir() or self.roots.tree_digest(path) != 'sha256:' + path.name:
+                    reason = 'it is not the tree its name is the digest of'
+                else:
+                    shutil.rmtree(path)
+                    continue
+            except OSError as error:
+                reason = error
+            print(f'Staged source left in place: {path}: {reason}', file=sys.stderr)
 
     @staticmethod
     def _stage_source(source, destination):

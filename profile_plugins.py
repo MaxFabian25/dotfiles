@@ -126,6 +126,10 @@ def inspect(setup, roots, patterns, accepted, approved=None):
             record = accepted(f'plugin:{Host.CODEX}:{subject}')
             # The receipt names the version folder of its own that sync wrote for the plugin in ~/.codex.
             canonical = Path(record['path']) if record else roots.codex_home / relative
+            if record and record.get('source'):
+                # The catalog's source gives that folder's name as its version, and Codex in the home replaces a copy
+                # held under any other name with that source.
+                relative = relative.rsplit('/', 1)[0] + '/' + canonical.name
             try:
                 shared = (profile / relative).parent.resolve() == canonical.parent.resolve()
                 try:
