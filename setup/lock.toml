@@ -91,8 +91,8 @@ codex = { version = "0.1.0+upstream.ced39776fdf8.codex1", tree = "sha256:dd58dba
 claude = { version = "0.1.0+codex-aligned.f6c9d03c5fcf", tree = "sha256:7f6768983aa85ee443f728165e7065076ccb34b10e442535e68f7380419730fc" }
 
 [planted-error-checks]
-intent = "sha256:846e306b11868aece437cd347b5c069dd6a2a8e3e9fb7104e082a14277da4004"
-placements = { agents = "sha256:42f2ad496d8025918717dc1bbb5e65ef9bdcef7c2f3d6fc669d15c1673f38945", claude = "sha256:42f2ad496d8025918717dc1bbb5e65ef9bdcef7c2f3d6fc669d15c1673f38945" }
+intent = "sha256:196392ad30bcca591bf0c6277fe313f9d09b85465da92afe8c69009bd99c672f"
+placements = { agents = "sha256:cabe827e9f4f408e73d22439d8a2642d58730cc81a35b77c7833697012e1d850", claude = "sha256:cabe827e9f4f408e73d22439d8a2642d58730cc81a35b77c7833697012e1d850" }
 
 [powerpoint-com-wsl]
 intent = "sha256:a76daeea53c80acdc78e54e9f9a17d76f8a99c8971b7ba4fbbe81c150ec1d75c"
@@ -102,9 +102,9 @@ placements = { agents = "sha256:eeeff1bc17719f7c56dfc00ec8dd4a39d4c1197d177b13e8
 intent = "sha256:0ed2c0e168ba151097399cfcf6e5e064dd1089b87cda571324a89ceb9f30f5d8"
 
 [prose]
-intent = "sha256:997d2969e75d3bb9e535ed52c3a8703275d7c020c45ce195ac83dda37921b610"
-codex = { version = "0.3.20+dotfiles.20261115", tree = "sha256:4eb0acbe07e793afbaed961f208d5f4a8c5b1bbdbb5a144c4985c5439cd0e473" }
-claude = { version = "0.3.20+codex-aligned.c7159a21f365", tree = "sha256:a63768af0d505c9650248e33d9fb466fd9ae1fd0d0ec575d16688bee94470d01" }
+intent = "sha256:cdb4a79f31ccbb0f2585a425673f83e2537b2c8ff23e588281627d30414a7661"
+codex = { version = "0.3.21+dotfiles.20261118", tree = "sha256:433e9f7700ab9e882fd94d6cce3085ef1b0eedc006ccc39b5952f7a004dd2766" }
+claude = { version = "0.3.21+codex-aligned.0a4d14e5ca6d", tree = "sha256:d2df435f328421e4ac45c898d2c15e41474c7f3a288426db579f2025fb8e5037" }
 
 [pstack]
 intent = "sha256:5bd9325a8dbc80fac9097172259d57130ce79aa7e51f4956be0a2084ed3e1d75"

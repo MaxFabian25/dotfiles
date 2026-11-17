@@ -14,11 +14,12 @@ TEST runs at low priority where the system allows it. On stderr, the script warn
 1-minute load is above its number of CPUs, and once the unchanged copy has passed it gives that run's wall and CPU
 time multiplied by the number of plants, an estimate of the whole run. The run goes on either way.
 
-Prints CAUGHT, MISSED, TIMED OUT or NOT APPLIED for each plant, after the unchanged copy has passed. A CAUGHT
-line names the tests that failed. In a run that holds unittest's `Ran N tests` line, those are its `FAIL: name`
-and `ERROR: name` headings. In any other run, they are the lines that a TEST of its own making prints as `FAIL`,
-two spaces and the check's name, which ends at the next two spaces. It gives the run's last line when the run
-names none, as a plant that breaks the import does. Check that those are the tests of the planted behaviour.
+Prints CAUGHT, CRASHED, MISSED, TIMED OUT or NOT APPLIED for each plant, after the unchanged copy has passed. A
+CAUGHT line names the tests that failed. In a run that holds unittest's `Ran N tests` line, those are its
+`FAIL: name` and `ERROR: name` headings. In any other run, they are the lines that a TEST of its own making prints
+as `FAIL`, two spaces and the check's name, which ends at the next two spaces. Check that those are the tests of
+the planted behaviour. A run that fails but names no failed test, as a plant that breaks the import does, crashed
+the checker before any test could fail: its CRASHED line gives the run's last line, and it counts as not caught.
 Exits 0 when every plant was caught, 1 when one was not, and 2, with the reason on stderr, when the unchanged
 copy fails or the arguments are wrong.
 """
@@ -70,14 +71,14 @@ def run(root, source, test, text, arguments=()):
         return done.returncode, done.stdout.decode(errors='replace')
 
 
-def failures(output):
-    """What a CAUGHT line says failed: the tests the run names, or the run's last line."""
+def outcome(label, output):
+    """The line for a failed run: CAUGHT with the tests it names, or CRASHED with its last line when it names none."""
     names = list(dict.fromkeys((FAILED if RAN.search(output) else FAILED_CHECK).findall(output)))
-    if names:
-        more = f' and {len(names) - NAMED} more' if len(names) > NAMED else ''
-        return f'{", ".join(names[:NAMED])}{more} failed'
-    last = output.strip().splitlines()[-1:] or ['no output']
-    return f'no test named, the run ended with: {last[0].strip()}'
+    if not names:
+        last = output.strip().splitlines()[-1:] or ['no output']
+        return f'CRASHED {label}: no test failed, the run ended with: {last[0].strip()}'
+    more = f' and {len(names) - NAMED} more' if len(names) > NAMED else ''
+    return f'CAUGHT {label}: {", ".join(names[:NAMED])}{more} failed'
 
 
 def children_cpu():
@@ -176,8 +177,9 @@ def main(argv):
         elif status == 0:
             print(f'MISSED {label}', flush=True)
         else:
-            caught += 1
-            print(f'CAUGHT {label}: {failures(output)}', flush=True)
+            line = outcome(label, output)
+            caught += line.startswith('CAUGHT ')
+            print(line, flush=True)
     print(f'{caught} of {len(plants)} plants caught')
     return 0 if caught == len(plants) else 1
 

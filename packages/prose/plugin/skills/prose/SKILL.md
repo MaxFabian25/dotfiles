@@ -68,7 +68,8 @@ release notes, use [technical prose](references/technical-and-code-prose.md).
 
 Before you hand over English prose longer than a few paragraphs, run `scripts/scan_prose.py FILE`
 on the HTML, Markdown, or text file and settle each finding in context. It flags serial-comma gaps
-and other house mechanics, and the patterns the unslop writing passes remove.
+and other house mechanics, and the patterns the unslop writing passes remove. When the text keeps a
+style that omits the serial comma, add `--no-serial-comma`.
 
 Return the requested artefact when the requested changes and relevant checks are complete. When the
 user asks for the artefact alone, begin the reply with its first line. Disclose
