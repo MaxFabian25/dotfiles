@@ -43,7 +43,7 @@ CLAUDE_BASE = [
     "--verbose",
 ]  # fmt: skip
 CODEX_BASE = [
-    "codex", "exec", "-m", "gpt-6.1-sol", "-c", 'model_reasoning_effort="high"', "-c", 'web_search="disabled"',
+    "codex", "exec", "-m", "gpt-6.2-sol", "-c", 'model_reasoning_effort="high"', "-c", 'web_search="disabled"',
     "-c", "notify=[]", "--skip-git-repo-check",
 ]  # fmt: skip
 # The installed Prose, turned off when a candidate runs. Codex wants the key unquoted.
