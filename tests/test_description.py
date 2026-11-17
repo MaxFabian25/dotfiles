@@ -151,16 +151,13 @@ class RenderTest(unittest.TestCase):
             changed = description_toml.load(roots.roots()).packages['combined']
             self.assertNotEqual(description.intent(package, setup.repos), description.intent(changed, setup.repos))
 
-    def test_a_windows_hook_command_round_trips_and_changes_intent(self):
+    def test_a_windows_replace_round_trips_and_changes_intent(self):
         with Roots() as roots:
             path = roots.public / 'packages/hooked.toml'
-            command = r'cmd /c if exist "${CLAUDE_PLUGIN_ROOT}\skills\run.cmd" "${CLAUDE_PLUGIN_ROOT}\skills\run.cmd" hook'
             path.write_text('public = true\n[source]\nrepo = "impeccable"\n[codex]\ninstall = [{ via = "personal", enabled = true }]\n'
-                            f"windows_hook_command = '{command}'\n"
                             f"windows_replace = [{{ path = 'a/run.cmd', find = '\"%~1\" engine-probe >', replace = 'call \"%~1\" engine-probe >' }}]\n")
             setup = description_toml.load(roots.roots())
             package = setup.packages['hooked']
-            self.assertEqual(package.codex.windows_hook_command, command)
             self.assertEqual(package.codex.windows_replace, (description.WindowsReplace('a/run.cmd', '"%~1" engine-probe >', 'call "%~1" engine-probe >'),))
             # A lock's intent holds this name, so another name would make every Windows-patched package's lock stale.
             self.assertEqual(type(package.codex.windows_replace[0]).__name__, 'WindowsReplace')

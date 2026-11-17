@@ -243,7 +243,6 @@ def _parse_package(path: Path, data: Mapping, visibility: Visibility, errors: li
         codex = CodexPlacement(_parse_installs(codex_table, Host.CODEX),
                                codex_table.parse('hooks', Hooks, codex_table.get('hooks', str, Hooks.OFF.value)),
                                _parse_roles(codex_table.sub('roles')), adaptation,
-                               codex_table.get('windows_hook_command', str, None),
                                _parse_replace(codex_table, 'windows_replace'), _parse_replace(codex_table, 'replace'))
         codex_table.done()
     claude_table = table.sub('claude')
@@ -628,8 +627,6 @@ def _dump_package(package: Package) -> dict:
             codex['adaptation'] = _Inline({'repository': adaptation.repository, 'base': adaptation.base,
                                            'adapted': adaptation.adapted,
                                            **({'harness': adaptation.harness} if adaptation.harness else {})})
-        if package.codex.windows_hook_command:
-            codex['windows_hook_command'] = package.codex.windows_hook_command
         for key in ('windows_replace', 'replace'):
             if replaces := getattr(package.codex, key):
                 codex[key] = [_Inline({'path': r.path, 'find': r.find, 'replace': r.replace}) for r in replaces]

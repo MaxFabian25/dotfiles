@@ -258,7 +258,7 @@ class Builder:
         return build_snapshot(package.name, recipe, source, snapshot, output_root=self.directory)[0]
 
     def overlay(self, package: Package, host: Host, identity: str, root: Path, *, windows: bool | None = None):
-        from invocation_overrides import plan, read_text, skill_paths, windows_overlay
+        from invocation_overrides import plan, read_text, skill_paths
         import yaml
 
         label = host.value.capitalize()
@@ -307,10 +307,8 @@ class Builder:
         placement = package.placement(host)
         if placement and placement.replace:
             adaptations['replace'] = {package.name: [(r.path, r.find, r.replace) for r in placement.replace]}
-        if placement and (WINDOWS if windows is None else windows):
-            command = placement.windows_hook_command if host == Host.CODEX else None
-            if edits := windows_overlay(command, placement.windows_replace):
-                adaptations['windows'] = {package.name: edits}
+        if placement and placement.windows_replace and (WINDOWS if windows is None else windows):
+            adaptations['windows'] = {package.name: [(r.path, r.find, r.replace) for r in placement.windows_replace]}
         return plan(registry, [(label, identity, root)], adaptations=adaptations)
 
     def check_overlays(self, package: Package, codex: Built, claude: dict[str, Built]) -> None:

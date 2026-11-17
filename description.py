@@ -221,8 +221,6 @@ class CodexPlacement:
     hooks: Hooks = Hooks.OFF
     roles: PluginRoles | None = None
     adaptation: Adaptation | None = None
-    # The commandWindows a pull on Windows gives the plugin's hooks. Absent from the intent of every other package.
-    windows_hook_command: str | None = field(default=None, metadata={'intent': 'when-set'})
     windows_replace: tuple[WindowsReplace, ...] = field(default=(), metadata={'intent': 'when-set'})
     # Edits on every platform; a native Claude install must declare the same edits explicitly.
     replace: tuple[TextReplace, ...] = field(default=(), metadata={'intent': 'when-set'})
@@ -372,7 +370,7 @@ class Setup:
                     changes = {'installs': tuple(replace(i, enabled=False) if isinstance(i, MarketplaceInstall)
                                                  else replace(i, enabled=False, keep_current=False) for i in placement.installs)}
                     if host == Host.CODEX:
-                        changes.update(hooks=Hooks.OFF, roles=None, adaptation=None, windows_hook_command=None, windows_replace=())
+                        changes.update(hooks=Hooks.OFF, roles=None, adaptation=None, windows_replace=())
                     else:
                         changes['modes'] = {}
                         changes['windows_replace'] = ()
