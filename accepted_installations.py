@@ -22,8 +22,8 @@ from configuration import (BlockedConfiguration, FileConfiguration, JsonConfigur
 from description import AlignedInstall, LocalSource, RepoSource, SkillRoot, _canonical, plugin_id
 from claude_host import _loaded
 from drift import Difference, EntryRef, Kind
-from host_state import (FactKey, Host, InstallDetail, Released, Surface, Unpinned, bytes_digest, named_for,
-                        version_folder)
+from host_state import (ENGINE_MARKETPLACE, FactKey, Host, InstallDetail, Released, Surface, Unpinned, bytes_digest,
+                        named_for, version_folder)
 from portable import StillHeld, staging_directory, staging_folder, replace as replace_path, while_held
 from sync_files import ConcurrentEdit, contents
 from sync_sources import BuildError
@@ -33,6 +33,10 @@ _ABSENT = {'kind': 'absent'}
 _RENDERER = 1
 _PYTHON_CACHE = '__pycache__'
 _WORK = re.compile(r'\.sync-(.+)-[0-9a-f]{32}')
+# The manifests Codex 0.171.0-alpha.12 reads a plugin's version from (find_plugin_manifest_path): the root plugin.json
+# when it names an Agent Plugins schema, otherwise the first of the other three.
+_MANIFESTS = ('plugin.json', '.codex-plugin/plugin.json', '.claude-plugin/plugin.json', '.cursor-plugin/plugin.json')
+_AGENT_PLUGIN_SCHEMAS = 'https://agent-plugins.org/schemas/'
 
 
 class _Stop(Enum):
@@ -98,6 +102,29 @@ def image(path: Path, fields=None, syntax='toml'):
 def copy_tree(source: Path, destination: Path, copy_function=shutil.copy2):
     """Copy a tree without the Python caches that image() leaves out."""
     shutil.copytree(source, destination, ignore=shutil.ignore_patterns(_PYTHON_CACHE), copy_function=copy_function)
+
+
+def _versioned(tree: Path, version: str):
+    """Give each manifest in tree that Codex may read a plugin's version from that version, so whichever one a Codex
+    release reads names it."""
+    written = 0
+    for relative in _MANIFESTS:
+        path = tree / relative
+        if _linked(path) or not path.is_file():
+            continue
+        try:
+            manifest = json.loads(path.read_bytes())
+        except ValueError as error:
+            raise BuildError(f'{path}: not a JSON manifest: {error}') from error
+        if not isinstance(manifest, dict):
+            raise BuildError(f'{path}: not a JSON object')
+        if relative == 'plugin.json' and not str(manifest.get('$schema', '')).startswith(_AGENT_PLUGIN_SCHEMAS):
+            continue
+        manifest['version'] = version
+        path.write_bytes((json.dumps(manifest, indent=2, ensure_ascii=False) + '\n').encode())
+        written += 1
+    if not written:
+        raise BuildError(f'{tree}: no manifest for Codex to read the version from')
 
 
 class HeldMove(ConcurrentEdit):
@@ -227,6 +254,12 @@ class _Artifact:
     def claude_cache(self):
         return self.kind == 'plugin' and self.key.host == Host.CLAUDE
 
+    @property
+    def catalogued(self):
+        """A Codex plugin of the engine's personal catalog, whose entry names the source Codex installs it from."""
+        return (self.kind == 'plugin' and self.key.host == Host.CODEX
+                and self.key.subject.endswith('@' + ENGINE_MARKETPLACE[Host.CODEX]))
+
 
 @dataclass(frozen=True)
 class _PreparedArtifact:
@@ -267,6 +300,7 @@ class AcceptedInstallations:
             if self.opencode is not None:
                 self.configurations += self.opencode.configurations
         self._prepared = {}
+        self._installing = set()   # the plugins this sync has still to install with the host's own command
         self.staging = contextlib.ExitStack()   # holds the trees prepare stages; leaving it removes them
         self._refused_move = None
 
@@ -277,6 +311,57 @@ class AcceptedInstallations:
         """A plugin's accepted record (its path and image), or None when it has none or a replacement is pending."""
         receipt = self._receipt(_Artifact(identity, None, None, Path(), Path(), (), '', 'plugin'))
         return receipt['accepted'] if receipt and not receipt.get('pending') else None
+
+    def catalog_source(self, identity):
+        """The staged source the personal catalog names for a Codex plugin: its accepted record's, while that source
+        and the folder the record names are intact. None, for the release, where the record names no source, where
+        either changed, and while this sync has still to install the plugin with `codex plugin add`, which installs
+        whatever the catalog names."""
+        record = None if identity in self._installing else self.accepted(identity)
+        source = record and record.get('source')
+        if not source:
+            return None
+        try:
+            if (_same(image(Path(source['path'])), source['image'])
+                    and any(_same(image(Path(record['path'])), held) for held in (record['image'], source['image']))):
+                return Path(source['path'])
+        except (ConcurrentEdit, OSError):
+            pass
+        return None
+
+    def names_later(self, identity):
+        """Whether this sync names the plugin's catalog source itself once the plugin's folder is in place, which it
+        does for each plugin it applies without `codex plugin add`."""
+        return identity not in self._installing and any(item.artifact.identity == identity
+                                                        for item in self._prepared.values())
+
+    def _catalogued(self, artifact):
+        """The source the personal catalog names for a plugin, or None."""
+        data = contents(self.roots.agents_home / 'plugins/marketplace.json')
+        plugins = json.loads(data).get('plugins', []) if data is not None else []
+        name = artifact.key.subject.split('@', 1)[0]
+        entry = next((plugin for plugin in plugins if isinstance(plugin, dict) and plugin.get('name') == name), {})
+        source = entry.get('source')
+        if not isinstance(source, dict) or source.get('source') != 'local' or not isinstance(source.get('path'), str):
+            return None
+        return self.roots.agents_home.parent / source['path']
+
+    def _catalog_step(self, artifact, accepted):
+        """An in-step Codex personal plugin in a folder the engine named needs the catalog to name the source staged
+        for that folder, which carries the folder's name as its version. Codex reinstalls a plugin from that source
+        whenever the version it reads there differs from the plugin's highest folder, and deletes the plugin's other
+        folders."""
+        if not artifact.catalogued or Path(accepted['path']) == artifact.destination:
+            return None, ''
+        source = accepted.get('source')
+        if source is None or self._catalogued(artifact) != Path(source['path']):
+            return Kind.CHANGED, "Point the personal catalog at the adapted build, with its folder's name as its version"
+        actual = image(Path(source['path']))
+        if _missing(actual):
+            return Kind.CHANGED, 'Stage the adapted build the personal catalog names again'
+        if not _same(actual, source['image']):
+            return Kind.LOCAL_EDIT, f'The adapted build the personal catalog names was edited: {source["path"]}'
+        return None, ''
 
     def _receipt(self, artifact):
         path = self._path(artifact)
@@ -512,6 +597,8 @@ class AcceptedInstallations:
                     return Kind.MISSING, 'Recreate an absent managed artifact'
                 if accepted['intent'] != artifact.intent:
                     return Kind.CHANGED, 'Verify exact desired content before replacing a stale receipt'
+                if _same(actual, (accepted.get('source') or {}).get('image')):
+                    return Kind.CHANGED, 'Write the accepted image again in place of the copy Codex made of its catalog source'
                 return Kind.LOCAL_EDIT, 'Installed bytes differ from the accepted image'
             if accepted['intent'] == artifact.intent and _same(accepted['bindings'], _bindings(artifact.aliases)):
                 # That folder is the built release itself, so it holds the locked tree, while the cache holds the
@@ -519,7 +606,7 @@ class AcceptedInstallations:
                 if artifact.loaded is not None and self.roots.tree_digest(artifact.loaded) != artifact.expected.digest:
                     return Kind.LOCAL_EDIT, (f'The folder Claude Code runs it from, {self.roots.tokens(artifact.loaded)}, '
                                              'differs from its locked release')
-                return None, ''
+                return self._catalog_step(artifact, accepted)
             return Kind.CHANGED, 'Prepare the reviewed desired image'
         if _missing(actual):
             return Kind.MISSING, 'Create an absent managed artifact'
@@ -642,6 +729,7 @@ class AcceptedInstallations:
         validate_runtime(self.configurations, self.roots, proposed=True)
         tokens = tuple(object() for _ in prepared)
         self._prepared.update(zip(tokens, prepared))
+        self._installing = {item.artifact.identity for item in prepared if item.artifact.native}
         result = Prepared(tokens, built, claude, catalogs)
         self.preflight(result)
         return result
@@ -750,9 +838,11 @@ class AcceptedInstallations:
                                      receipt=receipt, retained=retained)
         if artifact.kind == 'plugin':
             # The folder the host loads stays as it is, but the host stops loading it, so it has to hold what the
-            # receipt, the pinned release, the target or an earlier engine's unfinished replacement put there, or the
-            # image its engine-made name was made for.
+            # receipt, the pinned release, the target or an earlier engine's unfinished replacement put there, the
+            # copy Codex makes of the catalog source the receipt names, or the image its engine-made name was made for.
             verified = [(artifact.current, pristine), (artifact.current, target), *_left_by_swap(pending)]
+            if accepted and accepted.get('source'):
+                verified.append((Path(accepted['path']), accepted['source']['image']))
             return _PreparedArtifact(artifact, target, self._baseline(artifact, accepted, read, verified),
                                      artifact.current, _bindings((*artifact.aliases, artifact.current)),
                                      read(artifact.destination), pristine, source, data)
@@ -821,7 +911,9 @@ class AcceptedInstallations:
         finally:
             temporary.unlink(missing_ok=True)
 
-    def apply(self, token, files, *, native=None):
+    def apply(self, token, files, *, native=None, catalog=None):
+        """native(host, plugin id) installs a plugin with the host's own command. catalog(plugin id, source) names
+        source, or the release when None, as the plugin's source in the personal catalog."""
         prepared = self._resolve(token)
         if prepared.artifact.kind == 'directory':
             self._directory(prepared)
@@ -829,7 +921,7 @@ class AcceptedInstallations:
         self._check(prepared)
         artifact = prepared.artifact
         if artifact.kind == 'plugin':
-            self._plugin(prepared, files, native)
+            self._plugin(prepared, files, native, catalog)
             return
         if prepared.taken_over:
             self._settle(artifact, prepared.taken_over)
@@ -922,18 +1014,24 @@ class AcceptedInstallations:
                 record['legacy'] = accepted['legacy']
         self._save(artifact, record)
 
-    def _plugin(self, prepared, files, native):
+    def _plugin(self, prepared, files, native, catalog):
         artifact = prepared.artifact
+        if artifact.catalogued and catalog is None:
+            raise RuntimeError(f'Catalog writer required: {artifact.identity}')
         loaded = artifact.current
         if artifact.native:
             if native is None:
                 raise RuntimeError(f'Native installer required: {artifact.identity}')
             native(artifact.key.host, artifact.key.subject)
+            self._installing.discard(artifact.identity)
             loaded = artifact.destination
             if not any(_same(self._read(artifact, loaded), known) for known in (prepared.pristine, prepared.target)):
                 raise ConcurrentEdit(f'Unknown native output preserved: {artifact.identity}')
         record = self._claude_record(artifact, loaded) if artifact.key.host == Host.CLAUDE else None
-        folder = loaded if _same(self._read(artifact, loaded), prepared.target) else self._write_folder(prepared)
+        if _same(self._read(artifact, loaded), prepared.target):
+            folder, source = loaded, self._source(prepared, loaded)
+        else:
+            folder, source = self._write_folder(prepared)
         if record is not None and Path(record[2]['installPath']) != folder:
             before, data, entry = record
             entry['installPath'] = str(folder)
@@ -941,14 +1039,60 @@ class AcceptedInstallations:
                         json.dumps(data, indent=2, ensure_ascii=False).encode(), expected=before)
         if not _same(self._read(artifact, folder), prepared.target):
             raise ConcurrentEdit(f'Effective output failed verification: {artifact.identity}')
+        # After the check, so that a folder Codex replaced meanwhile stops the sync with the catalog naming the
+        # source of the folder the receipt still names.
+        if artifact.catalogued:
+            catalog(artifact.key.subject, Path(source['path']) if source else None)
         receipt = self._receipt(artifact) or {}
         named = ((receipt.get('accepted') or {}).get('backup'), *((receipt.get('pending') or {}).get(key)
                                                                   for key in ('staged', 'displaced')))
         if left := sorted({str(Path(path).parent) for path in named if path and Path(path).parent.exists()}):
             print(f'Work folders left in place: {", ".join(left)}: an earlier engine replaced {artifact.identity} in '
                   'place there, and this one leaves those folders as they are', file=sys.stderr)
-        self._save(artifact, {'path': str(folder), 'bindings': _bindings(artifact.aliases), 'intent': artifact.intent,
-                              'image': prepared.target, 'provenance': artifact.provenance})
+        accepted = {'path': str(folder), 'bindings': _bindings(artifact.aliases), 'intent': artifact.intent,
+                    'image': prepared.target, 'provenance': artifact.provenance}
+        if source:
+            accepted['source'] = source
+        self._save(artifact, accepted)
+
+    def _source(self, prepared, folder):
+        """For a Codex plugin of the personal catalog in a folder the engine named, the source the catalog is to name:
+        the accepted image with folder's name as the version of each manifest Codex may read it from, staged under
+        ~/.agents/plugins/sources/<plugin>/ in a folder named by the digest of its tree, as {'path', 'image'}. None for
+        any other plugin, and for one in the folder of its release, whose version its manifest already gives."""
+        artifact = prepared.artifact
+        if not artifact.catalogued or folder == artifact.destination:
+            return None
+        sources = self.roots.agents_home / 'plugins/sources'
+        sources.mkdir(parents=True, exist_ok=True)
+        work = Path(staging_folder(prefix=f'.sync-{folder.parent.name}-', dir=sources))
+        staged, destination = work / 'tree', None
+        try:
+            copy_tree(prepared.source, staged, shutil.copy)
+            _versioned(staged, folder.name)
+            expected = image(staged)
+            destination = sources / folder.parent.name / str(self.roots.tree_digest(staged)).removeprefix('sha256:')
+            if destination.exists() or _linked(destination):
+                if not _same(image(destination), expected):
+                    raise ConcurrentEdit(f'Cached immutable source was edited: {destination}')
+            else:
+                def ready():
+                    if destination.exists() or _linked(destination):
+                        raise ConcurrentEdit(f'Tree changed during replacement: {destination}')
+                    if not _same(image(staged), expected):
+                        raise ConcurrentEdit(f'Prepared stage was edited: {staged}')
+
+                destination.parent.mkdir(exist_ok=True)
+                ready()
+                while_held(lambda: staged.rename(destination), before_retry=ready)
+        except StillHeld as refusal:
+            raise HeldMove(staged, refusal, into=destination) from refusal
+        finally:
+            try:
+                shutil.rmtree(work)
+            except OSError as error:
+                print(f'Work folder left in place: {work}: {error}', file=sys.stderr)
+        return {'path': str(destination), 'image': expected}
 
     def _claude_record(self, artifact, loaded):
         """Claude Code's install record as read, parsed, and with the plugin's user-scope entry, which must name the
@@ -965,7 +1109,9 @@ class AcceptedInstallations:
 
     def _write_folder(self, prepared):
         """Stage the target beside the plugin's folder, outside the one Codex reads versions from, and move it into
-        a version folder of its own with one rename, so a host sees all of it or none."""
+        a version folder of its own with one rename, so a host sees all of it or none. The folder's catalog source,
+        if it needs one, is staged first, so a refused move of either leaves no new folder. Gives the folder and that
+        source."""
         artifact = prepared.artifact
         plugin = artifact.destination.parent
         version = self.setup.lock[artifact.entry.name].trees[artifact.key.host].version
@@ -973,6 +1119,7 @@ class AcceptedInstallations:
         name = version_folder(version, _digest(prepared.target), datetime.now(timezone.utc),
                               [path.name for path in plugin.iterdir()])
         folder = plugin / (name.replace('+', '-') if artifact.key.host == Host.CLAUDE else name)
+        source = self._source(prepared, folder)
         work = Path(staging_folder(prefix=f'.sync-{plugin.name}-', dir=plugin.parent))
         staged = work / 'staged'
 
@@ -993,7 +1140,7 @@ class AcceptedInstallations:
                 shutil.rmtree(work)
             except OSError as error:
                 print(f'Work folder left in place: {work}: {error}', file=sys.stderr)
-        return folder
+        return folder, source
 
     def _pending_unchanged(self, artifact, pending, target):
         try:

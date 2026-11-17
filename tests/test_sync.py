@@ -589,6 +589,8 @@ class NativeCatalogTest(unittest.TestCase):
             operation.catalogs = {}
             operation.claude = {}
             operation.built = {'interfaces': SimpleNamespace(root=root / 'built')}
+            # No folder of the engine's own, so the catalog names the release.
+            operation.owner = SimpleNamespace(catalog_source=lambda identity: None, names_later=lambda identity: False)
             operation.setup = SimpleNamespace(
                 packages={'interfaces': SimpleNamespace(source=RepoSource('interfaces'),
                                                          codex=CodexPlacement((EngineInstall(True),)))},

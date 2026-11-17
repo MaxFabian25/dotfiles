@@ -70,6 +70,19 @@ end, except on Codex when the upstream version changes: the native `codex plugin
 removes the plugin's other version folders, as Codex 0.169.0-alpha.6 did in an isolated probe on 14 November
 2026.
 
+Codex also reinstalls a plugin of the personal catalog whenever the version that the catalog's source gives differs
+from the name of the plugin's highest version folder. Each `plugin/list` request to a Codex app server compares the
+two, and where they differ Codex copies the source into a folder named for its version and deletes the plugin's other
+folders. On 17 November 2026 the Codex desktop app on Windows replaced four engine folders with their unadapted
+releases that way, and Codex 0.171.0-alpha.12 did the same in an isolated probe. So for each plugin of the personal
+catalog in a folder the engine named, sync stages a copy of that folder in which each plugin manifest Codex may read
+gives the folder's name as its version. The copy goes under `~/.agents/plugins/sources/<plugin>/`, in a folder named by
+the digest of its tree, and once the new folder is in place sync points the plugin's catalog entry at it. Codex then
+finds nothing to refresh, and any reinstall copies the adapted build. While a pull installs a new upstream release
+with `codex plugin add`, the entry names the release, because that command installs whatever the catalog names. The
+receipt records the staged copy. A pull points an entry that names anything else at it, writes a new folder in place
+of a copy Codex made of it, removes the plugin's other staged copies, and stops at an edited one as a local edit.
+
 Superseded builds under `~/.claude/marketplaces/codex-aligned/plugins` go once no session can read them
 (`old_builds.py`). An applied pull that ended well notes each folder that neither the catalog nor any
 entry of the install record names, in `~/.local/state/dotfiles/builds-out-of-use.json`, and a later pull removes
@@ -98,7 +111,9 @@ kept-current plugin a home has installed, whatever that home's switch says, a sy
 copies the accepted `~/.codex` copy into that home in place of an older version, the native copy, its own
 earlier copy, or an earlier `~/.codex` copy, which a home that already matched holds without a copy receipt:
 another version folder of the plugin in `~/.codex`, or the backup an earlier engine kept when it replaced the
-`~/.codex` copy in place (`profile_plugins.py`). It decides which homes need a copy after updating `~/.codex`, so a
+`~/.codex` copy in place (`profile_plugins.py`). The copy takes the name of the `~/.codex` folder when the catalog's
+source gives that name as its version, and the release's version otherwise, so Codex in the home finds nothing to
+refresh. It decides which homes need a copy after updating `~/.codex`, so a
 release that changes the accepted copy reaches every home in the same sync. The copies it replaces move to
 the sync backup. A copy with any other file blocks the sync as a local edit. A home whose marketplace
 setting differs from `~/.codex` gets a note instead. A sync installs no plugin a home lacks, enables nothing, and leaves settings, credentials
