@@ -80,6 +80,12 @@ class ScanTests(unittest.TestCase):
             "serial-comma", self.checks("We bought apples, pears, and plums.\n")
         )
 
+    def test_no_serial_comma_skips_only_that_check(self) -> None:
+        found = self.checks(
+            "We bought apples, pears and plums, etc.\n", ".md", "--no-serial-comma"
+        )
+        self.assertEqual(found, ["etc"])
+
     def test_introductory_phrase_and_relative_clause_are_not_series(self) -> None:
         text = "However, the team and the boss agreed. We met John, who likes tea and coffee.\n"
         self.assertNotIn("serial-comma", self.checks(text))

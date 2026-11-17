@@ -8,6 +8,8 @@ Options:
   --only house    only the English house choices in references/english-core.md
   --only unslop   only the patterns the unslop writing passes remove
   --passive       also flag passive verbs with no "by" actor (noisy)
+  --no-serial-comma
+                  skip the serial-comma check, for text whose style omits it
   --json          print one JSON object per finding
 
 HTML is read block by block (paragraphs, list items, table cells, headings,
@@ -620,7 +622,7 @@ def snippet(text: str, start: int, match: str) -> str:
 
 
 def scan(
-    blocks: list[Block], groups: set[str], passive: bool
+    blocks: list[Block], groups: set[str], passive: bool, serial: bool
 ) -> list[dict[str, object]]:
     findings = []
     checks = [c for c in CHECKS if c.group in groups]
@@ -654,7 +656,11 @@ def scan(
                     match.start(),
                     match.group(0),
                 )
-        if "house" in groups and block.kind in ("para", "item", "cell", "caption"):
+        if (
+            serial
+            and "house" in groups
+            and block.kind in ("para", "item", "cell", "caption")
+        ):
             for start, text in serial_comma(block):
                 add(
                     block,
@@ -685,12 +691,15 @@ def main(argv: list[str]) -> int:
     parser.add_argument("files", nargs="+")
     parser.add_argument("--only", choices=("house", "unslop"))
     parser.add_argument("--passive", action="store_true")
+    parser.add_argument("--no-serial-comma", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     groups = {args.only} if args.only else {"house", "unslop"}
     total = 0
     for path in args.files:
-        for finding in scan(read_blocks(path), groups, args.passive):
+        for finding in scan(
+            read_blocks(path), groups, args.passive, not args.no_serial_comma
+        ):
             total += 1
             if args.json:
                 print(json.dumps({"file": path, **finding}, ensure_ascii=False))

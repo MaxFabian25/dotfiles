@@ -203,10 +203,16 @@ class Plant(unittest.TestCase):
             status, lines, error = self.plant([['triples', 'number * 2', 'number * 3']])
         self.assertEqual((status, lines), (0, ['CAUGHT triples: test_double failed', '1 of 1 plants caught']), error)
 
-    def test_a_caught_plant_that_fails_no_named_test_says_how_the_run_ended(self):
-        status, lines, _ = self.plant([['breaks the syntax', 'def double(number):', 'def double(number:']])
-        self.assertEqual(status, 0)
-        self.assertRegex(lines[0], r'^CAUGHT breaks the syntax: no test named, the run ended with: SyntaxError: ')
+    def test_a_plant_that_crashes_the_checker_before_any_test_fails_is_crashed_and_not_caught(self):
+        (self.root / 'code/test_checks.py').write_text(CHECKS, encoding='utf-8')
+        breaks = ['breaks the syntax', 'def double(number):', 'def double(number:']
+        for test, arguments, failed in (('test_value.py', (), 'test_double'),
+                                        ('test_checks.py', ('--', '{fresh}', '--strict'), 'doubles a number')):
+            with self.subTest(test):
+                status, lines, error = self.plant([breaks, TRIPLED], *arguments, test=test)
+                self.assertEqual((status, lines[1:]), (1, [f'CAUGHT triples: {failed} failed', '1 of 2 plants caught']),
+                                 error)
+                self.assertRegex(lines[0], r'^CRASHED breaks the syntax: no test failed, the run ended with: SyntaxError: ')
 
     def test_a_plant_whose_test_runs_past_the_limit_is_not_caught_and_the_next_plant_still_runs(self):
         hangs = ['hangs', 'return number * 2', 'import time\n    time.sleep(60)']
