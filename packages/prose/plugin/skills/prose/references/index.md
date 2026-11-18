@@ -1,7 +1,6 @@
 # Prose references
 
-Use the section matching the writing task. Each reference owns its rules and scope; consult the
-sections needed for the current work.
+Each reference owns its rules and scope.
 
 ## Language, voice, and readers
 
@@ -9,7 +8,7 @@ sections needed for the current work.
 | --- | --- |
 | Clarity, organisation, and presentation | [Reader core](reader-core.md) |
 | Drafting, development, or craft work on essays, talks, or personal narratives | [Authored prose](authored-prose.md) |
-| Academic papers, reports, and theses | [Reader core](reader-core.md), the [development guidance](authored-prose.md#development) in authored prose, the selected [named style](#named-styles), the English or Danish core, [quantitative prose](quantitative-prose.md), [number forms](number-forms.md), and [tables and figures](tables-and-figures.md) |
+| Academic papers, reports, and theses | [Reader core](reader-core.md), the [development guidance](authored-prose.md#development) in authored prose, the selected [named style](#named-styles), the [English core](english-core.md) or [Danish core](danish-core.md), [quantitative prose](quantitative-prose.md), [number forms](number-forms.md), and [tables and figures](tables-and-figures.md) |
 | Matching a supplied voice sample | [Voice samples](editorial-practice.md#voice-samples) |
 | English house word choices and mechanics | [English core](english-core.md) |
 | English grammar or a usage question | [English usage](english-usage.md) |
@@ -22,8 +21,7 @@ sections needed for the current work.
 
 | Work | Reference |
 | --- | --- |
-| Editing or reviewing supplied prose | [Editorial scope and practice](editorial-practice.md) |
-| Editing supplied prose | [Affected consistency checks](editorial-verification.md) |
+| Editing or reviewing supplied prose | [Editorial scope and practice](editorial-practice.md); when editing, also [affected consistency checks](editorial-verification.md) |
 | Maintained documents | [Durable structure](durable-document-structure.md) |
 | Authored English document headings, labels, and cross-references | [English document prose](english-document-prose.md) |
 | Documentation pages and READMEs | [Documentation and README files](documentation-and-readme-files.md), [technical prose](technical-and-code-prose.md) |
