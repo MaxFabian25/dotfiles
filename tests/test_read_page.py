@@ -953,7 +953,8 @@ class EmptyPageTest(unittest.TestCase):
                 mock.patch.object(read_page, 'close'), \
                 mock.patch.object(read_page, 'address_bar', return_value=(None, 'https://example.com/a')), \
                 mock.patch.object(read_page.time, 'sleep'), \
-                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as said:
+                contextlib.redirect_stdout(io.TextIOWrapper(io.BytesIO(), encoding='utf-8')), \
+                contextlib.redirect_stderr(io.StringIO()) as said:  # main() reconfigures stdout on Windows
             driver.return_value.uia = False
             driver.return_value.tree.return_value = {'tree_markdown': no_web_area}
             driver.return_value.windows.return_value = {2: 'A page'}
