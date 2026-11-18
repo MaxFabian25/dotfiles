@@ -1,8 +1,9 @@
 # Evaluate a Prose change
 
 These tools run writers in Claude Code and Codex on fixed tasks, with the installed Prose or a
-candidate, and help grade what they produce. [CONTRIBUTING.md](../CONTRIBUTING.md#check-the-change)
-says when to run a comparison and how to judge it.
+candidate, and help grade what they produce. A comparison runs one task, written with and without
+one contested rule. [CONTRIBUTING.md](../CONTRIBUTING.md#check-the-change) says when to run one and
+how to judge it.
 
 Run the tools from this directory with `python3 -B`. They need `claude`, `codex` and `uv`.
 Rendering and measuring pages also need `agent-browser` with Google Chrome, and Office files need
@@ -37,17 +38,17 @@ set:
 | `plugins/LABEL/` | The candidate as Claude loads it |
 | `.venv`, `sources/` | The writers' Python environment and the downloaded boundaries |
 
-Keep each round's plan and results in the work directory too. A label names one candidate:
+Keep each comparison's plan and results in the work directory too. A label names one candidate:
 `run_writers.py` stops when a label's earlier runs used different skills.
 
 ## Run writers
 
 ```sh
-python3 -B run_writers.py maps-v4 club-growth,club-map opus-1,opus-2,gpt --candidate ../plugin
+python3 -B run_writers.py maps-v4 club-map opus-1,opus-2,gpt --candidate ../plugin
 ```
 
 Seats named `opus-*` run `claude -p` with Opus at high effort; any other seat, such as `gpt`, runs
-`codex exec`. Each task and seat is one run, so this example starts six. Up to three run at a time;
+`codex exec`. Each task and seat is one run, so this example starts three. Up to three run at a time;
 change that with `--parallel`. `--done FILE` writes the results to FILE when every run has ended,
 for a waiter. Leave out `--candidate` to run the installed Prose.
 
@@ -61,7 +62,7 @@ The runner:
   Prose each writer's transcript shows in its `meta.json` as `loaded`;
 - starts each run in a fresh workspace outside the repository, with standard input closed, `CLAUDE*`
   variables removed and standard error in its own file;
-- skips runs that already have a `meta.json`, so a rerun finishes an interrupted round;
+- skips runs that already have a `meta.json`, so a rerun finishes an interrupted comparison;
 - takes the writers' Skill calls back off the usage counts in `~/.claude.json`, which Claude uses to
   rank skills, keeping counts that other sessions added meanwhile.
 
@@ -70,7 +71,7 @@ The runner:
 ```sh
 python3 -B render.py maps-v4
 python3 -B skill_usage.py maps-v4
-python3 -B blind.py r17 17 prose-037,maps-v4 club-growth club-map
+python3 -B blind.py r17 17 prose-037,maps-v4 club-map
 python3 -B measure.py --map --out ~/prose-eval/judge/r17/measure.md ~/prose-eval/judge/r17/club-map
 python3 -B contrast_scan.py ~/prose-eval/judge/r17/club-map/*
 python3 -B mech_checks.py maps-v4
