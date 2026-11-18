@@ -24,29 +24,30 @@ the words on and around it.
   footers. Moving detail keeps it in the deck for questions and for people who read it alone, where
   dropping it or leaving it to be said aloud loses it.
 - **Explaining a topic.** A request to explain a topic or its options gets a general concept page
-  first, such as local against cloud, and then the options compared. Say that you read the request
-  this way when you first show the pages.
+  first, such as local against cloud, and then the options compared. Name this reading of the
+  request when you first show the pages.
 - **Comparison pages.** Name on the page whose options and criteria it compares, and ask the deck's
   owner whether that source binds the comparison, as part of the round of questions in Prose's
-  [reader-core](../prose/references/reader-core.md). Test every option the deck names on the same
-  criteria, or ask before you leave one out. Cite beside each row who asked for it, and mark each
-  row you added yourself. When the criteria favour one kind of option, such as hosted services over
-  local ones, say so on the page.
+  [reader-core](../prose/references/reader-core.md#plain-language-in-practice). Test every option
+  the deck names on the same criteria, or ask before you leave one out. Cite beside each row who
+  asked for it, and mark each row you added yourself. When the criteria favour one kind of option,
+  such as hosted services over local ones, say so on the page.
 - **Judged grades.** When a page grades options against a condition, such as "Meets" or "Falls
   short", write each grade's condition once beside the data and derive every cell from it. Before a
   count of grades goes into a title, group the cells by condition and confirm that each group has
-  one grade. Fix an uneven grade that a reviewer finds by reapplying the rule to every row: in
-  November 2026 a worker regraded only the rows a reviewer named, and one page's headline count
-  moved from 4 to 7 to 9 of 13 while every check passed.
+  one grade. Fix an uneven grade that a reviewer finds by reapplying the rule to every row, because
+  the rows the reviewer did not name can carry the same error, and regrading only the named rows
+  moves the count in the title at each review while every check still passes.
 - **Cuts that keep the claim.** When text overflows its box, check what each word you would cut
   carries, such as billed against used, an estimate against a count, or who covers for whom. When a
   cut would change the claim, change the layout instead: widen or split the box, or move the detail
-  to the notes or an appendix slide. Reread each shortened line for its meaning as well as its fit.
+  to the speaker notes or an appendix slide. Reread each shortened line for its meaning as well as
+  its fit.
 - **A table that becomes a drawing.** Before you redraw a table or a grid of marks as a drawing,
   list what a reader could conclude from the old page, such as which option is cheapest or which
-  falls short on which criterion, and check each item on the new page. In November 2026 redrawn
-  pages kept the facts and lost the comparison: one showed only prices, one label covered three
-  grades, and one colour meant four things.
+  falls short on which criterion, and check each item on the new page. A redrawn page can keep
+  every fact and still lose the comparison, as when it shows only prices, one label covers several
+  grades, or one colour means several things.
 - **A word alone on a line.** When a box's last line holds one word, join its last two words with a
   non-breaking space before you reword anything, and check every box in the presenting app's own
   render, not only the one someone flagged. Reword only when that fails, and check a swapped or
@@ -54,11 +55,11 @@ the words on and around it.
 - **The subject, not the making.** A slide speaks about its subject. Lines about the making include
   what was checked and when, where a figure came from beyond the display's source line, what the
   writer could not find out, text that explains how to read a drawing beyond the labels and legend
-  that Charts asks for, caveats that repeat, hedges, worked calculations, a "?", and a "to test" or
-  "to confirm" stamp. Move each to the speaker notes, or, when it changes the decision, state it as
-  the fact or as a limit of the subject. Prose's
-  [reader-core](../prose/references/reader-core.md) rule on what only the writing process needs
-  covers the same lines in documents.
+  that Charts asks for, caveats that repeat, hedges, worked calculations, a "?" other than the mark
+  Charts puts on an unknown value, and a "to test" or "to confirm" stamp. Move each to the speaker
+  notes, or, when it changes the decision, state it as the fact or as a limit of the subject.
+  Prose's [reader-core](../prose/references/reader-core.md#remove-wording-that-carries-no-content)
+  rule on what only the writing process needs covers the same lines in documents.
 
 ## Build
 
@@ -105,15 +106,15 @@ every page at full size after every change fills the context and forces early co
 
 As soon as changed pages render, show them to the user in a message as images, with each reading of
 the request you chose, before you go on to planted-error runs and evidence records. Do this also
-when the user asked for no pages to approve: in November 2026 a user who had started the thread
-from a phone got a file path, saw the pages only after asking for them, and reversed two of the
-readings that a 4.5-hour pass had chosen without asking.
+when the user asked for no pages to approve, because a user reading on a phone may be unable to
+open a file path, and a reading the user reverses after the checks have run discards the work built
+on it.
 
 For a generated deck with its own checks, keep the design, the renders and the logged result lines
 in your own context, and have a worker write the page code and check code, one committed unit at a
-time. In November 2026 a deck thread that held page code, renders and check output compacted nine
-times, and none once it handed each unit to a worker.
+time. Page code and check output held in your own thread fill its context and force repeated
+compactions, and a worker for each unit keeps them out of it.
 
-Complete the work when every slide meets each rule above and Charts and Prose govern their parts,
-you have looked at each changed page as the presenting app draws it, and the user has seen the
-changed pages and your chosen readings.
+Complete the work when every slide meets each rule above, every data display meets Charts' rules
+and the words on and around it meet Prose's, you have looked at each changed page as the presenting
+app draws it, and the user has seen the changed pages and your chosen readings.
