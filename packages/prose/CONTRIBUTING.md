@@ -76,18 +76,37 @@ with what was adopted, what was left out and why, and the release.
 
 ## Deliver a plugin update
 
-Make the change in a `release.py start NAME` worktree, and bump the plugin version when its payload
-changes. Compute each count in the release message with a script from the runs. Before pushing,
-have a second model, such as `codex exec`, check every claim in the message against the diff and
-the round's records. Then, from the dotfiles root, run `release.py finish NAME --message FILE
---entry prose --refresh-owned --package prose --push --pull`, which locks, builds, pairs, pushes,
-and pulls, as the dotfiles README's paired-release section describes. The device sync publishes Prose through the
-personal marketplace and builds Claude's aligned copy. It preserves current activation choices.
+An update lands as a pull request to the dotfiles repository, through the `release-dotfiles` skill,
+which covers the worktree, the private-string check, the pull request and its merge. Make every
+edit in `packages/prose/plugin`, the source. The copies under `~/.claude/marketplaces/codex-aligned/`
+and `~/.codex/plugins/cache/` are generated, and the next pull overwrites edits made there, reflect
+edits included.
 
-After installation, compare each host's copy with the source. Codex's is
-`~/.codex/plugins/cache/personal/prose/VERSION`, and Claude's is the `installPath` that
-`claude plugin list --json` gives for `prose@codex-aligned`. Replace `INSTALLED_PLUGIN_ROOT` with
-each in turn:
+1. In a worktree of `origin/main`, make the change and run `make check` in `packages/prose`.
+2. When the change touches `plugin/`, raise the version in `plugin/.codex-plugin/plugin.json`. Keep
+   its form, `MAJOR.MINOR.PATCH+dotfiles.YYYYMMDD`, with the date of the change.
+3. From the worktree's root, refresh the setup lock, which rewrites `setup/packages/prose.toml` and
+   the `[prose]` block of `setup/lock.toml`:
+
+   ```sh
+   uv run --locked python -B lock_setup.py --public setup --private PRIVATE/setup \
+     --output OUT --entry prose --refresh-owned --write
+   uv run --locked python -B sync.py --candidate --public setup --private PRIVATE/setup
+   ```
+
+   Replace `PRIVATE` with the private dotfiles checkout, such as `~/dotfiles-private`, and `OUT` with
+   an empty scratch folder outside the repository. Fix every issue `sync.py` reports as blocking.
+4. Compute each count in the pull request's text, such as an eval round's results, with a script
+   from the records it counts. Have a second model,
+   such as `codex exec`, check every claim in that text against the diff and the round's records.
+5. Open and merge the pull request as `release-dotfiles` says. A device pull then publishes Prose
+   through the personal marketplace and builds Claude's aligned copy. It preserves current activation
+   choices.
+
+After a device has pulled, compare each host's copy with the source. Codex's is
+`~/.codex/plugins/cache/personal/prose/VERSION`, and Claude's is the `readFromFolder` that
+`claude plugin list --json` gives for `prose@codex-aligned`. That entry's `installPath` can name an
+older cache that Claude no longer reads. Replace `INSTALLED_PLUGIN_ROOT` with each in turn:
 
 ```sh
 uv run --locked python -B scripts/validate_release.py --source plugin --installed INSTALLED_PLUGIN_ROOT --json
