@@ -35,7 +35,7 @@ from pathlib import Path
 WORD = r"[\w'’-]+"
 ITEM = rf"{WORD}(?: {WORD}){{0,2}}"
 SERIES = re.compile(
-    rf"(?<![\w'’-])({ITEM}), ((?:{ITEM}, )*)({ITEM}) (?:and|or|nor) (?={WORD})"
+    rf"(?<![\w'’-])({ITEM}), ((?:{ITEM}, )*)({ITEM}) (?:and|or|nor) (?=({WORD}))"
 )
 # Words that name a state or version of the noun before them, as in "the data,
 # current and target", an appositive pair rather than the end of a series.
@@ -56,6 +56,41 @@ STATES = {
     "revised",
     "expected",
     "observed",
+}
+# A preposition that ends a longer last item and one after the conjunction form a
+# pair that shares its object, as in "a task, written with and without that rule".
+PREPOSITIONS = {
+    "about",
+    "above",
+    "across",
+    "after",
+    "against",
+    "around",
+    "at",
+    "before",
+    "below",
+    "between",
+    "by",
+    "down",
+    "during",
+    "for",
+    "from",
+    "in",
+    "inside",
+    "into",
+    "of",
+    "off",
+    "on",
+    "out",
+    "outside",
+    "over",
+    "through",
+    "to",
+    "under",
+    "up",
+    "with",
+    "within",
+    "without",
 }
 CLAUSE_END = r"(?=[,.;:!?)]|$)"
 # The rest of a list whose last item has its serial comma, as in
@@ -620,13 +655,16 @@ def text_blocks(source: str) -> list[Block]:
 def serial_comma(block: Block) -> list[tuple[int, str]]:
     found = []
     for match in SERIES.finditer(block.text):
-        first, middle, last = match.groups()
+        first, middle, last, after = match.groups()
         later = [m for m in middle.split(", ") if m] + [last]
         if any(item.split()[0].lower() in FUNCTION_WORDS for item in later):
             continue
         sentence = re.split(r"(?<=[.!?;:])\s+", block.text[: match.start()])[-1]
         opening = (sentence + first).lstrip("(“\"'").lower()
         if "," not in sentence and any(re.match(rf"{o}\b", opening) for o in OPENERS):
+            continue
+        *head, end = last.split()
+        if head and {end.lower(), after.lower()} <= PREPOSITIONS:
             continue
         rest = block.text[match.end() :]
         pair = re.match(rf"({WORD}){CLAUSE_END}", rest)

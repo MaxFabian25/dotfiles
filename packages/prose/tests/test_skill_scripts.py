@@ -88,11 +88,21 @@ class ScanTests(unittest.TestCase):
         text = "The stack is Microsoft 365, SharePoint and OneDrive, and Power BI.\n"
         self.assertNotIn("serial-comma", self.checks(text))
 
+    def test_pair_of_prepositions_after_a_comma_is_not_flagged(self) -> None:
+        for text in (
+            "Compare one task, written with and without that rule.\n",
+            "Time the suite, measured before and after the change.\n",
+        ):
+            with self.subTest(text=text):
+                self.assertNotIn("serial-comma", self.checks(text))
+
     def test_series_that_resembles_those_exceptions_is_flagged(self) -> None:
         for text in (
             "The table shows revenue, actual and planned costs.\n",
             "We compared the past, current and target.\n",
             "We bought apples, pears and plums, and then we left.\n",
+            "We sampled the data before, during and after the move.\n",
+            "We built it, set it up and shipped it.\n",
         ):
             with self.subTest(text=text):
                 self.assertIn("serial-comma", self.checks(text))

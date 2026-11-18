@@ -126,5 +126,6 @@ unexplained, or answer a question the reader did not ask, and resolve each one. 
 a model whose maker the document assesses, also have a model from another maker check the factual
 claims and look for framing that favours the writer's maker.
 
-Complete the requested prose when its required information is clear, usable, and faithful to the
-source and the selected rules.
+Complete the requested prose when it holds the information its reader needs, meets the selected
+rules and each rule above that applies to it, resolves each passage a fresh reader flagged, and
+keeps each claim faithful to its source.
