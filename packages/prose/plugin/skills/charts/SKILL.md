@@ -74,15 +74,18 @@ charts](references/ibcs-charts.md) before drawing.
 
 ## Delivery
 
-- **Title and source.** Give each display a title of ten words or fewer that states its finding,
-  and put its supporting figures, measure, and period in a subtitle. Give it a source line that
+- **Title and source.** Give each display a title of ten words or fewer that states its finding
+  or, for an exploratory chart, names its topic. Put its supporting figures, measure, and period in
+  a subtitle. Give it a source line that
   names the producer or system and the data's date. On a dashboard, the headline follows the same
   limit and each panel title names its measure. The producer is the organisation or system that
   made the data. When the request does not name it, write a marked placeholder in its place, such
   as `Source: [producer to confirm], September 2026`, keep any file name as an extra detail, and
   ask the user for the producer in your reply.
   A share card posted with a link to the publication that cites its source needs neither the
-  source line nor the date, because the linked page carries both.
+  source line nor the date, because the linked page carries both. This exception overrides the
+  data-display sources rule in Prose's [tables and
+  figures](../prose/references/tables-and-figures.md).
 - **One period.** State the amounts across one document for one period, such as per month, and
   name it on each display.
 - **Borrowed conventions.** Apply a convention borrowed from another medium, such as the
