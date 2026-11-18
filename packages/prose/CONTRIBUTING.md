@@ -1,5 +1,11 @@
 # Develop Prose
 
+While this paragraph stands, the audit of Prose's instructions is running. File each lesson for
+Prose, a rule learnt from a session's correction, as an issue in `MaxFabian25/dotfiles-private`
+titled `Prose lesson: SUBJECT`, and leave the skills unchanged. A defect fix, such as a script's
+false alarm or a broken link, still lands as a pull request. Remove this paragraph when the audit
+ends.
+
 Run development commands from `packages/prose` in the dotfiles checkout. Install Python 3.10 or later,
 [uv](https://docs.astral.sh/uv/getting-started/installation/), Node.js 22 or later, npm, and Make.
 
@@ -35,15 +41,17 @@ make check
 ```
 
 This checks lint, formatting, Markdown, release tests, reference integrity, and the payload. It
-does not establish writing quality. When a model comparison can resolve a material question about
-an instruction change, run it with the tools in [`eval`](eval/README.md). They keep their tasks in
-this repository and write runs to a work directory outside it.
+does not establish writing quality; the user's corrections do, as
+[Count repeated corrections](#count-repeated-corrections) describes.
 
-Before the runs, write the round's plan in the work directory: the behaviour expected to change,
-the behaviour that must remain, the observable conditions for success, and the tasks, seats and
-number of runs. Tell the user the number of runs before starting them. Include a task the change
-does not name, and check there that the reply still answers the request and keeps the behaviour
-that must remain.
+Run a model comparison with the tools in [`eval`](eval/README.md) only for one contested rule,
+when neither a prompt audit, such as Claude Code's `/doctor prompt-audit`, nor the user's
+corrections can say whether the rule helps. Compare one task, written with and without that rule.
+The tools keep their tasks in this repository and write runs to a work directory outside it.
+
+Before the runs, write the comparison's plan in the work directory: the behaviour expected to
+change, the behaviour that must remain, the observable conditions for success, and the task, seats
+and number of runs. Tell the user the number of runs before starting them.
 
 Judge both versions against those conditions on the same tasks, with version labels removed and
 output order randomised. When you grade your own change, grade the blinded folders before opening
@@ -65,14 +73,32 @@ for meaningful contracts such as broken links and exact installed bytes. Avoid a
 incidental wording, headings, or internal call order.
 
 Use `make format` for Python formatting. Commit lockfiles when dependencies change. Development
-scripts, tests and the evaluation tools stay outside `plugin/`.
+scripts, tests, and the evaluation tools stay outside `plugin/`.
 
 ## Review a source
 
-Before proposing rules from a style or design source, run writers with the installed Prose on tasks
-the source covers, and propose rules only for the gaps the runs show. Cover the scope the source
+Before proposing rules from a style or design source, compare it with Prose's rules on each point
+the source covers, and propose rules only for the gaps. Cover the scope the source
 declares, not only the pages read first. Record each review in [source-reviews.md](source-reviews.md)
 with what was adopted, what was left out and why, and the release.
+
+## Count repeated corrections
+
+Once a month, count the lessons that repeat a point Prose already covered. A lesson is a rule added
+or changed after a session's correction. The count starts with the first full month after the audit
+paragraph at the top of this guide is removed, and it works from commits alone:
+
+1. On `origin/main`, list the month's commits, as
+   `git log --since=2027-01-01 --until=2027-02-01 -- packages/prose/plugin` does for January 2027.
+   Take the previous calendar month unless the prompt names one.
+2. For each commit that adds a lesson, search Prose at the commit's parent, `COMMIT^`, for a rule
+   that already covered the lesson's point.
+3. File one issue in `MaxFabian25/dotfiles-private` titled `Prose repeat count: YYYY-MM`. List each
+   repeat with the commit, the lesson, and the earlier rule's `file:line` at `COMMIT^`, or say that
+   the month had none.
+
+A repeat means the rule failed, and that rule is rewritten against the checklist in
+[Edit the guidance](#edit-the-guidance). A month with no repeats is the target.
 
 ## Deliver a plugin update
 
@@ -96,9 +122,9 @@ edits included.
 
    Replace `PRIVATE` with the private dotfiles checkout, such as `~/dotfiles-private`, and `OUT` with
    an empty scratch folder outside the repository. Fix every issue `sync.py` reports as blocking.
-4. Compute each count in the pull request's text, such as an eval round's results, with a script
+4. Compute each count in the pull request's text, such as a comparison's results, with a script
    from the records it counts. Have a second model,
-   such as `codex exec`, check every claim in that text against the diff and the round's records.
+   such as `codex exec`, check every claim in that text against the diff and those records.
 5. Open and merge the pull request as `release-dotfiles` says. A device pull then publishes Prose
    through the personal marketplace and builds Claude's aligned copy. It preserves current activation
    choices.
