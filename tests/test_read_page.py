@@ -940,5 +940,27 @@ class SaveTest(unittest.TestCase):
                 self.assertIn('Compare the plans.', saved[0].read_text(encoding='utf-8'))
 
 
+class EmptyPageTest(unittest.TestCase):
+    def test_a_page_with_no_text_fails_and_names_the_wait(self):
+        """On 18 November 2026 a Windows read printed no page text at the default wait and still exited 0."""
+        no_web_area = WINDOWS_TREE.split('Document')[0]
+        self.assertEqual(read_page.page_text(no_web_area), '')
+        with mock.patch.object(read_page.sys, 'argv', ['read_page', '--wait', '7', 'https://example.com/a']), \
+                mock.patch.object(read_page.Hyprland, 'find', return_value=None), \
+                mock.patch.object(read_page, 'Driver') as driver, \
+                mock.patch.object(read_page, 'chrome', return_value=1), \
+                mock.patch.object(read_page, 'open_window', return_value=2), \
+                mock.patch.object(read_page, 'close'), \
+                mock.patch.object(read_page, 'address_bar', return_value=(None, 'https://example.com/a')), \
+                mock.patch.object(read_page.time, 'sleep'), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as said:
+            driver.return_value.uia = False
+            driver.return_value.tree.return_value = {'tree_markdown': no_web_area}
+            driver.return_value.windows.return_value = {2: 'A page'}
+            self.assertEqual(read_page.main(), 6)
+        self.assertIn('https://example.com/a: no page text after --wait 7', said.getvalue())
+        self.assertIn('--wait 25', said.getvalue())
+
+
 if __name__ == '__main__':
     unittest.main()
