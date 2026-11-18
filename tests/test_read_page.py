@@ -31,6 +31,28 @@ class FakeDriver:
                          for pid in self.pids]}
 
 
+class FakeClock:
+    """read_page's time module, where sleep() moves monotonic() on at once."""
+
+    def __init__(self):
+        self.now, self.slept = 0.0, []
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.slept.append(seconds)
+        self.now += seconds
+
+    def __enter__(self):
+        self.patch = mock.patch.object(read_page, 'time', self)
+        self.patch.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.patch.stop()
+
+
 class ChromeTest(unittest.TestCase):
     def pick(self, lines):
         with mock.patch.object(read_page, 'command_line', side_effect=lambda pid, cua: lines[pid]):
@@ -259,14 +281,14 @@ class LinuxTreeTest(unittest.TestCase):
         empty = LINUX_TREE.split('        - [35] section')[0]
         reads = [{'tree_markdown': t} for t in (empty, half, LINUX_TREE, LINUX_TREE)]
         driver = mock.Mock(tree=mock.Mock(side_effect=reads))
-        with mock.patch.object(read_page.time, 'sleep') as sleep:
-            self.assertEqual(read_page.settled_tree(driver, 7, 1), reads[2])
+        with FakeClock() as clock:
+            self.assertEqual(read_page.settled_tree(driver, 7, 1, 30), reads[2])
         self.assertEqual(driver.tree.call_count, 4)
-        self.assertEqual({c.args for c in sleep.call_args_list}, {(2,)})
+        self.assertEqual(clock.slept, [2, 2, 2])
         driver = mock.Mock(tree=mock.Mock(return_value={'tree_markdown': empty}))
-        with mock.patch.object(read_page.time, 'sleep'):
-            read_page.settled_tree(driver, 7, 1, tries=3)
-        self.assertEqual(driver.tree.call_count, 4)  # a page that never shows text stops after its tries
+        with FakeClock():
+            read_page.settled_tree(driver, 7, 1, 6)
+        self.assertEqual(driver.tree.call_count, 4)  # a page that never shows text stops at the deadline
 
     def test_presses_a_collapsed_question(self):
         driver = mock.Mock(tree=mock.Mock(return_value={'tree_markdown': LINUX_TREE, 'snapshot_id': 's1'}))
@@ -497,20 +519,19 @@ class HyprlandTest(unittest.TestCase):
         driver = mock.Mock(windows=mock.Mock(return_value={1: 'The Economist'}))
         desktop = hyprland()
         with mock.patch.object(read_page.Hyprland, 'address', side_effect=['', '', 'https://www.economist.com/']) as address, \
-                mock.patch.object(read_page.time, 'sleep') as sleep:
-            self.assertEqual(desktop.wait_for_address(driver, 7, 1), 'https://www.economist.com/')
+                FakeClock() as clock:
+            self.assertEqual(desktop.wait_for_address(driver, 7, 1, 30), 'https://www.economist.com/')
         self.assertEqual(address.call_count, 3)
         address.assert_called_with(7, 'The Economist')
-        self.assertEqual([c.args for c in sleep.call_args_list], [(2,), (2,)])
-        with mock.patch.object(read_page.Hyprland, 'address', return_value='') as address, \
-                mock.patch.object(read_page.time, 'sleep') as sleep:
-            self.assertEqual(desktop.wait_for_address(driver, 7, 1), '')
-        self.assertEqual((address.call_count, sleep.call_count), (8, 7))
+        self.assertEqual(clock.slept, [2, 2])
+        with mock.patch.object(read_page.Hyprland, 'address', return_value='') as address, FakeClock() as clock:
+            self.assertEqual(desktop.wait_for_address(driver, 7, 1, 14), '')
+        self.assertEqual((address.call_count, clock.now), (8, 14))
         # The title is read on each try, because a loading page changes it, and an empty title stops the frame match.
         driver.windows.side_effect = [{1: ''}, {1: 'Loading'}, {1: 'The Economist'}]
         with mock.patch.object(read_page.Hyprland, 'address', side_effect=['', '', 'https://www.economist.com/']) as address, \
-                mock.patch.object(read_page.time, 'sleep'):
-            desktop.wait_for_address(driver, 7, 1)
+                FakeClock():
+            desktop.wait_for_address(driver, 7, 1, 30)
         self.assertEqual([c.args for c in address.call_args_list], [(7, ''), (7, 'Loading'), (7, 'The Economist')])
         for stderr in ('jeepney.wrappers.DBusErrorResponse: no bus', 'no accessible application for pid 7'):
             with self.subTest(stderr=stderr), mock.patch.object(
@@ -706,7 +727,7 @@ class HyprlandMainTest(unittest.TestCase):
                 contextlib.redirect_stdout(io.StringIO()) as out:
             self.assertEqual(read_page.main(), 0)
         self.assertIn('ADDRESS: https://example.com/b (one of 2 windows with this title)\n', out.getvalue())
-        self.assertEqual([c.args[1:] for c in settled.call_args_list], [(7, 0x20), (7, 0x30)])
+        self.assertEqual([c.args[1:3] for c in settled.call_args_list], [(7, 0x20), (7, 0x30)])
         self.assertEqual({c.args[0].socket for c in call.call_args_list}, {'/tmp/s'})
         steps = [call[0] for call in desktop.method_calls if call[0] in ('open', 'close')]
         self.assertEqual(steps, ['open', 'open', 'close', 'close'])
@@ -977,27 +998,76 @@ class SaveTest(unittest.TestCase):
                 self.assertIn('Compare the plans.', saved[0].read_text(encoding='utf-8'))
 
 
-class EmptyPageTest(unittest.TestCase):
-    def test_a_page_with_no_text_fails_and_names_the_wait(self):
-        """On 18 November 2026 a Windows read printed no page text at the default wait and still exited 0."""
-        no_web_area = WINDOWS_TREE.split('Document')[0]
-        self.assertEqual(read_page.page_text(no_web_area), '')
-        with mock.patch.object(read_page.sys, 'argv', ['read_page', '--wait', '7', 'https://example.com/a']), \
+class PollTest(unittest.TestCase):
+    """main() reads each page again until its text stops growing, or until --wait seconds pass."""
+    # Chrome on Windows shows a page's tree only after a tool first asks for it: on 18 November 2026 a loaded page
+    # in a Chrome just started read like this at 1, 7 and 20 seconds, and in full a second later.
+    EMPTY = WINDOWS_TREE.split('              - [24] Document')[0]
+    HALF = WINDOWS_TREE.split('                - Group "Primary navigation"')[0]
+    OTHER = WINDOWS_TREE.replace('Compare the plans.', 'Another page.')
+
+    def read(self, trees, *argv, urls=('https://example.com/a',), uia=True):
+        """Run main() on reads that follow `trees`, the last repeating, and return (exit status, stdout, stderr,
+        seconds slept, reads)."""
+        reads = iter(trees)
+        with FakeClock() as clock, \
+                mock.patch.object(read_page.sys, 'argv', ['read_page', *argv, *urls]), \
                 mock.patch.object(read_page.Hyprland, 'find', return_value=None), \
                 mock.patch.object(read_page, 'Driver') as driver, \
                 mock.patch.object(read_page, 'chrome', return_value=1), \
                 mock.patch.object(read_page, 'open_window', return_value=2), \
+                mock.patch.object(read_page, 'load'), \
                 mock.patch.object(read_page, 'close'), \
                 mock.patch.object(read_page, 'address_bar', return_value=(None, 'https://example.com/a')), \
-                mock.patch.object(read_page.time, 'sleep'), \
-                contextlib.redirect_stdout(io.TextIOWrapper(io.BytesIO(), encoding='utf-8')), \
+                contextlib.redirect_stdout(io.TextIOWrapper(io.BytesIO(), encoding='utf-8')) as out, \
                 contextlib.redirect_stderr(io.StringIO()) as said:  # main() reconfigures stdout on Windows
-            driver.return_value.uia = False
-            driver.return_value.tree.return_value = {'tree_markdown': no_web_area}
-            driver.return_value.windows.return_value = {2: 'A page'}
-            self.assertEqual(read_page.main(), 6)
-        self.assertIn('https://example.com/a: no page text after --wait 7', said.getvalue())
-        self.assertIn('--wait 25', said.getvalue())
+            driver.return_value.uia = uia
+            driver.return_value.tree.side_effect = lambda *a, **k: {'tree_markdown': next(reads, trees[-1])}
+            driver.return_value.windows.return_value = {2: 'Plans'}
+            status = read_page.main()
+            out.flush()
+            return (status, out.buffer.getvalue().decode('utf-8'), said.getvalue(), clock.now,
+                    driver.return_value.tree.call_count)
+
+    def test_returns_soon_when_the_text_shows_at_once(self):
+        status, out, _, slept, _ = self.read([WINDOWS_TREE])
+        self.assertEqual(status, 0)
+        self.assertIn('Compare the plans.', out)
+        self.assertLessEqual(slept, 2)
+
+    def test_reads_again_until_the_text_arrives(self):
+        status, out, said, slept, _ = self.read([self.EMPTY, self.EMPTY, WINDOWS_TREE])
+        self.assertEqual((status, said), (0, ''))
+        self.assertIn('Compare the plans.', out)
+        self.assertLessEqual(slept, 6)
+
+    def test_fails_at_the_limit_when_no_text_arrives(self):
+        """On 18 November 2026 a Windows read printed no page text at the default wait and still exited 0."""
+        status, _, said, slept, reads = self.read([self.EMPTY], '--wait', '30')
+        self.assertEqual(status, 6)
+        self.assertGreater(reads, 1)
+        self.assertTrue(30 <= slept <= 32, slept)
+        self.assertIn('https://example.com/a: no page text within --wait 30 seconds', said)
+        self.assertIn('--wait 60', said)
+
+    def test_waits_for_text_that_is_still_growing(self):
+        status, out, _, _, _ = self.read([self.HALF, WINDOWS_TREE])
+        self.assertEqual(status, 0)
+        self.assertIn('[link] Pricing', out)
+        # At the limit it keeps the last read, even if the page is still adding text.
+        status, out, _, slept, _ = self.read([self.HALF, WINDOWS_TREE], '--wait', '2')
+        self.assertEqual((status, slept), (0, 2))
+        self.assertIn('[link] Pricing', out)
+
+    def test_does_not_take_the_last_page_for_the_next(self):
+        """On macOS the window loads each page in turn, and shows the last one until the next replaces it."""
+        trees = [WINDOWS_TREE] * 4 + [self.OTHER]
+        status, out, _, _, _ = self.read(trees, urls=('https://example.com/a', 'https://example.com/b'), uia=False)
+        self.assertEqual(status, 0)
+        first, second = out.split('URL: https://example.com/b')
+        self.assertIn('Compare the plans.', first)
+        self.assertIn('Another page.', second)
+        self.assertNotIn('Compare the plans.', second)
 
 
 if __name__ == '__main__':
