@@ -8,8 +8,8 @@ Apply this branch to an instruction, procedure, requirement, warning, or caution
 - Use *install* for the action in an instruction. Use *installation* for a named procedure or
   result. Write *perform a clean or custom installation*, not *do an installation*. Preserve
   product commands and defined technical terms.
-- Preserve *please* in a genuine request for permission or forgiveness, correspondence, quotation,
-  or source text.
+- Omit *please* from an instruction. Keep it in a genuine request for permission or forgiveness,
+  correspondence, quotation, or source text.
 - Put every required starting state, tool, input, permission, and access condition before the
   first procedural action.
 - Document one primary input method. If several methods are available to the intended readers,

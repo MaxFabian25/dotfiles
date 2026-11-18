@@ -67,8 +67,9 @@ data, or wider analysis. Apply `AUTH-NIST-SP330` only when United States federal
 - **When to spell out.** In non-APA user documentation, spell out an unfamiliar unit of measure on
   first occurrence. Give its unit symbol or abbreviation in parentheses. Repeat it in new sections
   and chapters when its unit symbol or abbreviation is obscure to readers.
-- Spell out non-SI units of measure in text unless a higher authority requires another form. Unit
-  symbols or abbreviations may appear in tables and technical specifications.
+- Spell out non-SI units of measure in text, except temperatures, which follow
+  [Number forms](number-forms.md#units-and-rates), unless a higher authority requires another form.
+  Unit symbols or abbreviations may appear in tables and technical specifications.
 - **Unit names, symbols, and prefixes.** Follow the standard capitalisation and form of every unit
   name, unit symbol, and abbreviation. Do not mix unit symbols and names. Join a prefix name to a
   unit name and a prefix symbol to a unit symbol. Use only standard unit symbols and abbreviations.

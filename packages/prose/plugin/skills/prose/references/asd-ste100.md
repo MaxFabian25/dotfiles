@@ -54,9 +54,8 @@ ASD-approved general-language alternative.
   is unknown.
 - Use simple present for a current state, simple past for a completed action, and simple future for
   a future action.
-- Use the perfect aspect only when completion before another event is material. Use
-  the progressive aspect only when continuity at a stated time is material. In an evidence record,
-  name the dates, events, or duration that make the complex form necessary. Do not use either aspect
+- Use the perfect aspect only when completion before another event is material. Use the
+  progressive aspect only when continuity at a stated time is material. Do not use either aspect
   only to sound current or formal. The aspect permissions are a house departure. ASD-STE100 Rule
   3.2 approves only the simple tenses, the infinitive, the
   imperative, and the past participle.

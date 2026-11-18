@@ -72,7 +72,8 @@ and bibliography policy before drafting.
 - Omit the bibliography only when the notes supply complete publication details.
 - Prefer a full bibliography for a book-length work.
 - Include every substantially used and cited work in a full bibliography.
-- Exclude personal communications and works merely mentioned but not relied on.
+- Exclude works merely mentioned but not relied on. Exclude personal communications by default, as
+  [Personal communications](chicago-web-and-personal-sources.md#personal-communications) sets out.
 - Add uncited consulted works only when they are especially relevant.
 - Label a selected bibliography and explain its selection principle in a headnote.
 - Segment only when meaningful categories make sources easier to find.

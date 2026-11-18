@@ -2,7 +2,7 @@ public = true
 
 [source]
 local = "packages/prose/plugin"
-tree = "sha256:d2bdb0da7c044c3ce1e7ebdd7a8b94b3875e8db3e4c271fd8a267868d10cb203"
+tree = "sha256:4a4b108983b877c7312e53f512e3044a2111820abc4aee072e124e7a570c0620"
 
 [codex]
 install = [{ via = "personal", enabled = true }, { via = "local-codex", enabled = false }]

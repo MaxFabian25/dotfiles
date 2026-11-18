@@ -102,9 +102,9 @@ placements = { agents = "sha256:eeeff1bc17719f7c56dfc00ec8dd4a39d4c1197d177b13e8
 intent = "sha256:0ed2c0e168ba151097399cfcf6e5e064dd1089b87cda571324a89ceb9f30f5d8"
 
 [prose]
-intent = "sha256:4377fde195dbc2a6364d825f728f14a16ae2c99912454b0e993d759feb637aa7"
-codex = { version = "0.3.26+dotfiles.20261118", tree = "sha256:d2bdb0da7c044c3ce1e7ebdd7a8b94b3875e8db3e4c271fd8a267868d10cb203" }
-claude = { version = "0.3.26+codex-aligned.729b3ab40785", tree = "sha256:a0b38a585c68527f1c6e4e12da53d75905f9bf34815ddac9ed67406eb4140b9b" }
+intent = "sha256:4a853441d8332f3d4b104c45aeb8a8b068f778229e7b37889b3fefb7df0c5a3c"
+codex = { version = "0.3.27+dotfiles.20261118", tree = "sha256:4a4b108983b877c7312e53f512e3044a2111820abc4aee072e124e7a570c0620" }
+claude = { version = "0.3.27+codex-aligned.19dec3cda6d5", tree = "sha256:0f782d387230ba1d74c903824a4882f39071a7d6af49b4453d4fac0d8f3b3849" }
 
 [pstack]
 intent = "sha256:5bd9325a8dbc80fac9097172259d57130ce79aa7e51f4956be0a2084ed3e1d75"

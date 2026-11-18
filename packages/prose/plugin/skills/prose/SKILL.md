@@ -11,8 +11,7 @@ organisation, or presentation work, use [Reader core](references/reader-core.md)
 or working on their development or craft, and its
 [development guidance](references/authored-prose.md#development) for the argument of an academic
 paper, report, or thesis. Use the [reference index](references/index.md) for editing, review, and
-specialist work. Reuse guidance already available in context and consult additional sections when
-the task changes or a choice needs resolution.
+specialist work.
 
 ## Authority and preservation
 
