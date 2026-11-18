@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -11,11 +12,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRAST = ROOT / "plugin/skills/charts/scripts/contrast.py"
+PAGE_WIDTH = ROOT / "plugin/skills/charts/scripts/page_width.py"
 SCAN = ROOT / "plugin/skills/prose/scripts/scan_prose.py"
 
 
 def run(
-    script: Path, *args: str, stdin: str | None = None
+    script: Path,
+    *args: str,
+    stdin: str | None = None,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-I", str(script), *args],
@@ -23,6 +28,7 @@ def run(
         capture_output=True,
         text=True,
         check=False,
+        env=env,
     )
 
 
@@ -60,6 +66,48 @@ class ContrastTests(unittest.TestCase):
 
     def test_unknown_colour_is_an_error(self) -> None:
         self.assertEqual(run(CONTRAST, "teal-ish", "#fff").returncode, 2)
+
+
+# A chart drawn 600 px wide, and a page whose 900 px table scrolls inside its own container, with a
+# body tall enough to need a vertical scrollbar.
+WIDE_PAGE = """<!doctype html><meta name="viewport" content="width=device-width">
+<body style="margin:0"><div style="width:600px;height:20px">Chart</div></body>"""
+FITTING_PAGE = """<!doctype html><meta name="viewport" content="width=device-width">
+<body style="margin:0"><div style="overflow-x:auto"><table style="width:900px"><tr><td>Wide
+table</td></tr></table></div><div style="height:3000px"></div></body>"""
+
+
+class PageWidthTests(unittest.TestCase):
+    def test_missing_browser_tool_is_named(self) -> None:
+        result = run(PAGE_WIDTH, "page.html", env={"PATH": str(ROOT / "no-such-bin")})
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("agent-browser is not on PATH", result.stderr)
+
+
+@unittest.skipUnless(shutil.which("agent-browser"), "needs agent-browser")
+class PageWidthBrowserTests(unittest.TestCase):
+    def measure(self, html: str) -> subprocess.CompletedProcess[str]:
+        with tempfile.TemporaryDirectory() as folder:
+            page = Path(folder) / "page.html"
+            page.write_text(html, encoding="utf-8")
+            return run(PAGE_WIDTH, str(page))
+
+    def test_a_page_wider_than_the_phone_fails(self) -> None:
+        result = self.measure(WIDE_PAGE)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertIn("at 390 px: scroll width 600 px, OVERFLOWS", lines[0])
+        self.assertIn("at 1366 px: scroll width 1366 px, fits", lines[1])
+
+    def test_a_table_scrolling_in_its_own_container_passes(self) -> None:
+        result = self.measure(FITTING_PAGE)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count(", fits"), 2)
+
+    def test_a_page_that_fails_to_load_is_an_error(self) -> None:
+        result = run(PAGE_WIDTH, "http://127.0.0.1:9/")
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("could not open it", result.stderr)
 
 
 class ScanTests(unittest.TestCase):

@@ -44,7 +44,7 @@ charts](references/ibcs-charts.md) before drawing.
   measures each have their own scale, say so on the display.
 - **Axis start.** When a line chart's value axis starts above zero, mark the break on the chart
   with an axis-break symbol or a short note.
-- **Known values only.** Give a mark a length, area or position only for a value you know. Draw an
+- **Known values only.** Give a mark a length, area, or position only for a value you know. Draw an
   unknown value as an open or dotted outline marked "?", and an item without a price as a labelled
   gap, so it never reads as a zero that costs nothing. Keep one meaning for each line style and fill
   across the document, such as solid for counted in the total and dotted for an estimate. Give the
@@ -60,10 +60,11 @@ charts](references/ibcs-charts.md) before drawing.
   column, with every text element at 8 pt or more at that size, 12 px or more as rendered on a web
   page at both test widths below, or 12 pt on a slide. SVG text renders at its computed font size
   times the scale from `getScreenCTM()`, so measure it that way. Save raster images at 300 dpi.
-- **Page width.** Load web charts, tables, and dashboards at 390 px and 1366 px wide, and measure
-  `document.documentElement.scrollWidth` at each. It equals the viewport width, and a wide table
-  scrolls inside its own container. Put what needs attention first at every width, and keep tick
-  labels horizontal by showing fewer of them.
+- **Page width.** Check each web chart, table, and dashboard with `scripts/page_width.py PAGE`,
+  which loads the page at 390 px and 1366 px wide and exits 1 when its
+  `document.documentElement.scrollWidth` exceeds the viewport width at either. Make the scroll
+  width equal the viewport width, with a wide table scrolling inside its own container. Put what
+  needs attention first at every width, and keep tick labels horizontal by showing fewer of them.
 - **Table totals.** When an analytical table's values add up, total each dimension that adds up,
   such as all sectors for each region and all regions for each sector. Place each total after the
   rows or columns it sums, and set every total off with a rule and bold figures: total rows, total
@@ -116,4 +117,5 @@ charts](references/ibcs-charts.md) before drawing.
   runnable with the project's own environment, and name it in the reply.
 
 Complete the work when every display meets each rule above and Prose's tables and figures rules,
-and you have looked at the rendered output at its delivered size.
+`scripts/contrast.py` has measured each colour pair, `scripts/page_width.py` exits 0 on each web
+chart, table, and dashboard, and you have looked at the rendered output at its delivered size.

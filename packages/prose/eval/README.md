@@ -83,7 +83,8 @@ python3 -B mech_checks.py maps-v4
 - `blind.py` copies the runs of one or more labels into lettered folders in a seeded random order.
   Grade the folders before opening `key.json`.
 - `measure.py` reports each page's scroll width and smallest text at both widths, and with `--map`
-  the map's region fills and outlines with their contrast. It takes labels or blinded folders.
+  the map's region fills and outlines with their contrast. It takes labels or blinded folders. Its
+  browser session and width check come from the charts skill's `scripts/page_width.py`.
 - `contrast_scan.py` lists the colours under 3:1 in a blinded delivery's code.
 - `mech_checks.py` runs pattern checks on the prose tasks.
 
