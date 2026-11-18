@@ -13,7 +13,8 @@ of --wait, which a longer --wait often fixes.
 
 On a Hyprland desktop, such as the Omarchy laptop, it runs unattended: it starts a cua-driver daemon of its own
 with the desktop's environment, opens each page in a window on a hidden workspace without taking focus, starts the
-user's Chrome there when it isn't running, which then quits when its last window closes, and reads each page's
+user's Chrome there when it isn't running and the keyring holding its cookie key is unlocked (see chrome_keyring.py),
+which then quits when its last window closes, and reads each page's
 address through AT-SPI with uv and jeepney. A Chrome the user started shows its pages there only when, as it
 started, ACCESSIBILITY_ENABLED=1 was in its environment or the desktop's AT-SPI switch was on, and the script stops
 at one that is not. Runs there go one at a time.
@@ -126,6 +127,18 @@ def chrome(driver, desktop=None):
         raise RuntimeError("the user's Chrome started without accessibility, so its pages can't be read; ask the user "
                            'to quit it, or to start it with ACCESSIBILITY_ENABLED=1 and ' + A11Y_FLAG)
     return own[0]['pid']
+
+
+def keyring_refusal(env):
+    """Why this run must not start the user's Chrome, or '' when it may: Chrome started while the keyring is locked
+    deletes the cookies it can't decrypt."""
+    script = Path(__file__).resolve().parent / 'chrome_keyring.py'
+    try:
+        check = subprocess.run([sys.executable, '-I', str(script), 'check'], capture_output=True, text=True, env=env,
+                               timeout=60)
+    except (OSError, subprocess.SubprocessError) as error:
+        return f'{script.name} check could not run ({error}), so Chrome was not started'
+    return '' if check.returncode == 0 else check.stderr.strip() or f'{script.name} check exited {check.returncode}'
 
 
 class Hyprland:
@@ -557,6 +570,8 @@ def main():
             serve = daemon(args.cua, desktop)
             driver.socket = serve[1]
         pid = chrome(driver, desktop)
+        if pid is None and (refusal := keyring_refusal(desktop.env)):
+            raise RuntimeError(refusal)
         for index, url in enumerate(args.urls):
             if window is not None and driver.uia:
                 # Windows refuses the address bar's Return key in the background, so each page gets a window.

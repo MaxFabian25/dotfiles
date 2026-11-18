@@ -644,6 +644,43 @@ class HyprlandMainTest(unittest.TestCase):
         for name in ('SIGTERM', 'SIGHUP'):  # main() installs handlers of its own
             if hasattr(signal, name):
                 self.addCleanup(signal.signal, getattr(signal, name), signal.getsignal(getattr(signal, name)))
+        keyring = mock.patch.object(read_page, 'keyring_refusal', return_value='')
+        self.keyring = keyring.start()
+        self.addCleanup(keyring.stop)
+
+    def test_does_not_start_chrome_while_the_keyring_is_locked(self):
+        """On 18 November 2026 a Chrome started on the user's profile with the keyring locked lost their sign-ins."""
+        self.keyring.return_value = 'chrome_keyring: the default keyring is locked. Ask the user to unlock it'
+        desktop = mock.Mock()
+        with mock.patch.object(read_page.sys, 'argv', ['read_page', 'https://example.com/a']), \
+                mock.patch.object(read_page.Hyprland, 'find', return_value=desktop), \
+                mock.patch.object(read_page, 'daemon', return_value=(mock.Mock(), '/tmp/s', '/tmp')), \
+                mock.patch.object(read_page, 'stop_daemon'), \
+                mock.patch.object(read_page, 'chrome', return_value=None), \
+                mock.patch.object(read_page.Driver, 'call', return_value={}), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as said:
+            self.assertEqual(read_page.main(), 3)
+        desktop.open.assert_not_called()
+        self.keyring.assert_called_once_with(desktop.env)
+        self.assertIn('the default keyring is locked. Ask the user to unlock it', said.getvalue())
+
+    def test_uses_a_running_chrome_whatever_the_keyring(self):
+        self.keyring.return_value = 'chrome_keyring: the default keyring is locked'
+        desktop = mock.Mock(note='')
+        desktop.open.return_value = (0x20, 7)
+        desktop.wait_for_address.return_value = 'https://example.com/a'
+        with mock.patch.object(read_page.sys, 'argv', ['read_page', 'https://example.com/a']), \
+                mock.patch.object(read_page.Hyprland, 'find', return_value=desktop), \
+                mock.patch.object(read_page, 'daemon', return_value=(mock.Mock(), '/tmp/s', '/tmp')), \
+                mock.patch.object(read_page, 'stop_daemon'), \
+                mock.patch.object(read_page, 'chrome', return_value=7), \
+                mock.patch.object(read_page, 'command_line', return_value=OWN), \
+                mock.patch.object(read_page.Driver, 'call', return_value={'tree_markdown': LINUX_TREE}), \
+                mock.patch.object(read_page.Driver, 'windows', return_value={0x20: 'A'}), \
+                mock.patch.object(read_page.time, 'sleep'), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(read_page.main(), 0)
+        self.keyring.assert_not_called()
 
     def test_opens_each_page_before_closing_the_last_and_stops_its_daemon(self):
         """Closing a Chrome's only window quits it, so the next window opens first."""
