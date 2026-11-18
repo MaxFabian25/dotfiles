@@ -14,7 +14,7 @@ to widen it.
 
 [Prose](../prose/SKILL.md) owns the words in and around a display. Its [tables and
 figures](../prose/references/tables-and-figures.md) rules govern titles, labels, notes, sources,
-and text alternatives. When the request selects IBCS notation, read [IBCS
+and text alternatives. When a user, organisation, or project requires IBCS notation, read [IBCS
 charts](references/ibcs-charts.md) before drawing.
 
 ## Marks
@@ -44,7 +44,7 @@ charts](references/ibcs-charts.md) before drawing.
   measures each have their own scale, say so on the display.
 - **Axis start.** When a line chart's value axis starts above zero, mark the break on the chart
   with an axis-break symbol or a short note.
-- **Known values only.** Give a mark a length, area or position only for a value you know. Draw an
+- **Known values only.** Give a mark a length, area, or position only for a value you know. Draw an
   unknown value as an open or dotted outline marked "?", and an item without a price as a labelled
   gap, so it never reads as a zero that costs nothing. Keep one meaning for each line style and fill
   across the document, such as solid for counted in the total and dotted for an estimate. Give the
@@ -58,12 +58,15 @@ charts](references/ibcs-charts.md) before drawing.
 
 - **Destination size.** Build each figure at its final size, such as 16 cm wide for an A4 report
   column, with every text element at 8 pt or more at that size, 12 px or more as rendered on a web
-  page at both test widths below, or 12 pt on a slide. SVG text renders at its computed font size
-  times the scale from `getScreenCTM()`, so measure it that way. Save raster images at 300 dpi.
-- **Page width.** Load web charts, tables, and dashboards at 390 px and 1366 px wide, and measure
-  `document.documentElement.scrollWidth` at each. It equals the viewport width, and a wide table
-  scrolls inside its own container. Put what needs attention first at every width, and keep tick
-  labels horizontal by showing fewer of them.
+  page at both test widths below, or 12 pt on a slide. Check a web page's text with
+  `scripts/page_width.py PAGE`, which measures SVG text at its computed font size times the scale
+  from `getScreenCTM()` and exits 1 when any text is under 12 px at either width. Check text drawn
+  on a canvas, which the script does not measure, by hand. Save raster images at 300 dpi.
+- **Page width.** Check each web chart, table, and dashboard with `scripts/page_width.py PAGE`,
+  which loads the page at 390 px and 1366 px wide and exits 1 when its
+  `document.documentElement.scrollWidth` exceeds the viewport width at either. Make the scroll
+  width equal the viewport width, with a wide table scrolling inside its own container. Put what
+  needs attention first at every width, and keep tick labels horizontal by showing fewer of them.
 - **Table totals.** When an analytical table's values add up, total each dimension that adds up,
   such as all sectors for each region and all regions for each sector. Place each total after the
   rows or columns it sums, and set every total off with a rule and bold figures: total rows, total
@@ -74,15 +77,18 @@ charts](references/ibcs-charts.md) before drawing.
 
 ## Delivery
 
-- **Title and source.** Give each display a title of ten words or fewer that states its finding,
-  and put its supporting figures, measure, and period in a subtitle. Give it a source line that
+- **Title and source.** Give each display a title of ten words or fewer that states its finding
+  or, for an exploratory chart, names its topic. Put its supporting figures, measure, and period in
+  a subtitle. Give it a source line that
   names the producer or system and the data's date. On a dashboard, the headline follows the same
   limit and each panel title names its measure. The producer is the organisation or system that
   made the data. When the request does not name it, write a marked placeholder in its place, such
   as `Source: [producer to confirm], September 2026`, keep any file name as an extra detail, and
   ask the user for the producer in your reply.
   A share card posted with a link to the publication that cites its source needs neither the
-  source line nor the date, because the linked page carries both.
+  source line nor the date, because the linked page carries both. This exception overrides the
+  data-display sources rule in Prose's [tables and
+  figures](../prose/references/tables-and-figures.md).
 - **One period.** State the amounts across one document for one period, such as per month, and
   name it on each display.
 - **Borrowed conventions.** Apply a convention borrowed from another medium, such as the
@@ -113,4 +119,5 @@ charts](references/ibcs-charts.md) before drawing.
   runnable with the project's own environment, and name it in the reply.
 
 Complete the work when every display meets each rule above and Prose's tables and figures rules,
-and you have looked at the rendered output at its delivered size.
+`scripts/contrast.py` has measured each colour pair, `scripts/page_width.py` exits 0 on each web
+chart, table, and dashboard, and you have looked at the rendered output at its delivered size.

@@ -7,12 +7,18 @@ else $PROSE_EVAL_WORK, else ~/prose-eval. Runs are kept as runs/LABEL/TASK/SEAT/
 import hashlib
 import json
 import os
-import secrets
-import subprocess
+import sys
 from pathlib import Path
 
 EVAL = Path(__file__).resolve().parent
 TASKS = EVAL / "tasks"
+# The browser session and the page-width and text-size measurements are the charts skill's
+# page_width.py, imported without writing bytecode, because a __pycache__ under plugin/ fails the
+# release check.
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(EVAL.parent / "plugin/skills/charts/scripts"))
+from page_width import FONTS, SMALL, Browser, at_each_width  # noqa: E402, F401
+
 SKIP_PARTS = frozenset(
     {".venv", "node_modules", "__pycache__", ".git", ".agents", ".claude"}
 )
@@ -98,36 +104,3 @@ def lum(rgb):
 def contrast(a, b):
     hi, lo = sorted([lum(a), lum(b)], reverse=True)
     return (hi + 0.05) / (lo + 0.05)
-
-
-class Browser:
-    """An agent-browser session of our own, closed when the block ends."""
-
-    def __init__(self, name):
-        self.session = f"{name}-{secrets.token_hex(3)}"
-
-    def __call__(self, *args, stdin=None):
-        out = subprocess.run(
-            ["agent-browser", "--session", self.session, *args],
-            input=stdin,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        return out.stdout.strip()
-
-    def at_width(self, width, wait_ms=1500):
-        self("set", "viewport", str(width), "900")
-        self("reload")
-        self("wait", str(wait_ms))
-
-    def json(self, script):
-        """Run a script that returns JSON.stringify(...) and parse its result."""
-        lines = self("eval", "--stdin", stdin=script).splitlines()
-        return json.loads(json.loads(lines[-1])) if lines else None
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        self("close")

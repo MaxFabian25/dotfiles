@@ -54,8 +54,8 @@ regions, or cultures:
 - Use standard subject-verb-object order when it states the relationship accurately.
 - Include helper words such as *then*, *that*, and *of* when they prevent ambiguity.
 - Include articles and relative pronouns when omitting them could create ambiguity.
-- Use no more than two nouns as modifiers of another noun when possible. Preserve a longer governed
-  technical designation and explain its relationships in the surrounding prose.
+- Use no more than two nouns as modifiers of another noun. Preserve a longer governed technical
+  designation and explain its relationships in the surrounding prose.
 - Replace a phrasal verb with a simpler verb when both forms have the same meaning. Retain an
   established technical phrasal verb and define it when intended readers might not know it.
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Validate the Prose source payload and an optional installed copy.
 
-Check payload hygiene, skill topology, local reference integrity, provenance
-registers, and exact source-installed parity.
+Check payload hygiene, skill topology, local reference integrity, that each
+skill's SKILL.md reaches every file in its references/, provenance registers,
+and exact source-installed parity.
 """
 
 from __future__ import annotations
@@ -404,9 +405,12 @@ def _validate_manifest(snapshot: TreeSnapshot, findings: list[Finding]) -> None:
 
 
 def _validate_markdown(
-    snapshot: TreeSnapshot, findings: list[Finding]
+    snapshot: TreeSnapshot, findings: list[Finding], edges: dict[str, set[str]]
 ) -> dict[str, set[str]]:
-    """Resolve rendered local links and share heading anchors with provenance checks."""
+    """Resolve rendered local links and share heading anchors with provenance checks.
+
+    Record each link that resolves to a payload file in edges, for the reach check.
+    """
     parser = MarkdownIt("commonmark")
     anchors: dict[str, set[str]] = {}
     links: list[tuple[str, str, int]] = []
@@ -480,7 +484,8 @@ def _validate_markdown(
                 f"Local link leaves the payload: {href!r}.",
                 line,
             )
-        elif destination not in snapshot.files:
+            continue
+        if destination not in snapshot.files:
             _append(
                 findings,
                 "markdown-link-missing",
@@ -488,7 +493,9 @@ def _validate_markdown(
                 f"Local link target is missing: {href!r}.",
                 line,
             )
-        elif (
+            continue
+        edges.setdefault(relative, set()).add(destination)
+        if (
             url.fragment
             and destination.endswith(".md")
             and unquote(url.fragment) not in anchors.get(destination, set())
@@ -504,8 +511,12 @@ def _validate_markdown(
 
 
 def _validate_source_authorities(
-    snapshot: TreeSnapshot, anchors: Mapping[str, set[str]], findings: list[Finding]
+    snapshot: TreeSnapshot,
+    anchors: Mapping[str, set[str]],
+    findings: list[Finding],
+    edges: dict[str, set[str]],
 ) -> set[str]:
+    """Check the authority register; each evidence_record it names is an edge."""
     relative = "skills/prose/references/source-authorities.csv"
     expected_header = [
         "authority_id",
@@ -577,6 +588,7 @@ def _validate_source_authorities(
                 line_number,
             )
             continue
+        edges.setdefault(relative, set()).add(payload_path)
         if anchor not in anchors.get(payload_path, set()):
             _append(
                 findings,
@@ -844,6 +856,31 @@ def _validate_research_sources(
                 )
 
 
+def _validate_reach(
+    snapshot: TreeSnapshot, edges: Mapping[str, set[str]], findings: list[Finding]
+) -> None:
+    """Every file in a skill's references/ needs a chain of links from its SKILL.md."""
+    for skill in sorted(snapshot.skills):
+        entry = f"skills/{skill}/SKILL.md"
+        if entry not in snapshot.files:
+            continue
+        reached = {entry}
+        pending = [entry]
+        while pending:
+            for target in edges.get(pending.pop(), set()) - reached:
+                reached.add(target)
+                pending.append(target)
+        prefix = f"skills/{skill}/references/"
+        for relative in sorted(snapshot.files):
+            if relative.startswith(prefix) and relative not in reached:
+                _append(
+                    findings,
+                    "reference-unreachable",
+                    relative,
+                    f"No chain of links from {entry} reaches this reference file.",
+                )
+
+
 def _claude_manifest_parity(
     source: TreeSnapshot, installed: TreeSnapshot, findings: list[Finding]
 ) -> None:
@@ -919,11 +956,15 @@ def validate(
     _scan_text(source_snapshot, findings)
     _validate_required(source_snapshot, findings)
     _validate_manifest(source_snapshot, findings)
-    anchors = _validate_markdown(source_snapshot, findings)
-    authority_ids = _validate_source_authorities(source_snapshot, anchors, findings)
+    edges: dict[str, set[str]] = {}
+    anchors = _validate_markdown(source_snapshot, findings, edges)
+    authority_ids = _validate_source_authorities(
+        source_snapshot, anchors, findings, edges
+    )
     _validate_terminology(source_snapshot, authority_ids, findings)
     _validate_google_registers(source_snapshot, anchors, findings)
     _validate_research_sources(source_snapshot, authority_ids, findings)
+    _validate_reach(source_snapshot, edges, findings)
     if installed is not None:
         installed_snapshot = _scan_tree(installed, findings, installed=True)
         if installed_snapshot is not None:

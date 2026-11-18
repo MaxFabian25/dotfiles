@@ -19,9 +19,10 @@ neutral, concise, answerable queries and offer concrete alternatives when known.
 and decisions.
 
 Treat each cut or correction the user makes, and any reason they give, as a standing rule for the
-rest of the work. Apply it in one pass to every remaining item and to each companion document, and
-list the further changes it implies for one confirmation instead of asking about each item. Once the
-user has said a piece is too long, make later fixes replace words rather than add them.
+rest of the work. Apply it in one pass to every remaining item in the authorised scope, companion
+documents in that scope included. For companion documents outside that scope, and for any further
+changes it implies, list the changes for one confirmation instead of asking about each item. Once
+the user has said a piece is too long, make later fixes replace words rather than add them.
 
 ## Voice samples
 

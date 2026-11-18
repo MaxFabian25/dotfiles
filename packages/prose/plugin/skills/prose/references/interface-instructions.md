@@ -101,8 +101,9 @@ label, state, message, command, and product term below.
 - Use *app* for a graphical application in general software prose. Use *program* for software
   without a graphical interface when the distinction matters. Use *application* when a broader or
   formal term is useful. Use one term consistently.
-- Use *appear*, not *display*, for items becoming visible on a screen. In most cases, use *display*,
-  not *monitor*, for a computer's primary or built-in display.
+- Use *appear*, not *display*, for items becoming visible on a screen. Use *display*, not *monitor*,
+  for a computer's primary or built-in display. Use *monitor* to refer generically to a kind of
+  display device, such as a CRT monitor or an external monitor.
 - In user instructions, state the requested action directly instead of using *prompt* as a verb.
   When a prompt must be named, describe the visible request or use passive voice.
 - Use *open* for an app, document, folder, or resource. Reserve *launch* for a defined startup or

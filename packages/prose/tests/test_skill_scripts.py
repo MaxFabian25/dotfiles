@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -11,11 +12,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRAST = ROOT / "plugin/skills/charts/scripts/contrast.py"
+PAGE_WIDTH = ROOT / "plugin/skills/charts/scripts/page_width.py"
 SCAN = ROOT / "plugin/skills/prose/scripts/scan_prose.py"
 
 
 def run(
-    script: Path, *args: str, stdin: str | None = None
+    script: Path,
+    *args: str,
+    stdin: str | None = None,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-I", str(script), *args],
@@ -23,6 +28,7 @@ def run(
         capture_output=True,
         text=True,
         check=False,
+        env=env,
     )
 
 
@@ -62,6 +68,70 @@ class ContrastTests(unittest.TestCase):
         self.assertEqual(run(CONTRAST, "teal-ish", "#fff").returncode, 2)
 
 
+# A chart drawn 600 px wide, and a page whose 900 px table scrolls inside its own container, with a
+# body tall enough to need a vertical scrollbar.
+WIDE_PAGE = """<!doctype html><meta name="viewport" content="width=device-width">
+<body style="margin:0"><div style="width:600px;height:20px">Chart</div></body>"""
+FITTING_PAGE = """<!doctype html><meta name="viewport" content="width=device-width">
+<body style="margin:0"><div style="overflow-x:auto"><table style="width:900px"><tr><td>Wide
+table</td></tr></table></div><div style="height:3000px"></div></body>"""
+# A note set at 10 px under a 16 px chart title, and the same page with the note at 12 px.
+SMALL_TEXT_PAGE = """<!doctype html><meta name="viewport" content="width=device-width">
+<body style="margin:0"><h1 style="font-size:16px">Title</h1>
+<p style="font-size:10px">Source note</p></body>"""
+TWELVE_PX_PAGE = SMALL_TEXT_PAGE.replace("font-size:10px", "font-size:12px")
+
+
+class PageWidthTests(unittest.TestCase):
+    def test_missing_browser_tool_is_named(self) -> None:
+        result = run(PAGE_WIDTH, "page.html", env={"PATH": str(ROOT / "no-such-bin")})
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("agent-browser is not on PATH", result.stderr)
+
+
+@unittest.skipUnless(shutil.which("agent-browser"), "needs agent-browser")
+class PageWidthBrowserTests(unittest.TestCase):
+    def measure(self, html: str) -> subprocess.CompletedProcess[str]:
+        with tempfile.TemporaryDirectory() as folder:
+            page = Path(folder) / "page.html"
+            page.write_text(html, encoding="utf-8")
+            return run(PAGE_WIDTH, str(page))
+
+    def test_a_page_wider_than_the_phone_fails(self) -> None:
+        result = self.measure(WIDE_PAGE)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertIn("at 390 px: scroll width 600 px, OVERFLOWS", lines[0])
+        self.assertIn("at 1366 px: scroll width 1366 px, fits", lines[1])
+
+    def test_a_table_scrolling_in_its_own_container_passes(self) -> None:
+        result = self.measure(FITTING_PAGE)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count(", fits"), 2)
+
+    def test_text_under_twelve_px_fails_and_is_listed(self) -> None:
+        result = self.measure(SMALL_TEXT_PAGE)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertIn(
+            "at 390 px: scroll width 390 px, fits; smallest text 10 px, "
+            "1 of 2 text runs UNDER 12 px",
+            lines[0],
+        )
+        self.assertEqual(lines.count("  10 px: Source note"), 2)
+
+    def test_text_at_twelve_px_passes(self) -> None:
+        result = self.measure(TWELVE_PX_PAGE)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count("smallest text 12 px"), 2)
+        self.assertNotIn("UNDER", result.stdout)
+
+    def test_a_page_that_fails_to_load_is_an_error(self) -> None:
+        result = run(PAGE_WIDTH, "http://127.0.0.1:9/")
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("could not open it", result.stderr)
+
+
 class ScanTests(unittest.TestCase):
     def checks(self, text: str, suffix: str = ".md", *extra: str) -> list[str]:
         with tempfile.TemporaryDirectory() as folder:
@@ -88,11 +158,21 @@ class ScanTests(unittest.TestCase):
         text = "The stack is Microsoft 365, SharePoint and OneDrive, and Power BI.\n"
         self.assertNotIn("serial-comma", self.checks(text))
 
+    def test_pair_of_prepositions_after_a_comma_is_not_flagged(self) -> None:
+        for text in (
+            "Compare one task, written with and without that rule.\n",
+            "Time the suite, measured before and after the change.\n",
+        ):
+            with self.subTest(text=text):
+                self.assertNotIn("serial-comma", self.checks(text))
+
     def test_series_that_resembles_those_exceptions_is_flagged(self) -> None:
         for text in (
             "The table shows revenue, actual and planned costs.\n",
             "We compared the past, current and target.\n",
             "We bought apples, pears and plums, and then we left.\n",
+            "We sampled the data before, during and after the move.\n",
+            "We built it, set it up and shipped it.\n",
         ):
             with self.subTest(text=text):
                 self.assertIn("serial-comma", self.checks(text))

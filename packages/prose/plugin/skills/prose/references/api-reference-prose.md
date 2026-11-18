@@ -100,7 +100,7 @@ API reference prose, not program behaviour or generated markup.
 
 ## Verification
 
-Test documented behaviour when practical.
+Test documented behaviour whenever you can run the code.
 
 Complete this branch when every public element in scope documents its contract, parameters,
 returns, errors, limits, and deprecation state. Examples match tested behaviour.
