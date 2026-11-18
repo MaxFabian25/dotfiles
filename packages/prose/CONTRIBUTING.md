@@ -32,6 +32,54 @@ Update controlled inbound links when a heading or path changes.
 Remove superseded instructions and duplicate representations. Git history retains old designs and
 completed experiments. Keep the current tree focused on material needed to use or maintain Prose.
 
+### Hold instructions to the checklist
+
+Hold each Prose instruction file, which is each `SKILL.md` and its description,
+`references/index.md`, and each reference file, to these 14 questions. A file, or a rule added after
+a session's correction, is ready when every answer is yes.
+
+1. **Description.** Does the description lead with the skill's main word and give each distinct
+   kind of request one trigger?
+2. **Pointers.** Does each pointer name, once, the case that should open it, link the file, and link
+   the section when the rule sits in one section?
+3. **One home.** Does each rule live in one file that others link to, and where two files rule on
+   one point, does the narrower file name the rule it overrides?
+4. **Positive wording.** Does each instruction name the behaviour to produce, at normal volume, with
+   any prohibition guarding a known failure and placed beside its positive target?
+5. **Reasons.** Is each reason a present-tense fact about the work, written for the rule's class of
+   cases, with no date, incident, one session's count, pull request number, or model name?
+6. **Completion.** Does the file end on a completion criterion that names each output and each
+   check, so an agent can tick it off item by item?
+7. **No sentence the agent obeys anyway.** Would an agent on either host act differently without
+   each sentence?
+8. **Load per use.** Does each `SKILL.md` read in one sitting, and does each route send the agent
+   only to the files its kind of request needs?
+9. **Reach.** Can a run reach every reference file through links from a `SKILL.md`, and does every
+   link and anchor resolve?
+10. **Steps.** Does each step the agent performs sit where it runs, in order, apart from the
+    reference rules?
+11. **Exact where fragile.** Does each fragile step name the exact path, command, or file, and does
+    each named path, command, and flag exist?
+12. **One name per concept.** Does each concept keep one name throughout the file and the
+    references it routes to?
+13. **Scripts for scriptable checks.** Is each check that a script can make shipped as a script that
+    the rule names?
+14. **Both hosts.** Does the text name only tools and mechanisms that both Claude Code and Codex
+    have?
+
+Where the questions pull against each other, settle the case this way:
+
+- Cut a trigger word from a description only when another word in the same description already
+  names that kind of request.
+- Keep a short rule word for word in two skills when each loads on its own and needs it.
+- Move text from a `SKILL.md` behind a pointer only when the `SKILL.md` stops reading in one sitting.
+- Keep a rule that came from one correction when it is written for its class of cases.
+- Delete as a no-op only a sentence that tells the agent to do what reading the file already makes
+  it do.
+
+Removing a rule needs the user's yes, and so does a change to what a rule says, as against how it
+says it.
+
 ## Check the change
 
 Run the repository checks:
@@ -97,8 +145,8 @@ paragraph at the top of this guide is removed, and it works from commits alone:
    repeat with the commit, the lesson, and the earlier rule's `file:line` at `COMMIT^`, or say that
    the month had none.
 
-A repeat means the rule failed, and that rule is rewritten against the checklist in
-[Edit the guidance](#edit-the-guidance). A month with no repeats is the target.
+A repeat means the rule failed, and that rule is rewritten against the
+[checklist](#hold-instructions-to-the-checklist). A month with no repeats is the target.
 
 ## Deliver a plugin update
 
