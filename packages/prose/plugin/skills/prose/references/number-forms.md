@@ -41,7 +41,8 @@ around it when practical.
   readers could misunderstand a term. In Danish, *milliard* (*mia.*) means 10⁹, *billion* means
   10¹², and *trillion* means 10¹⁸. Render an English *billion* as *milliard* and an English
   *trillion* as *billion*.
-- **How to write numbers.** Spell out numbers when there might otherwise be confusion.
+- **Adjacent numbers.** When two numbers sit side by side, as in *ten 20-page reports*, spell out
+  one of them or recast the sentence.
 - **Counts.** When APA, Chicago, or another selected style does not govern counts, write a count
   without a unit below 10 in words, as in *two scenarios*, and from 10 in numerals. Use numerals for
   every count of the same kind in a sentence that includes a count of 10 or more.
@@ -68,7 +69,8 @@ around it when practical.
   Preserve clock forms in governed or quoted text.
 - **Danish clock times.** In Danish prose, use the 24-hour clock and separate hours and minutes with
   a full stop, as in `kl. 16.00`.
-- **Noon.** Use *noon* instead of *12 a.m.* or *12 p.m.*
+- **Noon.** Write *noon* instead of *12 p.m.* Treat *12 a.m.* as midnight and apply the midnight
+  rule below.
 - **Midnight.** Avoid *midnight* for a deadline because it can mean the beginning or end of a day.
   State an unambiguous date and time instead. State the time zone when readers could differ.
 - **Decades.** Include the century in a decade reference unless the context makes it unambiguous.
@@ -98,7 +100,7 @@ around it when practical.
   reader-facing arithmetic. In ordinary prose, write dimensions with *by*. For a compact
   specification or resolution, use its governed separator and spacing, such as `1024 x 768`. Do not
   treat that separator as arithmetic. Use `\times` in LaTeX. Code keeps its language operator.
-- **Minus sign.** Use `−` for subtraction and negative values in reader-facing text. Use `-` only where a hyphen or technical syntax is required. Put no space after a unary minus and spaces around subtraction. A financial table may instead show negative values in parentheses; use one convention within each display and state it in a note when readers may not know it. Do not let a sign and a row label, such as *less* or *loss*, both express the same negative.
+- **Minus sign.** Use `−` for subtraction and negative values in reader-facing text. Use `-` only where a hyphen or technical syntax is required. Space the sign as [operator spacing](quantitative-prose.md#equations-and-notation) sets out. A financial table may instead show negative values in parentheses; use one convention within each display and state it in a note when readers may not know it. Do not let a sign and a row label, such as *less* or *loss*, both express the same negative.
 - **Numerical ranges.** In English prose, write a range as *from A to B* or *between A and B*. In Danish prose, use *fra A til B* or *mellem A og B*.
 - **Compact ranges.** In compact English technical content, use an unspaced en dash rather than a hyphen, as in `200–250`. In compact Danish content, use a hyphen, as in `200-250`; between long expressions, a spaced en dash may replace it (*Retskrivningsordbogen* § 57.9). Reserve *from*, *fra*, *between*, and *mellem* for worded ranges. Write both endpoints in full. Repeat a percentage or currency symbol at both endpoints, as in `25%–30%` in English and `25 %-30 %` in Danish.
 - **Ranges of numbers with units.** Attach the unit name or symbol to both limits. Repeat a closed-up symbol at

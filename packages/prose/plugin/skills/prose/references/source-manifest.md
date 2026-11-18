@@ -34,9 +34,10 @@ shared rules. Consult it when a term's provenance or source status matters.
 The [Google Page Register](google-developer-documentation-pages.csv) owns Google page review
 records: scope, disposition, licences, and the revision and access dates of the latest check. A
 Google authority record keeps the dates of the version its citation identifies.
-The Google entry register owns source anchors and markers. The decision register owns unique
-word-list adoption treatments and points to the module that owns each shared rule. Each additional
-destination applies only under a distinct condition stated in its treatment.
+The [Google entry register](google-developer-documentation-word-list-entries.csv) owns source
+anchors and markers. The [decision register](google-developer-documentation-word-list-decisions.csv)
+owns unique word-list adoption treatments and points to the module that owns each shared rule. Each
+additional destination applies only under a distinct condition stated in its treatment.
 
 An authority's `evidence_record` identifies its source-family evidence. Read its scope limits and
 only the topic needed for the question. When the pointer names a parent section, select the

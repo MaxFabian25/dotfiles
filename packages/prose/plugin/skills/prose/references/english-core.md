@@ -82,8 +82,6 @@ supports British data prose within that scope.
 - Use *inside* or *outside* without *of* for a simple location. Retain *outside of* for *except for*
   or *apart from*.
 - Use *onto* for movement to a position. Write *on to* when *on* completes the preceding verb.
-- Examples of direct technical verbs include *restart*, *restore*, *quit*, and *stop*. Retain a noun
-  that names an established technical concept or state.
 - Replace *functionality* with *feature*, *capability*, or the exact operation unless it names an
   established technical concept.
 - Omit *mode* when removing it preserves the meaning. Retain it for a defined state, operating mode,
@@ -174,9 +172,10 @@ supports British data prose within that scope.
 ## Remove empty English wording
 
 State the supported fact instead of saying it *underscores the significance* or *plays a vital
-role*. Prefer the direct verb, such as *analyse* or *reduce*, to an empty action-noun phrase.
-Remove needless *moreover*, *furthermore*, and *in addition*. Apply the [reader-core content
-check](reader-core.md#remove-wording-that-carries-no-content) to other filler.
+role*. Prefer the direct verb, such as *analyse*, *reduce*, *restart*, *restore*, or *stop*, to an
+empty action-noun phrase, such as *perform a restart*. Retain a noun that names an established
+technical concept or state. Remove needless *moreover*, *furthermore*, and *in addition*. Apply the
+[reader-core content check](reader-core.md#remove-wording-that-carries-no-content) to other filler.
 
 Complete the English edit when the applicable house choices hold and the source's meaning and
 protected forms remain intact.
