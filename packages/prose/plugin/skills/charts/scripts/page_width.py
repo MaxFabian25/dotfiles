@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-"""Check that web pages fit the phone and desktop test widths.
+"""Check that web pages fit the phone and desktop test widths, with no text under 12 px.
 
 Usage: page_width.py PAGE [PAGE ...]
 
 PAGE is an HTML file or an http, https, or file URL. The script loads each page
 in agent-browser at 390 px and 1366 px wide and prints, for each width, the
-page's scroll width (document.documentElement.scrollWidth) and whether it fits
-the viewport. A wide table that scrolls inside its own container fits.
+page's scroll width (document.documentElement.scrollWidth), whether it fits
+the viewport, and the smallest rendered text, followed by one indented line for
+each text run under 12 px. A wide table that scrolls inside its own container
+fits. SVG text counts at its computed font size times the scale from
+getScreenCTM(). Text drawn on a canvas is not measured.
 
-Exit status: 0 when every page fits at both widths, 1 when any page overflows,
-and 2 when agent-browser is missing or a page cannot be loaded or measured.
+Exit status: 0 when every page fits at both widths and has no text under 12 px,
+1 when any page overflows or has text under 12 px, and 2 when agent-browser is
+missing or a page cannot be loaded or measured.
 """
 
 from __future__ import annotations
@@ -36,6 +40,35 @@ MEASURE = (
     "JSON.stringify({scroll: document.documentElement.scrollWidth,"
     " viewport: document.documentElement.clientWidth})"
 )
+# Text runs smaller than this, in px as rendered, fail the charts skill's size rule.
+SMALL = 12
+# The size of each visible text run, SVG text scaled by its screen transform, smallest first: the
+# count, the smallest size, and each run under SMALL px (rounded to 0.1 px) with its first 40 characters.
+FONTS = r"""
+(() => {
+  const out = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  let n;
+  while ((n = walker.nextNode())) {
+    const t = n.textContent.trim();
+    const el = n.parentElement;
+    if (!t || !el || el.closest('script,style,noscript,title')) continue;
+    const cs = getComputedStyle(el);
+    if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity === 0) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width <= 2 || r.height <= 2) continue;
+    let px = parseFloat(cs.fontSize);
+    if (el instanceof SVGElement && el.getScreenCTM) {
+      const m = el.getScreenCTM();
+      if (m) px *= Math.hypot(m.a, m.b);
+    }
+    out.push([Math.round(px * 10) / 10, t.slice(0, 40)]);
+  }
+  out.sort((a, b) => a[0] - b[0]);
+  return JSON.stringify({n: out.length, min: out.length ? out[0][0] : null,
+                         small: out.filter(x => x[0] < 11.95)});
+})()
+"""
 
 
 class PageError(Exception):
@@ -120,37 +153,62 @@ def at_each_width(browser: Browser, url: str) -> Iterator[Width]:
         yield result
 
 
+def text_sizes(browser: Browser, url: str) -> dict:
+    """The FONTS measurement of the page at its current width."""
+    sizes = browser.json(FONTS)
+    if not isinstance(sizes, dict) or "small" not in sizes:
+        raise PageError(f"{url}: agent-browser could not measure its text")
+    return sizes
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
-        description="Check that web pages fit 390 px and 1366 px wide viewports."
+        description=(
+            "Check that web pages fit 390 px and 1366 px wide viewports, with no "
+            "text under 12 px."
+        )
     )
     parser.add_argument("pages", nargs="+", metavar="PAGE")
     args = parser.parse_args(argv)
     if shutil.which(TOOL) is None:
         print(MISSING, file=sys.stderr)
         return 2
-    overflow = False
+    failed = False
     try:
         with Browser("page-width") as browser:
             for page in args.pages:
-                for result in at_each_width(browser, url_of(page)):
+                url = url_of(page)
+                for result in at_each_width(browser, url):
                     if result.fits:
                         verdict = "fits"
                     else:
-                        overflow = True
+                        failed = True
                         verdict = (
                             f"OVERFLOWS the {result.viewport} px viewport by "
                             f"{result.scroll - result.viewport} px"
                         )
+                    sizes = text_sizes(browser, url)
+                    if sizes["min"] is None:
+                        text = "no text measured"
+                    else:
+                        text = f"smallest text {sizes['min']:g} px"
+                    if sizes["small"]:
+                        failed = True
+                        text += (
+                            f", {len(sizes['small'])} of {sizes['n']} text runs "
+                            f"UNDER {SMALL} px"
+                        )
                     print(
                         f"{page} at {result.width} px: scroll width "
-                        f"{result.scroll} px, {verdict}",
+                        f"{result.scroll} px, {verdict}; {text}",
                         flush=True,
                     )
+                    for px, words in sizes["small"]:
+                        print(f"  {px:g} px: {words}", flush=True)
     except PageError as error:
         print(f"page_width.py: {error}", file=sys.stderr)
         return 2
-    return 1 if overflow else 0
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

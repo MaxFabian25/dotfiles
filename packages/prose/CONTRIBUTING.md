@@ -1,11 +1,5 @@
 # Develop Prose
 
-While this paragraph stands, the audit of Prose's instructions is running. File each lesson for
-Prose, a rule learnt from a session's correction, as an issue in `MaxFabian25/dotfiles-private`
-titled `Prose lesson: SUBJECT`, and leave the skills unchanged. A defect fix, such as a script's
-false alarm or a broken link, still lands as a pull request. Remove this paragraph when the audit
-ends.
-
 Run development commands from `packages/prose` in the dotfiles checkout. Install Python 3.10 or later,
 [uv](https://docs.astral.sh/uv/getting-started/installation/), Node.js 22 or later, npm, and Make.
 
@@ -133,17 +127,19 @@ with what was adopted, what was left out and why, and the release.
 ## Count repeated corrections
 
 Once a month, count the lessons that repeat a point Prose already covered. A lesson is a rule added
-or changed after a session's correction. The count starts with the first full month after the audit
-paragraph at the top of this guide is removed, and it works from commits alone:
+or changed after a session's correction. The first count covers December 2026, and each count
+works from commits alone:
 
 1. On `origin/main`, list the month's commits, as
    `git log --since=2027-01-01 --until=2027-02-01 -- packages/prose/plugin` does for January 2027.
    Take the previous calendar month unless the prompt names one.
 2. For each commit that adds a lesson, search Prose at the commit's parent, `COMMIT^`, for a rule
    that already covered the lesson's point.
-3. File one issue in `MaxFabian25/dotfiles-private` titled `Prose repeat count: YYYY-MM`. List each
-   repeat with the commit, the lesson, and the earlier rule's `file:line` at `COMMIT^`, or say that
-   the month had none.
+3. When the month has a repeat, file one issue in `MaxFabian25/dotfiles-private` titled
+   `Prose repeat count: YYYY-MM`, and list each repeat in it with the commit, the lesson, and the
+   earlier rule's `file:line` at `COMMIT^`.
+4. Report the month, the number of lesson commits read, and either the issue's URL or, when the
+   month has no repeat, `No repeats in YYYY-MM`. A month with no repeat gets no issue.
 
 A repeat means the rule failed, and that rule is rewritten against the
 [checklist](#hold-instructions-to-the-checklist). A month with no repeats is the target.

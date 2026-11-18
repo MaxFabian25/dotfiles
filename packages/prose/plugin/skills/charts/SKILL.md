@@ -14,7 +14,7 @@ to widen it.
 
 [Prose](../prose/SKILL.md) owns the words in and around a display. Its [tables and
 figures](../prose/references/tables-and-figures.md) rules govern titles, labels, notes, sources,
-and text alternatives. When the request selects IBCS notation, read [IBCS
+and text alternatives. When a user, organisation, or project requires IBCS notation, read [IBCS
 charts](references/ibcs-charts.md) before drawing.
 
 ## Marks
@@ -58,8 +58,10 @@ charts](references/ibcs-charts.md) before drawing.
 
 - **Destination size.** Build each figure at its final size, such as 16 cm wide for an A4 report
   column, with every text element at 8 pt or more at that size, 12 px or more as rendered on a web
-  page at both test widths below, or 12 pt on a slide. SVG text renders at its computed font size
-  times the scale from `getScreenCTM()`, so measure it that way. Save raster images at 300 dpi.
+  page at both test widths below, or 12 pt on a slide. Check a web page's text with
+  `scripts/page_width.py PAGE`, which measures SVG text at its computed font size times the scale
+  from `getScreenCTM()` and exits 1 when any text is under 12 px at either width. Check text drawn
+  on a canvas, which the script does not measure, by hand. Save raster images at 300 dpi.
 - **Page width.** Check each web chart, table, and dashboard with `scripts/page_width.py PAGE`,
   which loads the page at 390 px and 1366 px wide and exits 1 when its
   `document.documentElement.scrollWidth` exceeds the viewport width at either. Make the scroll

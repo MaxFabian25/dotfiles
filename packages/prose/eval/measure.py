@@ -2,9 +2,9 @@
 
 Usage: measure.py [--work DIR] [--map] [--out FILE] LABEL[/TASK]|FOLDER ...
 A FOLDER is a blinded task, judge/ROUND/TASK, or one lettered run in it.
-Reports the page's scroll width against the viewport, measured by the charts skill's page_width.py,
-and the smallest rendered text, with SVG text scaled by its screen transform (canvas text is not
-measured). With --map, also reports the region fills and outlines of the SVG with the most paths,
+Reports the page's scroll width against the viewport and the smallest rendered text, both measured
+by the charts skill's page_width.py, with SVG text scaled by its screen transform (canvas text is
+not measured). With --map, also reports the region fills and outlines of the SVG with the most paths,
 blended over the map background, with contrast.
 """
 
@@ -13,6 +13,8 @@ from collections import Counter
 from pathlib import Path
 
 from harness import (
+    FONTS,
+    SMALL,
     Browser,
     at_each_width,
     contrast,
@@ -23,32 +25,6 @@ from harness import (
     work_dir,
 )
 
-SMALL = 12
-FONTS = r"""
-(() => {
-  const out = [];
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-  let n;
-  while ((n = walker.nextNode())) {
-    const t = n.textContent.trim();
-    const el = n.parentElement;
-    if (!t || !el || el.closest('script,style,noscript,title')) continue;
-    const cs = getComputedStyle(el);
-    if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity === 0) continue;
-    const r = el.getBoundingClientRect();
-    if (r.width <= 2 || r.height <= 2) continue;
-    let px = parseFloat(cs.fontSize);
-    if (el instanceof SVGElement && el.getScreenCTM) {
-      const m = el.getScreenCTM();
-      if (m) px *= Math.hypot(m.a, m.b);
-    }
-    out.push([Math.round(px * 10) / 10, t.slice(0, 40)]);
-  }
-  out.sort((a, b) => a[0] - b[0]);
-  return JSON.stringify({n: out.length, min: out.length ? out[0][0] : null,
-                         small: out.filter(x => x[0] < 11.95)});
-})()
-"""
 MAP = r"""
 (() => {
   const svgs = [...document.querySelectorAll('svg')];
