@@ -2,18 +2,27 @@
 
 Usage: measure.py [--work DIR] [--map] [--out FILE] LABEL[/TASK]|FOLDER ...
 A FOLDER is a blinded task, judge/ROUND/TASK, or one lettered run in it.
-Reports the page's scroll width against the viewport, and the smallest rendered text, with SVG text
-scaled by its screen transform (canvas text is not measured). With --map, also reports the region
-fills and outlines of the SVG with the most paths, blended over the map background, with contrast.
+Reports the page's scroll width against the viewport, measured by the charts skill's page_width.py,
+and the smallest rendered text, with SVG text scaled by its screen transform (canvas text is not
+measured). With --map, also reports the region fills and outlines of the SVG with the most paths,
+blended over the map background, with contrast.
 """
 
 import argparse
 from collections import Counter
 from pathlib import Path
 
-from harness import Browser, contrast, files_of, lum, pages, specs, work_dir
+from harness import (
+    Browser,
+    at_each_width,
+    contrast,
+    files_of,
+    lum,
+    pages,
+    specs,
+    work_dir,
+)
 
-WIDTHS = (390, 1366)
 SMALL = 12
 FONTS = r"""
 (() => {
@@ -36,8 +45,8 @@ FONTS = r"""
     out.push([Math.round(px * 10) / 10, t.slice(0, 40)]);
   }
   out.sort((a, b) => a[0] - b[0]);
-  return JSON.stringify({width: document.documentElement.scrollWidth, n: out.length,
-                         min: out.length ? out[0][0] : null, small: out.filter(x => x[0] < 11.95)});
+  return JSON.stringify({n: out.length, min: out.length ? out[0][0] : null,
+                         small: out.filter(x => x[0] < 11.95)});
 })()
 """
 MAP = r"""
@@ -137,12 +146,12 @@ def map_cells(d):
 
 def measure_page(browser, page, with_map):
     """Rows for the width, text and map tables."""
-    browser("open", page.resolve().as_uri())
-    widths, fonts, maps = [], [], []
-    for width in WIDTHS:
-        browser.at_width(width)
+    widths, fits, fonts, maps = [], [], [], []
+    for measured in at_each_width(browser, page.resolve().as_uri()):
+        width = measured.width
+        widths.append(str(measured.scroll))
+        fits.append(measured.fits)
         f = browser.json(FONTS)
-        widths.append(str(f["width"]))
         examples = "; ".join(f"{px}px {text}" for px, text in f["small"][:3])
         fonts.append(
             [str(width), str(f["min"]), f"{len(f['small'])}/{f['n']}", examples]
@@ -159,8 +168,7 @@ def measure_page(browser, page, with_map):
                     ),
                 ]
             )
-    fits = widths == [str(w) for w in WIDTHS]
-    return [*widths, "yes" if fits else "no"], fonts, maps
+    return [*widths, "yes" if all(fits) else "no"], fonts, maps
 
 
 def table(header, rows):

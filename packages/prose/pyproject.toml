@@ -22,4 +22,4 @@ pythonVersion = "3.10"
 typeCheckingMode = "off"
 include = ["scripts", "tests", "eval"]
 exclude = ["**/__pycache__", "eval/tasks"]
-extraPaths = ["scripts", "eval"]
+extraPaths = ["scripts", "eval", "plugin/skills/charts/scripts"]
