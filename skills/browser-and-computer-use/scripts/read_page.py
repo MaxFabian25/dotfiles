@@ -8,8 +8,8 @@ answers. It skips a page whose address bar shows another site, such as a sign-in
 bot check, closes only its own window, and ends its cua-driver session. Requires the user's own Chrome
 running, except on a Hyprland desktop as below, and cua-driver on PATH. A Chrome that automation started, such
 as agent-browser's, is never used. On WSL, pass --cua cua-driver.exe to drive Chrome on the Windows desktop.
-It exits 3 when it stops, 4 at a bot check, 5 when it skipped a page, and 6 when a page showed no text by the end
-of --wait, which a longer --wait often fixes.
+It reads each page again every 2 seconds until its text stops growing or --wait seconds pass. It exits 3 when it
+stops, 4 at a bot check, 5 when it skipped a page, and 6 when a page showed no text within --wait.
 
 On a Hyprland desktop, such as the Omarchy laptop, it runs unattended: it starts a cua-driver daemon of its own
 with the desktop's environment, opens each page in a window on a hidden workspace without taking focus, starts the
@@ -289,13 +289,13 @@ class Hyprland:
                     else 'its page has no address yet')
         return ''
 
-    def wait_for_address(self, driver, pid, window, tries=8):
-        """The page's address, read again every 2 seconds while the page has none, because a page in a Chrome that
-        the script has just started can take longer than --wait: The Economist's had none at 7 seconds and had
+    def wait_for_address(self, driver, pid, window, deadline):
+        """The page's address, read again every 2 seconds while the page has none until the deadline, because a page
+        in a Chrome that the script has just started takes a while: The Economist's had none at 7 seconds and had
         one at 10 on the Omarchy laptop on 14 November 2026."""
-        for attempt in range(tries):
+        while True:
             shown = self.address(pid, driver.windows(pid).get(window, ''))
-            if shown or attempt == tries - 1:
+            if shown or time.monotonic() >= deadline:
                 return shown
             time.sleep(2)
 
@@ -367,20 +367,24 @@ def open_window(driver, pid, profile, url):
     raise RuntimeError('no new Chrome window appeared')
 
 
-def settled_tree(driver, pid, window, tries=10):
-    """The window's tree once its page's text has stopped growing, read again every 2 seconds. In a Chrome the
-    script had just started on the Omarchy laptop on 14 November 2026, the FT's page had half its text and The
-    Economist's none when their addresses first showed."""
-    data = driver.tree(pid, window)
-    size = len(page_text(data.get('tree_markdown', '')))
-    for _ in range(tries):
-        time.sleep(2)
+def settled_tree(driver, pid, window, deadline, before=''):
+    """The window's tree once its page shows text and that text has stopped growing, read again every 2 seconds
+    until the deadline, when it returns the last read. Chrome on Windows builds a page's tree only once a tool asks
+    for it: on 18 November 2026 a loaded page in a Chrome just started read empty at 1, 7 and 20 seconds and in
+    full a second later. A page's scripts can still be adding text: on the Omarchy laptop on 14 November 2026 the
+    FT's page had half its text when its address first showed. Text equal to `before`, the page the window showed
+    before this one was asked for, counts as none."""
+    data, size = None, 0
+    while True:
         again = driver.tree(pid, window)
-        grown = len(page_text(again.get('tree_markdown', '')))
+        text = page_text(again.get('tree_markdown', ''))
+        grown = 0 if text == before else len(text)
         if size and grown <= size:
-            break
+            return data
         data, size = again, grown
-    return data
+        if time.monotonic() >= deadline:
+            return data
+        time.sleep(2)
 
 
 def address_bar(driver, pid, window):
@@ -549,7 +553,7 @@ def main():
     parser.add_argument('--profile', default='Default', help="the Chrome profile directory holding the user's subscriptions")
     parser.add_argument('--out', type=Path, help='save each page here instead of printing it')
     parser.add_argument('--cua', default='cua-driver', help='the cua-driver command; cua-driver.exe on WSL')
-    parser.add_argument('--wait', type=float, default=7, help='seconds to let each page load')
+    parser.add_argument('--wait', type=float, default=30, help='the most seconds to wait for each page to show its text')
     parser.add_argument('--expand', action='store_true', help='open collapsed FAQ answers before reading')
     args = parser.parse_args()
     if sum('nytimes.com' in url for url in args.urls) > NYT_LIMIT:
@@ -573,6 +577,7 @@ def main():
         if pid is None and (refusal := keyring_refusal(desktop.env)):
             raise RuntimeError(refusal)
         for index, url in enumerate(args.urls):
+            before = ''
             if window is not None and driver.uia:
                 # Windows refuses the address bar's Return key in the background, so each page gets a window.
                 close(driver, pid, window)
@@ -596,19 +601,21 @@ def main():
             elif window is None:
                 window = open_window(driver, pid, args.profile, url)
             else:
+                # The window shows the last page until the new one replaces it.
+                before = page_text(driver.tree(pid, window).get('tree_markdown', ''))
                 load(driver, pid, window, url)
-            time.sleep(args.wait)
+            deadline = time.monotonic() + args.wait
             if desktop is not None:
                 # Once the page has an address it has loaded, so read its tree, then its address once more, in
                 # case the page's own script sent it to another site meanwhile. A page that never showed an
                 # address is skipped without that second wait.
-                shown = desktop.wait_for_address(driver, pid, window)
+                shown = desktop.wait_for_address(driver, pid, window, deadline)
                 data = {}
                 if shown:
-                    data = settled_tree(driver, pid, window)
-                    shown = desktop.wait_for_address(driver, pid, window)
+                    data = settled_tree(driver, pid, window, deadline)
+                    shown = desktop.wait_for_address(driver, pid, window, deadline)
             else:
-                data = driver.tree(pid, window)
+                data = settled_tree(driver, pid, window, deadline, before)
                 shown = address_bar(driver, pid, window)[1]
             title = driver.windows(pid).get(window, '')
             if BOT_CHECK.search(title + '\n' + page_text(data.get('tree_markdown', ''))[:2000]):
@@ -626,8 +633,8 @@ def main():
                     data = driver.tree(pid, window)
             text = page_text(data.get('tree_markdown', ''))
             if not text:
-                print(f'{url}: no page text after --wait {args.wait:g} seconds; run it again with a longer wait, '
-                      'such as --wait 25.', file=sys.stderr)
+                print(f'{url}: no page text within --wait {args.wait:g} seconds; run it again with a longer wait, '
+                      f'such as --wait {args.wait * 2:g}.', file=sys.stderr)
                 empty = True
             note = desktop.note if desktop is not None else ''
             page = f'URL: {url}\nADDRESS: {shown}{note}\nTITLE: {title}\n\n{text}\n'
