@@ -4,15 +4,14 @@ from __future__ import annotations
 import argparse
 import contextlib
 from datetime import datetime, timezone
-import hashlib
 import json
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import time
 import traceback
 
+from mise_tools import install as install_tools, state_folder
 from portable import GIT, exclusive_lock, lock_holder, native_cli_environment, run_tree
 from sync_ending import run_sync
 
@@ -94,27 +93,6 @@ def clean(public, private):
             raise RuntimeError(f'{root}: local changes; a release pull requires clean checkouts')
 
 
-def install_tools(home, state):
-    """A release writes tool versions and the npm PATH entry into the mise config, and mise stops on a pinned
-    version that isn't installed. Install once per config contents, and again on the next pull after a failed
-    install."""
-    config = home / '.config/mise/config.toml'
-    if not config.is_file():
-        return
-    record = state / 'mise-installed.sha256'
-    digest = hashlib.sha256(config.read_bytes()).hexdigest()
-    if record.is_file() and record.read_text(encoding='utf-8').strip() == digest:
-        return
-    mise = shutil.which('mise')
-    if mise is None:
-        raise RuntimeError(f'{config} pins tools, but mise is not on PATH to install them')
-    # mise also reads version files in the folder it runs in, so it runs in the home folder, not the pull's checkout.
-    result = subprocess.run([mise, '--cd', str(home), 'install', '--yes'], timeout=900)
-    if result.returncode:
-        raise RuntimeError(f'mise install exited {result.returncode}; device files were applied, and the next pull retries it')
-    record.write_text(digest + '\n', encoding='utf-8')
-
-
 def home_files(private, state, apply):
     if private is None or not (sys.platform.startswith('linux') or sys.platform == 'win32'):
         return False
@@ -165,11 +143,19 @@ def pull_lock(path, patience):
 def run(args):
     root = args.root.resolve()
     private = args.private.resolve() if args.private else None
-    state = Path.home() / '.local/state/dotfiles'
+    state = state_folder(Path.home())
     with pull_lock(state / 'pull.lock', args.wait):
         if args.update:
             update(root, private)
         clean(root, private)
+        if args.apply:
+            # A sync that wrote the mise config and stopped before its tools installed leaves Codex's launcher asking
+            # mise for a Node that is not there, and every later sync then stops while reading Codex.
+            try:
+                install_tools(Path.home(), state)
+            except (RuntimeError, OSError, subprocess.SubprocessError) as error:
+                print(f'Dotfiles pull: the tools the mise config pins did not install before the sync: {error}',
+                      file=sys.stderr, flush=True)
         status = run_sync(root, private, state=state, apply=args.apply, notes=args.notes, timeout=1200)
         # 1 after --apply: sync wrote what it could and nothing blocked it, but some managed changes did not take.
         # The pair is not applied, so it gets no receipt, but the mise config was written, so its tools still install.

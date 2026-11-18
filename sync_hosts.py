@@ -54,6 +54,13 @@ class Apply:
                 self.owner.apply(artifact, self.files, native=self._install, catalog=self._point)
             except HeldMove as held:
                 self.held.append(held)
+        # The loop writes the mise config after its plugin installs, and Codex runs through a launcher that asks mise
+        # for the pinned Node, so the new pins install before the next Codex command and the plan after this run.
+        if self.device.install_tools is not None:
+            try:
+                self.device.install_tools()
+            except (RuntimeError, OSError, subprocess.SubprocessError) as error:
+                print(f'Sync: the tools the mise config pins did not install: {error}', file=sys.stderr, flush=True)
         self._plugins()
         self._skills()
         # Planned again, because the steps above can replace the accepted ~/.codex copy the homes mirror.
