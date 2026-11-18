@@ -75,6 +75,11 @@ WIDE_PAGE = """<!doctype html><meta name="viewport" content="width=device-width"
 FITTING_PAGE = """<!doctype html><meta name="viewport" content="width=device-width">
 <body style="margin:0"><div style="overflow-x:auto"><table style="width:900px"><tr><td>Wide
 table</td></tr></table></div><div style="height:3000px"></div></body>"""
+# A note set at 10 px under a 16 px chart title, and the same page with the note at 12 px.
+SMALL_TEXT_PAGE = """<!doctype html><meta name="viewport" content="width=device-width">
+<body style="margin:0"><h1 style="font-size:16px">Title</h1>
+<p style="font-size:10px">Source note</p></body>"""
+TWELVE_PX_PAGE = SMALL_TEXT_PAGE.replace("font-size:10px", "font-size:12px")
 
 
 class PageWidthTests(unittest.TestCase):
@@ -103,6 +108,23 @@ class PageWidthBrowserTests(unittest.TestCase):
         result = self.measure(FITTING_PAGE)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout.count(", fits"), 2)
+
+    def test_text_under_twelve_px_fails_and_is_listed(self) -> None:
+        result = self.measure(SMALL_TEXT_PAGE)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertIn(
+            "at 390 px: scroll width 390 px, fits; smallest text 10 px, "
+            "1 of 2 text runs UNDER 12 px",
+            lines[0],
+        )
+        self.assertEqual(lines.count("  10 px: Source note"), 2)
+
+    def test_text_at_twelve_px_passes(self) -> None:
+        result = self.measure(TWELVE_PX_PAGE)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count("smallest text 12 px"), 2)
+        self.assertNotIn("UNDER", result.stdout)
 
     def test_a_page_that_fails_to_load_is_an_error(self) -> None:
         result = run(PAGE_WIDTH, "http://127.0.0.1:9/")

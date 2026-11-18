@@ -12,11 +12,12 @@ from pathlib import Path
 
 EVAL = Path(__file__).resolve().parent
 TASKS = EVAL / "tasks"
-# The browser session and the page-width measurement are the charts skill's page_width.py, imported
-# without writing bytecode, because a __pycache__ under plugin/ fails the release check.
+# The browser session and the page-width and text-size measurements are the charts skill's
+# page_width.py, imported without writing bytecode, because a __pycache__ under plugin/ fails the
+# release check.
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(EVAL.parent / "plugin/skills/charts/scripts"))
-from page_width import Browser, at_each_width  # noqa: E402, F401
+from page_width import FONTS, SMALL, Browser, at_each_width  # noqa: E402, F401
 
 SKIP_PARTS = frozenset(
     {".venv", "node_modules", "__pycache__", ".git", ".agents", ".claude"}

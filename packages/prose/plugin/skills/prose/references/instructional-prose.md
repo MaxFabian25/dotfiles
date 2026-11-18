@@ -6,8 +6,9 @@ Apply this branch to an instruction, procedure, requirement, warning, or caution
 
 - Write instructions in the imperative form. Name the action directly.
 - Use *install* for the action in an instruction. Use *installation* for a named procedure or
-  result. Write *perform a clean or custom installation*, not *do an installation*. Preserve
-  product commands and defined technical terms.
+  result. Outside [ASD-STE100](asd-ste100.md), write *perform a clean or custom installation*, not
+  *do an installation*. In ASD-STE100 text, write *do* in place of *perform*, which the STE
+  dictionary does not approve. Preserve product commands and defined technical terms.
 - Omit *please* from an instruction. Keep it in a genuine request for permission or forgiveness,
   correspondence, quotation, or source text.
 - Put every required starting state, tool, input, permission, and access condition before the
