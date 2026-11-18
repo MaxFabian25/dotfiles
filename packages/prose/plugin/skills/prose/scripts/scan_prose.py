@@ -37,6 +37,30 @@ ITEM = rf"{WORD}(?: {WORD}){{0,2}}"
 SERIES = re.compile(
     rf"(?<![\w'’-])({ITEM}), ((?:{ITEM}, )*)({ITEM}) (?:and|or|nor) (?={WORD})"
 )
+# Words that name a state or version of the noun before them, as in "the data,
+# current and target", an appositive pair rather than the end of a series.
+STATES = {
+    "current",
+    "target",
+    "future",
+    "past",
+    "present",
+    "previous",
+    "planned",
+    "actual",
+    "proposed",
+    "existing",
+    "old",
+    "new",
+    "original",
+    "revised",
+    "expected",
+    "observed",
+}
+CLAUSE_END = r"(?=[,.;:!?)]|$)"
+# The rest of a list whose last item has its serial comma, as in
+# "SharePoint and OneDrive, and Power BI": the matched "and" joins a pair inside it.
+LIST_TAIL = re.compile(rf"{ITEM}(?:, {ITEM})*, (?:and|or|nor) ({ITEM}){CLAUSE_END}")
 FUNCTION_WORDS = {
     "who",
     "which",
@@ -603,6 +627,18 @@ def serial_comma(block: Block) -> list[tuple[int, str]]:
         sentence = re.split(r"(?<=[.!?;:])\s+", block.text[: match.start()])[-1]
         opening = (sentence + first).lstrip("(“\"'").lower()
         if "," not in sentence and any(re.match(rf"{o}\b", opening) for o in OPENERS):
+            continue
+        rest = block.text[match.end() :]
+        pair = re.match(rf"({WORD}){CLAUSE_END}", rest)
+        if (
+            pair
+            and not middle
+            and {last.lower(), pair.group(1).lower()} <= STATES
+            and first.split()[-1].lower() not in STATES
+        ):
+            continue
+        tail = LIST_TAIL.match(rest)
+        if tail and tail.group(1).split()[0].lower() not in FUNCTION_WORDS:
             continue
         found.append((match.start(), match.group(0).rstrip()))
     return found
