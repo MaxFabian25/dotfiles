@@ -698,13 +698,25 @@ class AcceptedInstallations:
                 source = Path(self.staging.enter_context(
                     staging_directory(prefix=package.name + '-', dir=scratch))) / 'tree'
                 copy_tree(release.root, source)
+                adapted = False
                 for path, before, after, _, _ in builder.overlay(package, artifact.key.host, artifact.key.subject, source):
                     if before != after:
+                        adapted = True
                         if after is None:
                             path.unlink(missing_ok=True)
                         else:
                             path.parent.mkdir(parents=True, exist_ok=True)
                             path.write_bytes(after.encode('utf-8'))
+                # Codex's plugin/list refresh reinstalls each plugin of a non-curated marketplace whose source gives a
+                # version other than its folder's name, and deletes its other folders. Sync points only the personal
+                # catalog's source at the adapted build (_source), so any other marketplace would lose it.
+                if adapted and artifact.key.host == Host.CODEX and not artifact.catalogued:
+                    marketplace = artifact.key.subject.split('@', 1)[1]
+                    raise BuildError(
+                        f'{artifact.key.subject}: its install overlay changes the plugin, and Codex would replace that '
+                        f'adapted build with the {marketplace} marketplace\'s release whenever a client lists plugins, '
+                        'because sync points only the personal marketplace at adapted builds; install it with '
+                        'via = "personal", or drop the overlay')
             elif artifact.kind == 'opencode':
                 scratch = self.roots.engine / '.sync/accepted-images'
                 scratch.mkdir(parents=True, exist_ok=True)

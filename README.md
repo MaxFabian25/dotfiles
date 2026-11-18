@@ -82,6 +82,11 @@ finds nothing to refresh, and any reinstall copies the adapted build. While a pu
 with `codex plugin add`, the entry names the release, because that command installs whatever the catalog names. The
 receipt records the staged copy. A pull points an entry that names anything else at it, writes a new folder in place
 of a copy Codex made of it, removes the plugin's other staged copies, and stops at an edited one as a local edit.
+Codex 0.171.0-alpha.12 refreshes the plugins of every marketplace outside OpenAI's curated catalogs this way, git
+marketplaces included, but sync points only the personal catalog at adapted builds. So a pull stops before it changes
+anything when a Codex plugin from any other marketplace would get a folder of its own, and names the plugin and its
+marketplace. Such a plugin installs through the personal catalog instead (`via = "personal"`). Claude Code's
+copies are not affected.
 
 Superseded builds under `~/.claude/marketplaces/codex-aligned/plugins` go once no session can read them
 (`old_builds.py`). An applied pull that ended well notes each folder that neither the catalog nor any

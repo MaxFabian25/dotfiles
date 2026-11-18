@@ -20,9 +20,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import accepted_installations
 from codex_host import CodexState
 from configuration import desired
-from description import (Adaptation, AlignedInstall, ClaudePlacement, CodexPlacement, EngineInstall, Hooks, LocalSource,
-                         Lock, LockedTree, LooseSkill, NoteRule, Package, PluginRoles, Repo, RepoSource, Roots, Rules,
-                         Setup, SkillRoot, SnapshotSource, ToolNotes, Visibility, intent)
+from description import (Adaptation, AlignedInstall, ClaudePlacement, CodexPlacement, EngineInstall, Hooks,
+                         HostMarketplace, LocalSource, Lock, LockedTree, LooseSkill, MarketplaceInstall, NoteRule,
+                         Package, PluginRoles, Repo, RepoSource, Roots, Rules, Setup, SkillRoot, SnapshotSource,
+                         ToolNotes, Visibility, intent)
 from device import Device
 from device_sync import apply, plan
 from homes import hold_built_trees_once, isolate_git
@@ -224,7 +225,7 @@ class InstallationTest(unittest.TestCase):
                 # Codex 0.169.0-alpha.6's `plugin add` removed the plugin's other version folders in an isolated
                 # probe on 14 November 2026 (evidence/codex/downgrade-summary.txt). The probe had no dot folders.
                 release = operation.built['kit']
-                destination = self.roots.codex_home / 'plugins/cache/personal/kit' / release.version
+                destination = self.roots.codex_home / 'plugins/cache' / args[2].split('@')[1] / 'kit' / release.version
                 for folder in destination.parent.glob('[!.]*'):
                     shutil.rmtree(folder)
                 destination.parent.mkdir(parents=True, exist_ok=True)
@@ -1229,7 +1230,9 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual(self.snapshot(), before)
         self.assertEqual(ordinary.read_text(), 'uncommitted user work\n')
 
-    def test_repository_receipt_preserves_the_resolved_pin_and_replayable_selection(self):
+    def origin_repository(self, codex=None):
+        """The kit committed to a git repository, origin, that a sync fetches it from, and which registers codex as a
+        Codex marketplace. Gives the repository entry."""
         from tests.test_sync import git
         repo = self.root / 'upstream'
         shutil.copytree(self.source, repo / 'plugins/kit')
@@ -1243,8 +1246,39 @@ class InstallationTest(unittest.TestCase):
         git(repo, 'add', '.')
         git(repo, 'commit', '-m', 'Pinned source')
         commit = git(repo, 'rev-parse', 'HEAD')
-        repository = Repo('origin', Visibility.PUBLIC, '', 'https://example.invalid/kit.git', commit, None, None)
         self.seeds = (repo,)
+        return Repo('origin', Visibility.PUBLIC, '', 'https://example.invalid/kit.git', commit, codex, None)
+
+    def install_from_origin(self, install):
+        """Describe the kit, whose tool notes change its skill, as fetched from origin and installed in Codex by
+        install, with origin registered as a Codex marketplace for a marketplace install."""
+        marketplace = HostMarketplace('origin') if isinstance(install, MarketplaceInstall) else None
+        repositories = {'origin': self.origin_repository(marketplace)}
+        kit = self.setup.packages['kit']
+        package = replace(kit, source=RepoSource('origin'), codex=replace(kit.codex, installs=(install,)))
+        lock = replace(self.setup.lock['kit'], intent=intent(package, repositories))
+        self.setup = replace(self.setup, packages={'kit': package}, repos=repositories, lock={**self.setup.lock, 'kit': lock})
+
+    def test_codex_refuses_an_adapted_build_of_a_git_marketplace_plugin(self):
+        """Codex's plugin/list refresh replaces an adapted build of a git marketplace's plugin with that marketplace's
+        release, since sync points only the personal catalog at adapted builds, so the sync stops before any host
+        write and names the plugin and its marketplace."""
+        self.install_from_origin(MarketplaceInstall('origin', True))
+        with self.assertRaisesRegex(BuildError, r'^kit@origin: its install overlay changes the plugin, and Codex '
+                                                r'would replace .* with the origin marketplace\'s release .*'
+                                                r'only the personal marketplace'):
+            self.run_apply()
+        self.assertEqual(self.calls, [])
+        self.assertFalse((self.roots.codex_home / 'plugins').exists())
+
+    def test_the_same_overlay_gives_a_personal_plugin_a_folder_of_its_own(self):
+        self.install_from_origin(EngineInstall(True))
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertRegex(self.installed().name, r'^1\.0\.0\+notes\.')
+        self.assertIn('use the local reader', (self.installed() / 'skills/one/SKILL.md').read_text())
+
+    def test_repository_receipt_preserves_the_resolved_pin_and_replayable_selection(self):
+        repository = self.origin_repository()
         for path, selection in (('plugins/kit', {'path': 'plugins/kit'}), (None, {'marketplace_plugin': 'kit'})):
             with self.subTest(selection=selection):
                 package = replace(self.setup.packages['kit'], source=RepoSource('origin', path))
@@ -1256,7 +1290,7 @@ class InstallationTest(unittest.TestCase):
                 receipt = next(json.loads(p.read_bytes()) for p in self.receipt_paths()
                                if json.loads(p.read_bytes())['identity'].startswith('plugin:'))
                 self.assertEqual(receipt['accepted']['provenance']['repository'], {
-                    'url': 'https://example.invalid/kit.git', 'commit': commit, 'selection': selection})
+                    'url': 'https://example.invalid/kit.git', 'commit': repository.commit, 'selection': selection})
                 before = self.snapshot()
                 self.assertEqual(self.run_apply().exit_code, 0)
                 self.assertEqual(self.snapshot(), before)
