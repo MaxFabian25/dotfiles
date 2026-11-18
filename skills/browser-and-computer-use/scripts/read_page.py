@@ -8,6 +8,8 @@ answers. It skips a page whose address bar shows another site, such as a sign-in
 bot check, closes only its own window, and ends its cua-driver session. Requires the user's own Chrome
 running, except on a Hyprland desktop as below, and cua-driver on PATH. A Chrome that automation started, such
 as agent-browser's, is never used. On WSL, pass --cua cua-driver.exe to drive Chrome on the Windows desktop.
+It exits 3 when it stops, 4 at a bot check, 5 when it skipped a page, and 6 when a page showed no text by the end
+of --wait, which a longer --wait often fixes.
 
 On a Hyprland desktop, such as the Omarchy laptop, it runs unattended: it starts a cua-driver daemon of its own
 with the desktop's environment, opens each page in a window on a hidden workspace without taking focus, starts the
@@ -546,7 +548,7 @@ def main():
             signal.signal(getattr(signal, name), lambda number, frame: sys.exit(128 + number))
     driver = Driver(args.cua, f'read-page-{secrets.token_hex(3)}')
     desktop = serve = pid = window = None
-    skipped = False
+    skipped = empty = False
     try:
         if not driver.uia:
             desktop = Hyprland.find()
@@ -609,7 +611,9 @@ def main():
                     data = driver.tree(pid, window)
             text = page_text(data.get('tree_markdown', ''))
             if not text:
-                print(f'{url}: the window shows no page content yet; try a longer --wait.', file=sys.stderr)
+                print(f'{url}: no page text after --wait {args.wait:g} seconds; run it again with a longer wait, '
+                      'such as --wait 25.', file=sys.stderr)
+                empty = True
             note = desktop.note if desktop is not None else ''
             page = f'URL: {url}\nADDRESS: {shown}{note}\nTITLE: {title}\n\n{text}\n'
             if args.out:
@@ -619,7 +623,7 @@ def main():
                 print(f'{len(text):7d} characters  {url}')
             else:
                 print(page)
-        return 5 if skipped else 0
+        return 5 if skipped else 6 if empty else 0
     except (RuntimeError, OSError, subprocess.SubprocessError) as error:
         print(f'read_page stopped: {error}', file=sys.stderr)
         return 3
