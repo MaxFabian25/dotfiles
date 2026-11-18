@@ -63,8 +63,8 @@ Apply these inclusive-language rules:
   source establishes it.
 - Report beliefs, practices, observances, and preferences only when the person states them or a
   source establishes them.
-- Avoid gendered terms where possible. Preserve a gendered term when an official title or
-  designation requires it.
+- Use gender-neutral terms. Use a gendered term only when an official title or designation requires
+  it, or when gender is material and supported.
 - Do not infer a person's gender, pronouns, or title from a name or appearance. If a required title
   is unknown, use the person's name alone when controlling style permits it.
 - Do not assume binary gender categories in examples or generalisations unless the distinction is

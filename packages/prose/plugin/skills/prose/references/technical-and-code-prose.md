@@ -135,7 +135,7 @@ The following rules cover internal API references and public API references in o
 
 - Treat method API documentation as the contract for how the code must behave.
 - Document each argument, return value, restriction, exception, and error.
-- Test the documented behaviour when practical.
+- Test the documented behaviour whenever you can run the code.
 - Give each class or module a brief overview and short examples when they help.
 - Put the simplest use case first.
 

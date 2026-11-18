@@ -15,7 +15,7 @@ docs fresh, accurate, and easy to find, not Markdown syntax.
   documentation.
 - Keep documentation where the same review can update it with the code.
 - Prefer documentation that maintainers can read and update with the same tools as code.
-- Prefer a small, complete change. Do not reduce accuracy, verification, or completion standards.
+- Prefer a small change that is complete and verified.
 
 ## Link authoritative documentation
 
