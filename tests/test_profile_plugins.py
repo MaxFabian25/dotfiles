@@ -239,7 +239,7 @@ class ProfilePluginsTest(unittest.TestCase):
             operation = sync_hosts.Apply.__new__(sync_hosts.Apply)
             # On WSL the homes come from devices/wsl.toml, though the platform is Linux.
             operation.setup, operation.roots = replace(kit.setup, account_homes={DeviceList.WSL: ACCOUNT_HOMES}), home.roots
-            operation.device = SimpleNamespace(platform=Platform.LINUX, device_list=DeviceList.WSL)
+            operation.device = SimpleNamespace(platform=Platform.LINUX, device_list=DeviceList.WSL, install_tools=None)
             operation.current = SimpleNamespace(profile_mirrors=planned)
             operation.files = Files(home.roots.home / 'backup')
             operation.owner = SimpleNamespace(preflight=lambda prepared: None, apply=release, accepted=kit.accepted)
