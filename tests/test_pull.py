@@ -19,7 +19,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from homes import child_stderr_dropped, isolate_git, keeping_arguments, recording_sync
 import portable
 import pull
-from pull import clean, git as pull_git, install_tools, pull_lock, run, update
+from mise_tools import install as install_tools
+from pull import clean, git as pull_git, pull_lock, run, update
 
 
 def setUpModule():
@@ -201,7 +202,7 @@ class PairedPullTest(unittest.TestCase):
             self.assertEqual(run(args), 0)
             self.assertEqual((receipt.read_bytes(), receipt.stat().st_mtime_ns), before)
 
-    def test_tools_install_after_an_applied_sync_that_nothing_blocked(self):
+    def test_tools_install_before_every_applying_sync_and_after_one_that_nothing_blocked(self):
         receipt = self.root / 'home/.local/state/dotfiles/last-applied.json'
         calls = []
         for code, apply in ((0, False), (1, False), (2, True), (3, True), (1, True), (0, True)):
@@ -214,7 +215,23 @@ class PairedPullTest(unittest.TestCase):
             self.assertEqual('managed changes remain after applying' in errors.getvalue(), (code, apply) == (1, True))
             # Changes that remain after applying leave the pair unrecorded, so only the last pull writes a receipt.
             self.assertEqual(receipt.exists(), (code, apply) == (0, True))
-        self.assertEqual(calls, [(1, True), (0, True)])
+        self.assertEqual(calls, [(2, True), (3, True), (1, True), (1, True), (0, True), (0, True)])
+
+    def test_a_failed_install_before_the_sync_is_reported_and_the_sync_still_runs(self):
+        self.commit(self.public_origin, 'sync.py', recording_sync(0))
+        args = SimpleNamespace(root=self.public, private=self.private, update=True, apply=True, notes=False, wait=0)
+        installs = []
+
+        def install(home, state):
+            installs.append(home)
+            if len(installs) == 1:
+                raise RuntimeError('mise install exited 1; the next pull retries it')
+
+        with patch('pull.Path.home', return_value=self.root / 'home'), redirect_stderr(io.StringIO()) as errors, \
+                patch('pull.install_tools', install):
+            self.assertEqual(run(args), 0)
+        self.assertIn('did not install before the sync: mise install exited 1', errors.getvalue())
+        self.assertEqual(len(installs), 2)
 
     def test_a_sync_that_does_not_end_by_recording_its_status_stops_the_pull_and_changes_nothing(self):
         receipt = self.root / 'home/.local/state/dotfiles/last-applied.json'
@@ -254,7 +271,8 @@ class PairedPullTest(unittest.TestCase):
                 self.assertNotIn('managed changes remain', said)
                 self.assertEqual(receipt.read_bytes(), before)
                 self.assertEqual(tool.read_text(encoding='utf-8'), 'tool 0\n')
-        self.assertEqual(installs, [0])
+        # Each pull installs before its sync; only the one whose sync ended well installs again after it.
+        self.assertEqual(installs, [0, 0, *range(1, 8)])
 
     def test_the_sync_gets_the_pulls_mode_notes_private_checkout_and_time_limit(self):
         kept = self.root / 'arguments.json'
@@ -592,7 +610,7 @@ class InstallToolsTest(unittest.TestCase):
         def fake_run(command, **kwargs):
             self.calls.append(command)
             return subprocess.CompletedProcess(command, code)
-        with patch('pull.shutil.which', return_value=mise), patch('pull.subprocess.run', fake_run):
+        with patch('mise_tools.shutil.which', return_value=mise), patch('mise_tools.subprocess.run', fake_run):
             install_tools(self.home, self.state)
 
     def test_installs_once_per_config_and_again_after_a_pin_changes(self):
@@ -647,7 +665,7 @@ class CrashedPullTest(unittest.TestCase):
             self.assertIn(f'AttributeError: {crash}', said.splitlines()[-1])
             self.assertNotIn('managed changes remain', said)
             self.assertFalse(receipt.exists())
-            install.assert_not_called()
+            install.assert_called_once()   # before the sync, and not again after the crash
 
     def test_ctrl_c_and_a_system_exit_still_end_the_pull_as_they_did(self):
         for interrupt in (KeyboardInterrupt(), SystemExit(2)):

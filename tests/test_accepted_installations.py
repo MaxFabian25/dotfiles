@@ -33,6 +33,7 @@ from host_state import (Approved, DeviceList, DeviceRoots, EngineMarketplace, Fa
                         upstream_version)
 import portable
 from sync_files import ConcurrentEdit
+import sync_hosts
 from sync_sources import BuildError, Builder, Sources
 
 # The words after the host name in the warning that a sync prints when it cannot switch a kept-current plugin off
@@ -1923,6 +1924,52 @@ class InstallationTest(unittest.TestCase):
             self.run_apply(current)
         self.assertFalse(live.exists())
         self.assertEqual(self.calls, [])
+
+    def test_a_node_pin_move_installs_the_pins_before_codex_runs_again(self):
+        """Omarchy's Codex launcher asks mise for the pinned Node, so Codex cannot start while the mise config names
+        a Node that is not installed. On 18 November 2026 a release that moved Node wrote the config, read Codex
+        again before the pull installed the pins, and stopped with 459 blocking rows."""
+        source = self.public / 'config/mise/config.toml'
+        source.parent.mkdir(parents=True)
+        source.write_text('[tools]\nnode = "26.13.0"\n')
+        live = self.roots.home / '.config/mise/config.toml'
+        installed, order = set(), []
+
+        def node_missing():
+            return live.is_file() and tomllib.loads(live.read_text())['tools']['node'] not in installed
+
+        def install():
+            order.append('install')
+            installed.add(tomllib.loads(live.read_text())['tools']['node'])
+
+        observe, command = self.host.observe, sync_hosts.Apply.command
+
+        def launched_observe(request):
+            seen = observe(request)
+            if not node_missing():
+                return seen
+            unread = Observer(Host.CODEX, self.roots)
+            unread.unread('codex plugin list', 'mise ERROR', {Surface.PLUGIN, Surface.TREE, Surface.HOOK, Surface.SKILL})
+            return unread.finish('codex', set())
+
+        def launched_command(operation, host, *args):
+            if node_missing():
+                raise RuntimeError('codex exited before replying to initialize')
+            order.append(args[:2])
+            return command(operation, host, *args)
+
+        self.host.observe = launched_observe
+        patch('sync_hosts.Apply.command', launched_command).start()
+        self.device = replace(self.device, install_tools=install)
+        self.assertEqual(self.run_apply().exit_code, 0)
+        # The kit's install ran before the loop wrote the config, and the pins installed before Codex ran again.
+        self.assertLess(order.index(('plugin', 'add')), order.index('install'))
+        self.assertEqual(installed, {'26.13.0'})
+        source.write_text('[tools]\nnode = "26.13.1"\n')
+        self.assertEqual(plan(self.setup, self.device).exit_code, 1)
+        after = self.run_apply()
+        self.assertEqual((after.exit_code, after.blocked), (0, ()))
+        self.assertEqual(installed, {'26.13.0', '26.13.1'})
 
     def test_receiptless_mismatched_toml_field_is_not_overwritten(self):
         config_source = self.public / 'config/mise/config.toml'
