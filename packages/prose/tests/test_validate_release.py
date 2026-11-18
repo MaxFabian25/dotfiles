@@ -335,6 +335,12 @@ class ValidateReleaseTests(unittest.TestCase):
             "```markdown\n[Literal](absent.md)\n```\n",
             encoding="utf-8",
         )
+        skill = root / "skills/prose/SKILL.md"
+        skill.write_text(
+            skill.read_text(encoding="utf-8")
+            + "\n[Link example](references/link-example.md)\n",
+            encoding="utf-8",
+        )
         evidence = root / "skills/prose/references/source-evidence/unicode.md"
         evidence.write_text("# Straße og é\n", encoding="utf-8")
         register = root / "skills/prose/references/source-authorities.csv"
@@ -367,6 +373,69 @@ class ValidateReleaseTests(unittest.TestCase):
                     markup, encoding="utf-8"
                 )
                 self.assertIn(expected, self.codes(root))
+
+    def unreachable(self, root: Path) -> set[str]:
+        return {
+            finding.path
+            for finding in validate_release.validate(root)
+            if finding.code == "reference-unreachable"
+        }
+
+    def test_reference_files_must_be_reachable_from_their_skill(self) -> None:
+        root = self.clone_source()
+        skill = root / "skills/charts/SKILL.md"
+        references = root / "skills/charts/references"
+        (references / "first.md").write_text(
+            "# First\n\nSee the [second reference](second.md).\n", encoding="utf-8"
+        )
+        (references / "second.md").write_text("# Second\n", encoding="utf-8")
+        self.assertEqual(
+            self.unreachable(root),
+            {
+                "skills/charts/references/first.md",
+                "skills/charts/references/second.md",
+            },
+        )
+        decks = root / "skills/decks/SKILL.md"
+        decks.write_text(
+            decks.read_text(encoding="utf-8")
+            + "\nSee [first](../charts/references/first.md).\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(
+            self.unreachable(root),
+            {
+                "skills/charts/references/first.md",
+                "skills/charts/references/second.md",
+            },
+        )
+        skill.write_text(
+            skill.read_text(encoding="utf-8") + "\nSee [first](references/first.md).\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(self.codes(root), set())
+
+    def test_evidence_records_named_by_the_authority_register_are_reachable(
+        self,
+    ) -> None:
+        root = self.clone_source()
+        evidence = root / "skills/prose/references/source-evidence/new-family.md"
+        evidence.write_text("# New family\n", encoding="utf-8")
+        self.assertEqual(
+            self.unreachable(root),
+            {"skills/prose/references/source-evidence/new-family.md"},
+        )
+        register = root / "skills/prose/references/source-authorities.csv"
+        rows = self.read_csv(register)
+        rows.append(
+            {
+                **rows[0],
+                "authority_id": "AUTH-NEW-FAMILY",
+                "evidence_record": "source-evidence/new-family.md#new-family",
+            }
+        )
+        self.write_csv(register, rows)
+        self.assertEqual(self.codes(root), set())
 
     def test_malformed_manifest_is_rejected_by_public_cli(self) -> None:
         for contents in ('{"name":', "[]", '{"name":"prose","name":"other"}'):
