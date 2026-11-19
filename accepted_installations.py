@@ -165,6 +165,18 @@ def _claude_cache_image(path):
     return {'kind': 'tree', 'entries': entries}
 
 
+def _as_prepared(prepared, path, before, read):
+    """Whether path still reads as it did when the sync prepared the artifact. For a Claude plugin, the folder named
+    after the pinned release's version may also have gone from missing to a copy of exactly that release: once the
+    sync pins the marketplace, Claude Code copies the release there on its own, as it did on each machine on
+    19 November 2026 while the sync downloaded the Codex runtime, and the native install the sync runs next writes the
+    same bytes there."""
+    now = read(path)
+    return _same(now, before) or (prepared.artifact.claude_cache and path == prepared.artifact.destination
+                                  and _missing(before) and prepared.pristine is not None
+                                  and _same(now, prepared.pristine))
+
+
 def _remnant(actual, expected):
     """Whether a tree is the expected one, whole or with entries gone, as a removal that stopped part-way leaves
     it."""
@@ -890,8 +902,8 @@ class AcceptedInstallations:
                 if state is None:
                     raise ConcurrentEdit(f'Unknown partial installation preserved: {artifact.identity}')
                 read = partial(self._settled_read, artifact, prepared.taken_over, state)
-            if not (_same(read(prepared.before_path), prepared.before)
-                    and _same(read(artifact.destination), prepared.destination_before)):
+            if not (_as_prepared(prepared, prepared.before_path, prepared.before, read)
+                    and _as_prepared(prepared, artifact.destination, prepared.destination_before, read)):
                 raise ConcurrentEdit(f'Changed after preparation: {artifact.identity}')
         if prepared.source is not None and not _same(image(prepared.source), prepared.target):
             raise ConcurrentEdit(f'Prepared source changed: {artifact.identity}')

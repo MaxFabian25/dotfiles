@@ -2961,6 +2961,46 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual(self.run_apply().exit_code, 0)
         self.assertEqual(self.calls, [])
 
+    def claude_copies_the_release_meanwhile(self, change=None):
+        """While the sync downloads the Codex runtime, after it pinned the marketplace, a Claude Code process copies the
+        pinned release into the folder named after its version, leaving the install record as it is, as one did on
+        each machine on 19 November 2026. change edits the copy first."""
+        runtime = sync_hosts.Apply._runtime
+
+        def meanwhile(operation):
+            runtime(operation)
+            release = operation.claude[self.claude_plugin]
+            name, marketplace = self.claude_plugin.split('@')
+            copy = self.roots.claude_home / 'plugins/cache' / marketplace / name / release.version
+            shutil.copytree(release.root, copy)
+            if change:
+                change(copy)
+
+        return patch.object(sync_hosts.Apply, '_runtime', meanwhile)
+
+    def test_claude_code_s_own_copy_of_the_pinned_release_made_during_the_sync_does_not_stop_it(self):
+        first = self._installed_claude()
+        self.release_version('2.0.0', 'second release bytes\n')
+        with self.claude_copies_the_release_meanwhile():
+            self.assertEqual(self.run_apply().exit_code, 0)
+        folder = self.claude_loads()
+        self.assertEqual((folder.parent, folder.name.startswith('2.0.0-notes.')), (first.parent, True))
+        self.assertEqual((folder / 'ordinary.txt').read_text(), 'second release bytes\n')
+        self.assertEqual((first.parent / '2.0.0/ordinary.txt').read_text(), 'second release bytes\n')
+        self.calls.clear()
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertEqual(self.calls, [])
+
+    def test_a_copy_made_during_the_sync_that_is_not_the_pinned_release_stops_it(self):
+        first = self._installed_claude()
+        self.release_version('2.0.0', 'second release bytes\n')
+        with self.claude_copies_the_release_meanwhile(lambda copy: (copy / 'ordinary.txt').write_text('edited\n')), \
+                self.assertRaisesRegex(ConcurrentEdit, '^Changed after preparation: plugin:claude:kit@'):
+            self.run_apply()
+        self.assertEqual(self.claude_loads(), first)
+        self.assertEqual((first.parent / '2.0.0/ordinary.txt').read_text(), 'edited\n')
+
     def test_a_claude_record_that_is_not_json_stops_the_sync_without_writes(self):
         self._installed_claude()
         claude_records(self.roots).write_text('{not json')
