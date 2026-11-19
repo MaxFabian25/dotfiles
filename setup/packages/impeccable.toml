@@ -88,8 +88,8 @@ replace = '''Never read the agent's file yourself before spawning; the agent rea
 
 [[codex.replace]]
 path = 'skills/impeccable/reference/new-work.md'
-find = '''Then spawn the shipped documenter, `impeccable-documenter` (`impeccable_documenter` in codex), with'''
-replace = '''Then spawn the documenter as a built-in agent: `general-purpose` in Claude Code, or `spawn_agent` with no `agent_type` and with `fork_turns` `none` in Codex, at the model and effort of the first seat on the `feature, refactoring` line in your harness's section of `~/.config/pstack/models.md` (a seat reads `model@effort`; skip one prefixed `codex:` or `claude:`). Begin its brief with "Read PATH, skip its frontmatter and follow the rest.", where PATH is the absolute path of `agents/impeccable-documenter.md` in this plugin's root, two folders above this skill's folder. Then give it'''
+find = '''Then spawn the shipped documenter, `impeccable-documenter` (`impeccable_documenter` in codex); spawn it'''
+replace = '''Then spawn the documenter as a built-in agent: `general-purpose` in Claude Code, or `spawn_agent` with no `agent_type` and with `fork_turns` `none` in Codex, at the model and effort of the first seat on the `feature, refactoring` line in your harness's section of `~/.config/pstack/models.md` (a seat reads `model@effort`; skip one prefixed `codex:` or `claude:`). Begin its brief with "Read PATH, skip its frontmatter and follow the rest.", where PATH is the absolute path of `agents/impeccable-documenter.md` in this plugin's root, two folders above this skill's folder. Spawn it'''
 
 [[codex.replace]]
 path = 'skills/impeccable/reference/new-work.md'
@@ -153,8 +153,8 @@ replace = '''Never read the agent's file yourself before spawning; the agent rea
 
 [[claude.replace]]
 path = 'skills/impeccable/reference/new-work.md'
-find = '''Then spawn the shipped documenter, `impeccable-documenter` (`impeccable_documenter` in codex), with'''
-replace = '''Then spawn the documenter as a built-in agent: `general-purpose` in Claude Code, or `spawn_agent` with no `agent_type` and with `fork_turns` `none` in Codex, at the model and effort of the first seat on the `feature, refactoring` line in your harness's section of `~/.config/pstack/models.md` (a seat reads `model@effort`; skip one prefixed `codex:` or `claude:`). Begin its brief with "Read PATH, skip its frontmatter and follow the rest.", where PATH is the absolute path of `agents/impeccable-documenter.md` in this plugin's root, two folders above this skill's folder. Then give it'''
+find = '''Then spawn the shipped documenter, `impeccable-documenter` (`impeccable_documenter` in codex); spawn it'''
+replace = '''Then spawn the documenter as a built-in agent: `general-purpose` in Claude Code, or `spawn_agent` with no `agent_type` and with `fork_turns` `none` in Codex, at the model and effort of the first seat on the `feature, refactoring` line in your harness's section of `~/.config/pstack/models.md` (a seat reads `model@effort`; skip one prefixed `codex:` or `claude:`). Begin its brief with "Read PATH, skip its frontmatter and follow the rest.", where PATH is the absolute path of `agents/impeccable-documenter.md` in this plugin's root, two folders above this skill's folder. Spawn it'''
 
 [[claude.replace]]
 path = 'skills/impeccable/reference/new-work.md'
