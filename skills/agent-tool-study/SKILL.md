@@ -48,6 +48,8 @@ This step is done when every pilot failure has a cause taken from its record, no
 
 ## 4. Counted runs
 
+Before the first counted run, make the study's folder a local Git repository, commit what it holds, and commit again after each counted run. Give it no remote and never push it, because the folder holds private command text and personal data. Before the first commit, write a `.gitignore` that lists credentials, sign-in state and extracts of the user's own sessions or messages, which Git would keep after you delete them, along with caches such as `__pycache__/` and each file that `find . -size +50M` lists. After each counted run, and after any other script that writes into the folder, such as a site build, read `git status`: a stored file, such as a counts or results file, that changed though no step meant to change it was overwritten, so bring it back with `git restore FILE`. The last commit is the rollback copy of every file it tracks; a file the repository ignores still needs its own copy before a step that may write it ([incidents](references/incidents.md)).
+
 Make the runner copy the brief, the inputs and its own scripts into the run folder at launch, and have every stage read that copy, so an edit made while a run is in flight changes no run. Wrap a bash runner's body in `{ ...; exit; }`, because bash reads a script while it runs it, and an edit to the file shifts what it runs next.
 
 Interleave the setups, one run of each in turn, so drift and warm caches favour none. A harness fault found partway through voids every run the faulty code scored: rerun those runs, keep the voided ones out of the comparison, and say so in the method.

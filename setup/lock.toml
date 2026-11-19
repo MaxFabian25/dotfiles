@@ -1,8 +1,8 @@
 # Generated from the setup description and verified package builds. Do not edit.
 
 [agent-tool-study]
-intent = "sha256:78a1e11c0bc790fbedb011b1f670f6c969a591f44d9a42a72156e0135d8b2984"
-placements = { agents = "sha256:e2c03d3d8a36e6b43d42a953215bfa3cea5fbcb7f6e0cf72cefe426151c195bb", claude = "sha256:e2c03d3d8a36e6b43d42a953215bfa3cea5fbcb7f6e0cf72cefe426151c195bb" }
+intent = "sha256:72ed37c8619505043cc55f8f7d4885396a3199d353189460b2ed8da141ec1267"
+placements = { agents = "sha256:24e922463aa941586d926797f43625a680c61daaee4d36036aa6db9bec25797e", claude = "sha256:24e922463aa941586d926797f43625a680c61daaee4d36036aa6db9bec25797e" }
 
 [browser-and-computer-use]
 intent = "sha256:1a699616b38486872ab39faa72bef5e14fb753f1bc8b32b819956ef533d973d7"
