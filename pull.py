@@ -12,7 +12,7 @@ import time
 import traceback
 
 from mise_tools import install as install_tools, state_folder
-from portable import GIT, exclusive_lock, lock_holder, native_cli_environment, run_tree
+from portable import GIT, WINDOWS, exclusive_lock, lock_holder, native_cli_environment, run_tree
 from sync_ending import run_sync
 
 GIT_TIMEOUT = 180
@@ -156,7 +156,12 @@ def run(args):
             except (RuntimeError, OSError, subprocess.SubprocessError) as error:
                 print(f'Dotfiles pull: the tools the mise config pins did not install before the sync: {error}',
                       file=sys.stderr, flush=True)
-        status = run_sync(root, private, state=state, apply=args.apply, notes=args.notes, timeout=1200)
+        # Windows gets an hour. There the first open of a file, where Defender's on-access scan runs, took a median of
+        # 7.8 ms with WSL busy on 19 November 2026, against 0.26 ms once opened, and the sync opens some 15,400 files:
+        # that day a check with nothing to change took 12 min 46 s under a profiler, 447 s of it in open(), and three
+        # applies ran past 20 minutes.
+        status = run_sync(root, private, state=state, apply=args.apply, notes=args.notes,
+                          timeout=3600 if WINDOWS else 1200)
         # 1 after --apply: sync wrote what it could and nothing blocked it, but some managed changes did not take.
         # The pair is not applied, so it gets no receipt, but the mise config was written, so its tools still install.
         # Before the tools, so that a failed install holds back no home file. It stops nothing itself, so the

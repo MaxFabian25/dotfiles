@@ -285,12 +285,12 @@ class PairedPullTest(unittest.TestCase):
             limits.append(timeout)
             return run_sync(*args, timeout=timeout, **options)
 
-        for apply, notes in ((False, False), (True, True)):
-            with self.subTest(apply=apply, notes=notes):
+        for apply, notes, windows in ((False, False, False), (True, True, False), (True, False, True)):
+            with self.subTest(apply=apply, notes=notes, windows=windows):
                 args = SimpleNamespace(root=self.public, private=self.private, update=True, apply=apply, notes=notes,
                                        wait=0)
                 with patch('pull.Path.home', return_value=self.root / 'home'), patch('pull.install_tools'), \
-                        patch('pull.run_sync', noting_the_limit):
+                        patch('pull.run_sync', noting_the_limit), patch('pull.WINDOWS', windows):
                     self.assertEqual(run(args), 0)
                 arguments = json.loads(kept.read_bytes())
                 self.assertEqual([flag in arguments for flag in ('--apply', '--check', '--notes')],
@@ -298,7 +298,7 @@ class PairedPullTest(unittest.TestCase):
                 self.assertEqual(arguments[arguments.index('--private') + 1], str(self.private.resolve() / 'setup'))
                 ending = Path(arguments[arguments.index('--ending') + 1])
                 self.assertTrue(ending.is_relative_to(self.root / 'home/.local/state/dotfiles'), ending)
-        self.assertEqual(limits, [1200, 1200])
+        self.assertEqual(limits, [1200, 1200, 3600])
 
 
 class PullLockTest(unittest.TestCase):
