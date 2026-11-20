@@ -73,9 +73,9 @@ intent = "sha256:8715a3a0dfcf58db315c7ac92f2d27bbe786cd571f8ca975abb80c14cb69733
 intent = "sha256:02d68f5d51e66b709db8cbf4a4cd9fdc24982b25d781607bcaa9c9721925fe16"
 
 [mattpocock-skills]
-intent = "sha256:8965284fa369eba7a2e8e7465fc363a60888c669f72bfeba65b5dc741c44d0c8"
-codex = { version = "1.3.2+upstream.4ae2317ddb22.codex6.explicit.0f0dc09aa2cc0c97", tree = "sha256:9a1d672cb027361180f3aa6136a25ac6101c2a5782885f75458904a07bd65bb7" }
-claude = { version = "1.3.2+codex-aligned.91b607d6d8cd", tree = "sha256:6cf477771c6a8398c05c023285578996ce9a2b6e4abe0e859d2ab8b89f74c4ec" }
+intent = "sha256:2cb915972dfdcbc7a7748d8fe40521d7a66141ca0ea1362a24aaa69f3b7d7d44"
+codex = { version = "1.3.2+upstream.abeeaf95660b.codex6.explicit.181475dafb545150", tree = "sha256:2fc17489a99a54034bd1d799308e1b0f04a4099b3a175c599b35bcbaa05e353e" }
+claude = { version = "1.3.2+codex-aligned.694bdea791c0", tree = "sha256:cf93b25662c71f652aee9294c5a5a1336c061c83227dff8bfd9834500fd2d028" }
 
 [narrow-react-prop-types]
 intent = "sha256:3bff1fe58adad4228f235b57cd438844bcf1c9eaca0183cebc910556d3cdb1d7"
