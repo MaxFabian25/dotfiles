@@ -97,6 +97,10 @@ expose_spawn_agent_model_overrides = true # managed
         self.assertEqual(patch_fields(compact, fields, 'json'), compact)
         self.assertEqual(read_fields(after, fields, 'json'),
                          {('executablePath',): {'present': True, 'value': '/opt/google/chrome/chrome'}})
+        self.assertEqual(read_fields(b'', fields, 'json'), {('executablePath',): {'present': False}})
+        self.assertEqual(read_fields(b'  \n', fields, 'json'), {('executablePath',): {'present': False}})
+        self.assertEqual(patch_fields(b'', fields, 'json'),
+                         b'{\n  "executablePath": "/opt/google/chrome/chrome"\n}\n')
         with self.assertRaises(ValueError):
             read_fields(b'["not", "an", "object"]', fields, 'json')
 

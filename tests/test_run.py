@@ -62,6 +62,7 @@ class Probe(unittest.TestCase):
 '''
 # One name for each prefix and part the runner drops, matched by that member alone, and one name it keeps.
 SESSION_NAMES = ('ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL', 'OPENAI_ORG_ID', 'T3CODE_THREAD_ID', 'CLAUDECODE', 'CODEX_THREAD_ID',
+                 'ANTIGRAVITY_AGENT', 'AGY_ACCOUNT', 'GEMINI_HOME',
                  'GH_TOKEN', 'CLIENT_SECRET', 'MAPS_API_KEY', 'DB_PASSWORD', 'npm_config_authtoken')
 SEES_NO_SESSION_VARIABLES = f'''import json
 import os
