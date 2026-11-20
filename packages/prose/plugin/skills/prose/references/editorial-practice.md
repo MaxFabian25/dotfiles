@@ -18,11 +18,15 @@ Query uncertainty that would materially affect meaning, factual basis, voice, or
 neutral, concise, answerable queries and offer concrete alternatives when known. Use prior answers
 and decisions.
 
-Treat each cut or correction the user makes, and any reason they give, as a standing rule for the
-rest of the work. Apply it in one pass to every remaining item in the authorised scope, companion
-documents in that scope included. For companion documents outside that scope, and for any further
-changes it implies, list the changes for one confirmation instead of asking about each item. Once
-the user has said a piece is too long, make later fixes replace words rather than add them.
+## Revisions after feedback
+
+Apply the reason for a correction wherever the same problem occurs. Keep details that still serve
+the reader. If the user changes the audience or purpose, reconsider which parts of the piece still
+belong.
+
+Make the affected changes in one pass across the authorised work, including companion documents.
+Group changes outside that scope for one confirmation. Once the user has said a piece is too long,
+make later fixes replace words rather than add them.
 
 ## Voice samples
 

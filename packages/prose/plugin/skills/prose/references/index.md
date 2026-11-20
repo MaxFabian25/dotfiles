@@ -21,7 +21,7 @@ Each reference owns its rules and scope.
 
 | Work | Reference |
 | --- | --- |
-| Editing or reviewing supplied prose | [Editorial scope and practice](editorial-practice.md); when editing, also [affected consistency checks](editorial-verification.md) |
+| Editing or reviewing supplied prose, or revising your own draft after feedback | [Editorial scope and practice](editorial-practice.md); when editing, also [affected consistency checks](editorial-verification.md) |
 | Maintained documents | [Durable structure](durable-document-structure.md) |
 | Authored English document headings, labels, and cross-references | [English document prose](english-document-prose.md) |
 | Documentation pages and READMEs | [Documentation and README files](documentation-and-readme-files.md), [technical prose](technical-and-code-prose.md) |

@@ -10,8 +10,9 @@ organisation, or presentation work, use [Reader core](references/reader-core.md)
 [Authored prose](references/authored-prose.md) when drafting essays, talks, or personal narratives,
 or working on their development or craft, and its
 [development guidance](references/authored-prose.md#development) for the argument of an academic
-paper, report, or thesis. Use the [reference index](references/index.md) for editing, review, and
-specialist work.
+paper, report, or thesis. When revising your own draft after feedback, use the
+[revision guidance](references/editorial-practice.md#revisions-after-feedback). Use the
+[reference index](references/index.md) for editing, review, and specialist work.
 
 ## Authority and preservation
 
