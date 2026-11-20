@@ -1,10 +1,10 @@
 public = true
-note = "Upstream's exported skills, except setup-matt-pocock-skills and diagnosing-bugs, which patched copies replace, plus four the user chose on 2026-10-14 from upstream's in-progress and misc folders: chief-of-staff, scaffold-exercises, setup-ts-deep-modules and setup-pre-commit, explicit-only in both hosts. On 2026-11-15 the user took out ask-matt, implement, pr, grill-me, handoff, wait-what and claude-handoff, which pstack or another kept skill covers, and made wizard explicit-only. Listed by path so other upstream additions stay out."
+note = "Upstream's exported skills, except setup-matt-pocock-skills and diagnosing-bugs, which patched copies replace, plus four the user chose on 2026-10-14 from upstream's in-progress and misc folders: chief-of-staff, scaffold-exercises, setup-ts-deep-modules and setup-pre-commit, explicit-only in both hosts. On 2026-11-15 the user took out ask-matt, implement, pr, grill-me, handoff, wait-what and claude-handoff, which pstack or another kept skill covers, and made wizard explicit-only. On 2026-11-20 the user added software-factory as a manual design guide in both hosts. Listed by path so other upstream additions stay out."
 
 [source]
 build = "generic"
 repository = "https://github.com/mattpocock/skills.git"
-commit = "4ae2317ddb22b046e26455e4f9c9b3aaaf62212d"
+commit = "abeeaf95660ba9e8b7c753eb38f441ca707a8823"
 manifest = ".claude-plugin/plugin.json"
 packaging = 6
 display_name = "Matt Pocock skills"
@@ -29,6 +29,7 @@ select = [
   "./skills/productivity/to-questionnaire",
   "./skills/productivity/writing-for-agents",
   "./skills/in-progress/chief-of-staff",
+  "./skills/in-progress/software-factory",
   "./skills/misc/scaffold-exercises",
   "./skills/in-progress/setup-ts-deep-modules",
   "./skills/misc/setup-pre-commit",
@@ -50,6 +51,7 @@ explicit = [
   "scaffold-exercises",
   "setup-pre-commit",
   "setup-ts-deep-modules",
+  "software-factory",
   "tdd",
   "teach",
   "to-questionnaire",
