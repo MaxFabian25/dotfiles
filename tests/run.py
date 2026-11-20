@@ -41,7 +41,7 @@ TEMPORARY_PARENT = Path.home() / '.cache' / 'dotfiles-tests'
 STALE_SECONDS = 24 * 60 * 60
 # Agent sessions export their thread, their session and API keys, and a test that passes them on to a program it
 # starts can write them into a file, as a probe once wrote a pool key into a Codex snapshot.
-SESSION_PREFIXES = ('ANTHROPIC_', 'OPENAI_', 'T3CODE_', 'CLAUDE', 'CODEX_')
+SESSION_PREFIXES = ('ANTHROPIC_', 'OPENAI_', 'T3CODE_', 'CLAUDE', 'CODEX_', 'ANTIGRAVITY_', 'AGY_', 'GEMINI_')
 SECRET_PARTS = ('TOKEN', 'SECRET', 'API_KEY', 'PASSWORD')
 
 

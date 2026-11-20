@@ -163,6 +163,8 @@ def _document(data: bytes | None, syntax: str) -> dict:
     text = data.decode('utf-8-sig')
     if syntax == 'toml':
         return tomllib.loads(text)
+    if not text.strip():
+        return {}
     document = json.loads(text)
     if not isinstance(document, dict):
         raise ValueError('A managed JSON file must hold an object')

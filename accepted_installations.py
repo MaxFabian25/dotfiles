@@ -7,6 +7,7 @@ from enum import Enum
 from functools import partial
 import hashlib
 import json
+import antigravity
 import opencode
 from pathlib import Path, PurePosixPath
 import re
@@ -306,11 +307,18 @@ class AcceptedInstallations:
                                       setup.roots.private.parent if setup.roots.private else None,
                                       self.roots, device.platform) if configurations else ()
         self.opencode = None
+        self.antigravity = None
         if configurations:
             receipt = _Artifact('configuration:opencode', None, None, Path(), Path(), (), '', 'fields')
             self.opencode = opencode.plan(setup, self.roots, device.platform, adopted=self._path(receipt).is_file())
             if self.opencode is not None:
                 self.configurations += self.opencode.configurations
+            ag_receipt = _Artifact('configuration:antigravity-skills', None, None, Path(), Path(), (), '', 'fields')
+            self.antigravity = antigravity.plan(
+                setup, self.roots, device.platform, adopted=self._path(ag_receipt).is_file(),
+            )
+            if self.antigravity is not None:
+                self.configurations += self.antigravity.configurations
         self._prepared = {}
         self._installing = set()   # the plugins this sync has still to install with the host's own command
         self.staging = contextlib.ExitStack()   # holds the trees prepare stages; leaving it removes them
@@ -475,6 +483,10 @@ class AcceptedInstallations:
             destination = self.opencode.destination
             units.append(_Artifact('opencode:projection', None, None, destination, destination,
                                    (destination,), str(self.opencode.intent), 'opencode'))
+        if self.antigravity is not None:
+            destination = self.antigravity.destination
+            units.append(_Artifact('antigravity:projection', None, None, destination, destination,
+                                   (destination,), str(self.antigravity.intent), 'antigravity'))
         for config in self.configurations:
             if isinstance(config, BlockedConfiguration):
                 continue
@@ -734,6 +746,11 @@ class AcceptedInstallations:
                 scratch.mkdir(parents=True, exist_ok=True)
                 source = Path(self.staging.enter_context(staging_directory(prefix='opencode-', dir=scratch))) / 'tree'
                 opencode.materialise(self.opencode, builder, source)
+            elif artifact.kind == 'antigravity':
+                scratch = self.roots.engine / '.sync/accepted-images'
+                scratch.mkdir(parents=True, exist_ok=True)
+                source = Path(self.staging.enter_context(staging_directory(prefix='antigravity-', dir=scratch))) / 'tree'
+                antigravity.materialise(self.antigravity, builder, source)
             elif artifact.kind == 'role':
                 data = roles[artifact.key.subject]
                 if bytes_digest(self.roots.neutral(data)) != artifact.expected.digest:
