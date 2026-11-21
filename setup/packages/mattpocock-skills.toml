@@ -66,5 +66,12 @@ tool_notes = "apply"
 [codex]
 install = [{ via = "personal", enabled = true }]
 
+[[codex.replace]]
+path = 'skills/engineering/retro/SKILL.md'
+find = '''If the user doesn't specify a session, default to the current one.'''
+replace = '''If the user doesn't specify a session, default to the current one.
+
+   When reviewing writing across sessions, select replies by date or task before looking at reader reactions. Read each reply against its request: what does the text make clear, and what must the reader infer? Report these findings separately from examples chosen because the user corrected them.'''
+
 [claude]
 install = [{ via = "codex-aligned", enabled = true }]
