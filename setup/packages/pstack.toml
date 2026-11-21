@@ -3,7 +3,7 @@ public = true
 [source]
 build = "generic"
 repository = "https://github.com/cursor/plugins.git"
-commit = "e1cc03121a0e71129a4fb730d7c5528a0a3e43c8"
+commit = "792440e8a560a4a3f63748cdee70491ecd412982"
 subdirectory = "pstack"
 manifest = ".cursor-plugin/plugin.json"
 packaging = 3
@@ -139,7 +139,7 @@ tool_notes = "exempt"
 
 [codex]
 install = [{ via = "personal", enabled = true }]
-adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "ed35dd45bb70ec9e507a192ba2e2719c7edec6f5", adapted = "7966f9dfb7bd5b6706d2481313899101c4d7512b", harness = "skills/poteto-mode/references/harnesses.md" }
+adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "7ef5949aaca808ec4951124deb4608d45259ac72", adapted = "5bc4fe1787b850fd2ef976fcf0dadd6688b7bea0", harness = "skills/poteto-mode/references/harnesses.md" }
 
 # Three ideas from Matt Pocock's skills that the user chose to fold into pstack on 2026-11-15: hard bugs built to
 # the owned diagnosing-bugs skill's loop, writing-for-agents beside skill authoring, and questions asked in rounds
