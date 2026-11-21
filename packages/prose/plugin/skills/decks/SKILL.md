@@ -63,6 +63,17 @@ the words on and around it.
 
 ## Build
 
+- **The brief's criteria first.** When a deck answers a brief, such as an assignment or a client's
+  request, read the brief and list its criteria before you draft a page. Settle the argument
+  against those criteria first, then the visuals, then the build. Put the criteria in every
+  reviewer's brief, because a reviewer without them checks the pages only against themselves.
+- **The delivery path first.** When the deck reaches its audience through a shared file or another
+  editor, such as a group's master deck in Google Slides, take a rough draft through that whole
+  path before you polish: put it into the shared file in the editor its owners use, and render the
+  result. Read the shared file's current version again before each merge into it and before you
+  report its other slides unchanged, because others edit it between your reads. Render the
+  delivered file after its last edit, in the app it is presented from, because an editor that saves
+  the file can change what an earlier check passed.
 - **A style to match.** When the user asks for slides in a named style, such as consulting or
   lecture slides, collect real examples of it as rendered pages and measure their title size,
   margins, and footers before you draft pages or brief prototypes. Describe the style in the user's
@@ -121,4 +132,5 @@ compactions, and a worker for each unit keeps them out of it.
 
 Complete the work when every slide meets each rule above, every data display meets Charts' rules
 and the words on and around it meet Prose's, you have looked at each changed page as the presenting
-app draws it, and the user has seen the changed pages and your chosen readings.
+app draws it, you have rendered the delivered file after its last edit, and the user has seen the
+changed pages and your chosen readings.

@@ -1,6 +1,6 @@
 ---
 name: charts
-description: House rules for charts and the code that draws them, analytical tables, dashboards, and slide pages that show data, in matplotlib, Plotly, Vega-Lite, Excel, PowerPoint, pptxgenjs, or HTML. Use when making, reviewing, or fixing any data display, alongside any general chart skill, including IBCS business reports and a visual pass on a deck or presentation, such as consulting-style or MBB-style chart pages.
+description: House rules for charts and the code that draws them, analytical tables, dashboards, process and flow drawings, and slide pages that show data, in matplotlib, Plotly, Vega-Lite, Excel, PowerPoint, pptxgenjs, or HTML. Use when making, reviewing, or fixing any data display, alongside any general chart skill, including IBCS business reports and a visual pass on a deck or presentation, such as consulting-style or MBB-style chart pages.
 ---
 
 # Charts
@@ -99,6 +99,11 @@ charts](references/ibcs-charts.md) before drawing.
   describes starts and ends. When a script writes a title, note, or text alternative, compute its
   figures and findings from the data in that script, so a rerun keeps them true. A title that
   restates a finding from the text uses the text's baseline and multiple.
+- **Drawings as claims.** In a process, flow, or relationship drawing, such as a workflow, a value
+  chain, or options placed along an axis, each position, link, order, and axis states something
+  about the source. Check each one against the source as you would a quotation before you show the
+  drawing, because a check of its words can pass while its layout says what the source does not,
+  such as a step nobody performs or an axis the source rejects.
 - **Rounding.** Compute derived figures from unrounded values, such as counts rather than a
   supplied rounded rate, and pass unrounded values to charts, tooltips, and tables. Round each
   figure once, when you format it for display, to the precision the reader needs.

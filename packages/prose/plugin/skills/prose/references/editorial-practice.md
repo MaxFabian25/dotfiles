@@ -35,6 +35,12 @@ passage out unless the user restores it.
 Fix a reviewer's finding in the passage that carries it. Add a caveat only when no existing passage
 can carry the limit, and check first that the piece does not already state it.
 
+When the user sets a loose quality bar, such as text that must not read as machine-written, adopt a
+published checklist for it at once, name it to the user, and run it on your own drafts before each
+showing. Before you post a critique of other people's text in the user's name, run the same
+checklist on the user's own part of the work, because a critique whose faults the user's own text
+shares undercuts the user.
+
 ## Voice samples
 
 Use a sample supplied for voice matching to guide vocabulary, rhythm, punctuation, and formality

@@ -1,6 +1,6 @@
 ---
 name: powerpoint-com-wsl
-description: Render, measure, export, and click through a .pptx in desktop PowerPoint on Windows from WSL, over COM through powershell.exe. Use when a deck's fit, line breaks, fonts, PDF, or slide-show links must be checked as PowerPoint itself draws them, such as a font outside LibreOffice's safe set or a layout scan that needs real text sizes, and before you open a deck for the user or check or close the user's PowerPoint.
+description: Render, measure, export, and click through a .pptx in desktop PowerPoint on Windows from WSL, over COM through powershell.exe. Use when a deck's fit, line breaks, fonts, PDF, or slide-show links must be checked as PowerPoint itself draws them, such as a font outside LibreOffice's safe set or a layout scan that needs real text sizes, after a validator or build step repairs a deck, and before you open a deck for the user or check or close the user's PowerPoint.
 ---
 
 # PowerPoint over COM from WSL
@@ -55,6 +55,13 @@ the clipboard stay free unless a slide show runs, which takes the screen'`.
   build's file free for the next build. Before you close the user's PowerPoint, list each open
   deck's `Name` and `Saved` through `GetActiveObject` and ask the user, because a deck whose
   `Saved` is 0 rather than -1 holds unsaved work.
+- **PowerPoint judges a repair.** A schema validator and PowerPoint are separate checks, and
+  PowerPoint's verdict decides: a file a validator rejects can open cleanly, and a build step that
+  repairs what the validator named can leave a file PowerPoint refuses to open. After any repair,
+  open the file in PowerPoint again before you report it fixed. A run with alerts turned off, such
+  as `DisplayAlerts` set to `ppAlertsNone`, hides the repair prompt a user would see, so it is no
+  proof that the file opens without one. Open a copy with `Start-Process`, as the user will, and
+  look for that prompt.
 - **Open without a window.** `Presentations.Open(path, -1, 0, 0)` opens read-only with no window.
   Without a window, `TextRange.BoundWidth`, `BoundHeight`, `Lines()` and `Lines(i).Text` are right,
   while `BoundLeft` and `BoundTop` are not, so place text from the shape's own `Left` and `Top`.
