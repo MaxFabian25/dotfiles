@@ -8,9 +8,14 @@ Options:
   --only house    only the English house choices in references/english-core.md
   --only unslop   only the patterns the unslop writing passes remove
   --passive       also flag passive verbs with no "by" actor (noisy)
+  --serial-comma  force the serial-comma check on, overriding .prose.toml
   --no-serial-comma
                   skip the serial-comma check, for text whose style omits it
   --json          print one JSON object per finding
+
+Optional `.prose.toml` config (discovered by walking up from each file or cwd
+for `-`, stopping at the repository root containing `.git`):
+  serial_comma = false   skip the serial-comma check unless --serial-comma is set
 
 HTML is read block by block (paragraphs, list items, table cells, headings,
 captions), so table cells are never joined into one sentence, and code, pre,
@@ -31,6 +36,14 @@ import sys
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python 3.10 fallback
+    tomllib = None
+
+CONFIG_NAME = ".prose.toml"
+CONFIG_KEYS = frozenset({"serial_comma"})
 
 WORD = r"[\w'’-]+"
 ITEM = rf"{WORD}(?: {WORD}){{0,2}}"
@@ -758,6 +771,85 @@ def read_blocks(path: str) -> list[Block]:
     return html_blocks(source) if looks_html else text_blocks(source)
 
 
+class ConfigError(ValueError):
+    """Raised when a .prose.toml file cannot be parsed or holds invalid settings."""
+
+
+def _parse_simple_toml(text: str, config_path: Path) -> dict[str, object]:
+    data: dict[str, object] = {}
+    for line_no, raw in enumerate(text.splitlines(), 1):
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        if "=" not in line:
+            raise ConfigError(f"{config_path}:{line_no}: invalid TOML line")
+        key, value = (part.strip() for part in line.split("=", 1))
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", key):
+            raise ConfigError(f"{config_path}:{line_no}: unsupported key {key!r}")
+        if key in data:
+            raise ConfigError(f"{config_path}:{line_no}: duplicate key {key!r}")
+        if value == "true":
+            data[key] = True
+        elif value == "false":
+            data[key] = False
+        else:
+            raise ConfigError(
+                f"{config_path}:{line_no}: unsupported value {value!r} for {key!r}"
+            )
+    return data
+
+
+def _load_config(config_path: Path) -> dict[str, object]:
+    try:
+        raw = config_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ConfigError(f"{config_path}: could not read config: {exc}") from exc
+    if tomllib is not None:
+        try:
+            data = tomllib.loads(raw)
+        except tomllib.TOMLDecodeError as exc:
+            raise ConfigError(f"{config_path}: invalid TOML: {exc}") from exc
+    else:  # pragma: no cover - Python 3.10 fallback
+        data = _parse_simple_toml(raw, config_path)
+    unknown = sorted(set(data) - CONFIG_KEYS)
+    if unknown:
+        raise ConfigError(f"{config_path}: unknown keys: {', '.join(unknown)}")
+    if "serial_comma" in data and not isinstance(data["serial_comma"], bool):
+        raise ConfigError(f"{config_path}: serial_comma must be a boolean")
+    return data
+
+
+def find_config(start_dir: Path) -> Path | None:
+    current = start_dir.resolve()
+    while True:
+        candidate = current / CONFIG_NAME
+        if candidate.is_file():
+            return candidate
+        if (current / ".git").exists():
+            return None
+        parent = current.parent
+        if parent == current:
+            return None
+        current = parent
+
+
+def resolve_serial_comma(
+    path: str,
+    cli_override: bool | None,
+    cache: dict[Path, dict[str, object]],
+) -> bool:
+    if cli_override is not None:
+        return cli_override
+    start_dir = Path.cwd() if path == "-" else Path(path).resolve().parent
+    config_path = find_config(start_dir)
+    if config_path is None:
+        return True
+    if config_path not in cache:
+        cache[config_path] = _load_config(config_path)
+    value = cache[config_path].get("serial_comma")
+    return True if value is None else bool(value)
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         description="Find prose patterns worth a second look."
@@ -765,15 +857,31 @@ def main(argv: list[str]) -> int:
     parser.add_argument("files", nargs="+")
     parser.add_argument("--only", choices=("house", "unslop"))
     parser.add_argument("--passive", action="store_true")
-    parser.add_argument("--no-serial-comma", action="store_true")
+    serial_group = parser.add_mutually_exclusive_group()
+    serial_group.add_argument(
+        "--serial-comma",
+        dest="serial_comma",
+        action="store_true",
+        default=None,
+    )
+    serial_group.add_argument(
+        "--no-serial-comma",
+        dest="serial_comma",
+        action="store_false",
+        default=None,
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     groups = {args.only} if args.only else {"house", "unslop"}
+    config_cache: dict[Path, dict[str, object]] = {}
     total = 0
     for path in args.files:
-        for finding in scan(
-            read_blocks(path), groups, args.passive, not args.no_serial_comma
-        ):
+        try:
+            serial = resolve_serial_comma(path, args.serial_comma, config_cache)
+        except ConfigError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        for finding in scan(read_blocks(path), groups, args.passive, serial):
             total += 1
             if args.json:
                 print(json.dumps({"file": path, **finding}, ensure_ascii=False))

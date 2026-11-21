@@ -171,6 +171,16 @@ path = 'skills/poteto-mode/SKILL.md'
 find = '''Ask it through the question tool (Claude Code `AskUserQuestion`, Codex `request_user_input`) when the host has one.'''
 replace = '''Ask it through the question tool (Claude Code `AskUserQuestion`, Codex `request_user_input`) when the host has one. When several calls for the user remain, ask them in rounds. Put every call whose prerequisites are settled in one question-tool call, each with your recommended answer, and hold a call that depends on an answer still open for the next round.'''
 
+[[codex.replace]]
+path = 'skills/unslop/SKILL.md'
+find = '''Scan for the patterns below, then rewrite. Preserve meaning and match the intended tone.'''
+replace = '''Scan for the patterns below, then rewrite. Preserve meaning and match the intended tone. When the **prose** skill or a project style guide is active, follow it for punctuation, quotation marks, headings, and register.'''
+
+[[codex.replace]]
+path = 'skills/unslop/SKILL.md'
+find = '''11. One name per thing. Repeat it.'''
+replace = '''11. One name per thing. Keep the term consistent without opening consecutive sentences with the same subject noun when a clear pronoun or clause works.'''
+
 [codex.roles]
 from = "plugin"
 directory = "agents/codex"

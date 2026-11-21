@@ -7,6 +7,10 @@ and repeat the affected check after a material correction.
 For edits affecting a piece's overall development or rhythm, and for final manuscript preparation,
 read the complete text for sense and rhythm.
 
+After a prose or style rewrite, read each revised passage against the original to verify that every
+actor, claim scope, and caveat still holds, that pronouns keep clear antecedents without repeating
+the same noun as every sentence opener, and that split sections still follow one narrative thread.
+
 For changes to voice, imagery, humour, repetition, or rhythm in an essay, talk, or personal
 narrative, use [craft after editing](authored-prose.md#craft-after-editing).
 
