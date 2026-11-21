@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -253,6 +254,27 @@ class Plant(unittest.TestCase):
         status, lines, error = self.plant([tripled])
         self.assertEqual((status, lines), (2, []))
         self.assertRegex(error, r"(?m)^no copy of .* could run with .*value\.py: 'utf-8' codec can't decode")
+
+    @unittest.skipIf(shutil.which('git') is None, 'git is not installed')
+    def test_copies_leave_out_git_unless_kept_and_a_linked_worktree_cannot_keep_it(self):
+        listing = ('        listed = subprocess.run(["git", "ls-files", "value.py"], capture_output=True, text=True)\n'
+                   '        self.assertEqual(listed.stdout, "value.py\\n", listed.stderr)\n        self.assert')
+        (self.root / 'code/test_value.py').write_text('import subprocess\n' + TEST.replace('        self.assert', listing),
+                                                     encoding='utf-8')
+        for command in (['init', '-q'], ['add', '-A']):
+            subprocess.run(['git', '-C', str(self.root), *command], check=True, capture_output=True)
+        status, lines, error = self.plant([TRIPLED], str(self.root))
+        self.assertEqual((status, lines), (2, []))
+        self.assertIn('the unchanged copy fails', error)
+        status, lines, error = self.plant([TRIPLED], str(self.root), '--keep-git')
+        self.assertEqual((status, lines), (0, ['CAUGHT triples: test_double failed', '1 of 1 plants caught']), error)
+        linked = self.root.parent / 'linked'
+        shutil.copytree(self.root / 'code', linked / 'code')
+        (linked / '.git').write_text(f'gitdir: {self.root / ".git"}\n', encoding='utf-8')
+        self.root = linked
+        status, lines, error = self.plant([TRIPLED], str(linked), '--keep-git')
+        self.assertEqual((status, lines), (2, []))
+        self.assertIn('is a file, as in a linked worktree', error)
 
     def test_a_plants_file_that_is_missing_malformed_or_empty_stops_with_the_reason(self):
         for plants, reason in (([], 'must hold a list of at least one [label, old, new]'),
