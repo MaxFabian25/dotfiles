@@ -183,6 +183,98 @@ class ScanTests(unittest.TestCase):
         )
         self.assertEqual(found, ["etc"])
 
+    def test_prose_toml_disables_serial_comma_for_nested_files(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / ".prose.toml").write_text(
+                "serial_comma = false\n", encoding="utf-8"
+            )
+            nested = root / "src" / "posts" / "draft.md"
+            nested.parent.mkdir(parents=True)
+            nested.write_text(
+                "We bought apples, pears and plums, etc.\n", encoding="utf-8"
+            )
+
+            result = run(SCAN, "--json", str(nested))
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertEqual(
+                [json.loads(line)["check"] for line in result.stdout.splitlines()],
+                ["etc"],
+            )
+
+            override = run(SCAN, "--json", "--serial-comma", str(nested))
+            self.assertEqual(override.returncode, 1, override.stderr)
+            self.assertEqual(
+                [json.loads(line)["check"] for line in override.stdout.splitlines()],
+                ["etc", "serial-comma"],
+            )
+
+    def test_prose_toml_lookup_stops_at_git_root(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            outer = Path(folder)
+            (outer / ".prose.toml").write_text(
+                "serial_comma = false\n", encoding="utf-8"
+            )
+            repo = outer / "repo"
+            (repo / ".git").mkdir(parents=True)
+            draft = repo / "draft.md"
+            draft.write_text("We bought apples, pears and plums.\n", encoding="utf-8")
+
+            result = run(SCAN, "--json", str(draft))
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertEqual(
+                [json.loads(line)["check"] for line in result.stdout.splitlines()],
+                ["serial-comma"],
+            )
+
+    def test_prose_toml_applies_to_stdin_from_cwd_and_no_serial_comma_overrides_true(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / ".prose.toml").write_text(
+                "serial_comma = false\n", encoding="utf-8"
+            )
+            result = subprocess.run(
+                [sys.executable, "-I", str(SCAN), "--json", "-"],
+                input="We bought apples, pears and plums.\n",
+                cwd=root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, "")
+
+            (root / ".prose.toml").write_text("serial_comma = true\n", encoding="utf-8")
+            override = subprocess.run(
+                [sys.executable, "-I", str(SCAN), "--json", "--no-serial-comma", "-"],
+                input="We bought apples, pears and plums.\n",
+                cwd=root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(override.returncode, 0, override.stderr)
+            self.assertEqual(override.stdout, "")
+
+    def test_invalid_prose_toml_exits_two(self) -> None:
+        for body in (
+            "serial_comma = 'no'\n",
+            "unknown_key = true\n",
+            "not valid = [[\n",
+        ):
+            with self.subTest(body=body), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                (root / ".prose.toml").write_text(body, encoding="utf-8")
+                draft = root / "draft.md"
+                draft.write_text(
+                    "We bought apples, pears and plums.\n", encoding="utf-8"
+                )
+                result = run(SCAN, str(draft))
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(".prose.toml", result.stderr)
+
     def test_introductory_phrase_and_relative_clause_are_not_series(self) -> None:
         text = "However, the team and the boss agreed. We met John, who likes tea and coffee.\n"
         self.assertNotIn("serial-comma", self.checks(text))

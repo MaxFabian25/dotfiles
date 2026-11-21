@@ -24,6 +24,9 @@ scope](source-evidence/plain-language.md#plain-language) when that designation m
 - Lead with the main point and its support. Keep a limiting condition with its claim; put it first
   when the main point would otherwise mislead. Present a narrative sequence chronologically unless
   the requested analytical order serves the reader better.
+- Put a prerequisite, permission, or access requirement before step 1 of a procedure rather than in
+  a closing note. Place a limiting distinction, such as a subset, scope boundary, or measurement
+  unit, in a chart's or table's title, legend, or note as well as in the surrounding prose.
 - Give each paragraph a controlling idea. Split independent claims or conditions when their scope
   becomes hard to follow. Vary sentence length and retain a clear relationship between sentences;
   add a transition only when that relationship needs stating.
@@ -78,6 +81,8 @@ reasoning; use a list for a genuine set and a table for comparison across dimens
 items are requirements, alternatives, or examples. Number them when order, rank, count, or later
 reference matters. Keep item syntax consistent, introduce the list's purpose, and nest only for a
 real parent-child relationship. State whether a choice permits both alternatives or exactly one.
+Check that adjacent recommendations can be carried out together; when two proposals conflict,
+present them as alternatives rather than sequential steps.
 Answer in the body any question the gathered sources can answer, for each option compared, and keep
 a list of next steps to actions only the reader can take.
 
