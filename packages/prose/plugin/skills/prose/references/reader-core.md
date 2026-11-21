@@ -89,7 +89,9 @@ a list of next steps to actions only the reader can take.
 Address the reader directly when useful. Use role names accurately and identify the author group or
 recommending authority when it matters. When one person drafts for a group, use *we* or *the group*
 only for what the group decided or did, and keep the label *suggested* on a suggestion through every
-summary of it. Describe software, hardware, and services through observable functions or states.
+summary of it. In text the user will send or post in their own name, refer to their own work in
+the first person, such as *my post*, and add no motive, feeling, or experience they did not give.
+Describe software, hardware, and services through observable functions or states.
 Present disagreement by stating what a source addresses and where it falls short.
 
 Use capitals for governed forms rather than emphasis. Use bold for useful structure, labels, or

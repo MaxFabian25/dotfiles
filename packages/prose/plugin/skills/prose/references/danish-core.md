@@ -84,6 +84,13 @@ Brug disse træk som anledning til en vurdering. De er ikke fejl i sig selv:
 - Vurder et sammensat ord med tre eller flere led i sin sammenhæng. Bevar et etableret og tydeligt
   ord. Omskriv ellers uden at ændre begrebet.
 
+## Faste udtryk og oversatte vendinger
+
+Læs et dansk udkast igennem for oversatte engelske vendinger og faste udtryk før det går videre.
+Giv en oversat vending som *går stien* (*walks the path*) eller *træner på vores data* (*trains on
+our data*) sin danske form, og skriv et fast udtryk i dets faste form, fx *den mindste modstands
+vej*. Slå formen op i *Den Danske Ordbog* når du er i tvivl.
+
 ## Dokumentation for læsbarhed
 
 Oplys som udgangspunkt ikke et LIX-tal, et interval eller et numerisk mål for tekst til agenter eller
