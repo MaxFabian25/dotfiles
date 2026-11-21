@@ -7,7 +7,7 @@ repo = "skills"
 explicit = ["narrow-react-prop-types"]
 
 [codex]
-install = [{ via = "skills", enabled = true }]
+install = [{ via = "personal", enabled = true }, { via = "skills", enabled = false }]
 
 [claude]
 install = [{ via = "skills", enabled = true }]

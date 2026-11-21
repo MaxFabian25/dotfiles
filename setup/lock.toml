@@ -78,9 +78,9 @@ codex = { version = "1.3.2+upstream.abeeaf95660b.codex6.explicit.181475dafb54515
 claude = { version = "1.3.2+codex-aligned.217df91f29dc", tree = "sha256:e1e6fee577cf3d2e8351da5491f47d35f9e7f8390832d2e9ed7e8f158854bd1e" }
 
 [narrow-react-prop-types]
-intent = "sha256:d6377a49a6f6c79618058e1317a5fb13f8cec0920f5d706e93458d98e4024b38"
-codex = { version = "1.0.0", tree = "sha256:ec9b227e94e74f23d0dd710e92817b94bded1d23659fe6df918b980d2d0fbbe4" }
-claude = { version = "1.0.0", tree = "sha256:ec9b227e94e74f23d0dd710e92817b94bded1d23659fe6df918b980d2d0fbbe4" }
+intent = "sha256:f4b3b628c8f44397403c96a748cc4ae7db20c19b8942414e462fdf3af717bfd2"
+codex = { version = "1.0.0+explicit.da565e0a24bf84d3", tree = "sha256:a30f0ecc10276aa9152ef07be677e08b555160c9846c1997a5b27d12dad65055" }
+claude = { version = "1.0.0+explicit.da565e0a24bf84d3", tree = "sha256:a30f0ecc10276aa9152ef07be677e08b555160c9846c1997a5b27d12dad65055" }
 
 [nateherk-design]
 intent = "sha256:245b3884eefc0e5aabe7a4cf49182d1ed1bd28ad571fe6db80b44552d7f19691"
