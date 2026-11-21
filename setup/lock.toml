@@ -95,8 +95,8 @@ intent = "sha256:3c3e91e40b987f50861be11fba666b5063d6ecdbdcebc60506f7d9df82d7056
 placements = { agents = "sha256:0aeb7bfbfc88b3ee7bcb8d9d094b192847d5a5e37cdbe91cf4fb9a4d33d21471", claude = "sha256:0aeb7bfbfc88b3ee7bcb8d9d094b192847d5a5e37cdbe91cf4fb9a4d33d21471" }
 
 [powerpoint-com-wsl]
-intent = "sha256:942b0bb2177f81370081e1591be59c17f97554143321f5e0618c25273c10e5a2"
-placements = { agents = "sha256:eb0566b37aa6783a49f13ce50febfc9ecf222c320a82ff918a52d896a88bf704", claude = "sha256:eb0566b37aa6783a49f13ce50febfc9ecf222c320a82ff918a52d896a88bf704" }
+intent = "sha256:b3c0d7b744c954ac7a99a45a0c2aa73b8a25e3542c8168c7c48f67a5b8e318b9"
+placements = { agents = "sha256:8d840d322ee6ff5d29c959470fe0626856c5fdd28fb5d2743a3fbe3a696bfa83", claude = "sha256:8d840d322ee6ff5d29c959470fe0626856c5fdd28fb5d2743a3fbe3a696bfa83" }
 
 [private-equity]
 intent = "sha256:0ed2c0e168ba151097399cfcf6e5e064dd1089b87cda571324a89ceb9f30f5d8"
