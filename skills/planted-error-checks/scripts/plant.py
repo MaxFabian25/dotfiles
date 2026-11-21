@@ -1,10 +1,13 @@
 """Plant one defect at a time in a copy of a source file and run its test file on each copy.
 
-Usage: python3 -I plant.py SOURCE TEST PLANTS_JSON [ROOT] [-- TEST_ARGUMENT...]
+Usage: python3 -I plant.py [--keep-git] SOURCE TEST PLANTS_JSON [ROOT] [-- TEST_ARGUMENT...]
 
 PLANTS_JSON holds a list of [label, old, new]: each plant replaces the one place where `old` occurs in SOURCE
 with `new`. ROOT is the folder copied for each run, which must hold SOURCE, TEST and every file TEST reads; it
-defaults to SOURCE's folder. TEST runs from its own folder in the copy as `python -I -B TEST`, so it must find
+defaults to SOURCE's folder. Each copy leaves out every `__pycache__`, `.venv` and `.git` in ROOT, so a TEST that
+runs git in its copy fails there. With --keep-git the copies keep `.git`; a ROOT whose `.git` is a file, as in a
+linked worktree, then stops the run, because its copies would share the original's index and branches.
+TEST runs from its own folder in the copy as `python -I -B TEST`, so it must find
 SOURCE by a path relative to itself. It runs with NO_COLOR set and PYTHON_COLORS left out, so its headings stay
 plain. Everything after `--` is passed to TEST as its arguments. In each of them, `{fresh}` becomes the path of a
 folder that does not exist yet, a new one for each run, for a TEST that writes its results to a folder it must
@@ -48,14 +51,17 @@ TAIL = 40  # lines of a failed unchanged run that stderr shows
 NAMED = 3  # failed tests a CAUGHT line names
 # Windows has no os.nice, so TEST starts below normal priority there instead; elsewhere the flags must be 0.
 PRIORITY = getattr(subprocess, 'BELOW_NORMAL_PRIORITY_CLASS', 0)
+KEEP_GIT = '--keep-git'  # before `--`, keeps .git in each copy
+LEFT_OUT = ('__pycache__', '.venv', '.git')  # names each copy leaves out, .git unless KEEP_GIT
 
 
-def run(root, source, test, text, arguments=()):
+def run(root, source, test, text, arguments=(), left_out=LEFT_OUT):
     """The exit status and output of TEST in a fresh copy of ROOT whose SOURCE holds text, or None and the limit
-    when it ran past it. TEST gets the arguments, with FRESH as a path beside the copy that holds nothing yet."""
+    when it ran past it. TEST gets the arguments, with FRESH as a path beside the copy that holds nothing yet. The
+    copy leaves out every file and folder with a name in left_out."""
     with tempfile.TemporaryDirectory() as folder:
         copy = Path(folder) / root.name
-        shutil.copytree(root, copy, symlinks=True, ignore=shutil.ignore_patterns('__pycache__', '.git', '.venv'))
+        shutil.copytree(root, copy, symlinks=True, ignore=shutil.ignore_patterns(*left_out))
         (copy / source.relative_to(root)).write_bytes(text.encode('utf-8'))
         # Without colour, because with FORCE_COLOR set unittest colours the headings that FAILED reads. TEST runs
         # with -I, but the Python runs it starts read PYTHON_COLORS before NO_COLOR.
@@ -132,6 +138,9 @@ def main(argv):
     arguments = []
     if '--' in argv:
         argv, arguments = argv[:argv.index('--')], argv[argv.index('--') + 1:]
+    keep_git = KEEP_GIT in argv
+    argv = [argument for argument in argv if argument != KEEP_GIT]
+    left_out = tuple(name for name in LEFT_OUT if not (keep_git and name == '.git'))
     if len(argv) not in (3, 4):
         print(__doc__, file=sys.stderr)
         return 2
@@ -141,6 +150,10 @@ def main(argv):
         if not path.is_file() or not path.is_relative_to(root):
             print(f'{path} is no file under {root}', file=sys.stderr)
             return 2
+    if keep_git and (root / '.git').is_file():
+        print(f'{root / ".git"} is a file, as in a linked worktree, so each copy would share its index and branches. '
+              'Give a ROOT whose .git is a folder, such as a clone.', file=sys.stderr)
+        return 2
     try:
         plants = load(Path(argv[2]))
     except SystemExit as stop:
@@ -153,7 +166,7 @@ def main(argv):
     try:
         original = source.read_bytes().decode('utf-8')
         began, cpu = time.perf_counter(), children_cpu()
-        status, output = run(root, source, test, original, arguments)
+        status, output = run(root, source, test, original, arguments, left_out)
         wall = time.perf_counter() - began
     except (OSError, UnicodeDecodeError) as error:  # a SOURCE that is not UTF-8, or a ROOT that cannot be copied
         print(f'no copy of {root} could run with {source}: {error}', file=sys.stderr)
@@ -171,7 +184,7 @@ def main(argv):
             print(f'NOT APPLIED {label}: the text to replace occurs {original.count(old)} times'
                   + (' and the plant changes nothing' if old == new else ''), flush=True)
             continue
-        status, output = run(root, source, test, original.replace(old, new), arguments)
+        status, output = run(root, source, test, original.replace(old, new), arguments, left_out)
         if status is None:
             print(f'TIMED OUT {label}: the test {output}, which shows no test of it', flush=True)
         elif status == 0:
