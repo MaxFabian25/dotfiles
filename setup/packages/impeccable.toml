@@ -47,6 +47,38 @@ exit 1
 if [ -n "$version" ] && [ "$os" != unknown ] && [ "$arch" != unknown ]; then'''
 
 [[codex.replace]]
+path = 'skills/impeccable/scripts/impeccable'
+find = '''set -eu'''
+replace = '''set -eu
+
+# Skip PostToolUse design checks on scratch/task artifacts and non-UI files
+# before starting the engine (which also prevents Stop deep passes on them).
+# Set IMPECCABLE_HOOK_ALL_PATHS=1 to check all paths.
+if [ "${1:-}" = "hook" ] && [ -z "${IMPECCABLE_HOOK_SCOPED:-}" ] && [ "${IMPECCABLE_HOOK_ALL_PATHS:-}" != "1" ]; then
+  hook_in=$(cat)
+  case "$hook_in" in
+    *'"hook_event_name"'*'"PostToolUse"'*)
+      hook_rest=${hook_in#*'"file_path"'}
+      if [ "$hook_rest" != "$hook_in" ]; then
+        hook_rest=${hook_rest#*:}
+        hook_ws=$(printf ' \t\r\n')
+        hook_rest=${hook_rest#"${hook_rest%%[!"$hook_ws"]*}"}
+        case "$hook_rest" in
+          '"'*)
+            hook_path=${hook_rest#'"'}
+            hook_path=${hook_path%%'"'*}
+            case "$hook_path" in
+              tasks/*|*/tasks/20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*|*/agent-home/tasks/*|*/agent-home/*/tasks/*|scratch/*|*/scratch/*|*/.t3/scratch/*|*/.t3/userdata/*|*/.gemini/antigravity/brain/*|/tmp/show-me*|*.md|*.markdown|*.txt|*.py|*.toml|*.json|*.jsonl|*.yaml|*.yml|*.sh|*.bash|*.zsh|*.rs|*.go|*.sql|*.csv|*.log|*.lock|*.bak)
+                exit 0 ;;
+            esac ;;
+        esac
+      fi ;;
+  esac
+  printf '%s\n' "$hook_in" | IMPECCABLE_HOOK_SCOPED=1 sh "$0" "$@"
+  exit $?
+fi'''
+
+[[codex.replace]]
 path = 'skills/impeccable/reference/live.md'
 find = '''drop both, pass `--query`'''
 replace = '''drop both; keep separate `--tag` and `--text`'''
@@ -110,6 +142,38 @@ replace = '''by the asset producer, a built-in agent spawned as the plates step 
 path = 'skills/impeccable/reference/component-review.md'
 find = '''then produce the new plates, with the asset producer when subagents are available.'''
 replace = '''then produce the new plates, with the asset producer when subagents are available, spawned as the plates step of [new-work-comp.md](new-work-comp.md) says.'''
+
+[[claude.replace]]
+path = 'skills/impeccable/scripts/impeccable'
+find = '''set -eu'''
+replace = '''set -eu
+
+# Skip PostToolUse design checks on scratch/task artifacts and non-UI files
+# before starting the engine (which also prevents Stop deep passes on them).
+# Set IMPECCABLE_HOOK_ALL_PATHS=1 to check all paths.
+if [ "${1:-}" = "hook" ] && [ -z "${IMPECCABLE_HOOK_SCOPED:-}" ] && [ "${IMPECCABLE_HOOK_ALL_PATHS:-}" != "1" ]; then
+  hook_in=$(cat)
+  case "$hook_in" in
+    *'"hook_event_name"'*'"PostToolUse"'*)
+      hook_rest=${hook_in#*'"file_path"'}
+      if [ "$hook_rest" != "$hook_in" ]; then
+        hook_rest=${hook_rest#*:}
+        hook_ws=$(printf ' \t\r\n')
+        hook_rest=${hook_rest#"${hook_rest%%[!"$hook_ws"]*}"}
+        case "$hook_rest" in
+          '"'*)
+            hook_path=${hook_rest#'"'}
+            hook_path=${hook_path%%'"'*}
+            case "$hook_path" in
+              tasks/*|*/tasks/20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*|*/agent-home/tasks/*|*/agent-home/*/tasks/*|scratch/*|*/scratch/*|*/.t3/scratch/*|*/.t3/userdata/*|*/.gemini/antigravity/brain/*|/tmp/show-me*|*.md|*.markdown|*.txt|*.py|*.toml|*.json|*.jsonl|*.yaml|*.yml|*.sh|*.bash|*.zsh|*.rs|*.go|*.sql|*.csv|*.log|*.lock|*.bak)
+                exit 0 ;;
+            esac ;;
+        esac
+      fi ;;
+  esac
+  printf '%s\n' "$hook_in" | IMPECCABLE_HOOK_SCOPED=1 sh "$0" "$@"
+  exit $?
+fi'''
 
 [[claude.replace]]
 path = 'skills/impeccable/reference/live.md'
