@@ -28,6 +28,13 @@ Make the affected changes in one pass across the authorised work, including comp
 Group changes outside that scope for one confirmation. Once the user has said a piece is too long,
 make later fixes replace words rather than add them.
 
+Treat a passage or claim the user cut as settled: leave it out of later drafts, suggestions, and
+companion documents. When new evidence argues for it, give that evidence in one line and keep the
+passage out unless the user restores it.
+
+Fix a reviewer's finding in the passage that carries it. Add a caveat only when no existing passage
+can carry the limit, and check first that the piece does not already state it.
+
 ## Voice samples
 
 Use a sample supplied for voice matching to guide vocabulary, rhythm, punctuation, and formality

@@ -63,6 +63,10 @@ the words on and around it.
 
 ## Build
 
+- **A style to match.** When the user asks for slides in a named style, such as consulting or
+  lecture slides, collect real examples of it as rendered pages and measure their title size,
+  margins, and footers before you draft pages or brief prototypes. Describe the style in the user's
+  words, because an adjective of your own in a brief steers every prototype toward it.
 - **Native charts.** Draw each chart the presenting app can draw natively as a native chart, so the
   presenter can edit it and its data travels with it. A check can read a native chart's values from
   the chart part's XML, so checks are no reason to draw a chart as shapes, or to keep a table that
