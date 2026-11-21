@@ -50,7 +50,8 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(configuration['model'], 'anthropic-api/claude-opus-5-5#xhigh')
         self.assertEqual(configuration['policies'],
                          [{'action': 'provider.use', 'resource': '*', 'effect': 'deny'},
-                          {'action': 'provider.use', 'resource': 'anthropic-api', 'effect': 'allow'}])
+                          {'action': 'provider.use', 'resource': 'anthropic-api', 'effect': 'allow'},
+                          {'action': 'provider.use', 'resource': 'openai-api', 'effect': 'allow'}])
         self.assertEqual((native / 'runtime.py').read_bytes(), b'print("synthetic runtime")\n')
         self.assertEqual((native / 'runtime.toml').read_bytes(), (source / 'runtime.toml').read_bytes())
         self.assertNotIn(b'__DOTFILES_', (native / 'plugins/credentials.js').read_bytes())

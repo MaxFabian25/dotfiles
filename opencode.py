@@ -148,12 +148,13 @@ def plan(setup: Setup, roots: DeviceRoots, platform: Platform, *, adopted: bool 
         fields[('model',)] = model
         fields[('policies',)] = [*retained.get('policies', []),
                                   {'action': 'provider.use', 'resource': '*', 'effect': 'deny'},
-                                  {'action': 'provider.use', 'resource': 'anthropic-api', 'effect': 'allow'}]
+                                  {'action': 'provider.use', 'resource': 'anthropic-api', 'effect': 'allow'},
+                                  {'action': 'provider.use', 'resource': 'openai-api', 'effect': 'allow'}]
         slug = model.split('/', 1)[1].split('#', 1)[0]
         helper = json.dumps([sys.executable, '-I', str(destination.parent / 'runtime.py'), 'credential'])
         plugin = (source.parent / 'credentials.js.in').read_text(encoding='utf-8')
-        if plugin.count('__DOTFILES_CREDENTIAL_HELPER__') != 1 or plugin.count('__DOTFILES_MODEL_ID__') != 1:
-            raise ValueError('OpenCode credential plugin must contain one helper command and one model slot')
+        if plugin.count('__DOTFILES_CREDENTIAL_HELPER__') != 1 or plugin.count('__DOTFILES_MODEL_ID__') > 1:
+            raise ValueError('OpenCode credential plugin must contain one helper command and at most one model slot')
         configurations += (
             FileConfiguration('opencode-runtime', destination.parent / 'runtime.py', (source.parent / 'runtime.py').read_bytes()),
             FileConfiguration('opencode-credential-reference', destination.parent / 'runtime.toml', runtime.read_bytes()),

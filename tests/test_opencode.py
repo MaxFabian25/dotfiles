@@ -304,7 +304,8 @@ class OpenCodeTests(unittest.TestCase):
             self.assertEqual(fields[('model',)], 'anthropic-api/claude-opus-5-5#xhigh')
             self.assertEqual(fields[('policies',)],
                              [{'action': 'provider.use', 'resource': '*', 'effect': 'deny'},
-                              {'action': 'provider.use', 'resource': 'anthropic-api', 'effect': 'allow'}])
+                              {'action': 'provider.use', 'resource': 'anthropic-api', 'effect': 'allow'},
+                              {'action': 'provider.use', 'resource': 'openai-api', 'effect': 'allow'}])
             plugin = by_name['opencode-credentials-plugin'].data.decode()
             self.assertNotIn('__DOTFILES_', plugin)
             self.assertIn('"claude-opus-5-5"', plugin)
