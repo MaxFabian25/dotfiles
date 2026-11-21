@@ -1,6 +1,6 @@
 ---
 name: powerpoint-com-wsl
-description: Render, measure, export, and click through a .pptx in desktop PowerPoint on Windows from WSL, over COM through powershell.exe. Use when a deck's fit, line breaks, fonts, PDF, or slide-show links must be checked as PowerPoint itself draws them, such as a deck in a font outside LibreOffice's safe set, a layout scan that needs real text sizes, or a link test in slide-show mode. Use also before you open a deck for the user, and before you check or close the user's PowerPoint.
+description: Render, measure, export, and click through a .pptx in desktop PowerPoint on Windows from WSL, over COM through powershell.exe. Use when a deck's fit, line breaks, fonts, PDF, or slide-show links must be checked as PowerPoint itself draws them, such as a font outside LibreOffice's safe set or a layout scan that needs real text sizes, and before you open a deck for the user or check or close the user's PowerPoint.
 ---
 
 # PowerPoint over COM from WSL

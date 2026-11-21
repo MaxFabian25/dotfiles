@@ -84,15 +84,12 @@ on = [
   "principle-explain-the-number",
   "principle-fix-root-causes",
   "principle-foundational-thinking",
-  "principle-guard-the-context-window",
   "principle-laziness-protocol",
   "principle-make-operations-idempotent",
   "principle-migrate-callers-then-delete-legacy-apis",
   "principle-minimize-reader-load",
   "principle-model-the-domain",
-  "principle-never-block-on-the-human",
   "principle-outcome-oriented-execution",
-  "principle-prove-it-works",
   "principle-redesign-from-first-principles",
   "principle-separate-before-serializing-shared-state",
   "principle-sequence-verifiable-units",
@@ -123,6 +120,9 @@ explicit = [
   "make-bot-ui",
   "no-comments",
   "poteto-help",
+  "principle-guard-the-context-window",
+  "principle-never-block-on-the-human",
+  "principle-prove-it-works",
   "recall",
   "reflect",
   "setup-pstack",
@@ -180,6 +180,16 @@ replace = '''Scan for the patterns below, then rewrite. Preserve meaning and mat
 path = 'skills/unslop/SKILL.md'
 find = '''11. One name per thing. Repeat it.'''
 replace = '''11. One name per thing. Keep the term consistent without opening consecutive sentences with the same subject noun when a clear pronoun or clause works.'''
+
+[[codex.replace]]
+path = 'skills/principle-explain-the-number/SKILL.md'
+find = '''description: "Apply before you measure, before you price a workaround for a limit you hit, and before you trust, report, or act on a number you measured: a speedup, a regression, a throughput, a latency, an eval result, or a score or ranking from a panel of agents, and before you repeat a count copied from a dashboard, push banner or alert API. Also apply before you choose a cap, limit or setting from measurements, and before you put a size, saving or cost figure in a question for the user's approval. Also apply to search hit counts and classifier bucket totals: all zeros needs a known-positive query, and a residual bucket needs a sample opened. For a limit you hit, read the tool's config schema or source at the installed version first, because a limit is a setting until those say otherwise. Find what limits it, and rule out that it measured something other than the work you think."'''
+replace = '''description: "Apply before you measure, price a workaround for a limit you hit, or trust, report or act on a measured number, such as a speedup, latency, eval result or a panel's score, and before you repeat a count from a dashboard, push banner or alert API. Also apply before you choose a cap or setting from measurements or put a size, saving or cost in a question for approval, and to search hit counts and classifier buckets: all zeros needs a known-positive query, and a residual bucket needs a sample opened. For a limit you hit, read the tool's config schema or source at the installed version first. Find what limits the number, and rule out that it measured other work."'''
+
+[[codex.replace]]
+path = 'skills/principle-build-the-lever/SKILL.md'
+find = '''description: "Apply to any non-trivial work, not just bulk work: edits, migrations, analyses, checks. Build the tool that does it or proves it (codemod, script, generator, or a skill your subagents follow) instead of working by hand. The tool is the artifact a reviewer can rerun. Also apply when you are about to paste the same shell loop, snippet or check a second time, and before you defer, drop or shrink work because doing it by hand would be slow or risky: look for a tool the repository already has, or build one."'''
+replace = '''description: "Apply to any non-trivial work, such as edits, migrations, analyses and checks: build the tool that does it or proves it, such as a codemod, script, generator or a skill your subagents follow, so a reviewer can rerun it. Also apply before you paste the same shell loop, snippet or check a second time, and before you defer, drop or shrink work because doing it by hand would be slow or risky: look for a tool the repository already has, or build one."'''
 
 [codex.roles]
 from = "plugin"

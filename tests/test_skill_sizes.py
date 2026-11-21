@@ -20,7 +20,7 @@ BYTE_LIMIT = 30_000
 # Bytes on 2026-11-12 of the one file that was already past BYTE_LIMIT. The number is a cap on that file. An edit
 # that shrinks the file may leave the number or lower it, and one that brings it under BYTE_LIMIT deletes its entry.
 # Add no entry.
-CEILINGS = {'skills/browser-and-computer-use/SKILL.md': 36_596}
+CEILINGS = {}
 FIX = 'Move a part that only some tasks reach into its own file behind a one-line pointer, or split the file by branch.'
 DATED = re.compile(r'\b20\d\d\b|\b[Oo]n \d{1,2}(?:(?: and | to |-|–)\d{1,2})?\s+(?:January|February|March|April|May|June|July|August|September|'
                    r'October|November|December)\b')
