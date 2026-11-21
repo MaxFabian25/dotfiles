@@ -3,6 +3,9 @@ public = true
 [source]
 repo = "skills"
 
+[skills]
+explicit = ["narrow-react-prop-types"]
+
 [codex]
 install = [{ via = "skills", enabled = true }]
 

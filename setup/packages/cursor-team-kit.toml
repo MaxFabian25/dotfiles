@@ -41,9 +41,14 @@ off = [
   "workflow-from-chats",
 ]
 explicit = [
+  "check-compiler-errors",
   "control-cli",
   "control-ui",
   "deslop",
+  "fix-ci",
+  "fix-merge-conflicts",
+  "get-pr-comments",
+  "loop-on-ci",
   "make-pr-easy-to-review",
   "new-branch-and-pr",
   "pr-review-canvas",
