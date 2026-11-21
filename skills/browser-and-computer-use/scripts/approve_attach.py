@@ -14,10 +14,11 @@ task. CHROME_PID is Chrome's browser process, the one
 without --type= in its arguments. --max caps the presses, and a prompt left over from a failed attempt stays on
 screen until someone cancels it. For Linux, WSLg's display :0 included.
 
-Chrome shows its windows to accessibility tools only when it was started with --force-renderer-accessibility.
-Without that the prompt cannot be found, so the script exits 4 before it starts COMMAND, and no prompt is raised.
-On 11 November 2026 an attach to a Chrome the user had opened themselves timed out and left its prompt over
-their window, which is why the check exists.
+Chrome joins the accessibility bus only when, as it started, ACCESSIBILITY_ENABLED=1 was in its environment or
+the desktop's AT-SPI switch (org.a11y.Status IsEnabled) was on, and it shows what is in its windows only when
+it was also started with --force-renderer-accessibility. Without either the prompt cannot be found, so the script
+exits 4 before it starts COMMAND, and no prompt is raised. On 11 November 2026 an attach to a Chrome the user
+had opened themselves timed out and left its prompt over their window, which is why the check exists.
 """
 
 import argparse
@@ -27,11 +28,13 @@ import time
 from collections import deque
 
 PROMPT = ("alert", "Allow remote debugging?")
-BUTTON = ("push button", "Allow")
+BUTTON_ROLES = ("push button", "button")  # Omarchy's at-spi2-core 2.62.1 names the role "button"
+BUTTON = "Allow"
 PAGE = "document web"
 REPRESS = 1  # seconds; a press Chrome accepts takes the prompt down within this
 ABSENT = "/org/a11y/atspi/null"  # the path AT-SPI gives for a child the application does not expose
 NO_TREE = 4  # exit status when Chrome exposes no accessibility tree
+RETRY = "Run the attach without --approve and ask the user to click Allow, or ask them to restart Chrome that way."
 
 
 def exposed(nodes):
@@ -51,6 +54,19 @@ def has_tree(roots, children):
     return False
 
 
+def unreadable(pid, roots, children):
+    """Why Chrome's prompt cannot be pressed, given the accessibility bus's applications for its process, or None
+    when it can."""
+    if not roots:
+        return (f"Chrome (pid {pid}) is not on the accessibility bus, so its prompt cannot be pressed, and the attach "
+                "was not started. Chrome joins it only when ACCESSIBILITY_ENABLED=1 was in its environment as it "
+                "started, or the desktop's AT-SPI switch (org.a11y.Status IsEnabled) was on. " + RETRY)
+    if not has_tree(roots, children):
+        return (f"Chrome (pid {pid}) exposes no accessibility tree, so its prompt cannot be pressed, and the attach "
+                "was not started. Chrome exposes one only when started with --force-renderer-accessibility. " + RETRY)
+    return None
+
+
 def allow_buttons(roots, info, children):
     """The Allow button of every remote-debugging prompt under roots. `info` gives a node's role and name and
     `children` its child nodes. Page content is left out, and so is an Allow button outside such a prompt, such
@@ -64,7 +80,7 @@ def allow_buttons(roots, info, children):
             continue
         if role == PAGE:
             continue
-        if in_prompt and (role, label) == BUTTON:
+        if in_prompt and role in BUTTON_ROLES and label == BUTTON:
             found.add(node)
         in_prompt = in_prompt or (role, label) == PROMPT
         try:
@@ -133,14 +149,9 @@ def main():
                 roots.append(node)
         except Exception:
             pass
-    if not roots:
-        sys.exit(f"approve_attach: no accessible application for pid {args.pid}")
-
-    if not has_tree(roots, children):
-        print(f"approve_attach: Chrome (pid {args.pid}) exposes no accessibility tree, so its prompt cannot be "
-              "pressed, and the attach was not started. Chrome exposes one only when started with "
-              "--force-renderer-accessibility. Run the attach without --approve and ask the user to click Allow, "
-              "or ask them to restart Chrome with that flag.", file=sys.stderr)
+    reason = unreadable(args.pid, roots, children)
+    if reason:
+        print(f"approve_attach: {reason}", file=sys.stderr)
         sys.exit(NO_TREE)
 
     def buttons():

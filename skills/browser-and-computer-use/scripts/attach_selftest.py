@@ -9,8 +9,8 @@ The unit tests of those scripts run against stand-ins, so they cannot show that 
 still behaves as the scripts expect. On 10 November 2026 Chrome ignored an Allow press that landed as its prompt
 appeared, and only attaches to a real Chrome showed it.
 
-It makes a folder under ~/.local/state with a Chrome profile that has remote debugging switched on, starts
-Chrome on it as a systemd user unit, and runs `ab_session.py attach --approve` and `close` N times. The user's
+It makes a folder under ~/.local/state with a Chrome profile that has remote debugging switched on, starts the
+installed Chrome on it as a systemd user unit, readable by accessibility tools as approve_attach.py needs, and runs `ab_session.py attach --approve` and `close` N times. The user's
 own Chrome and profile are never touched, but a Chrome window opens on their desktop for the run. --new-tab
 starts Chrome on its New Tab page, which agent-browser's tab list leaves out. It stops that Chrome and removes
 the folder, and exits 0 when every attach worked.
@@ -34,22 +34,31 @@ args = parser.parse_args()
 if sys.platform != "linux":
     sys.exit("attach_selftest: Linux only, because the approval goes through AT-SPI")
 
+# The Chrome the dotfiles pull names in agent-browser's config, else one on PATH: Omarchy's Chrome package installs
+# google-chrome-stable and no google-chrome.
+try:
+    browser = json.loads((pathlib.Path.home() / ".agent-browser/config.json").read_text()).get("executablePath")
+except (OSError, ValueError):
+    browser = None
+browser = browser or shutil.which("google-chrome") or shutil.which("google-chrome-stable") or sys.exit(
+    "attach_selftest: no installed Google Chrome found")
+# The children get the throwaway home, so agent-browser finds this Chrome and saves its session files there. They
+# keep the caller's tools: a mise shim would look for its settings in that home.
+found = shutil.which("agent-browser") or sys.exit("attach_selftest: agent-browser is not on PATH")
+
 tag = f"attach-selftest-{os.getpid()}"
 home = pathlib.Path.home() / ".local/state" / tag
 profile = home / ".config/google-chrome"
 profile.mkdir(parents=True)
 (profile / "Local State").write_text(json.dumps({"devtools": {"remote_debugging": {"user-enabled": True}}}))
 
-# The children get the throwaway home, so agent-browser finds this Chrome and saves its session files there. They
-# keep the caller's tools: a mise shim would look for its settings in that home.
-found = shutil.which("agent-browser") or sys.exit("attach_selftest: agent-browser is not on PATH")
 real = subprocess.run(["mise", "which", "agent-browser"], capture_output=True, text=True).stdout.strip() or found
 env = {**os.environ, "HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config"), "XDG_CACHE_HOME": str(home / ".cache"),
        "UV_CACHE_DIR": os.environ.get("UV_CACHE_DIR", str(pathlib.Path.home() / ".cache/uv")),
        "PATH": f"{pathlib.Path(real).parent}:{os.environ['PATH']}"}
 chrome = ["systemd-run", "--user", f"--unit={tag}", "--collect", "--quiet", *(f"--setenv={key}={env[key]}" for key in
           ("HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME")), "/usr/bin/env", "-u", "WAYLAND_DISPLAY",
-          f"DISPLAY={os.environ.get('DISPLAY', ':0')}", shutil.which("google-chrome") or "google-chrome",
+          f"DISPLAY={os.environ.get('DISPLAY', ':0')}", "ACCESSIBILITY_ENABLED=1", browser,
           "--force-renderer-accessibility", "--password-store=basic", "--no-first-run", "--no-default-browser-check",
           *([] if args.new_tab else ["about:blank"])]
 

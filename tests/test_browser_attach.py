@@ -45,6 +45,22 @@ class ApproveTest(unittest.TestCase):
         found = approve_attach.allow_buttons(['app'], lambda node: TREE[node][:2], lambda node: TREE[node][2])
         self.assertEqual(found, {'allow'})
 
+    def test_the_allow_button_is_found_where_at_spi_names_its_role_button(self):
+        # Omarchy's at-spi2-core 2.62.1 answered "button" for the prompt's buttons on 21 November 2026.
+        renamed = {node: (('button', *shape[1:]) if shape[0] == 'push button' else shape) for node, shape in TREE.items()}
+        found = approve_attach.allow_buttons(['app'], lambda node: renamed[node][:2], lambda node: renamed[node][2])
+        self.assertEqual(found, {'allow'})
+
+    def test_a_chrome_that_shows_no_prompt_is_named_with_what_it_lacks(self):
+        # On 21 November 2026 a Chrome started without ACCESSIBILITY_ENABLED=1, while the desktop's switch was
+        # off, was missing from the bus.
+        missing = approve_attach.unreadable(4711, [], lambda node: TREE[node][2])
+        self.assertIn('ACCESSIBILITY_ENABLED=1', missing)
+        self.assertNotIn('--force-renderer-accessibility', missing)
+        bare = approve_attach.unreadable(4711, ['app'], {'app': ['frame'], 'frame': []}.__getitem__)
+        self.assertIn('--force-renderer-accessibility', bare)
+        self.assertIsNone(approve_attach.unreadable(4711, ['app'], lambda node: TREE[node][2]))
+
     def test_a_chrome_that_lists_its_windows_and_nothing_in_them_has_no_tree(self):
         # What a Chrome started without --force-renderer-accessibility answered on 11 November 2026.
         reply = [(':1.439', '/org/a11y/atspi/accessible/1'), (':1.439', approve_attach.ABSENT)]
