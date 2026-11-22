@@ -31,8 +31,8 @@ no-author, and locator mechanics.
   any volume information.
 - For a chapter or other contribution, put the part title before *in* and the book title.
   Quote a contribution title, but italicise a part that is itself a book-length work.
-- Do not add a chapter's inclusive pages to a bibliography or reference list merely to complete a
-  template. Keep the specific page reference in the full note or author-date text citation.
+- Keep the specific page reference in the full note or author-date text citation rather than adding
+  a chapter's inclusive pages to a bibliography or reference list merely to complete a template.
 - When several contributions from one multiauthor book are cited in notes and bibliography, a
   bibliography may cross-refer from the parts to a full book entry. Do not use those component
   cross-references in author-date. List and cite the collection instead.
@@ -98,8 +98,8 @@ no-author, and locator mechanics.
 
 ## Electronic books
 
-- Do not label a fixed-layout ebook when it reliably matches the print edition. Name a reflowable
-  application or format because pagination and layout may differ.
+- Name a reflowable ebook application or format because pagination and layout may differ, leaving a
+  fixed-layout ebook unlabelled when it reliably matches the print edition.
 - For a reflowable book, prefer a chapter, section heading, or numbered paragraph to a device-only
   location. Use a page number only when it corresponds to a verified print edition.
 - Put the electronic format after the locator in a note and at the end of a bibliography or
@@ -113,4 +113,7 @@ no-author, and locator mechanics.
 - For a book on fixed media, put the medium after the publication details and after any note
   locator.
 
-Complete this branch when each book source has one type, verified facts, and required fields.
+Complete this branch when each book source is classified under its specific row, records verified
+title-page names, edition/multivolume/series data, and publication facts under the pre-/post-1900
+rules, labels reflowable electronic formats with stable locators, and renders in the selected
+Chicago citation form.

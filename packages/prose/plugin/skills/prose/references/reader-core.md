@@ -1,8 +1,7 @@
 # Reader core
 
-Use this reference for clarity, organisation, or presentation work in English or Danish. Follow
-the [authority and preservation rules](../SKILL.md#authority-and-preservation); language and
-specialist references govern their own forms.
+Use this reference for clarity, organisation, or presentation work in English or Danish; language
+and specialist references govern their own forms.
 
 ## Workflow
 
@@ -89,8 +88,9 @@ the unsupported inference. Retain the original rhetorical form when its meaning 
 Use a specific heading that predicts its contents. In a divided document, use consecutive heading
 levels for hierarchy and peer subsections for genuine divisions. A conventional academic heading
 can identify a recognised function. Keep essential information in the main text; keep parentheses
-brief and avoid nesting them. Use [Source text](source-text.md) for quoted, interpolated, or
-translated wording and the governing convention for other bracketed forms.
+brief and avoid nesting them. Use [Quotations and quoted text](quotations.md) and [Source
+text](source-text.md) for quoted, interpolated, or translated wording and the governing convention
+for other bracketed forms.
 
 Let content determine the number of list items. Use prose for one item or a connected line of
 reasoning; use a list for a genuine set and a table for comparison across dimensions. State whether

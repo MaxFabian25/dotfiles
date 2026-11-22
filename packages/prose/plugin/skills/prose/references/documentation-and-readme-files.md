@@ -38,6 +38,8 @@ docs fresh, accurate, and easy to find, not Markdown syntax.
 - Include or link relevant sample code, copyable commands, interfaces, and detailed documentation.
 - Include setup, testing, debugging, and release guidance only when readers need it.
 
-Complete this branch when the docs are fresh, accurate, useful, and easy to find. Preserve required
-records and check that readers can find each affected document from its README file or project
-directory.
+Complete this branch when affected docstrings, READMEs, guides, and examples are updated in the
+same change as the code, stale or redundant docs within authorised scope are removed (while legal,
+historical, audit, and design-decision archives stay intact), every README covers contents, usage
+with the simplest case first, contacts, status, and entry files, and each affected document is
+linked from its README or project directory.

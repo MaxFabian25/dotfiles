@@ -98,7 +98,7 @@ reproduces no abbreviation table.
 
 ### Source text and other languages
 
-Sections 10.78 and 14.106 support the [source-text](../source-text.md) treatment of emojis in
+Sections 10.78 and 14.106 support the [quotations and quoted text](../quotations.md) treatment of emojis in
 source content. This includes retaining emojis and rendering each as a special character when
 the corresponding Unicode character is available, treating an emoji as art when no corresponding
 character exists, and using an in-line image with alternative text when precise historical
@@ -184,7 +184,7 @@ Section 14.112 supports [Citing AI-generated content](../chicago-ai-sources.md),
 disclosure of tool use, citation of specific content where it occurs, and identification of the
 tool and its publisher or developer. It also supports recording available version numbers, the
 generation date, and prompts; linking to publicly archived copies; and acknowledging edited or
-adapted AI-generated text. [Source text](../source-text.md) separately governs alterations, and
+adapted AI-generated text. [Quotations and quoted text](../quotations.md) separately governs alterations, and
 [Rights, permissions, and credit
 lines](../references-and-citations.md#rights-permissions-and-credit-lines) separately governs
 rights. Section 14.112 does not establish AI-generated content as an authority or determine its

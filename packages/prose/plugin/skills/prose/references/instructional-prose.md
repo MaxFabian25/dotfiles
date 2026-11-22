@@ -9,8 +9,8 @@ Apply this branch to an instruction, procedure, requirement, warning, or caution
   result. Outside [ASD-STE100](asd-ste100.md), write *perform a clean or custom installation*, not
   *do an installation*. In ASD-STE100 text, write *do* in place of *perform*, which the STE
   dictionary does not approve. Preserve product commands and defined technical terms.
-- Omit *please* from an instruction. Keep it in a genuine request for permission or forgiveness,
-  correspondence, quotation, or source text.
+- Write instructions directly without *please*, keeping *please* only in a genuine request for
+  permission or forgiveness, correspondence, quotation, or source text.
 - Put every required starting state, tool, input, permission, and access condition before the
   first procedural action.
 - Document one primary input method. If several methods are available to the intended readers,
@@ -29,7 +29,8 @@ Apply this branch to an instruction, procedure, requirement, warning, or caution
   step.
 - Begin an optional procedural step with *Optional:*. Begin a conditional step with its condition.
 - Replace *if necessary* with the observable circumstance that requires the action.
-- Keep information in notes. Keep each instruction, limit, permission, and result in its work step.
+- Keep only skippable background information in notes; keep each instruction, limit, permission,
+  and result in its work step.
 - Keep a numbered procedure contiguous. Put explanations inside a step or outside the sequence.
 - Review a procedure with more than 12 top-level steps. Split it only at a stable pause point.
 - Give each vertical list one function. Separate procedural and descriptive lists.

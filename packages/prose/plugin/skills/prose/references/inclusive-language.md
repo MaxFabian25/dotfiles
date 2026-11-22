@@ -28,8 +28,8 @@ Apply these inclusive-language rules:
   Consider the audience and context before retaining or replacing it.
 - Prefer a clearer alternative when credible feedback identifies harm or difficulty understanding
   the wording.
-- Avoid ableist language, graphic or metaphorical language, and socially charged terms for
-  technical concepts. Use the most precise and well-understood term for the context.
+- Use the most precise and well-understood term for the context rather than ableist language,
+  graphic or metaphorical language, or socially charged terms for technical concepts.
 - Use *accessible* and *accessibility* only for things that are easy to use for everyone, including
   people with disabilities. Otherwise, name the specific characteristic that makes the thing easy
   to use.
@@ -37,11 +37,11 @@ Apply these inclusive-language rules:
   disabilities. In other contexts, name the item directly.
 - Use a colour word only for an actual visual property or a defined technical colour term. Do not
   assign good, bad, safe, or unsafe meanings to colours.
-- Do not use *male* or *female* to describe a connector. Use *plug* or *connector* instead of
-  *male*. Use *socket*, *port*, or another term appropriate to the context instead of *female*. In
-  user materials, describe the connector by its shape, size, icon, or another identifying feature.
-  Preserve exact standard, product, interface, or source terminology. Explain unavoidable legacy
-  wording outside the exact literal.
+- Use *plug* or *connector* (instead of *male*) and *socket*, *port*, or another context-appropriate
+  term (instead of *female*) to describe a connector. In user materials, describe the connector by
+  its shape, size, icon, or another identifying feature. Preserve exact standard, product,
+  interface, or source terminology, and explain unavoidable legacy wording outside the exact
+  literal.
 - Replace or write around a non-inclusive term when meaning
   remains clear.
 - Prefer a direct description over a one-word replacement when it states the operation more
@@ -58,15 +58,18 @@ Apply these inclusive-language rules:
   preference. Name people rather than turning a characteristic into a collective noun.
 - Describe specific access or support needs supported by the person or source. A diagnosis or group
   label alone establishes neither a uniform experience nor an individual's ability.
-- Do not describe one group as *normal* when comparing it with another. Name each comparison group precisely. This rule does not constrain a technical term such as *normal distribution*.
+- Name each comparison group precisely rather than describing one group as *normal* when comparing
+  it with another. This rule does not constrain a technical term such as *normal distribution*.
 - Describe every relevant characteristic in neutral, factual terms. Avoid pity, patronising language,
   stereotypes, and value judgements. Describe suffering, victimhood, or confinement only when the
   source establishes it.
 - Report beliefs, practices, observances, and preferences only when the person states them or a
   source establishes them.
-- Avoid gendered terms. Preserve a gendered term when an official title or designation requires it.
-- Do not infer a person's gender, pronouns, or title from a name or appearance. If a required title
-  is unknown, use the person's name alone when controlling style permits it.
+- Prefer gender-neutral terms, preserving a gendered term when an official title or designation
+  requires it.
+- Use a person's confirmed pronouns and title rather than inferring gender, pronouns, or title from
+  a name or appearance; if a required title is unknown, use the person's name alone when
+  controlling style permits it.
 - Keep gender categories open rather than assuming binary categories in examples or generalisations
   unless a distinction is material and supported.
 - Clarify a person's pronouns when they may be unclear to readers.

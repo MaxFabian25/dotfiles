@@ -6,13 +6,16 @@ The skill uses Chapters 1, 2, 4–10, and 12 of the manual; Chapter 11 was check
 chapters used cover scholarly communication, paper format, grammar, usage, word choice, voice,
 bias-free language, mechanics, tables, figures, citations, references, reference examples, and
 copyright attribution. The [APA Style
-module](../apa-style.md), [APA tables and figures](../apa-tables-and-figures.md), [APA citations
-and references](../apa-citations-and-references.md), and
-[source-text rules for quotations in relation to text](../source-text.md#quotations-in-relation-to-text)
+module](../apa-style.md), [APA mechanics](../apa-mechanics.md), [APA tables and
+figures](../apa-tables-and-figures.md), [APA citations and
+references](../apa-citations-and-references.md), [APA source forms and generative
+AI](../apa-source-forms.md), and
+[quotations in relation to text](../quotations.md#quotations-in-relation-to-text)
 contain independently worded adaptations, checked against the full text of the manual. The APA
-module keeps the 40-word block threshold of Section 8.27 inside APA scope. Source Text provides
-general house mechanics without a numeric threshold. Its Chicago forms apply only when an explicit
-Chicago quotation scope controls. No extended quotation or reproduction licence is included.
+module keeps the 40-word block threshold of Section 8.27 inside APA scope. [Quotations and quoted
+text](../quotations.md) provides general house mechanics without a numeric threshold, and its
+Chicago forms apply only when an explicit Chicago quotation scope controls. No extended quotation
+or reproduction licence is included.
 
 The manual governs. It gives no explicit day and month order for running text, although Section 6.3
 assumes month, day, and year; the house date form is therefore a stated departure. Section 7.13

@@ -17,14 +17,16 @@ without a full stop. Align the number, title, display, and notes flush left.
 Give every table column a heading, including the stub column. Centre the column headings and write
 them, the stub and cell entries, and the notes in sentence case. Left-align stub entries. APA centres
 other cell entries, left-aligns long text, and permits numerical values to be aligned on the
-decimal. For a column of numbers, the house [numeric table alignment](tables-and-figures.md) rule
+decimal. For a column of numbers, the house [numeric table
+alignment](tables-and-figures.md#table-structure-and-editing) rule
 replaces the centring. Carry comparable values to the same number of decimal places. Leave a cell
 blank when data are not applicable, explaining it in a note when needed. Insert a dash when data
 were not obtained or not reported, and explain the dash in the general note.
 
 Use horizontal rules at the top and bottom and below the column headings, and optionally above a row
 of totals. Use no vertical rules and no borders around cells. Avoid shading, and explain any
-necessary shading in the general note. The house [merged-cells rule](tables-and-figures.md)
+necessary shading in the general note. The house [unmerged-cells
+rule](tables-and-figures.md#table-structure-and-editing)
 excludes the column spanners, and so the decked heads, that APA permits. Repeat the shared words in
 each column heading, group rows under a label in the stub, or split the table into separately
 numbered tables, not *Table 1A* and *Table 1B*. Repeat the heading row when a table continues on

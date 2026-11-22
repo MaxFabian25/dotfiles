@@ -17,7 +17,8 @@ evidence](source-evidence/apple-style.md).
 - Join a key combination with hyphens in plain text, such as Shift-Command-E. This replaces the
   house `Control+S` form and monospace keys. Order modifiers Fn, Control, Option, Shift, Command. On
   first use, say that a hyphen means holding the earlier keys down while pressing the last one.
-- Do not make an Apple product name plural or possessive, or use it as a verb. Rewrite the
-  sentence, such as on every Mac you use or the free space on your iPad.
+- Keep every Apple product name in its singular, non-possessive noun form rather than making it
+  plural, possessive, or a verb, rewriting the sentence when needed, such as on every Mac you use
+  or the free space on your iPad.
 
 Complete this adapter when every key, interface name, and product name follows these forms.

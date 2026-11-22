@@ -6,9 +6,9 @@ interface.
 Apply a selected host or product terminology adapter with these rules. For Google developer
 documentation, apply the [Google UI terminology adapter](google-developer-ui-and-word-list.md#google-ui-terminology-adapter).
 For user documentation on an Apple platform, apply [Apple style](apple-style.md).
-Apply [Interface copy](interface-copy.md) only when user-visible product text is written or reviewed.
-Apply the [authority and preservation rules](../SKILL.md#authority-and-preservation) to every
-label, state, message, command, and product term below.
+Apply [Interface copy](interface-copy.md) only when user-visible product text is written or reviewed,
+and follow the authority and preservation rules for every label, state, message, command, and
+product term below.
 
 ## Tasks, labels, and controls
 

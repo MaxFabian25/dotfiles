@@ -1,7 +1,8 @@
 # Source preservation
 
 Preserve source content in quotations, official names, source titles, locators, and source metadata.
-The selected [source-text](source-text.md) or multilingual module governs its additional treatment.
+The selected [quotations](quotations.md), [source-text](source-text.md), or multilingual module
+governs its additional treatment.
 
 Reproduce wording accurately under the applicable quotation or citation convention.
 Repair transfer damage against the original source. Transfer damage includes mojibake and any

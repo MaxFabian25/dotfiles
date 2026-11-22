@@ -84,8 +84,8 @@ supports British data prose within that scope.
 - Use *onto* for movement to a position. Write *on to* when *on* completes the preceding verb.
 - Replace *functionality* with *feature*, *capability*, or the exact operation unless it names an
   established technical concept.
-- Omit *mode* when removing it preserves the meaning. Retain it for a defined state, operating mode,
-  or official feature name.
+- Drop *mode* when removing it preserves the meaning, retaining it for a defined state, operating
+  mode, or official feature name.
 - Replace *hard copy* with the exact medium. Preserve a formally defined term or exact source
   wording.
 - Use *share* for continuing access or shared editing. Use *send* for a one-time copy or message.
@@ -133,9 +133,9 @@ supports British data prose within that scope.
   three full stops in code, source text, or a required format.
 - Outside ASD-STE100 prose, use an en dash when an adjectival phrase contains an open or hyphenated
   compound.
-- Omit em dashes in original prose; recast the sentence with a full stop, comma pair, parentheses,
-  or colon. [Creative and dialogue prose](creative-and-dialogue-prose.md) controls intentional
-  literary or dialogue dashes.
+- Recast sentences with a full stop, comma pair, parentheses, or colon rather than using em dashes
+  in original prose. [Creative and dialogue prose](creative-and-dialogue-prose.md) controls
+  intentional literary or dialogue dashes.
 - Use a serial comma before the final conjunction in a series of three or more items.
 - Without a selected quotation convention, put a direct quotation in double quotation marks and a
   quotation within it in single marks. Put a full stop or comma inside the closing mark only when it
@@ -154,8 +154,6 @@ supports British data prose within that scope.
   punctuation. Leave fragment items unpunctuated unless the controlling style requires otherwise.
 - Begin a complete-sentence list item with a capital. Begin a fragment with lowercase unless its
   first word requires a capital.
-- Label examples of correct and incorrect forms *DO* and *DON'T*. Preserve governed labels and
-  source text.
 
 ## English forms for roles
 
@@ -180,5 +178,7 @@ empty action-noun phrase, such as *perform a restart*. Retain a noun that names 
 technical concept or state. Remove needless *moreover*, *furthermore*, and *in addition*. Apply the
 [reader-core content check](reader-core.md#remove-wording-that-carries-no-content) to other filler.
 
-Complete the English edit when the applicable house choices hold and the source's meaning and
-protected forms remain intact.
+Complete the English edit when the applicable house choices hold: new prose uses British spelling
+(*-ise*/*-isation*, *licence* noun, *practise* verb), serial commas, logical quotation punctuation
+when no other quotation convention is selected, no em dashes or *and/or*/*etc.* leftovers, direct
+verbs without empty wording, and supplied dialect, meaning, and protected forms remain intact.

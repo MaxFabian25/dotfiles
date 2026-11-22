@@ -16,8 +16,8 @@ metadata and presentation rules below.
   invent unsupported rendering syntax.
 - Decide whether an unfamiliar non-English word needs italics or a gloss from audience, context,
   repetition, and authorial voice.
-- Do not italicise a proper name merely because it is non-English. Avoid repeatedly glossing a term
-  after readers can recognise it.
+- Keep a non-English proper name in roman type rather than italicising it merely because it is
+  non-English, and drop repeated glosses once readers can recognise a term.
 - For translation, transliteration, or romanisation, apply [Source
   text](source-text.md#translations-and-transliteration-or-romanisation).
 

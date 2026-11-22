@@ -11,19 +11,19 @@ Brug *Retskrivningsordbogen* 5.1 (2025) fra Dansk Sprognævn som kilde til dansk
 bøjning og tegnsætning. Brug en autoritativ kilde inden for det relevante fagområde til et
 fagudtryk. Bevar officiel ordlyd der skal gengives ordret.
 
-Brug [reglerne om autoritet og bevaring](../SKILL.md#authority-and-preservation) til at vælge den
-styrende klarsprogskilde. En myndigheds-, udgiver- eller fagvejledning gælder kun for de tekster og
-læsere som den selv omfatter, medmindre brugeren eller
-projektet udvider dens rolle. Brug praktikervejledninger som supplerende støtte efter styrende
-projekt-, udgiver-, fag- og retskrivningskilder.
+Brug reglerne om autoritet og bevaring til at vælge den styrende klarsprogskilde. En myndigheds-,
+udgiver- eller fagvejledning gælder kun for de tekster og læsere som den selv omfatter, medmindre
+brugeren eller projektet udvider dens rolle. Brug praktikervejledninger som supplerende støtte
+efter styrende projekt-, udgiver-, fag- og retskrivningskilder.
 
 Overfør ikke en engelsk ordvalgsregel til dansk alene fordi de to sprog har et lignende udtryk.
 
 ## APA i dansk prosa
 
-Når APA Style er valgt, anvend [APA-reglerne](apa-style.md),
-[APA-tabeller og -figurer](apa-tables-and-figures.md) og [APA-reglerne for henvisninger og
-referencer](apa-citations-and-references.md) inden for det valgte område. Brug dansk grammatik og
+Når APA Style er valgt, anvend [APA-reglerne](apa-style.md), [APA-mekanik](apa-mechanics.md),
+[APA-tabeller og -figurer](apa-tables-and-figures.md), [APA-reglerne for henvisninger og
+referencer](apa-citations-and-references.md) og [APA-kildeformer og generativ
+AI](apa-source-forms.md) inden for det valgte område. Brug dansk grammatik og
 tegnsætning i prosaen. Følg den danske udformning af kildehenvisninger som institutionen
 foreskriver. APA har ingen dansk udgave, så formerne nedenfor er interne valg der bygger på danske
 universitetsbibliotekers vejledninger.
@@ -123,6 +123,8 @@ Når opgaven eller den styrende arbejdsgang kræver afprøvning med læsere, bru
 | Det forhold at en tekst er let at læse | læsbarhed |
 | Komma foran en ledsætning, som hovedregel valgfrit | startkomma |
 
-Arbejdet med dansk prosa er afsluttet når alle relevante danske regler er fulgt. Stavning og
-tegnsætning følger den angivne udgave. Hvert fagudtryk har et autoritativt eller konventionelt
-grundlag. Ingen regel der kun gælder for engelsk, har ændret den danske tekst.
+Arbejdet med dansk prosa er afsluttet når alle relevante danske regler er fulgt: stavning, bøjning
+og tegnsætning følger *Retskrivningsordbogen* 5.1 (uden valgfrit startkomma i ny tekst, med
+decimalkomma og fast mellemrum foran `%`), sammensatte substantiver, genitiver og oversatte
+engelske vendinger er gennemgået, hvert fagudtryk har et autoritativt eller konventionelt grundlag,
+og ingen rent engelsk regel har ændret den danske tekst.
