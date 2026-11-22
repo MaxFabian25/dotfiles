@@ -1,7 +1,7 @@
 # Tables and figures
 
-Apply this branch when a table, figure, or chart is present. For a display's marks, layout, and
-building code, also use the [charts skill](../../charts/SKILL.md).
+Apply this branch when a table, figure, or chart is present. For a display's marks, layout,
+building code, and chart delivery rules, also use the [charts skill](../../charts/SKILL.md).
 
 For an accessible analytical table, consult the UK Analysis Function table guidance
 (`AUTH-UKAF-DATA-TABLES` in [source provenance](source-manifest.md)) only for a choice that the
@@ -68,12 +68,12 @@ notation](ibcs-notation.md) to the display's text.
 - **Table units.** Put a shared measurement unit in the column or row header. Put a table-wide unit
   in the table title. Follow a selected style module when it places table-wide units elsewhere,
   such as the general note under [APA tables and figures](apa-tables-and-figures.md).
-- **Chart titles.** Write an explanatory chart title as a testable main message supported by the displayed data. Use a subtitle to identify any measure, scope, or period that the title and chart do not make clear. When the governing format fixes the figure elements, as APA Style does, give that information in the title, axis titles, or note instead of a subtitle. Use a neutral topic title for exploratory charts.
-- **Data-display sources.** Give each data table and chart an adjacent source block that names and links the exact dataset or publication. Name every source used. Put material caveats and the data date or version in that block. Link the exact source rather than an organisation homepage. When a citation style governs, attribute sources in the form and position that style requires. The [charts skill](../../charts/SKILL.md#delivery) exempts a share card linked to the publication that cites its source.
+- **Chart titles.** Write an explanatory chart title as a testable main message supported by the displayed data. Use a subtitle to identify any measure, scope, or period that the title and chart do not make clear. When the governing format fixes the figure elements, as APA Style does, give that information in the title, axis titles, or note instead of a subtitle. Use a neutral topic title for exploratory charts. For the ten-word title cap and supporting figures in subtitles on charts and dashboards, apply the [charts skill](../../charts/SKILL.md#delivery).
+- **Data-display sources.** Give each data table and chart an adjacent source block that names and links the exact dataset or publication. Name every source used. Put material caveats and the data date or version in that block. Link the exact source rather than an organisation homepage. When a citation style governs, attribute sources in the form and position that style requires. The [charts skill](../../charts/SKILL.md#delivery) sets the producer-placeholder rule when a request omits the producer and exempts a share card linked to the publication that cites its source.
 - **Reused display credits.** Apply [Rights, permissions, and credit
   lines](references-and-citations.md#rights-permissions-and-credit-lines) to the credit line, its
   placement, and the permissions record for each reused or adapted visual or table.
-- **Chart text alternatives.** For a chart's short text alternative, identify the chart type and key message. Put relationships, trends, material exceptions, and exact values that matter in a long description or accessible data table. Include only points that carry the message.
+- **Chart text alternatives.** For a chart's short text alternative, identify the chart type and key message. Put relationships, trends, material exceptions, and exact values that matter in a long description or accessible data table. Include only points that carry the message. For naming an above-zero value-axis start and format-specific placement, apply the [charts skill](../../charts/SKILL.md#delivery).
 - **Stand-alone displays.** For a table or figure intended for independent reading, confirm that its
   title, headers, units, symbols, notes, and source supply the context needed without surrounding
   prose. Define every non-standard abbreviation and symbol in that display's title, body, legend,

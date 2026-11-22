@@ -8,7 +8,8 @@ Each reference owns its rules and scope.
 | --- | --- |
 | Clarity, organisation, and presentation | [Reader core](reader-core.md) |
 | Drafting, development, or craft work on essays, talks, or personal narratives | [Authored prose](authored-prose.md) |
-| Academic papers, reports, and theses | [Reader core](reader-core.md), the [development guidance](authored-prose.md#development) in authored prose, the selected [named style](#named-styles), the [English core](english-core.md) or [Danish core](danish-core.md), [quantitative prose](quantitative-prose.md), [number forms](number-forms.md), and [tables and figures](tables-and-figures.md) |
+| Academic papers, reports, and theses | [Reader core](reader-core.md), the [development guidance](authored-prose.md#development) in authored prose, [references and citations](references-and-citations.md), [source preservation](source-preservation.md), the selected [named style](#named-styles), the [English core](english-core.md) or [Danish core](danish-core.md), [quantitative prose](quantitative-prose.md), [number forms](number-forms.md), and [tables and figures](tables-and-figures.md) |
+| Messages or posts sent in the user's name | [Reader core](reader-core.md#presentation-choices); before posting a critique of others' text, also [Editorial practice](editorial-practice.md) |
 | Matching a supplied voice sample | [Voice samples](editorial-practice.md#voice-samples) |
 | English house word choices and mechanics | [English core](english-core.md) |
 | English grammar or a usage question | [English usage](english-usage.md) |
@@ -21,7 +22,7 @@ Each reference owns its rules and scope.
 
 | Work | Reference |
 | --- | --- |
-| Editing or reviewing supplied prose, or revising your own draft after feedback | [Editorial scope and practice](editorial-practice.md); when editing, also [affected consistency checks](editorial-verification.md) |
+| Editing, proofreading, reviewing supplied prose, running a language check (sprogtjek), or revising your own draft after feedback | [Editorial scope and practice](editorial-practice.md), the [English core](english-core.md) or [Danish core](danish-core.md); when editing, also [affected consistency checks](editorial-verification.md) |
 | Maintained documents | [Durable structure](durable-document-structure.md) |
 | Authored English document headings, labels, and cross-references | [English document prose](english-document-prose.md) |
 | Documentation pages and READMEs | [Documentation and README files](documentation-and-readme-files.md), [technical prose](technical-and-code-prose.md) |
@@ -56,6 +57,7 @@ Each reference owns its rules and scope.
 | Quantities, measurements, estimates, and comparisons | [Quantitative prose](quantitative-prose.md) |
 | Number forms, dates, times, or units | [Number forms](number-forms.md) |
 | Tables, figures, charts, or other data displays | [Tables and figures](tables-and-figures.md) |
+| Slide decks and presentations | [Decks](../../decks/SKILL.md) alongside [Reader core](reader-core.md) and the language core |
 | Alt text, media descriptions, or visual instructions | [Visual and media prose](visual-and-media-prose.md) |
 | An explicitly selected international standard | [International conventions](standard-international-conventions.md) |
 

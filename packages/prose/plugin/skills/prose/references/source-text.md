@@ -97,7 +97,7 @@ When no stronger quotation convention controls, use these house rules:
 - Render each emoji as a special character rather than an image. Replace an image of an emoji with
   the corresponding Unicode character when one is available.
 - When no corresponding Unicode character is available, present the emoji as art. When precise
-  historical rendering is required, use an in-line image with alt text.
+  historical rendering is required, use an inline image with alt text.
 
 ## Proper nouns and adjectives, titles and offices, and titles of works
 

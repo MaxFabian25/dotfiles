@@ -14,7 +14,7 @@ provenance](source-manifest.md), checked against the standard's text.
   unit (*Net sales in mEUR*), and the period followed by its scenarios (*2026-Q3 AC and BU*).
 - **Periods.** Write dates and periods in ISO 8601 order, such as `2026-10-05`, `2026-03`, and
   `2026-Q3`. Join a span with two unspaced full stops, as in `2026-01..09` or `Jan..Sep`.
-- **Money.** Write the ISO 4217 code with a lower-case scale prefix, such as `kEUR` or `mEUR`.
+- **Money.** Write the ISO 4217 code with a lowercase scale prefix, such as `kEUR` or `mEUR`.
   Scale values to at most four digits in a table and three in a chart label.
 - **Scenarios.** Label scenarios AC (actual), PY (previous year), PL (plan), BU (budget), and FC
   (forecast). Order them PY, PL or BU, FC, then AC.

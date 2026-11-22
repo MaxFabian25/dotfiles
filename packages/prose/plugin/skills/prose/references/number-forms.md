@@ -113,7 +113,7 @@ Apply this section to a numbered document division, a number in a proper name or
 or procedural-step reference.
 
 - **Line references.** Use *l* for one line and *ll* for a range. Close the number up to the letter.
-  If the typeface does not distinguish lower-case *l* from `1`, change the typeface or write *line*
+  If the typeface does not distinguish lowercase *l* from `1`, change the typeface or write *line*
   or *lines* in full.
 - **Procedural step references.** Use a numeral when referring to a numbered procedural step,
   including a step number below 10. Preserve governed cross-reference syntax.

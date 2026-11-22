@@ -40,6 +40,10 @@ Brug disse former i en dansk tekst når institutionen ikke foreskriver andre:
   meddelelse, med dansk dag og måned, fx *(T. Nguyen, personlig kommunikation, 24. februar 2020)*.
 - Skriv en fuld dato i referencen med året først og dansk dag og måned: *(2025, 8. august)*.
 - Skriv *Hentet 20. august 2025, fra* foran URL'en når en hentningsdato er nødvendig.
+- Brug dansk sætningsversalisering (stort begyndelsesbogstav kun i første ord og egennavne) i
+  overskrifter, tabel- og figurtitler, aksetitler og signaturforklaringer i stedet for engelsk APA
+  title case. Brug *Tabel 1*, *Figur 1*, *Note.* samt *Data er fra*, *Fra* eller *Tilpasset fra* i
+  tabeller og figurer når institutionen ikke foreskriver andre danske betegnelser.
 
 Tilføj en dansk oversættelse i kantede parenteser efter en titel på et andet sprog end tekstens,
 også en engelsk titel, medmindre institutionen foreskriver andet.

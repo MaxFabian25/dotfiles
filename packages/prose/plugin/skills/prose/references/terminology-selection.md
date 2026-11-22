@@ -99,7 +99,7 @@ short forms.
   characteristics.
 - State what the concept is. Use a negative characteristic only when an absence is essential, and
   still name the positive broader class.
-- Make a definition intelligible without its heading, file name, or neighbouring prose. Name the
+- Make a definition intelligible without its heading, filename, or neighbouring prose. Name the
   subject field or boundary when it affects the meaning.
 - Use *means* for an exhaustive definition and *includes* or *does not include* for a
   non-exhaustive or exclusive statement.

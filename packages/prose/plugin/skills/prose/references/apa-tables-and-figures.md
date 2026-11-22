@@ -10,8 +10,9 @@ one figure and no text, its appendix label and title replace the display's numbe
 form an appendix without text within it, such as *Tables D1 and D2*.
 
 Put the label and number, such as *Table 1*, in bold above the display. Put the title one line
-below it in italic APA [title case](apa-style.md#paper-organisation-and-headings), without a full stop. Align
-the number, title, display, and notes flush left.
+below it in italic APA [title case](apa-style.md#paper-organisation-and-headings) (or Danish
+sentence case and display labels under [APA i dansk prosa](danish-core.md#apa-i-dansk-prosa)),
+without a full stop. Align the number, title, display, and notes flush left.
 
 Give every table column a heading, including the stub column. Centre the column headings and write
 them, the stub and cell entries, and the notes in sentence case. Left-align stub entries. APA centres
@@ -27,8 +28,8 @@ necessary shading in the general note. The house [merged-cells rule](tables-and-
 excludes the column spanners, and so the decked heads, that APA permits. Repeat the shared words in
 each column heading, group rows under a label in the stub, or split the table into separately
 numbered tables, not *Table 1A* and *Table 1B*. Repeat the heading row when a table continues on
-another page. In a figure, write axis labels and legend text in title case and state units of
-measurement, such as in the axis title.
+another page. In an English figure, write axis labels and legend text in title case and state units
+of measurement, such as in the axis title; in Danish, use Danish sentence case.
 
 Put notes below the display. Begin a general note with *Note.* in italics, followed by the note text
 in plain type. Use it for the display as a whole. Give explanations, the meaning of emphasis, and

@@ -11,6 +11,10 @@ Use `AUTH-GITHUB-DOCS-STYLE` and `AUTH-GITHUB-DOCS-BEST-PRACTICES` for GitHub do
 repository prose, and `AUTH-MICROSOFT-LISTS` for lists in Microsoft documentation. Keep these sources
 subordinate to a selected product, publisher, contract, or technical standard.
 
+## Contractions
+
+- Expand contractions in original technical prose. Write *let us* only when that meaning is needed.
+
 ## Literal formatting
 
 A *code span* is an inline sequence of code-formatted characters in CommonMark.

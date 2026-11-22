@@ -16,8 +16,8 @@ provenance](source-manifest.md), checked against the manual's text. It identifie
 APA-specific house departures. APA guidance published after the manual comes from
 `AUTH-APA-STYLE-WEB`.
 
-Apply English spelling, word choice, grammar, sentence punctuation, and date conventions only to
-authored English prose. For authored English, apply the [English house choices](english-core.md),
+Apply English spelling, word choice, grammar, sentence punctuation, date conventions, and APA title
+case only to authored English prose. For authored English, apply the [English house choices](english-core.md),
 including British spelling, which departs from the manual's American dictionary standard (Section
 6.11). Within the recorded APA scope, an APA rule below controls over an English house choice on
 the same point, except where this module states a house departure.
@@ -154,7 +154,9 @@ punctuation mark except a dash, which it precedes, with no space before it, and 
 parenthesis when it applies only to the parenthetical matter. Do not put a callout in a heading.
 Refer to an earlier note as *see Footnote 3*.
 
-In APA title case, capitalise the first word of a title, heading, or subtitle and the first word
+In APA title case (English prose only; Danish headings and titles follow
+[APA i dansk prosa](danish-core.md#apa-i-dansk-prosa)), capitalise the first word of a title,
+heading, or subtitle and the first word
 after a colon, em dash, or end punctuation. Capitalise every noun, verb (including *is*, *are*, and
 *be*), adjective, adverb, and pronoun, every word of four or more letters, and the second part of a
 hyphenated major word (*Self-Report*). Elsewhere, lowercase articles and conjunctions or

@@ -55,8 +55,9 @@ formatter rules control their stated scope. Apply these portable defaults otherw
 - Otherwise, put each reference link definition at the end of the section where it first appears.
 - Put reference link definitions used in multiple sections at the document end.
 - Follow the target host's rules for paths in Markdown links.
-- Otherwise, use a path from the repository or site root, such as `/docs/setup.md`, unless the
-  target is in the same directory.
+- Otherwise, use a relative path, such as `../docs/setup.md`, which works in local editors, static
+  builds, and packaged repositories; use a root-relative path such as `/docs/setup.md` only when
+  the target host defines root-relative Markdown links.
 
 ## Verification
 
