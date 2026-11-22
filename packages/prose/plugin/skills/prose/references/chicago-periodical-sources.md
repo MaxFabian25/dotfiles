@@ -27,7 +27,7 @@ no-author, and locator mechanics.
   behaviour](references-and-citations.md#link-selection-and-behaviour). Add an access date only
   when governing instructions require it.
 - For a journal article published ahead of print, use its posted publication date and available volume,
-  issue, and page data. Use forthcoming for an accepted article that has not reached that stage.
+  issue, and page data. Use *forthcoming* for an accepted article that has not reached that stage.
   For an unaccepted manuscript, apply [Unpublished
   manuscripts](chicago-unpublished-and-archival-sources.md#unpublished-manuscripts-and-private-contracts-wills-and-such).
 - Before finalising a citation to a forthcoming article or an article published ahead of print, check

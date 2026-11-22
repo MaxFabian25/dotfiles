@@ -183,5 +183,7 @@ uv run --locked python -B scripts/validate_release.py --source plugin --installe
 ```
 
 Require exact payload parity. Claude's copy has its own manifest, so the check compares its
-`skills/` and the manifest's name and version. Use a fresh task to check changed discovery or
-loading behaviour.
+`skills/` and the manifest's name and version. When `.dotfiles-policy.json` records dotfiles
+explicit-only skill overrides, the check validates that policy record, the version suffix, and the
+invocation fields on those named skills while requiring exact byte parity everywhere else. Use a
+fresh task to check changed discovery or loading behaviour.

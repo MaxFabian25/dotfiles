@@ -1,7 +1,9 @@
 # Standard international conventions
 
 Apply this branch when a data contract or specification requires standard international
-conventions.
+conventions. Within this scope, these rules replace the [house date and time
+forms](number-forms.md#dates-and-times) and the [currency code
+order](quantitative-prose.md#comparisons-and-statistical-claims) in quantitative prose.
 
 ## Basic rules
 

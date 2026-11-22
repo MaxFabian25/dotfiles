@@ -89,16 +89,14 @@ Entries that widen the dictionary's approved alternatives are house adaptations.
 
 ## Adopted punctuation
 
-Apply these house punctuation rules in prose that this branch governs:
+Apply [English house punctuation](english-core.md#punctuation-and-mechanics) and the
+[abbreviation punctuation default](terminology-selection.md#abbreviations) in prose that this
+branch governs, with these ASD-STE100 rules:
 
-- Use double quotation marks for a quotation and single marks for a quotation inside it.
-- Put full stops and commas inside the closing quotation mark. Put them outside when exact governed
-  text requires it.
-- Do not use an em dash in original prose. Recast the sentence with a sentence break, a comma pair,
-  parentheses, or a colon.
 - Do not use a semicolon. Replace it with two sentences under Rule 8.1. This restriction overrides
   an APA punctuation option only within the ASD-STE100 branch.
-- Write capital-letter abbreviations without full stops, including UK and US.
+- Write capital-letter abbreviations without full stops, including `UK` and `US`. This overrides
+  APA's `U.K.` and `U.S.` forms only within the ASD-STE100 branch.
 
 ## Terminology
 

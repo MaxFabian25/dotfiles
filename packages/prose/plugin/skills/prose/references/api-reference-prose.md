@@ -9,10 +9,11 @@ Exclude comments that do not publish a public API contract.
 Host reference templates, markup, generated signatures, and language-specific conventions control
 their exact forms.
 
-This branch independently adapts [API reference code
-comments](https://developers.google.com/style/api-reference-comments) and [verb forms in reference
-documentation](https://developers.google.com/style/reference-verbs). These sources govern public
-API reference prose, not program behaviour or generated markup.
+This branch independently adapts `GOOGLE-STYLE-005` (*API reference code comments*) and
+`GOOGLE-STYLE-054` (*Verb forms in reference documentation*) in the
+[Google Page Register](google-developer-documentation-pages.csv) and
+[source provenance](source-manifest.md). These sources govern public API reference prose, not
+program behaviour or generated markup.
 
 ## Documentation basics
 
