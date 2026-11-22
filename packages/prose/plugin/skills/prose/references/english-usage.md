@@ -40,8 +40,8 @@ abbreviation. For its grammatical form:
 
 - Use the dictionary form for established compounds. Hyphenate an adjectival phrase before a noun
   only when the hyphen improves clarity.
-- Omit a hyphen after *very* or an adverb ending in *-ly*. Normally omit it when the adjectival
-  phrase follows the noun.
+- Leave *very* and adverbs ending in *-ly* unhyphenated from the word they modify, and normally
+  leave an adjectival phrase unhyphenated when it follows the noun.
 - Retain a suspended hyphen only for a coordinated hyphenated compound. Repeat the shared element
   for a closed compound or possible misreading.
 - Hyphenate a prefix before a proper name, numeral, or date. Use a prefix hyphen to prevent ambiguity
@@ -54,8 +54,8 @@ abbreviation. For its grammatical form:
   a shared predicate unless clarity requires it.
 - Put a comma after a conjunctive adverb that opens a sentence. Start a new sentence before an
   independent restatement.
-- Omit a comma before a restrictive clause introduced by *because*. Use one when the clause is
-  nonrestrictive or omission could mislead.
+- Keep a restrictive clause introduced by *because* without a preceding comma, adding a comma when
+  the clause is nonrestrictive or omission could mislead.
 - Close every comma-delimited interruption with a second comma when the sentence continues.
 - Set off a name or other form of direct address with commas.
 - Set off a nonessential phrase introduced by *such as* or *including*. Leave an essential phrase

@@ -1,8 +1,8 @@
 # Quantitative prose
 
 Apply this branch when equations, quantities, units, numerical comparisons, or statistical claims
-are present. Apply the [authority and preservation rules](../SKILL.md#authority-and-preservation)
-before changing source notation, machine syntax, identifiers, or governed labels.
+are present. Follow the authority and preservation rules before changing source notation, machine
+syntax, identifiers, or governed labels.
 
 Use the registered UK Analysis Function and ONS authorities for analytical prose, statistical
 language, and causal restraint. Apply `AUTH-OSR-CODE-3` only to public communication of statistics,
@@ -91,5 +91,7 @@ data, or wider analysis. Apply `AUTH-NIST-SP330` only when United States federal
 | Expected future performance of a business | forecast |
 | Statistical or analytical value that carries stated uncertainty | estimate |
 
-Complete this branch when each equation, quantity, comparison, statistic, status, and unit states
-its meaning and follows the governing evidence and notation.
+Complete this branch when every formula and non-standard symbol is introduced and defined, every
+comparison names its measure, baseline, precision, and period when time bounds the values (with
+non-actual figures labelled by status), causal, *significant*, and *robust* claims match their
+statistical evidence, and quantities, currencies, and units use standard symbols and spacing.

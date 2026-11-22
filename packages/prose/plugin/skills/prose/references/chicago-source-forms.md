@@ -92,12 +92,15 @@ unsigned reviews, use the hosting periodical. Preserve explicit source attributi
 - Give the first and last number in a closed range. Do not replace the last number with *f.* or
   *ff.*. Use *ff.* only when the end cannot be stated usefully, and use *passim* only for scattered
   references within a stated range.
-- Omit *p.* and *pp.* when a number clearly denotes a book page. Add a label when another number
-  would make the locator ambiguous.
+- Give a bare book page number without *p.* or *pp.* when it clearly denotes a page, adding a label
+  when another number would make the locator ambiguous.
 - Label chapters, sections, books, notes, appendices, figures, tables, maps, plates, lines, folios,
   or other nonpage locations clearly. Preserve recto and verso distinctions for numbered leaves.
 - For a numbered note, attach `n` and its number to the page number; use `nn` for consecutive notes
   and `n` alone for a page's only or unnumbered note. For a note that spans two pages, put the page
   range before `n`. After a Roman-numbered page, put a space before `n`.
 
-Complete this branch when each source has one type, a selected module, and all required fields.
+Complete this branch when each source is classified into one matching source-specific module,
+retains verified metadata without invented fields, applies Chicago title case, uses the
+up-to-six-author limit in bibliographies and reference lists, and uses explicit ranges (reserving
+*ff.* and *passim* for their stated exceptions) and unambiguous locators.

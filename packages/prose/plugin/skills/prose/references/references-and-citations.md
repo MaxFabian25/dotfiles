@@ -23,7 +23,7 @@ claims.
 Cite a primary source after consulting it. If you used a secondary source, identify that source
 and make the indirect attribution clear. Cite the source actually used and give a page or other
 stable locator for a direct quotation. Check quoted wording against that source and apply
-[source text](source-text.md). Paraphrase when exact wording is unnecessary.
+[quotations and quoted text](quotations.md). Paraphrase when exact wording is unnecessary.
 
 ## Citation placement and style
 

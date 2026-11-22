@@ -106,9 +106,9 @@ the project to retain.
 - Apply [Websites, blogs, social media, interviews, and personal
   communications](chicago-web-and-personal-sources.md) to the communication form without replacing
   these requirements.
-- Apply [source text](source-text.md) to exact wording and [Multilingual
-  source](multilingual-source.md) to applicable language, transliteration, or romanisation
-  decisions.
+- Apply [quotations and quoted text](quotations.md) and [source text](source-text.md) to exact
+  wording and [Multilingual source](multilingual-source.md) to applicable language, transliteration,
+  or romanisation decisions.
 - Apply ordinary source-type rules to a secondary source without erasing acknowledged oral sources,
   and attribute the secondary source only for its own voice rather than implying community
   permission or representation.

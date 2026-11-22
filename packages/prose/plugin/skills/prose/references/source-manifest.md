@@ -76,3 +76,7 @@ the unresolved source condition without making an unsupported attribution.
 When updating an adopted rule or recorded source evidence, compare the affected mutable source with
 its recorded revision and access date. Record any change that affects the rule's meaning or scope
 and update the affected evidence.
+
+Complete this module when each requested source or term resolves to its canonical register record,
+evidence role, maturity, and scope (with any unresolved check reported), and any updated mutable
+source records its checked revision, access date, and resulting evidence change.

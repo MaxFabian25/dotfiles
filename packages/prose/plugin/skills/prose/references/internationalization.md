@@ -1,9 +1,9 @@
 # Internationalisation
 
 Apply this branch to content prepared for localisation or for readers across languages, regions,
-or cultures. These rules are language-neutral. Apply a language adapter separately when one is
-selected. Apply the [authority and preservation rules](../SKILL.md#authority-and-preservation)
-before changing source, product, or machine forms.
+or cultures. These rules are language-neutral; apply a language adapter separately when one is
+selected, and follow the authority and preservation rules before changing source, product, or
+machine forms.
 
 For technical text intended for translation, consult `AUTH-ISO-18968` within its registered
 publication stage. Use `AUTH-UNICODE-UTS35-NUMBERS` and pinned CLDR records for locale data, not as
@@ -16,8 +16,9 @@ under publication.
   language or region.
 - Choose examples and images that avoid unstated cultural, geographic, or socioeconomic
   assumptions.
-- Avoid idioms, colloquial expressions, slang, humour, and culturally specific references unless
-  they are the subject. These references include gestures, holidays, landmarks, and imagery.
+- Use plain, literal wording rather than idioms, colloquial expressions, slang, humour, or
+  culturally specific references (such as gestures, holidays, landmarks, and imagery) unless they
+  are the subject.
 - Keep text requiring translation outside images. Provide editable source text when an image must
   contain it.
 - Check each linked product, service, and resource in every stated region. Mark any regional limits.

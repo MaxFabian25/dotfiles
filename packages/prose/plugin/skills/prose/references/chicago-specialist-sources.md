@@ -91,5 +91,8 @@ The table identifies the required record. The governing authority controls the r
 - State that the original was examined only when the available evidence establishes that fact.
 - Preserve each locator's relationship to its own source.
 
-Complete this branch when each specialist source follows its exact source type, authority,
-required fields, locator, and governing citation form.
+Complete this branch when each specialist source is classified under its specific row, records its
+governing authority, edition/version, required fields, and authority-defined locator (or uses the
+selected Chicago system and marks the specialist form unverified when no specialist authority can
+be verified), and identifies both original and secondary sources whenever a secondary citation is
+unavoidable.

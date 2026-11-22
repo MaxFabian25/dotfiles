@@ -77,8 +77,8 @@ selection](terminology-selection.md). Keep source, conventional, and descriptive
 - Apply this section only when Google is the owning authority for the designation.
 - For full names, permitted short forms, governed literals, and trademark use, apply
   [Official names, generic terms, and trademarks](terminology-selection.md#official-names-generic-terms-and-trademarks).
-- Do not put *the* before a Google product name unless its official name includes it or it
-  modifies something else. Put *the* before a Google tool or API name.
+- Write a Google product name without *the* unless its official name includes *the* or it
+  modifies something else, and put *the* before a Google tool or API name.
 
 ## Google style choices
 
@@ -96,11 +96,11 @@ selection](terminology-selection.md). Keep source, conventional, and descriptive
   heading.
 - Begin a section heading with *Optional:* when the section is not required for all readers or
   scenarios. Do not put *(optional)* after the heading.
-- Do not use numbers in headings to indicate a sequence of sections. Preserve numbered divisions
-  required by a governing document format.
+- Write unnumbered section headings rather than numbering headings to show a sequence of sections,
+  preserving numbered divisions only where a governing document format requires them.
 - Write headings as unlinked text.
-- Avoid code items in headings. When a code item is necessary for findability or accuracy, put it
-  in code font and add a descriptive noun.
+- Write headings in plain prose rather than code items; when a code item is necessary for
+  findability or accuracy, put it in code font and add a descriptive noun.
 - Format single-step procedures as one sentence in a bulleted list; this overrides the one-item
   prose default in [Presentation choices](reader-core.md#presentation-choices) within Google
   developer documentation. Use a numbered list for two or more ordered steps.

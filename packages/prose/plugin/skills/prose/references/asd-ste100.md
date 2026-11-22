@@ -33,8 +33,8 @@ conformity. These sections contain the adopted rules:
 
 Use [British English spelling](english-core.md#british-english-spelling) in original project prose.
 This is a house directive; a spelling directive in the selecting requirement controls.
-Apply the [authority and preservation rules](../SKILL.md#authority-and-preservation) before an
-adopted house rule changes source wording, a governed literal, or professional terminology.
+Follow the authority and preservation rules before an adopted house rule changes source wording, a
+governed literal, or professional terminology.
 Treat an established professional term as a technical noun or technical verb when its subject field
 recognises that classification. Identify it as established professional terminology rather than an
 ASD-approved general-language alternative.
@@ -46,8 +46,8 @@ ASD-approved general-language alternative.
 - Count a hyphenated word as one word. Count text inside parentheses as one word. Count quoted
   text as one word. In a vertical list, count the introduction and each item as separate sentences.
   Meet the word limit by splitting or rewriting the sentence.
-- Do not use contractions or omit a noun, verb, subject, or article to meet a length limit. Split or
-  rewrite the sentence.
+- Split or rewrite a long sentence to meet a length limit rather than using contractions or
+  omitting a noun, verb, subject, or article.
 - Use no more than six sentences in a descriptive paragraph. Split a longer paragraph at a genuine
   topic boundary.
 - Use active voice in an instruction. In descriptive prose, use passive voice only when the agent
@@ -93,8 +93,8 @@ Apply [English house punctuation](english-core.md#punctuation-and-mechanics) and
 [abbreviation punctuation default](terminology-selection.md#abbreviations) in prose that this
 branch governs, with these ASD-STE100 rules:
 
-- Do not use a semicolon. Replace it with two sentences under Rule 8.1. This restriction overrides
-  an APA punctuation option only within the ASD-STE100 branch.
+- Replace every semicolon with two sentences under Rule 8.1 rather than using a semicolon. This
+  restriction overrides an APA punctuation option only within the ASD-STE100 branch.
 - Write capital-letter abbreviations without full stops, including `UK` and `US`. This overrides
   APA's `U.K.` and `U.S.` forms only within the ASD-STE100 branch.
 
@@ -114,5 +114,8 @@ branch governs, with these ASD-STE100 rules:
 | A noun term admitted through the ASD-STE100 technical vocabulary rules | technical noun |
 | A verb term admitted through the ASD-STE100 technical vocabulary rules | technical verb |
 
-Complete this branch when every sentence in scope follows each adopted area. Every dictionary
-decision must preserve the source's part of speech and meaning.
+Complete this branch when every in-scope instruction, warning, and caution stays within 20 words,
+every descriptive sentence or note stays within 25 words, descriptive paragraphs stay within six
+sentences, multi-word nouns stay within three words (or use the established-term handling), voice,
+tense, word choice, semicolons, and capital-letter abbreviations match the adopted rules, and every
+dictionary word keeps its approved part of speech and meaning.

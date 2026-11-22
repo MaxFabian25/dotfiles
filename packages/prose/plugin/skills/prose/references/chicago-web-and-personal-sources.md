@@ -68,7 +68,7 @@ punctuation, short-title, and locator rules.
 - Preserve the platform name used when the content was posted. Do not silently rename a historical
   platform to its current brand.
 - Quote only enough post text to identify the source and support the use. Treat quoted wording,
-  spelling, punctuation, symbols, and emoji as [source text](source-text.md).
+  spelling, punctuation, symbols, and emoji as [quoted text](quotations.md).
 - Describe a series of photos, video, repost, reply, or thread when that information affects
   identification or meaning.
 - Cite a comment or reply to the relevant original post. Use the wording on the site for the
@@ -105,15 +105,18 @@ punctuation, short-title, and locator rules.
 - Name the communication as a conversation, interview, letter, email, text, direct message, or
   other relevant form. Mention the medium only when it helps identify or assess the source.
 - Record the date. Identify the recipient when it is not clear from the surrounding prose.
-- Omit email addresses, account identifiers, telephone numbers, private links, and comparable
-  addresses. Include one only when needed in a specific context and with its owner's permission.
-- Do not use *et al.* to hide people in an author-date personal-communication citation.
-  Identify each cited person elsewhere in the text.
+- Leave out email addresses, account identifiers, telephone numbers, private links, and comparable
+  addresses unless one is needed in a specific context and its owner permits it.
+- Identify each cited person elsewhere in the text rather than using *et al.* to hide people in an
+  author-date personal-communication citation.
 - Rarely place a personal communication in a bibliography or reference list. A private exchange
   does not become available to readers merely because the author kept a copy.
 - Retain cited messages, recordings, or transcripts only when law, policy, security requirements,
   and any confidentiality agreement allow it. Record any permission to identify or quote.
 - A retained copy supports verification. It does not grant permission to publish private content.
 
-Complete this branch when each source records its applicable creator, title, date, container,
-locator, access facts, and Chicago form.
+Complete this branch when each web, blog, social-media, interview, or personal-communication source
+is classified under its specific row, records its applicable creator, title, date, container,
+locator, access facts, and Chicago form, keeps private content and confidential identities
+protected without non-public URLs, and records publication/update or required access dates and
+archive facts.

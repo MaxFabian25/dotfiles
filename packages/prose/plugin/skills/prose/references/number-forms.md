@@ -1,9 +1,9 @@
 # Number, date, time, and address forms
 
 Apply this branch when reader-facing numbers, dates, or times are present. Also apply it to numbered
-document divisions, numbers with proper names or titles, and postal addresses.
-Apply the [authority and preservation rules](../SKILL.md#authority-and-preservation) before
-changing a source form, identifier, interface token, or required data format.
+document divisions, numbers with proper names or titles, and postal addresses. Follow the authority
+and preservation rules before changing a source form, identifier, interface token, or required data
+format.
 
 When the rules below and the governing format leave a locale-format choice unresolved, or the task
 requires source verification, consult the [registered locale sources](source-evidence/research-corpus.md#localisation-and-locale-data).
@@ -19,7 +19,7 @@ document divisions, and identifiers as separate categories when their functions 
 
 | Convention | Select when | Controlling rule |
 | --- | --- | --- |
-| APA | APA Style governs the category. | Apply the [APA number conventions](apa-style.md#numbers-dates-and-mathematical-notation) and each compatible quantitative rule. |
+| APA | APA Style governs the category. | Apply the [APA number conventions](apa-mechanics.md#numbers-dates-and-mathematical-notation) and each compatible quantitative rule. |
 | Technical or quantitative | The number expresses a quantity or technical value, or no other number convention controls. | Apply this module, [Quantitative prose](quantitative-prose.md), and any governing domain standard. |
 | Locale | A locale or locale-specific authority controls the representation. | Apply the locale authority and each compatible language or quantitative rule. |
 | Standard international conventions | A data contract using standard international conventions or an international specification controls the representation. | Apply [Standard international conventions](standard-international-conventions.md), the governing contract or specification, and each compatible quantitative rule. |

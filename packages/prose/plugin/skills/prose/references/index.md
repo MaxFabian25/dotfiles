@@ -51,8 +51,8 @@ Each reference owns its rules and scope.
 
 | Work | Reference |
 | --- | --- |
-| Academic source use, citations, references, links, or attribution | [References and citations](references-and-citations.md), [source preservation](source-preservation.md), [source text](source-text.md) |
-| Quotations, source titles, official wording, or metadata | [Source preservation](source-preservation.md) and [source text](source-text.md) |
+| Academic source use, citations, references, links, or attribution | [References and citations](references-and-citations.md), [source preservation](source-preservation.md), [source text](source-text.md), [quotations](quotations.md) |
+| Quotations, source titles, official wording, or metadata | [Source preservation](source-preservation.md), [quotations](quotations.md), and [source text](source-text.md) |
 | Translated titles, non-Latin scripts, or multilingual source attribution | [Source preservation](source-preservation.md) and [multilingual sources](multilingual-source.md) |
 | Choosing or verifying a governed designation | [Terminology selection](terminology-selection.md); [technical terminology](technical-terminology.md) for designations in its listed fields; [terminology register maintenance](terminology-register-maintenance.md) when maintaining term records |
 | Prose's registered source or term provenance | [Source provenance](source-manifest.md) |
@@ -69,10 +69,13 @@ Apply a named style within its explicitly selected scope. For citation work, the
 [citation rules](references-and-citations.md) and [source preservation](source-preservation.md)
 also apply.
 
-- APA: [APA Style](apa-style.md) for scope, mechanics, headings, and quotations,
-  [APA tables and figures](apa-tables-and-figures.md) for tables, figures, and display attributions,
-  and [APA citations and references](apa-citations-and-references.md) for citations, reference
-  entries, and source forms. Danish adaptations are in the [Danish core](danish-core.md#apa-i-dansk-prosa).
+- APA: [APA Style](apa-style.md) for scope, paper organisation, headings, and quotations,
+  [APA mechanics](apa-mechanics.md) for numbers, grammar, capitalisation, abbreviations, and
+  punctuation, [APA tables and figures](apa-tables-and-figures.md) for tables, figures, and display
+  attributions, [APA citations and references](apa-citations-and-references.md) for in-text
+  citations and reference entries, and [APA source forms and generative AI](apa-source-forms.md)
+  for specific source forms and AI citations. Danish adaptations are in the
+  [Danish core](danish-core.md#apa-i-dansk-prosa).
 - Chicago: [scope and system selection](chicago-scope-and-systems.md) covers the requested writing,
   mechanics, or quotation scope. For citations, use the selected [author-date](chicago-author-date.md)
   or [notes and bibliography](chicago-notes-and-bibliography.md) system.

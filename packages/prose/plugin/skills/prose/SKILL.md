@@ -17,12 +17,7 @@ description: Draft, edit, or review English or Danish prose, such as reports, ac
    context. It flags serial-comma gaps, house-style word and punctuation slips, and filler, cliché,
    and conversational leftovers. When the text keeps a style that omits the serial comma, add
    `--no-serial-comma`, or set `serial_comma = false` in `.prose.toml` at the repository root.
-4. **Hand over.** Return the requested artefact when each requested change is made, the rules of
-   each opened reference are applied, and each finding of `scan_prose.py` is settled. When the user
-   asks for the artefact alone, begin the reply with its first line. When you report a check's
-   result, also say what the check exempted, because a pass says nothing about exempted text.
-   Disclose missing information or unavailable guidance that materially limits the result. Include
-   method when the user requests it.
+4. **Hand over.** Complete the task under [Hand over](#hand-over).
 
 ## Routes
 
@@ -61,3 +56,12 @@ description: Draft, edit, or review English or Danish prose, such as reports, ac
 - **Danish:** For new Danish prose, use [Danish core](references/danish-core.md), including omission
   of the optional start comma, a decimal comma, and a fixed space before `%`. Preserve machine
   formats.
+
+## Hand over
+
+Return the requested artefact when each requested change is made, the rules of each opened
+reference are applied, and each finding of `scan_prose.py` is settled. When the user asks for the
+artefact alone, begin the reply with its first line. When you report a check's result, also say
+what the check exempted, because a pass says nothing about exempted text. Disclose missing
+information or unavailable guidance that materially limits the result. Include method when the user
+requests it.

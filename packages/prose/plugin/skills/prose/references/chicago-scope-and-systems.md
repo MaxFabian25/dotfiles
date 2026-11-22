@@ -19,7 +19,7 @@ Before applying a Chicago rule, record:
 Do not extend a Chicago selection from one scope to another. Apply only recorded rules from this
 branch, a linked operative module, or an authorised copy of the selected edition.
 
-For Chicago quotations, apply [Chicago quotation scope](source-text.md#chicago-quotation-scope).
+For Chicago quotations, apply [Chicago quotation scope](quotations.md#chicago-quotation-scope).
 For Chicago mechanics, apply the Chicago rules in [Select a convention](number-forms.md#select-a-convention)
 and [Abbreviations](terminology-selection.md#abbreviations). For Chicago citations, use the system
 selected below.
@@ -54,5 +54,7 @@ When Chicago controls citations, APA citation and reference-list forms do not co
 When APA controls another scope, Chicago does not displace it. Stop if two controlling requirements
 remain incompatible.
 
-Complete this branch when recorded Chicago scope, citation system, editorial mechanics,
-quotations, and selected source branches are internally consistent.
+Complete this branch when the selecting authority, Chicago scope, edition, single citation system
+(when citations are in scope), and any APA boundary are recorded, each selected mechanics,
+quotation, and source-form module matches that scope, and any unlisted convention is verified or
+flagged as unverified.

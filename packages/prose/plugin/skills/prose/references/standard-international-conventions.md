@@ -37,5 +37,8 @@ order](quantitative-prose.md#comparisons-and-statistical-claims) in quantitative
 - Give an equivalent value in a non-SI unit in parentheses after the SI value when readers need it.
   Apply a documented conversion and rounding method.
 
-Complete this branch when every governed data value uses the selected international convention
-consistently and retains any contract-required syntax.
+Complete this branch when every governed data value follows the data contract's required syntax
+(or, where unspecified, ISO 3166-1 country codes, ISO 639 language codes, amount-first ISO 4217
+currencies, `YYYY-MM-DD` dates, 24-hour times with `Z` or a UTC offset when the time must be
+unambiguous, `+` international phone numbers, and SI units with any needed converted equivalents)
+and running prose uses full country and language names unless the code itself is the subject.

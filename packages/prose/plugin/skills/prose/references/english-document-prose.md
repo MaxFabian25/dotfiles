@@ -15,8 +15,14 @@ by identifying its authored titles, headings, cross-references, appendices, and 
   labels, and required forms.
 - Use sentence case for authored titles and headings unless another selected style controls.
 - End an authored title or heading without a full stop. Retain a meaningful question mark.
-- Omit authored exclamation marks from documentation unless necessary dialogue requires them.
-  Preserve quotations, official titles, and exact interface literals.
+- Reserve exclamation marks in documentation for necessary dialogue, quotations, official titles,
+  and exact interface literals.
+- Label examples of correct and incorrect forms *DO* and *DON'T*, preserving governed labels and
+  source text.
 
 Complete this branch when every English structural label, title, heading, cross-reference,
-appendix, and role uses the selected form consistently.
+appendix, and role follows the rules above: authored titles and headings use sentence case (unless
+another selected style controls) without trailing full stops, directional pointers name their
+cross-reference targets, subsections use *the following sections*, appendices use *Appendix* /
+*appendices* consistently, inanimate subjects take functional verbs, capitals, exclamation marks,
+and *DO*/*DON'T* example labels follow these forms, and governed labels remain intact.

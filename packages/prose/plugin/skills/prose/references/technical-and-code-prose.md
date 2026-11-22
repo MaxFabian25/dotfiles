@@ -4,9 +4,8 @@ Apply this branch to durable technical documentation, commands, paths, identifie
 release notes, and other code-adjacent prose. Read the sections needed for the current choice. For
 storage terminology, technical dates, example network or phone values, command-line syntax, internal
 API documentation, code examples, or source-code comments, also open [Technical formats, commands,
-and code samples](technical-formats-and-code-samples.md).
-Apply the [authority and preservation rules](../SKILL.md#authority-and-preservation) before
-changing a literal, source form, official name, or defined technical term.
+and code samples](technical-formats-and-code-samples.md). Follow the authority and preservation rules
+before changing a literal, source form, official name, or defined technical term.
 
 For an unresolved convention or a requested source audit, consult the [registered developer
 documentation sources](source-evidence/research-corpus.md#interface-and-developer-documentation).
@@ -120,10 +119,10 @@ A *code span* is an inline sequence of code-formatted characters in CommonMark.
 - Use *quality* as a noun unless it belongs to an established compound. Name the relevant property,
   criterion, or context instead of making an unqualified quality claim. Support an evaluative
   quality claim with evidence.
-- Do not make an unqualified performance, cost, reliability, compatibility, security, compliance,
-  or superlative claim.
-  State the measured property, test conditions, version or date, and result. When evidence supports
-  only design intent, use *designed to* or *intended to* and do not imply a guarantee.
+- Support every performance, cost, reliability, compatibility, security, compliance, or superlative
+  claim with the measured property, test conditions, version or date, and result rather than making
+  an unqualified claim. When evidence supports only design intent, use *designed to* or *intended
+  to* and do not imply a guarantee.
 
 ## Versions and time
 
@@ -139,8 +138,9 @@ A *code span* is an inline sequence of code-formatted characters in CommonMark.
   then the fix and its result in the present tense. Anchor the earlier state to the
   update, as in *Before this update*, and write each note as a sentence, not a changelog command
   such as *Fix race in lease renewal*.
-- Avoid documenting future features or products. Do not pre-announce them unless the owning
-  authority has approved publication. Keep unapproved plans out of examples and implications.
+- Document current capabilities rather than future features or products, pre-announcing them only
+  when the owning authority has approved publication and keeping unapproved plans out of examples
+  and implications.
 - Use present tense for current capability.
 - Use *release* to refer to the issuing of software. Do not use it for a software version number.
 - Include a version number with software names as needed, such as when describing a new version or

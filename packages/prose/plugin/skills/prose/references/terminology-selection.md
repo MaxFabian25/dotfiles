@@ -54,7 +54,7 @@ short forms.
 - In an explicitly selected Chicago scope, use its roughly-five-occurrence threshold only within
   the affected article or chapter. Record the departure from the four-use house threshold.
 - In an explicitly selected APA scope that includes writing style or mechanics, apply APA's
-  [three-use guideline](apa-style.md#capitalisation-emphasis-and-abbreviations) to the paper,
+  [three-use guideline](apa-mechanics.md#capitalisation-emphasis-and-abbreviations) to the paper,
   including its exception for a standard abbreviation of a long, familiar term. Record the departure
   from the four-use house threshold.
 - Introduce a needed abbreviation as the full term followed by the abbreviation in parentheses. If
