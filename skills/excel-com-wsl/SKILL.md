@@ -1,6 +1,6 @@
 ---
 name: excel-com-wsl
-description: Open, recalculate, read, change and save an .xlsx in desktop Excel on Windows from WSL, over COM through powershell.exe. Use when a workbook must be checked as Excel itself calculates it, such as openpyxl output with no cached values, results LibreOffice may calculate differently, whether a named input still drives a result, or whether Excel must repair the file, and before writing or debugging PowerShell that drives Excel's COM objects, such as a script failing with 0x800A03EC, a cast error or a calculation timeout.
+description: Open, recalculate, edit, and save `.xlsx` workbooks in Windows desktop Excel from WSL over COM (`powershell.exe`). Use when verifying true Excel calculations, cached values on openpyxl files, LibreOffice differences, input sensitivity, or workbook repairs, and before writing or debugging Excel COM PowerShell (`0x800A03EC`, casts, timeouts).
 ---
 
 # Excel over COM from WSL
