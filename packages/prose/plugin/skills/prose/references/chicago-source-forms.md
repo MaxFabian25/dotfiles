@@ -44,7 +44,7 @@ When only an English translation of a cited title is given, identify the origina
 
 Across reference lists and bibliographies, preserve the source's author sequence, keep every
 author after the first in normal order, and repeat author names in consecutive entries. List up to
-six authors; for more than six, list the first three followed by *et al.*
+six authors; for more than six, list the first three followed by *et al.* (set in roman type).
 Use neither 2-em nor 3-em dash substitution.
 
 | Citation form | Author, editor, or organisation and date | Source details | Locator coverage |
@@ -94,7 +94,7 @@ unsigned reviews, use the hosting periodical. Preserve explicit source attributi
   references within a stated range.
 - Omit *p.* and *pp.* when a number clearly denotes a book page. Add a label when another number
   would make the locator ambiguous.
-- Label chapters, sections, books, notes, appendixes, figures, tables, maps, plates, lines, folios,
+- Label chapters, sections, books, notes, appendices, figures, tables, maps, plates, lines, folios,
   or other nonpage locations clearly. Preserve recto and verso distinctions for numbered leaves.
 - For a numbered note, attach `n` and its number to the page number; use `nn` for consecutive notes
   and `n` alone for a page's only or unnumbered note. For a note that spans two pages, put the page

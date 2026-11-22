@@ -905,13 +905,92 @@ def _claude_manifest_parity(
         )
 
 
+DOTFILES_POLICY_RELATIVE = ".dotfiles-policy.json"
+EXPLICIT_VERSION_SUFFIX_RE = re.compile(r"\.explicit\.[0-9a-f]+$")
+
+
+def _explicit_openai_yaml(source_bytes: bytes | None) -> bytes | None:
+    text = _decode(source_bytes)
+    if text is None or text.count("allow_implicit_invocation: true") != 1:
+        return None
+    return text.replace(
+        "allow_implicit_invocation: true", "allow_implicit_invocation: false", 1
+    ).encode("utf-8")
+
+
+def _explicit_claude_skill_md(source_bytes: bytes | None) -> bytes | None:
+    text = _decode(source_bytes)
+    if text is None:
+        return None
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].strip() != "---":
+        return None
+    for index in range(1, len(lines)):
+        if lines[index].strip() == "---":
+            lines.insert(index, "disable-model-invocation: true\n")
+            return "".join(lines).encode("utf-8")
+    return None
+
+
+def _codex_explicit_manifest_matches(
+    source_bytes: bytes | None, installed_bytes: bytes | None
+) -> bool:
+    ours = _parse_json(source_bytes)
+    theirs = _parse_json(installed_bytes)
+    if not isinstance(ours, Mapping) or not isinstance(theirs, Mapping):
+        return False
+    source_version = ours.get("version")
+    installed_version = theirs.get("version")
+    if not isinstance(source_version, str) or not isinstance(installed_version, str):
+        return False
+    if not installed_version.startswith(source_version):
+        return False
+    suffix = installed_version[len(source_version) :]
+    if EXPLICIT_VERSION_SUFFIX_RE.fullmatch(suffix) is None:
+        return False
+    return {k: v for k, v in theirs.items() if k != "version"} == {
+        k: v for k, v in ours.items() if k != "version"
+    }
+
+
+def _dotfiles_explicit_skills(
+    source: TreeSnapshot, installed: TreeSnapshot, findings: list[Finding]
+) -> set[str] | None:
+    """Validate .dotfiles-policy.json when present and return its explicit skill set."""
+    if DOTFILES_POLICY_RELATIVE not in installed.files:
+        return None
+    policy = _parse_json(installed.files.get(DOTFILES_POLICY_RELATIVE))
+    manifest = _parse_json(source.files.get(".codex-plugin/plugin.json"))
+    source_version = manifest.get("version") if isinstance(manifest, Mapping) else None
+    explicit = policy.get("explicit") if isinstance(policy, Mapping) else None
+    if (
+        not isinstance(policy, Mapping)
+        or policy.get("schema") != 2
+        or policy.get("upstream_version") != source_version
+        or not isinstance(explicit, list)
+        or not explicit
+        or not all(isinstance(name, str) and name in source.skills for name in explicit)
+        or len(explicit) != len(set(explicit))
+    ):
+        _append(
+            findings,
+            "installed-policy-invalid",
+            DOTFILES_POLICY_RELATIVE,
+            "The dotfiles explicit-policy record does not match the source version or skills.",
+        )
+        return None
+    return set(explicit)
+
+
 def _payload_parity(
     source: TreeSnapshot, installed: TreeSnapshot, findings: list[Finding]
 ) -> None:
-    if (
+    is_claude = (
         ".claude-plugin/plugin.json" in installed.files
         and ".codex-plugin/plugin.json" not in installed.files
-    ):
+    )
+    explicit_skills = _dotfiles_explicit_skills(source, installed, findings)
+    if is_claude:
         _claude_manifest_parity(source, installed, findings)
         source = TreeSnapshot(
             {k: v for k, v in source.files.items() if k.startswith("skills/")},
@@ -923,6 +1002,11 @@ def _payload_parity(
                 for k, v in installed.files.items()
                 if not k.startswith(".claude-plugin/")
             },
+            installed.skills,
+        )
+    if explicit_skills is not None:
+        installed = TreeSnapshot(
+            {k: v for k, v in installed.files.items() if k != DOTFILES_POLICY_RELATIVE},
             installed.skills,
         )
     source_paths = set(source.files)
@@ -937,13 +1021,34 @@ def _payload_parity(
     for relative in sorted(source_paths & installed_paths):
         left = source.files[relative]
         right = installed.files[relative]
-        if left is not None and right is not None and left != right:
-            _append(
-                findings,
-                "payload-digest-mismatch",
-                relative,
-                "Installed payload bytes differ from source bytes.",
-            )
+        if left is None or right is None or left == right:
+            continue
+        if explicit_skills is not None:
+            if (
+                not is_claude
+                and relative == ".codex-plugin/plugin.json"
+                and _codex_explicit_manifest_matches(left, right)
+            ):
+                continue
+            parts = relative.split("/")
+            if len(parts) >= 3 and parts[0] == "skills" and parts[1] in explicit_skills:
+                if (
+                    parts[2:] == ["agents", "openai.yaml"]
+                    and _explicit_openai_yaml(left) == right
+                ):
+                    continue
+                if (
+                    is_claude
+                    and parts[2:] == ["SKILL.md"]
+                    and _explicit_claude_skill_md(left) == right
+                ):
+                    continue
+        _append(
+            findings,
+            "payload-digest-mismatch",
+            relative,
+            "Installed payload bytes differ from source bytes.",
+        )
 
 
 def validate(

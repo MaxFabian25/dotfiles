@@ -276,6 +276,68 @@ class ValidateReleaseTests(unittest.TestCase):
         (drifted / "skills/prose/SKILL.md").write_text("Drift.\n", encoding="utf-8")
         self.assertIn("payload-digest-mismatch", self.codes(source, drifted))
 
+    def _apply_explicit_policy(
+        self, source: Path, installed: Path, *, claude: bool
+    ) -> None:
+        manifest = json.loads((source / ".codex-plugin/plugin.json").read_text("utf-8"))
+        self.write_json(
+            installed / ".dotfiles-policy.json",
+            {
+                "schema": 2,
+                "upstream_version": manifest["version"],
+                "upstream_digest": "sha256:0000",
+                "explicit": ["prose-maintainer"],
+            },
+        )
+        yaml_path = installed / "skills/prose-maintainer/agents/openai.yaml"
+        yaml_path.write_text(
+            yaml_path.read_text("utf-8").replace(
+                "allow_implicit_invocation: true", "allow_implicit_invocation: false", 1
+            ),
+            encoding="utf-8",
+        )
+        if claude:
+            skill_path = installed / "skills/prose-maintainer/SKILL.md"
+            lines = skill_path.read_text("utf-8").splitlines(keepends=True)
+            close = next(i for i in range(1, len(lines)) if lines[i].strip() == "---")
+            lines.insert(close, "disable-model-invocation: true\n")
+            skill_path.write_text("".join(lines), encoding="utf-8")
+        else:
+            manifest["version"] = f"{manifest['version']}.explicit.20fd446f2f9db1ad"
+            self.write_json(installed / ".codex-plugin/plugin.json", manifest)
+
+    def test_dotfiles_explicit_policy_installs_pass_and_fail_closed(self) -> None:
+        source = self.clone_source("source")
+        codex_installed = self.clone_source("codex-explicit")
+        self._apply_explicit_policy(source, codex_installed, claude=False)
+        self.assertEqual(validate_release.validate(source, codex_installed), [])
+
+        claude_installed = self.claude_copy(source)
+        self._apply_explicit_policy(source, claude_installed, claude=True)
+        self.assertEqual(validate_release.validate(source, claude_installed), [])
+
+        # Tampering with an explicit skill body still fails closed.
+        tampered = self.claude_copy(source)
+        self._apply_explicit_policy(source, tampered, claude=True)
+        skill_md = tampered / "skills/prose-maintainer/SKILL.md"
+        skill_md.write_text(
+            skill_md.read_text("utf-8") + "\nDrift.\n", encoding="utf-8"
+        )
+        self.assertIn("payload-digest-mismatch", self.codes(source, tampered))
+
+        # Wrong upstream_version in .dotfiles-policy.json fails closed.
+        bad_policy = self.clone_source("codex-bad-policy")
+        self._apply_explicit_policy(source, bad_policy, claude=False)
+        self.write_json(
+            bad_policy / ".dotfiles-policy.json",
+            {
+                "schema": 2,
+                "upstream_version": "0.0.1+stale",
+                "explicit": ["prose-maintainer"],
+            },
+        )
+        self.assertIn("installed-policy-invalid", self.codes(source, bad_policy))
+
     def test_missing_source_evidence_file_is_rejected(self) -> None:
         root = self.clone_source()
         register = root / "skills/prose/references/source-authorities.csv"

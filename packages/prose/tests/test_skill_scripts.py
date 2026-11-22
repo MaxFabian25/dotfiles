@@ -155,8 +155,13 @@ class ScanTests(unittest.TestCase):
         self.assertNotIn("serial-comma", self.checks(text))
 
     def test_pair_inside_a_list_with_its_serial_comma_is_not_flagged(self) -> None:
-        text = "The stack is Microsoft 365, SharePoint and OneDrive, and Power BI.\n"
-        self.assertNotIn("serial-comma", self.checks(text))
+        for text in (
+            "The stack is Microsoft 365, SharePoint and OneDrive, and Power BI.\n",
+            "The scope includes editorial mechanics, paper format and organisation, headings, citations and references, tables and figures, or a stated combination.\n",
+            "Identify the measure, comparator or baseline, and the period when time bounds the values.\n",
+        ):
+            with self.subTest(text=text):
+                self.assertNotIn("serial-comma", self.checks(text))
 
     def test_pair_of_prepositions_after_a_comma_is_not_flagged(self) -> None:
         for text in (
@@ -323,6 +328,18 @@ class ScanTests(unittest.TestCase):
     def test_unslop_patterns_are_flagged(self) -> None:
         found = self.checks("It is not just fast but robust — it delves into data.\n")
         self.assertTrue({"em-dash", "vocabulary", "not-just"} <= set(found))
+
+    def test_technical_noun_underscore_is_not_flagged_as_vocabulary(self) -> None:
+        self.assertNotIn(
+            "vocabulary",
+            self.checks("Use uppercase characters with underscore delimiters.\n"),
+        )
+        for text in (
+            "This result underscores the gap.\n",
+            "The data were meant to underscore the trend.\n",
+        ):
+            with self.subTest(text=text):
+                self.assertIn("vocabulary", self.checks(text))
 
     def test_house_patterns_are_flagged(self) -> None:
         found = self.checks("Bring pens and/or paper, etc... Moreover, read it.\n")

@@ -106,9 +106,43 @@ PREPOSITIONS = {
     "without",
 }
 CLAUSE_END = r"(?=[,.;:!?)]|$)"
-# The rest of a list whose last item has its serial comma, as in
-# "SharePoint and OneDrive, and Power BI": the matched "and" joins a pair inside it.
-LIST_TAIL = re.compile(rf"{ITEM}(?:, {ITEM})*, (?:and|or|nor) ({ITEM}){CLAUSE_END}")
+# The rest of a list whose outer series already has a serial comma, as in
+# "SharePoint and OneDrive, and Power BI" or "citations and references,
+# tables and figures, or a stated combination": the matched conjunction joins
+# a paired item inside the outer list rather than ending a list without a comma.
+LIST_TAIL = re.compile(rf"{ITEM}(?:, [^.;:!?]+)*, (?:and|or|nor) ({WORD})")
+# Words after ", and" that typically open a new clause rather than the final
+# noun-phrase item of an outer list, as in "apples, pears and plums, and then we left".
+CLAUSE_STARTERS = {
+    "then",
+    "we",
+    "they",
+    "he",
+    "she",
+    "it",
+    "i",
+    "you",
+    "there",
+    "so",
+    "yet",
+    "still",
+    "also",
+    "now",
+    "when",
+    "if",
+    "because",
+    "although",
+    "though",
+    "while",
+    "where",
+    "unless",
+    "until",
+    "since",
+    "that",
+    "which",
+    "who",
+    "not",
+}
 FUNCTION_WORDS = {
     "who",
     "which",
@@ -428,8 +462,10 @@ CHECKS = [
                 "showcases?",
                 "showcased",
                 "showcasing",
-                "underscores?",
+                "to underscore",
+                "underscores",
                 "underscored",
+                "underscoring",
                 "tapestry",
                 "testament",
                 "garner",
@@ -705,7 +741,7 @@ def serial_comma(block: Block) -> list[tuple[int, str]]:
         ):
             continue
         tail = LIST_TAIL.match(rest)
-        if tail and tail.group(1).split()[0].lower() not in FUNCTION_WORDS:
+        if tail and tail.group(1).lower() not in CLAUSE_STARTERS:
             continue
         found.append((match.start(), match.group(0).rstrip()))
     return found
