@@ -16,7 +16,7 @@ Before applying a Chicago rule, record:
 - every overlapping requirement and its resolved precedence
 - the citation system for any selected citation scope
 
-Do not extend a Chicago selection from one scope to another. Apply only recorded rules from this
+Keep each Chicago selection confined to its recorded scope, applying only recorded rules from this
 branch, a linked operative module, or an authorised copy of the selected edition.
 
 For Chicago quotations, apply [Chicago quotation scope](quotations.md#chicago-quotation-scope).

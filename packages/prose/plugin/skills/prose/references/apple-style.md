@@ -21,4 +21,7 @@ evidence](source-evidence/apple-style.md).
   plural, possessive, or a verb, rewriting the sentence when needed, such as on every Mac you use
   or the free space on your iPad.
 
-Complete this adapter when every key, interface name, and product name follows these forms.
+Complete this adapter when every interface name (plain text, with quotation marks on multi-word
+sentence-style labels), hyphen-joined key combination in Apple modifier order (with the first-use
+hyphen note), and singular non-possessive Apple product noun form follows these forms, while house
+rules govern the surrounding prose.

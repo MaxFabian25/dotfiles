@@ -3,7 +3,7 @@
 Apply this branch when people, communities, personal or demographic characteristics,
 accessibility terminology, or non-inclusive terms are present.
 
-Apply these inclusive-language rules:
+## Names, self-identification, and examples
 
 - Use the form of name and title that each named person uses. Use that person's pronouns. When a
   name, title, or pronoun is unclear and direct consultation is practical and in scope, ask the
@@ -24,6 +24,9 @@ Apply these inclusive-language rules:
 - Describe people, countries, regions, and cultures with specific, verified facts rather than
   generalisations or positive, neutral, or negative stereotypes.
 - Keep each example truthful to its subject and purpose.
+
+## Technical wording and legacy terms
+
 - Research the current usage and history of a non-inclusive term.
   Consider the audience and context before retaining or replacing it.
 - Prefer a clearer alternative when credible feedback identifies harm or difficulty understanding
@@ -52,6 +55,9 @@ Apply these inclusive-language rules:
   quotation exactly. Format it under its governing convention and explain it on first use.
 - After that explanation, use the preferred term. Repeat the non-inclusive term only when readers
   must identify the code item or designation.
+
+## Personal and demographic characteristics
+
 - Include personal or demographic characteristics only to identify subjects, support claims, explain differences, or complete requested actions.
 - When a personal characteristic meets one of these conditions, describe it as specifically as the evidence and context justify.
 - Use person-first or identity-first language according to the named person's or community's
@@ -65,6 +71,9 @@ Apply these inclusive-language rules:
   source establishes it.
 - Report beliefs, practices, observances, and preferences only when the person states them or a
   source establishes them.
+
+## Gender and pronouns
+
 - Prefer gender-neutral terms, preserving a gendered term when an official title or designation
   requires it.
 - Use a person's confirmed pronouns and title rather than inferring gender, pronouns, or title from

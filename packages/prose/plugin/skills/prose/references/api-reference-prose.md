@@ -3,8 +3,9 @@
 Apply this branch to English public API reference documentation. Use it for public types,
 methods, members, parameters, return values, exceptions, and deprecations.
 
-Do not select it for tutorials, how-to guides, or ordinary explanatory prose.
-Exclude comments that do not publish a public API contract.
+Reserve this branch for published public API contracts, leaving tutorials, how-to guides, ordinary
+explanatory prose, and non-contract comments to [Diátaxis](diataxis.md) or [Technical and
+code-adjacent prose](technical-and-code-prose.md).
 
 Host reference templates, markup, generated signatures, and language-specific conventions control
 their exact forms.

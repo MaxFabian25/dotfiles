@@ -8,7 +8,7 @@ Each reference owns its rules and scope.
 | --- | --- |
 | Clarity, organisation, and presentation | [Reader core](reader-core.md) |
 | Drafting, development, or craft work on essays, talks, or personal narratives | [Authored prose](authored-prose.md) |
-| Academic papers, reports, and theses | [Reader core](reader-core.md), the [development guidance](authored-prose.md#development) in authored prose, [references and citations](references-and-citations.md), [source preservation](source-preservation.md), the selected [named style](#named-styles), the [English core](english-core.md) or [Danish core](danish-core.md), [quantitative prose](quantitative-prose.md), [number forms](number-forms.md), and [tables and figures](tables-and-figures.md) |
+| Academic papers, reports, and theses | [Reader core](reader-core.md), the [development guidance](authored-prose.md#development) in authored prose, [references and citations](references-and-citations.md), [source preservation](source-preservation.md), the selected [named style](#named-styles), and the [English core](english-core.md) or [Danish core](danish-core.md); also [quantitative prose](quantitative-prose.md), [number forms](number-forms.md), and [tables and figures](tables-and-figures.md) when numbers, units, or displays are present |
 | Messages or posts sent in the user's name | [Reader core](reader-core.md#presentation-choices); before posting a critique of others' text, also [Editorial practice](editorial-practice.md) |
 | Matching a supplied voice sample | [Voice samples](editorial-practice.md#voice-samples) |
 | English house word choices and mechanics | [English core](english-core.md) |
@@ -44,15 +44,15 @@ Each reference owns its rules and scope.
 | Public API references in English | [API reference prose](api-reference-prose.md) and [technical prose](technical-and-code-prose.md) |
 | Instructions, procedures, requirements, or warnings | [Instructional prose](instructional-prose.md) |
 | Interface labels and messages | [Interface copy](interface-copy.md) |
-| Instructions involving a named screen, control, device, or field | [Interface instructions](interface-instructions.md) and [interface copy](interface-copy.md) |
+| Instructions involving a named screen, control, device, or field | [Interface instructions](interface-instructions.md); also [interface copy](interface-copy.md) when writing or reviewing user-visible product text |
 | Explicitly required ASD-STE100 for English technical writing | [ASD-STE100](asd-ste100.md) and [technical prose](technical-and-code-prose.md) |
 
 ## Evidence, terminology, and displays
 
 | Work | Reference |
 | --- | --- |
-| Academic source use, citations, references, links, or attribution | [References and citations](references-and-citations.md), [source preservation](source-preservation.md), [source text](source-text.md), [quotations](quotations.md) |
-| Quotations, source titles, official wording, or metadata | [Source preservation](source-preservation.md), [quotations](quotations.md), and [source text](source-text.md) |
+| Academic source use, citations, references, links, or attribution | [References and citations](references-and-citations.md) and [source preservation](source-preservation.md); also [quotations](quotations.md) when quoting and [source text](source-text.md) for translations, transliteration, or work titles |
+| Quotations, source titles, official wording, or metadata | [Source preservation](source-preservation.md); [quotations](quotations.md) for quoted text, ellipses, or quotation layout; [source text](source-text.md) for translations, transliteration, proper nouns, or work titles |
 | Translated titles, non-Latin scripts, or multilingual source attribution | [Source preservation](source-preservation.md) and [multilingual sources](multilingual-source.md) |
 | Choosing or verifying a governed designation | [Terminology selection](terminology-selection.md); [technical terminology](technical-terminology.md) for designations in its listed fields; [terminology register maintenance](terminology-register-maintenance.md) when maintaining term records |
 | Prose's registered source or term provenance | [Source provenance](source-manifest.md) |

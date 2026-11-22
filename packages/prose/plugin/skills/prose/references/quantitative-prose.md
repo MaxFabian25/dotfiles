@@ -4,9 +4,10 @@ Apply this branch when equations, quantities, units, numerical comparisons, or s
 are present. Follow the authority and preservation rules before changing source notation, machine
 syntax, identifiers, or governed labels.
 
-Use the registered UK Analysis Function and ONS authorities for analytical prose, statistical
-language, and causal restraint. Apply `AUTH-OSR-CODE-3` only to public communication of statistics,
-data, or wider analysis. Apply `AUTH-NIST-SP330` only when United States federal scope controls.
+Use the registered UK Analysis Function and ONS authorities in [source
+provenance](source-manifest.md) for analytical prose, statistical language, and causal restraint.
+Apply `AUTH-OSR-CODE-3` only to public communication of statistics, data, or wider analysis. Apply
+`AUTH-NIST-SP330` only when United States federal scope controls.
 
 ## Equations and notation
 

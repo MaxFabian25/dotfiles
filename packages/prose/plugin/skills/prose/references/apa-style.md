@@ -41,11 +41,12 @@ requirement, order the paper as title page, abstract, text, references, footnote
 and appendices, and start each of these on a new page. Footnotes may instead stand at the foot of the
 page, and tables and figures may instead follow the paragraph that first calls them out.
 
-Do not head the introduction *Introduction*. The paper title at the top of the first page of text
-acts as its Level 1 heading, and headings within the introduction start at Level 2. Use only the
-heading levels the paper needs, in order from Level 1. Start each main section at Level 1, give
-sections of equal importance the same level, and give a divided section two or more subsections.
-Do not number or letter headings unless the institution requires it.
+Let the paper title at the top of the first page of text act as the introduction's Level 1 heading
+rather than heading it *Introduction*, and start headings within the introduction at Level 2. Use
+only the heading levels the paper needs, in order from Level 1. Start each main section at Level 1,
+give sections of equal importance the same level, and give a divided section two or more
+subsections. Leave headings unnumbered and unlettered unless the institution requires numbering or
+lettering.
 
 | Level | Format |
 | --- | --- |
@@ -101,11 +102,6 @@ When a quotation exceeds the copyright holder's limit for use without permission
 permission needed and give a copyright attribution in a footnote to the quoted text instead of the
 author–date citation. APA Manual Sections 8.25–8.35 and 12.14–12.18 supply the quotation basis.
 
-## Tables and figures
-
-When the recorded APA scope includes tables or figures, apply
-[APA tables and figures](apa-tables-and-figures.md).
-
 ## Bias-free language
 
 Apply [Inclusive language](inclusive-language.md) to every mention of a personal or demographic
@@ -133,6 +129,7 @@ unverified. Claim conformity only to the selected rules.
 
 Complete this branch when the selecting authority and APA scope are recorded, paper organisation,
 headings, title case, and quotations match these rules (with [APA mechanics](apa-mechanics.md),
-[APA tables and figures](apa-tables-and-figures.md), and [APA citations and
-references](apa-citations-and-references.md) applied where in scope), and any unlisted convention
-is verified or flagged as unverified.
+[APA tables and figures](apa-tables-and-figures.md), [APA citations and
+references](apa-citations-and-references.md), and [APA source forms and generative
+AI](apa-source-forms.md) applied where in scope), and any unlisted convention is verified or flagged
+as unverified.

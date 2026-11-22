@@ -43,12 +43,21 @@ product term below.
 
 ## Input methods and interaction verbs
 
+### Input methods and keyboard paths
+
 - Use a verb that applies to every supported input method when the methods produce the same result.
   Name an input method or gesture only when it matters.
 - In product documentation, give readers a complete procedure for each supported input method.
   Always document keyboard procedures, even when the interface indicates keyboard shortcuts.
 - Keep each alternative method complete. Put alternatives after the primary method or in parallel
   table columns.
+- In HTML, use the `kbd` element for a keyboard key or key combination. In non-HTML markup, use
+  monospace formatting. Use an uppercase letter for a letter key. Spell out modifier-key names.
+  Join keys in a combination with `+`, such as `Control+S`. Use code formatting when a key's value
+  is entered as text.
+
+### Selection, states, and indicators
+
 - Use *select* for choosing an interface object, text, or option. Use *highlighted* for a visual
   state or its change. Do not use *highlight* as a synonym for *select*. Use *choose* for a menu item
   only when the platform establishes that distinction.
@@ -57,6 +66,16 @@ product term below.
 - Describe a command or option as *available* or *not available*. State the action that makes it
   available when known. Reserve *unavailable* for outages or services not offered to the reader.
 - Use *appears dimmed* only for appearance. State availability separately.
+- For a checkbox action, use *select* or *clear*. Describe its state as *selected* or *not selected*.
+- Use *toggle* only as a control noun when the host or accessibility API defines it. State the
+  required *on* or *off* position. In user materials, use *turn on*, *turn off*, *switch between*, or
+  wording that names the intended state.
+- In user materials, use *progress indicator*. Name the operation when context does not make it
+  clear. Report a percentage, count, or time estimate only when the system measures it reliably.
+  In developer materials, use a narrower technical term only when the distinction matters.
+
+### Pointer, mouse, touch, haptics, and connections
+
 - Use *pointer* for the general pointing indicator and *insertion point* for the position where text
   or data is inserted. Use *caret* only when a technical audience needs that term. Use *cursor* only
   for a defined interface, accessibility, or developer concept.
@@ -66,10 +85,6 @@ product term below.
 - Use *press and hold* for a keyboard key, mechanical button, or the physical mouse or trackpad. Use
   *click and hold* for an onscreen item operated with a mouse or trackpad. Use *touch and hold* for a
   touchscreen.
-- In HTML, use the `kbd` element for a keyboard key or key combination. In non-HTML markup, use
-  monospace formatting. Use an uppercase letter for a letter key. Spell out modifier-key names.
-  Join keys in a combination with `+`, such as `Control+S`. Use code formatting when a key's value
-  is entered as text.
 - Describe the user's goal when a gesture is incidental. Use the host's gesture verb and complement
   when the gesture matters. Name fingers or device parts only when readers need them to perform or
   distinguish the gesture. A first definition may name them.
@@ -87,13 +102,6 @@ product term below.
 - Use *connect* for joining devices, components, networks, or systems. Use *plug in* for inserting a
   plug or connector into a port, socket, or outlet. For novice readers, identify an unfamiliar
   connector by its function or a distinguishing physical feature.
-- For a checkbox action, use *select* or *clear*. Describe its state as *selected* or *not selected*.
-- Use *toggle* only as a control noun when the host or accessibility API defines it. State the
-  required *on* or *off* position. In user materials, use *turn on*, *turn off*, *switch between*, or
-  wording that names the intended state.
-- In user materials, use *progress indicator*. Name the operation when context does not make it
-  clear. Report a percentage, count, or time estimate only when the system measures it reliably.
-  In developer materials, use a narrower technical term only when the distinction matters.
 
 ## Software and device actions
 

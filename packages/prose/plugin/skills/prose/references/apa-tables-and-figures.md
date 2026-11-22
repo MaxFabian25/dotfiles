@@ -2,6 +2,8 @@
 
 Apply this branch when the recorded [APA scope](apa-style.md) includes tables and figures.
 
+## Numbering and titles
+
 Treat any display other than a table as a figure. Number tables and figures separately, with Arabic
 numerals, in the order of first mention. Refer to each by number before it appears, such as *Table 2
 shows*, and not by its position or page. Number a display in a text appendix with the appendix
@@ -13,6 +15,8 @@ Put the label and number, such as *Table 1*, in bold above the display. Put the 
 below it in italic APA [title case](apa-style.md#paper-organisation-and-headings) (or Danish
 sentence case and display labels under [APA i dansk prosa](danish-core.md#apa-i-dansk-prosa)),
 without a full stop. Align the number, title, display, and notes flush left.
+
+## Table layout, cells, and figures
 
 Give every table column a heading, including the stub column. Centre the column headings and write
 them, the stub and cell entries, and the notes in sentence case. Left-align stub entries. APA centres
@@ -33,6 +37,8 @@ numbered tables, not *Table 1A* and *Table 1B*. Repeat the heading row when a ta
 another page. In an English figure, write axis labels and legend text in title case and state units
 of measurement, such as in the axis title; in Danish, use Danish sentence case.
 
+## Notes and units
+
 Put notes below the display. Begin a general note with *Note.* in italics, followed by the note text
 in plain type. Use it for the display as a whole. Give explanations, the meaning of emphasis, and
 data sources first, then definitions of non-standard abbreviations and symbols, and end with any
@@ -46,6 +52,8 @@ as *$ millions* may stand without a numeral. State a unit that applies to the wh
 the general note, such as *Amounts are in millions of U.S. dollars*. The manual places units in headings
 and stub entries and gives the general note to information about the whole table; the general-note
 placement of a table-wide unit extends those rules.
+
+## Sources, attributions, and accessibility
 
 Cite data that you reconfigure or reanalyse to produce different numbers with ordinary author–date
 citations and locators in a note or source column, and list the sources in the reference list. When

@@ -5,10 +5,11 @@ or cultures. These rules are language-neutral; apply a language adapter separate
 selected, and follow the authority and preservation rules before changing source, product, or
 machine forms.
 
-For technical text intended for translation, consult `AUTH-ISO-18968` within its registered
-publication stage. Use `AUTH-UNICODE-UTS35-NUMBERS` and pinned CLDR records for locale data, not as
-general prose authorities. Make no ISO 18968 conformance claim while the registered work remains
-under publication.
+For technical text intended for translation, consult `AUTH-ISO-18968` in [source
+provenance](source-manifest.md) within its registered publication stage. Use
+`AUTH-UNICODE-UTS35-NUMBERS` and pinned CLDR records for locale data, not as general prose
+authorities. Make no ISO 18968 conformance claim while the registered work remains under
+publication.
 
 ## Basic rules
 
@@ -47,9 +48,6 @@ under publication.
 - For machine-translated content, verify that acronyms resembling ordinary words remain unchanged.
 
 ## English localisation adapter
-
-Apply these rules to English content prepared for localisation or for readers across languages,
-regions, or cultures:
 
 - Use words in their primary sense when the subject permits it.
 - Use standard subject-verb-object order when it states the relationship accurately.
