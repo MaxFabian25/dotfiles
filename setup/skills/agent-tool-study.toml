@@ -2,7 +2,7 @@ public = true
 
 [source]
 local = "skills/agent-tool-study"
-tree = "sha256:68004d77d1f5651fc8dc8ead3d39a745f847a128fdade2b812b92cdcdcdc479b"
+tree = "sha256:a46fc89997594863c54f775a8239cc1d5ea298c37cb3c533fb27e7df09e3aa73"
 
 [place]
 agents = true

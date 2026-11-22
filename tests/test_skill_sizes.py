@@ -15,12 +15,25 @@ import yaml
 REPO = Path(__file__).resolve().parents[1]
 ROOTS = ('skills', 'packages')
 DESCRIPTION_LIMIT = 1024
+EXPLICIT_DESCRIPTION_LIMIT = 200
 LINE_LIMIT = 600
 BYTE_LIMIT = 30_000
+EXPLICIT_TRIGGER = re.compile(
+    r'\b[Uu]se\s+(?:when|for|only\s+when|to|also|before|after)\b|\b[Tt]rigger(?:s|ed)?\s+(?:on|when)\b')
+EXPLICIT_FIX = ('An explicit-only skill (`disable-model-invocation: true`) takes a short human-facing summary '
+                'without model trigger lists.')
 # Bytes on 2026-11-12 of the one file that was already past BYTE_LIMIT. The number is a cap on that file. An edit
 # that shrinks the file may leave the number or lower it, and one that brings it under BYTE_LIMIT deletes its entry.
 # Add no entry.
 CEILINGS = {}
+# A SKILL.md that was split by branch, and the bytes it may reach, so that it does not grow back. Raise a number
+# only with the user's yes.
+BUDGETS = {
+    'skills/browser-and-computer-use/SKILL.md': 15_500,
+    'skills/excel-com-wsl/SKILL.md': 10_200,
+    'skills/powerpoint-com-wsl/SKILL.md': 3_000,
+    'skills/planted-error-checks/SKILL.md': 7_200,
+}
 FIX = 'Move a part that only some tasks reach into its own file behind a one-line pointer, or split the file by branch.'
 DATED = re.compile(r'\b20\d\d\b|\b[Oo]n \d{1,2}(?:(?: and | to |-|–)\d{1,2})?\s+(?:January|February|March|April|May|June|July|August|September|'
                    r'October|November|December)\b')
@@ -40,6 +53,33 @@ def frontmatter(path):
 def owned(pattern):
     return sorted(path for root in ROOTS for path in (REPO / root).rglob(pattern)
                   if path.is_file() and not INSTALLED.intersection(path.relative_to(REPO).parts))
+
+
+def unreachable_markdown(skill_md):
+    """Markdown files inside one skill's folder that no link or filename from SKILL.md (or its CSV indexes) reaches."""
+    folder = skill_md.parent.resolve()
+    docs = {path.resolve() for path in folder.rglob('*.md')
+            if path.is_file() and not INSTALLED.intersection(path.relative_to(folder).parts)}
+    index_text = '\n'.join(
+        path.read_text(encoding='utf-8', errors='ignore')
+        for path in folder.rglob('*.csv')
+        if path.is_file() and not INSTALLED.intersection(path.relative_to(folder).parts)
+    )
+    visited = {skill_md.resolve()}
+    queue = [skill_md.resolve()]
+    while queue:
+        current = queue.pop(0)
+        text = current.read_text(encoding='utf-8') + '\n' + index_text
+        for candidate in list(docs - visited):
+            rel_root = candidate.relative_to(folder).as_posix()
+            try:
+                rel_current = candidate.relative_to(current.parent).as_posix()
+            except ValueError:
+                rel_current = None
+            if rel_root in text or (rel_current and rel_current in text) or candidate.name in text:
+                visited.add(candidate)
+                queue.append(candidate)
+    return sorted(path.relative_to(folder).as_posix() for path in (docs - visited))
 
 
 class SkillSizes(unittest.TestCase):
@@ -80,6 +120,9 @@ class SkillSizes(unittest.TestCase):
             lines, size = len(data.splitlines()), len(data)
             with self.subTest(file=name):
                 self.assertLess(lines, LINE_LIMIT, f'{name} has {lines} lines and a whole read takes under {LINE_LIMIT}. {FIX}')
+                if name in BUDGETS:
+                    self.assertLessEqual(size, BUDGETS[name],
+                                         f'{name} is {size} bytes and its budget is {BUDGETS[name]}. {FIX}')
                 if name in CEILINGS:
                     self.assertLessEqual(size, CEILINGS[name],
                                          f'{name} is {size} bytes, over its cap of {CEILINGS[name]}, which is its size on '
@@ -151,6 +194,66 @@ class SkillSizes(unittest.TestCase):
                      '---\ndescription: Use it for ES2020 modules and 12026 rows.\n---\nbody\n',
                      'On 4 November 2026, a body with no frontmatter.\n', '---\n- On 4 November 2026\n---\nbody\n'):
             self.assertEqual(failures(text), [], text)
+
+    def test_explicit_only_skills_have_concise_human_descriptions(self):
+        for path in owned('SKILL.md'):
+            name = path.relative_to(REPO).as_posix()
+            loaded = frontmatter(path)
+            if not isinstance(loaded, dict) or loaded.get('disable-model-invocation') is not True:
+                continue
+            description = str(loaded.get('description') or '')
+            with self.subTest(skill=name):
+                self.assertLessEqual(
+                    len(description), EXPLICIT_DESCRIPTION_LIMIT,
+                    f'{name} is explicit-only with a {len(description)}-character description '
+                    f'(limit {EXPLICIT_DESCRIPTION_LIMIT}). {EXPLICIT_FIX}')
+                found = EXPLICIT_TRIGGER.search(description)
+                self.assertIsNone(
+                    found,
+                    f'{name} is explicit-only and keeps a trigger phrase ("{found and found.group()}"). {EXPLICIT_FIX}')
+
+    def test_every_skill_markdown_file_is_reachable_from_skill_md(self):
+        for path in owned('SKILL.md'):
+            name = path.relative_to(REPO).as_posix()
+            with self.subTest(skill=name):
+                missing = unreachable_markdown(path)
+                self.assertEqual(
+                    missing, [],
+                    f'{name} leaves Markdown files unreachable from SKILL.md: {", ".join(missing)}. '
+                    'Add a pointer with its trigger condition or delete the unused file.')
+
+    def test_explicit_description_and_reachability_checks_catch_regressions(self):
+        def run(files, test_name):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                with mock.patch(f'{__name__}.REPO', root):
+                    for rel, text in files.items():
+                        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                        (root / rel).write_text(text, encoding='utf-8')
+                    result = unittest.TestResult()
+                    SkillSizes(test_name).run(result)
+            self.assertEqual(result.errors, [], files)
+            return [failure for _, failure in result.failures]
+
+        explicit = 'test_explicit_only_skills_have_concise_human_descriptions'
+        self.assertEqual(run({'skills/one/SKILL.md': '---\ndisable-model-invocation: true\ndescription: Summarize weekly notes.\n---\n'}, explicit), [])
+        self.assertEqual(run({'skills/one/SKILL.md': '---\ndescription: Use when the user asks for summaries.\n---\n'}, explicit), [])
+        [trigger_fail] = run({'skills/one/SKILL.md': '---\ndisable-model-invocation: true\ndescription: Summarize notes. Use when asked.\n---\n'}, explicit)
+        self.assertIn('Use when', trigger_fail)
+        [length_fail] = run({'skills/one/SKILL.md': f'---\ndisable-model-invocation: true\ndescription: {"a" * (EXPLICIT_DESCRIPTION_LIMIT + 1)}\n---\n'}, explicit)
+        self.assertIn(f'limit {EXPLICIT_DESCRIPTION_LIMIT}', length_fail)
+
+        reach = 'test_every_skill_markdown_file_is_reachable_from_skill_md'
+        self.assertEqual(run({
+            'skills/one/SKILL.md': '---\ndescription: One.\n---\nRead [a](references/a.md).\n',
+            'skills/one/references/a.md': 'See [b](b.md).\n',
+            'skills/one/references/b.md': 'Details.\n',
+        }, reach), [])
+        [orphan_fail] = run({
+            'skills/one/SKILL.md': '---\ndescription: One.\n---\nBody.\n',
+            'skills/one/references/incidents.md': 'Unlinked.\n',
+        }, reach)
+        self.assertIn('references/incidents.md', orphan_fail)
 
 
 if __name__ == '__main__':

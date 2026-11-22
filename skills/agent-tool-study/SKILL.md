@@ -54,9 +54,11 @@ Make the runner copy the brief, the inputs and its own scripts into the run fold
 
 Interleave the setups, one run of each in turn, so drift and warm caches favour none. A harness fault found partway through voids every run the faulty code scored: rerun those runs, keep the voided ones out of the comparison, and say so in the method.
 
-Keep signed-in setups, such as browser profiles, desktop apps and test accounts, signed in and ready until the user accepts the findings, because a review often needs a rerun and a fresh sign-in costs the user time or risks a lockout. Write each one and its cleanup step where you keep what you still owe the user, such as `~/.config/agents/open-items.md`.
+Keep signed-in setups, such as browser profiles, desktop apps and test accounts, signed in and ready until the user accepts the findings, because a review often needs a rerun and a fresh sign-in costs the user time or risks a lockout. Record each one and its cleanup step in the task's obligation tracker.
 
 A re-run of one setup can't be interleaved with runs that already finished, so it is a before-and-after on a later date. Rebuild its inputs from that setup's archived run and compare them byte for byte, because the current harness can hold fixes made later for other setups. Hold the app, model and harness versions to the original run records, and tell the user before counting if one has moved. Replacing a published number is a method change under step 6, so state the date gap. Credit no drop to a cause the re-run can't isolate, such as one line of a file it removed whole.
+
+This step is done when every planned counted run finished on an interleaved schedule (or any non-interleaved re-run matches its archived inputs byte for byte), each run is committed locally, and no tracked result file was overwritten unexpectedly.
 
 ## 5. Analyse
 
@@ -71,6 +73,8 @@ An agent's account of how its tool behaves is a lead. Before you publish a claim
 Check each claim pooled and within every level of each factor the reference data varies on, such as machine, operating system or date, whether or not the text names that factor. Test it at its sentence's own quantifier. Where the post's build allows it, write each claim as a check that fails the build when the data stops supporting it.
 
 A scoring rule set after the results are in, such as counting a step the first study didn't check, changes which runs pass. Before you adopt one, apply it to your runs and to the earlier study's, and name each run it flips. If the earlier data can't be scored by the rule, the comparison is no longer like for like, so tell the user.
+
+This step is done when every claim has been checked pooled and across each varying factor using the earlier study's derivation code, and any harness fault or scoring-rule flip is accounted for.
 
 ## 6. Write and publish
 
@@ -90,3 +94,5 @@ Give the reviewer the user's earlier cuts as fixed rules, from the task's decisi
 Before publishing, run the repository's publishing gates, such as the passes a site's verify doc lists, on the final draft.
 
 When a flaw is found after publication, quote each published sentence it touches before you say what it breaks, and set the severity from those sentences.
+
+This step is done when a fresh reviewer has answered all four questions on the final draft, every repository publishing gate passes, and any post-publication flaw cites the exact published sentences it affects.
