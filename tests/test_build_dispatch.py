@@ -315,7 +315,7 @@ class BuildDispatch(unittest.TestCase):
         self.assertEqualInOrder(self.built_json(release / '.codex-plugin/upstream.json'), {
             'repository': 'https://github.com/example/snap', 'commit': None, 'sourceKind': 'personal', 'version': version,
             'selectedSkills': ['one'], 'selectedSources': {},
-            'sourceSnapshot': str(self.root / 'engine/standalone-snapshots/kit' / stored.name),
+            'sourceSnapshot': 'standalone-snapshots/kit/' + stored.name,
             'snapshotSha256': stored.name, 'sourceFileHashes': {'one/SKILL.md': sha(snapshot_skill('one'))},
             'portabilityChanges': [],
             'packagedFileHashes': self.packaged(release, ['.codex-plugin/plugin.json', 'skills/one/SKILL.md'])})

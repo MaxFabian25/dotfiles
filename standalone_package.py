@@ -65,7 +65,11 @@ def build_snapshot(name: str, recipe: SnapshotRecipe, source: BuildSource, sourc
             'repository': manifest.get('repository', 'Personal local files'),
             'commit': record.get('commit'), 'sourceKind': source.metadata['sourceKind'], 'version': version,
             'selectedSkills': selected, 'selectedSources': record.get('selectedSources', {}),
-            'sourceSnapshot': str(source_snapshot), 'snapshotSha256': record['snapshotSha256'],
+            # Relative to the build root, so a release staged outside the checkout, such as under
+            # ~/.agents/plugins/sources, has one content address whichever checkout or worktree reads it.
+            'sourceSnapshot': (source_snapshot.relative_to(output_root).as_posix()
+                               if source_snapshot.is_relative_to(output_root) else str(source_snapshot)),
+            'snapshotSha256': record['snapshotSha256'],
             'sourceFileHashes': record['fileHashes'], 'portabilityChanges': record.get('portabilityChanges', []),
             'packagedFileHashes': files(stage),
         }
