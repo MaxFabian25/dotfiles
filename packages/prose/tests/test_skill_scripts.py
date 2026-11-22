@@ -296,6 +296,34 @@ class ScanTests(unittest.TestCase):
     def test_markdown_code_fence_is_skipped(self) -> None:
         self.assertEqual(self.checks("```\nx — y... and/or z\n```\n"), [])
 
+    def test_multi_backtick_inline_code_is_skipped(self) -> None:
+        self.assertEqual(self.checks("Use ``a — b and/or c`` here.\n"), [])
+
+    def test_markdown_emphasis_does_not_hide_series_or_break_openers(self) -> None:
+        for text in (
+            "We bought *apples*, *pears* and *plums*.\n",
+            "Use **red**, **green** and **blue**.\n",
+        ):
+            with self.subTest(text=text):
+                self.assertIn("serial-comma", self.checks(text))
+        self.assertNotIn(
+            "serial-comma",
+            self.checks(
+                "- **Intent clarification.** Before acting, clarify or disambiguate the input.\n"
+            ),
+        )
+
+    def test_markdown_blockquote_preserves_sentence_boundaries(self) -> None:
+        text = "> We bought apples, pears and plums.\n> Moreover, it delves.\n"
+        found = set(self.checks(text))
+        self.assertTrue({"serial-comma", "connective", "vocabulary"} <= found)
+
+    def test_markdown_table_escaped_pipe_keeps_cell_intact(self) -> None:
+        table = (
+            "| Col A | Col B |\n| --- | --- |\n| It is not just a \\| b but c | ok |\n"
+        )
+        self.assertEqual(self.checks(table), ["not-just"])
+
     def test_yaml_frontmatter_is_skipped_and_body_line_numbers_hold(self) -> None:
         text = (
             "---\n"

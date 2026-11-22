@@ -661,6 +661,14 @@ def _frontmatter_end(raw_lines: list[str]) -> int:
     return 0
 
 
+def _strip_emphasis(text: str) -> str:
+    text = re.sub(r"\*\*(\S(?:.*?\S)?)\*\*", r"\1", text)
+    text = re.sub(r"__(\S(?:.*?\S)?)__", r"\1", text)
+    text = re.sub(r"(?<!\*)\*(\S(?:[^*]*?\S)?)\*(?!\*)", r"\1", text)
+    text = re.sub(r"(?<![\w_])_(\S(?:[^_]*?\S)?)_(?![\w_])", r"\1", text)
+    return text
+
+
 def text_blocks(source: str) -> list[Block]:
     blocks: list[Block] = []
     lines: list[str] = []
@@ -668,7 +676,7 @@ def text_blocks(source: str) -> list[Block]:
 
     def flush() -> None:
         nonlocal lines
-        text = " ".join(lines).strip()
+        text = _strip_emphasis(" ".join(lines).strip())
         if text:
             blocks.append(Block(text, kind, start))
         lines = []
@@ -676,14 +684,15 @@ def text_blocks(source: str) -> list[Block]:
     raw_lines = source.splitlines()
     body_start = _frontmatter_end(raw_lines)
     for number, raw in enumerate(raw_lines[body_start:], body_start + 1):
-        stripped = raw.strip()
+        unquoted = re.sub(r"^\s*(?:>\s*)+", "", raw)
+        stripped = unquoted.strip()
         if stripped.startswith(("```", "~~~")):
             flush()
             fenced = not fenced
             continue
         if fenced:
             continue
-        line = re.sub(r"`[^`]*`", "code", raw)
+        line = re.sub(r"(`+)(?!`)(.+?)(?<!`)\1(?!`)", "code", unquoted)
         line = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", line)
         line = re.sub(r"https?://\S+", "link", line).rstrip()
         if not line.strip():
@@ -698,9 +707,15 @@ def text_blocks(source: str) -> list[Block]:
             continue
         if line.lstrip().startswith("|"):
             flush()
-            for cell in line.strip().strip("|").split("|"):
-                if cell.strip() and not re.fullmatch(r"\s*:?-{2,}:?\s*", cell):
-                    blocks.append(Block(cell.strip(), "cell", number))
+            row = line.strip()
+            if row.startswith("|"):
+                row = row[1:]
+            if row.endswith("|") and not row.endswith(r"\|"):
+                row = row[:-1]
+            for raw_cell in re.split(r"(?<!\\)\|", row):
+                cell = _strip_emphasis(raw_cell.replace(r"\|", "|").strip())
+                if cell and not re.fullmatch(r":?-{2,}:?", cell):
+                    blocks.append(Block(cell, "cell", number))
             continue
         if re.match(r"\s*(?:[-*+]|\d+[.)])\s", line):
             flush()
@@ -709,7 +724,7 @@ def text_blocks(source: str) -> list[Block]:
             continue
         if not lines:
             kind, start = (
-                ("item" if kind == "item" and raw[:1].isspace() else "para"),
+                ("item" if kind == "item" and unquoted[:1].isspace() else "para"),
                 number,
             )
         lines.append(line.strip())
