@@ -44,3 +44,7 @@ when a revision needs an experience or feeling that the author has not supplied.
 
 Change a fragment, long sentence, or uneven paragraph only when it obstructs comprehension or
 fails the requested style.
+
+Complete this branch when each paragraph advances the piece, supported objections or limitations
+are addressed, unresolved author questions are settled, and craft choices from the source remain
+intact.

@@ -65,9 +65,10 @@ Apply a named style within its explicitly selected scope. For citation work, the
 [citation rules](references-and-citations.md) and [source preservation](source-preservation.md)
 also apply.
 
-- APA: [APA Style](apa-style.md) for scope, mechanics, headings, tables, and figures, and [APA
-  citations and references](apa-citations-and-references.md) for citations, reference entries, and
-  source forms. Danish adaptations are in the [Danish core](danish-core.md#apa-i-dansk-prosa).
+- APA: [APA Style](apa-style.md) for scope, mechanics, headings, and quotations,
+  [APA tables and figures](apa-tables-and-figures.md) for tables, figures, and display attributions,
+  and [APA citations and references](apa-citations-and-references.md) for citations, reference
+  entries, and source forms. Danish adaptations are in the [Danish core](danish-core.md#apa-i-dansk-prosa).
 - Chicago: [scope and system selection](chicago-scope-and-systems.md) covers the requested writing,
   mechanics, or quotation scope. For citations, use the selected [author-date](chicago-author-date.md)
   or [notes and bibliography](chicago-notes-and-bibliography.md) system.

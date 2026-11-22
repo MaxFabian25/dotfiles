@@ -79,6 +79,5 @@ abbreviation. For its grammatical form:
 - Use a plural noun when the number can vary. Use *one or more* when both singular and plural need
   explicit mention.
 
-Check the changed sentence in context: its actor, time, emphasis, condition, and claim must retain
-the intended meaning. A grammatical alternative does not authorise changing supplied voice or
-source wording.
+Complete the grammar edit when each changed sentence keeps its intended actor, time, emphasis,
+condition, and claim in context, without altering supplied voice or source wording.

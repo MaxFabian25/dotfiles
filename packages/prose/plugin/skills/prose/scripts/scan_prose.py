@@ -6,7 +6,7 @@ Usage:
   scan_prose.py - < draft.txt
 Options:
   --only house    only the English house choices in references/english-core.md
-  --only unslop   only the patterns the unslop writing passes remove
+  --only unslop   only filler, cliché, and AI-style punctuation checks
   --passive       also flag passive verbs with no "by" actor (noisy)
   --serial-comma  force the serial-comma check on, overriding .prose.toml
   --no-serial-comma
@@ -402,7 +402,7 @@ CHECKS = [
         "unslop",
         "em-dash",
         re.compile(r"—|\s–\s|\s--\s"),
-        "replace the dash with a full stop or comma",
+        "recast with a full stop, comma pair, parentheses, or colon",
     ),
     Check(
         "unslop",
@@ -532,7 +532,7 @@ CHECKS = [
         re.compile(
             rf"(?:^|[.!?] )(?:{WORD} ){{4,}}{WORD}: [a-z]{WORD}(?: {WORD}){{4,}}"
         ),
-        "use a colon only before a list or example",
+        "check whether a full stop fits better, or capitalise after the colon if a complete sentence follows",
         frozenset({"para", "item"}),
     ),
     Check(
@@ -611,6 +611,20 @@ def html_blocks(source: str) -> list[Block]:
     return parser.blocks
 
 
+def _frontmatter_end(raw_lines: list[str]) -> int:
+    """Return the 0-based index of the first line after YAML frontmatter, or 0."""
+    if not raw_lines or raw_lines[0].strip() != "---":
+        return 0
+    has_key = False
+    for index in range(1, len(raw_lines)):
+        stripped = raw_lines[index].strip()
+        if stripped in ("---", "..."):
+            return index + 1 if has_key else 0
+        if re.match(r"[A-Za-z0-9_-]+\s*:", stripped):
+            has_key = True
+    return 0
+
+
 def text_blocks(source: str) -> list[Block]:
     blocks: list[Block] = []
     lines: list[str] = []
@@ -623,7 +637,9 @@ def text_blocks(source: str) -> list[Block]:
             blocks.append(Block(text, kind, start))
         lines = []
 
-    for number, raw in enumerate(source.splitlines(), 1):
+    raw_lines = source.splitlines()
+    body_start = _frontmatter_end(raw_lines)
+    for number, raw in enumerate(raw_lines[body_start:], body_start + 1):
         stripped = raw.strip()
         if stripped.startswith(("```", "~~~")):
             flush()
