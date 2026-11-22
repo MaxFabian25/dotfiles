@@ -5,7 +5,7 @@ description: Open, recalculate, read, change and save an .xlsx in desktop Excel 
 
 # Excel over COM from WSL
 
-A clean LibreOffice recalculation doesn't show that Excel opens a file without a repair or calculates the same numbers. Desktop Excel on the Windows host is the authority. Drive it over COM from WSL with Windows PowerShell.
+Desktop Excel on Windows is the authority for workbook repair and calculation results (LibreOffice recalculation does not prove Excel opens a file cleanly or produces identical numbers). Drive it from WSL over COM through Windows PowerShell.
 
 ## Check a workbook
 
@@ -13,48 +13,44 @@ A clean LibreOffice recalculation doesn't show that Excel opens a file without a
 python3 -I scripts/excel.py model.xlsx --read Result --read 'Model!B2:B4' --set Growth=0.1 --save baseline.xlsx
 ```
 
-`REF` is a workbook-scoped name or a `Sheet!A1` range, and names one cell or one rectangle. A sheet name goes in single quotes unless it holds only letters, digits and underscores, as in `'My sheet'!A1`, and each apostrophe in a quoted name is doubled, as in `'It''s'!B2`. The letters can be of any script, with their accents, so `Økonomi!A1` needs no quotes. In a shell script or an agent's shell, put a quoted `REF` in double quotes, as in `--read "'It''s'!B2"`, which one `excel.py` job read through bash on 12 November 2026. An interactive bash takes the `!` in double quotes for a history reference and runs nothing, as a probe in bash 5.2 showed that day. Inside double quotes a shell also takes the `$` of an `address` such as `'It''s'!$B$2` for a variable, so leave each `$` out, because `B2` names the same cell, or write it as `\$`: a probe in bash 5.2 on 13 November 2026 turned `"'a=b'!$A$1=5"` into `'a=b'!=5`. `--set REF=VALUE` takes a number, `true`, `false`, `null` or text, and `--set REF==0.1` writes the formula `=0.1`. The `REF` ends at the first `=`, or at the first `=` after the quoted sheet name it opens with, so `--set "'a=b'!A1=5"` sets `A1` on the sheet `a=b`.
+### Reference syntax and quoting
 
-The script copies the workbook and `scripts/excel-job.ps1` into a job folder in the Windows user's temp folder and runs them there. Excel gets a hidden instance of its own, with macros, link updates, events and alerts off. It opens the copy, recording any repair, rebuilds the calculation and reads each `REF`. With `--set` it changes those cells, recalculates and reads again. It saves the copy, reopens it, reads once more and quits, then the script deletes the job folder.
+- `REF` is a workbook-scoped name or a `Sheet!A1` cell/rectangle. Quote sheet names containing characters outside letters (any script/accent, e.g. `Økonomi!A1`), digits, and underscores (e.g. `'My sheet'!A1`), doubling embedded apostrophes (`'It''s'!B2`).
+- In shell scripts and agent shells, wrap a quoted `REF` in double quotes (`--read "'It''s'!B2"`) and omit `$` anchors (`B2` instead of `$B$2`, or escape as `\$`) so double-quoted shells do not expand variables ([incidents](references/incidents.md)); in interactive bash, avoid double-quoted `!` history expansion.
+- `--set REF=VALUE` accepts numbers, `true`, `false`, `null`, or text; `--set REF==0.1` writes formula `=0.1`. `REF` ends at the first `=` outside a leading quoted sheet name (`--set "'a=b'!A1=5"` sets `A1` on sheet `a=b`).
+- Read "How a REF reads now" in [references/ref-parsing.md](references/ref-parsing.md) before copying an `errors` entry or `address` back as a `REF`, using quoted/non-ASCII sheets, sheet-scoped names, multi-area ranges, table columns, or non-range names, or changing `REF` parsing in `excel-job.ps1`/`excel.py`.
 
-For how the job waits for a busy Excel, and what `busy_retries` and a `read_error` of `Excel gave no answer for …` mean, read [references/busy-excel.md](references/busy-excel.md).
+### Execution and JSON output
 
-It prints JSON, or writes it to `--json OUT.json` and prints one line:
+The script copies the workbook and `scripts/excel-job.ps1` into a Windows temp job folder, starts an isolated hidden Excel (macros, link updates, events, alerts off), opens the copy (recording repairs), recalculates, reads each `REF`, applies any `--set` edits and recalculates, saves, reopens, reads again, quits Excel, and deletes the job folder.
+
+- For busy-Excel retries and `Excel gave no answer for …` read errors, read [references/busy-excel.md](references/busy-excel.md).
+- For `errors` scanning and `errors_unscanned` rules (or comparing against pre-refactor `SpecialCells` output), read [references/error-scan-history.md](references/error-scan-history.md).
+
+`excel.py` prints JSON (or writes `--json OUT.json` and prints one line):
 
 | Field | Holds |
 |---|---|
 | `open` | `load` (`normal`, `repair` or `extract data`), `repaired`, `failed_loads`, `external_links` |
 | `settings` | calculation mode as opened, iteration, force full calculation |
-| `base`, `after`, `reopened.values` | each `REF` at open, after the sets, and after the save and reopen: its `address`, such as `'Model'!$B$4`, and `value`, `text`, `formula`, or `values` for a range |
-| `ok` | true when Excel finished the job, every read gave an answer and the error scan could tell for every sheet |
-| `errors` | the cells holding an error value that a formula made, by sheet |
-| `errors_unscanned` | the sheets whose error cells the scan could not list, each with its `sheet` and the `reason` |
-| `error`, `error_line` | why the job failed, and the line of `excel-job.ps1` that stopped it, if one did |
-| `busy_retries` | how many times a call waited for a busy Excel |
-| `runner` | `timed_out`, and `stopped`, the processes the script tried to stop, each with its outcome |
-| `excel` | Excel's `version`, `build`, `os`, `pid`, its Office log `session`, and a `session_reason` when the job found none |
-| `office_logs`, `runner.office_logs` | the Office log files of the job's Excel session that the job deleted, or that the script deleted after it stopped that Excel: `session`, `removed`, `bytes`, `left`, and a `reason` when it left any, found none or found no session |
-| `timings_ms` | elapsed time at each step |
+| `base`, `after`, `reopened.values` | each `REF` at open, after sets, and after save/reopen (`address` plus `value`, `text`, `formula`, or `values`) |
+| `ok` | true when Excel finished, every read succeeded, and error scanning covered every sheet |
+| `errors` | cells holding formula error values (e.g. `{"error": "#DIV/0!"}`), by sheet |
+| `errors_unscanned` | sheets the scan could not list (`sheet` and `reason`) |
+| `error`, `error_line` | failure reason and stopping line of `excel-job.ps1` |
+| `busy_retries` | count of busy-Excel wait retries |
+| `runner` | `timed_out` and `stopped` process outcomes |
+| `excel` | Excel `version`, `build`, `os`, `pid`, Office log `session`, and `session_reason` if absent |
+| `office_logs`, `runner.office_logs` | session Office logs deleted (`session`, `removed`, `bytes`, `left`, `reason`) |
+| `timings_ms` | elapsed milliseconds per step |
 
-An error value reads as `{"error": "#DIV/0!"}`. The exit status is 0, with `ok` true, when Excel finished the job, every read gave an answer and the error scan could tell for every sheet. Otherwise it is 1 and `error` says why, so a damaged file exits 1 with its `failed_loads` filled in. `--job-timeout` (300 s) stops only this job's Excel and PowerShell, and `--calc-timeout` (120 s) limits each calculation and each call's wait for a busy Excel, so several long waits can add up to the job's limit. When the job's PowerShell ends without a result, the script stops that job's Excel by its process ID, and `runner.stopped` lists it. A limit that falls while Excel is still starting waits up to 60 s for that process ID, because ending PowerShell first left a hidden Excel running in a fixture run on 12 November 2026.
+### Failure handling, caching, logs, and claims
 
-A read that failed, such as a `REF` the workbook lacks, fails the job. `error` says how many reads failed and names the first, as in `2 of 4 reads failed; the first is NoSuchName at open: …`, where a `REF` that fails at open and after the reopen counts twice. The reads that worked keep their values in `base`, `after` and `reopened.values`, and `--save` still keeps the copy, because Excel finished it. So a caller that tolerates a bad reference has to read the ranges of a failed job.
-
-A `REF` reads as follows. [references/ref-parsing.md](references/ref-parsing.md) keeps what each release changed for callers and the runs that showed it: read it before you change how `excel-job.ps1` or `excel.py` takes a `REF` apart or looks it up, and when a `REF` fails or reads otherwise than this list says or than an older script read it.
-
-The list is under "How a REF reads now" in [references/ref-parsing.md](references/ref-parsing.md): read it before you copy an `errors` entry or an `address` back as a `REF`, and when a `REF` names a sheet in quotes or with letters outside A to Z, a name scoped to a sheet, several rectangles, a table column, or a name with no range.
-
-For what `errors` lists, how the scan asks Excel and when a sheet goes into `errors_unscanned`, read "What the scan does now" in [references/error-scan-history.md](references/error-scan-history.md).
-
-The scan replaced the `SpecialCells` listing of the releases before the last one of 12 November 2026. What a caller sees changed, and the cases that showed it through real Excel and on stand-ins, are in [references/error-scan-history.md](references/error-scan-history.md): read it when you compare a result with one from before that release, or change the scan.
-
-`--save` keeps the copy Excel wrote. A workbook from openpyxl has no cached values until Excel or another engine saves it, so check and deliver that copy when readers need numbers without recalculating.
-
-Office leaves four log files of each Excel session in the Windows user's temp folder, 80 MiB after a crash or a stop, enough to fill C: over a run of jobs ([incidents](references/incidents.md)). So once the job's Excel has ended, `scripts/office-logs.ps1` deletes that session's files and no others. `office_logs`, and `runner.office_logs` for an Excel the script had to stop, say what it deleted, and a failure is a `reason` there and in `excel.session_reason`, which fails no job. Read [references/office-logs.md](references/office-logs.md) when one of them gives a `reason` or `left` files, before you change `office-logs.ps1`, and before your own script starts Excel.
-
-Excel runs in the user's interactive Windows session, which Microsoft doesn't support for unattended automation. The time limit and the stop of this job's own process are the guard, so run one job at a time.
-
-Before a job, take the `windows-desktop` claim that the `work-across-tailscale-machines` skill asks for, with a note that says what the job leaves free, so that another thread does not wait on it to use the screen: `--note 'excel-com-wsl: a hidden Excel over COM; the foreground and the clipboard stay free'`.
+- **Exit status:** 0 (`ok: true`) only when Excel finished, all reads succeeded, and all sheets scanned; otherwise 1 with `error` (damaged files populate `failed_loads`). A failed read (such as a missing `REF`) fails the job while preserving successful reads and any `--save` output (a `REF` failing at both open and reopen counts twice).
+- **Timeouts and process cleanup:** `--job-timeout` (300 s) stops only this job's Excel and PowerShell; `--calc-timeout` (120 s) caps each calculation and busy wait. If PowerShell ends without a result, the script kills its Excel PID (waiting up to 60 s if Excel is still starting; [incidents](references/incidents.md)).
+- **Cached values:** `--save` keeps Excel's saved copy with populated formula caches (needed for `openpyxl` outputs delivered to readers that do not recalculate).
+- **Office logs:** Excel writes ~80 MiB of temp logs per crashed/stopped session ([incidents](references/incidents.md)); `scripts/office-logs.ps1` deletes only this job's session logs without failing the job. Read [references/office-logs.md](references/office-logs.md) if `office_logs` reports a `reason` or `left` files, before editing `office-logs.ps1`, or before starting Excel from a custom script.
+- **Serialization and claims:** run one Excel job at a time (Microsoft does not support unattended interactive COM). Before starting, take the `windows-desktop` claim per `work-across-tailscale-machines` with `--note 'excel-com-wsl: a hidden Excel over COM; the foreground and the clipboard stay free'`, and release it when done.
 
 ## Prove a change to the scripts
 
@@ -62,16 +58,12 @@ Before a job, take the `windows-desktop` claim that the `work-across-tailscale-m
 python3 -I scripts/test_fixtures.py EVIDENCE_DIR
 ```
 
-It needs `openpyxl`, builds workbooks that have each tripped this COM layer, runs them through real Excel and prints PASS or FAIL per check.
-
-Run it after any change to a script, and before you run it read [references/testing.md](references/testing.md), which says how to run it as a job of its own, what `EVIDENCE_DIR` keeps and what its cases check.
-
-An agent in a sandbox reaches Excel through a file queue that a runner outside the sandbox serves. Run these same cases through that queue from inside the sandbox, because a run from outside doesn't exercise the agent's route.
+Requires `openpyxl`, runs real-Excel regression fixtures, and prints PASS/FAIL per check. Read [references/testing.md](references/testing.md) before running it after any script edit. From a sandboxed agent, run the same cases through the file queue served outside the sandbox so the agent route itself is tested.
 
 ## Rules for your own scripts
 
-Before writing or debugging your own PowerShell script that drives Excel over COM (process ownership, COM release order, busy-Excel message filter, `CorruptLoad`, `InvokeMember` typing, `CalculationState`, error codes, or UTF-8 JSON output), read [references/own-scripts.md](references/own-scripts.md).
+Before writing or debugging custom PowerShell COM automation (process ownership, COM release order, busy-Excel message filter, `CorruptLoad`, `InvokeMember` typing, `CalculationState`, error codes, or UTF-8 JSON), read [references/own-scripts.md](references/own-scripts.md).
 
-The job is done when the results are saved outside the job folder, the job folder is gone, the Office logs of its Excel's session are gone, and the `EXCEL` process count is back to what it was before the job.
+**Done check:** results are saved outside the job folder, the job folder and session Office logs are gone, the `EXCEL` process count matches its pre-job baseline, and the `windows-desktop` claim is released.
 
-Before you change or drop one of these rules, read [references/incidents.md](references/incidents.md) for the dated runs behind it.
+Read [references/incidents.md](references/incidents.md) before changing or dropping a rule here.

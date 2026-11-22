@@ -42,8 +42,8 @@ intent = "sha256:631a5da12b61bdb0d8c17505d7261408b9d35ae3d445e30fc2e78589b463cf0
 intent = "sha256:6f472bab5405540be5140cb16d982cc89f3ff3518b4fde3074e3a41ab0c8926a"
 
 [excel-com-wsl]
-intent = "sha256:0d29cd1b4f1f74c42399fd036d4cc6259a44c6ae27a9cd507b2037d712cd9279"
-placements = { agents = "sha256:bb29609beb57d5f7d8f672cafe883301d9a5ab240188724fd0102f7f44c780f9", claude = "sha256:bb29609beb57d5f7d8f672cafe883301d9a5ab240188724fd0102f7f44c780f9" }
+intent = "sha256:d8d390171ee0bffe7cce8903efa36c82312893e8f36cee6a15ec8a71c9bc6d39"
+placements = { agents = "sha256:0f7a6ee62524be7ec7099ea8a6d11bb7e40c0e1c85c6e3fb6baaef396fde7d5f", claude = "sha256:0f7a6ee62524be7ec7099ea8a6d11bb7e40c0e1c85c6e3fb6baaef396fde7d5f" }
 
 [financial-analysis]
 intent = "sha256:1bfca8d696fcf219546f3bdda4239b23b68b1b88147a3bf57e3821a57947d67c"
