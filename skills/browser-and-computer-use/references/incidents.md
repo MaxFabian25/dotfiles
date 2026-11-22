@@ -31,3 +31,7 @@ On 11 November 2026 its window returned no tree, a background pixel click worked
 ## Foreground input on Windows
 
 On 12 November 2026 three scrolls sent while another window was in front reached that window, and text typed again after a lagging screenshot landed twice.
+
+## Standing exception for `e-conomic-ledger-read`
+
+On 14 November 2026 the user approved opening or attaching to their own Chrome profile for read-only `e-conomic-ledger-read` searches without asking first, provided the agent states that it did so in the same message.
