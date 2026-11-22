@@ -1,6 +1,6 @@
 ---
 name: browser-and-computer-use
-description: Use before you tell the user you can't reach, type into or click something in a browser or app, give them click steps, ask them to click, restore or close something, or say only they can do a step on a signed-in site. Use for browser automation or verification, native desktop control, web testing, screenshots or measurements of local HTML pages at set widths, exporting a page or its sections as images even when the harness has its own HTML preview, the user's own Chrome, paywalled news, X post text, pages behind a 403 or bot wall, a value that exists only in an app's window, and cleaning up a tool you installed. It covers agent-browser and cua-driver on macOS, Windows, WSL and Linux.
+description: Drive browsers (`agent-browser`) and native apps (`cua-driver`) across Windows, WSL, Linux, and macOS. Use before telling the user you cannot reach or click something, giving click steps, or saying only they can act on a signed-in site; for web testing, local HTML width screenshots or image exports (even with an HTML preview tool), paywalled news, X post text, 403 or bot walls, the user's Chrome, UI-only app values, or cleaning up installed tools.
 ---
 
 # Browser and computer use

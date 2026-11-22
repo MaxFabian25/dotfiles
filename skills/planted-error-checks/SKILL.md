@@ -1,6 +1,6 @@
 ---
 name: planted-error-checks
-description: Planted errors and mutation testing of checks and test suites. Use before you quote an "N of N caught" score or decide what counts as caught, break code by hand to see a test fail, or run or change a planted-error harness, when you build or trust a guard, hook, monitor, acceptance gate, lint, probe, checker, scorer or answer key, or the fact, figure, link or layout checks on a deck, report, site or export, before you call such a check or a test suite complete, when checks pass but errors still reach a reviewer, user or production, and to decide which tests earn their keep.
+description: Planted-error and mutation testing for checks and test suites. Use before quoting an "N of N caught" score, deciding what counts as caught, injecting faults to verify tests, or calling a guard, hook, monitor, lint, checker, scorer, acceptance gate, or report, deck, or site check complete; also when checks pass yet errors escape, or to prune weak tests.
 ---
 
 # Planted-error checks

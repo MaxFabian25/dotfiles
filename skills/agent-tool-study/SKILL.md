@@ -1,6 +1,6 @@
 ---
 name: agent-tool-study
-description: Studies that compare AI agents, chat apps, agent harnesses or agent tools, such as browser tools or MCP servers, on one fixed job. Use to design, pilot, run, rerun, extend or analyse one, including a stock chat app against a configured toolkit, when a pilot or counted run fails or a scoring rule changes after results are in, before building a test rig for what an unfinished guide recommends, since the guide comes first, before drafting or publishing results, and when someone doubts a finished study, its test design or a published number.
+description: Comparative studies of AI agents, chat apps, or agent tools (browsers, MCP servers) on one fixed job. Use to design, pilot, run, rerun, extend, or analyse a study, when a run fails or scoring changes, before building a test rig for an unfinished guide, before drafting or publishing results, or when a study's design or numbers are questioned.
 ---
 
 # Agent tool study
