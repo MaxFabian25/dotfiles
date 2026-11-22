@@ -38,6 +38,6 @@ language](instructional-prose.md#requirement-language) to *may* and *can*.
 ## Code-adjacent terminology
 
 For *code span*, use [Literal formatting](technical-and-code-prose.md#literal-formatting). For
-*comment*, use [Code comments](technical-and-code-prose.md#code-comments).
+*comment*, use [Code comments](technical-formats-and-code-samples.md#code-comments).
 
 Complete this branch when every selected term matches the authority, subject field, concept, and stated scope.

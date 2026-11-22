@@ -63,5 +63,8 @@ Apply these rules to user-visible interface text:
 | Message about an input error in a web form | error message |
 | Small, transient view that briefly describes how to use a component in the interface | tooltip |
 
-Complete this branch when every visible label, message, control, prompt, and response in scope
-follows each applicable interface rule.
+Complete this branch when every visible action control names its specific outcome verb, every input
+has a persistent label with advance constraints, every error or empty state identifies the problem
+and next safe action neutrally, every destructive confirmation names the affected object and
+consequence with an explicit cancel path, every toggle names the controlled state rather than an
+imperative verb, and any bot response states its identity, limits, and human support path.

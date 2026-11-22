@@ -16,12 +16,12 @@ Indigenous Elder or other Indigenous Knowledge Keeper has additional requirement
 - Confirm whether publication requires following additional protocol or obtaining additional
   permission.
 - Record who supplied each confirmation, its scope and date, and any review or expiry condition.
-- Do not infer permission from access, earlier publication, silence, academic custom, or a previous
-  interaction.
-- Do not publish the information while its suitability, additional protocol, or additional
-  permission remains unresolved.
-- Whenever possible, confirm these matters with the Elder or Knowledge Keeper.
-- Do not substitute editorial judgement when the required confirmation is unavailable.
+- Require explicit confirmation of permission rather than inferring it from access, earlier
+  publication, silence, academic custom, or a previous interaction.
+- Hold the information back from publication until suitability, additional protocol, and additional
+  permission are all resolved.
+- Whenever possible, confirm these matters with the Elder or Knowledge Keeper, and pause rather
+  than substituting editorial judgement when required confirmation is unavailable.
 - Follow applicable Indigenous customary law and every confirmed additional protocol.
 - Protect restricted information in drafts, fixtures, prompts, logs, and retained records.
 - Retain evidence of confirmation only within the applicable access, storage, and retention limits.
@@ -48,7 +48,8 @@ this branch merely because a creator is Indigenous.
 - Check whether a secondary source ignored Indigenous customary law or used Indigenous information
   inappropriately.
 - Acknowledge an oral source in the citation rather than crediting only the secondary source.
-- Do not treat public availability as evidence of permission to republish knowledge.
+- Verify permission to republish knowledge directly rather than treating public availability as
+  permission.
 - Record what has been confirmed and what remains unknown.
 - An unknown status does not establish permission.
 
@@ -81,7 +82,7 @@ the project to retain.
 - If citation is permitted but disclosure is not, publish allowed attribution and omit restricted
   content.
 - If permission changes before publication, revise or withdraw the affected material.
-- Do not broaden permission for one use into permission for another.
+- Limit each permission to its confirmed use, obtaining new confirmation before any broader use.
 - Apply [Rights, permissions, and credit
   lines](references-and-citations.md#rights-permissions-and-credit-lines) separately for copyright or
   licence questions.
@@ -108,8 +109,9 @@ the project to retain.
 - Apply [source text](source-text.md) to exact wording and [Multilingual
   source](multilingual-source.md) to applicable language, transliteration, or romanisation
   decisions.
-- Apply ordinary source-type rules to a secondary source without erasing acknowledged oral sources.
-- Do not imply that a secondary source proves permission or speaks for the originating community.
+- Apply ordinary source-type rules to a secondary source without erasing acknowledged oral sources,
+  and attribute the secondary source only for its own voice rather than implying community
+  permission or representation.
 - Include a bibliography or reference-list entry only when the selected system and permission
   allow it.
 

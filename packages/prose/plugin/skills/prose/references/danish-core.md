@@ -100,13 +100,13 @@ vej*. Slå formen op i *Den Danske Ordbog* når du er i tvivl.
 
 Oplys som udgangspunkt ikke et LIX-tal, et interval eller et numerisk mål for tekst til agenter eller
 udviklere. Sætningslængde og fraværet af frarådede ord dokumenterer ikke forståelse. Når et dokument
-oplyser LIX, læs [LIX-rapportering](publication-verification.md#lix-reporting), og fastlæg
+oplyser LIX, læs [LIX-rapportering](readability-and-reader-testing.md#lix-reporting), og fastlæg
 optællingsmetoden efter reglerne dér.
 
 ## Afprøvning med forskellige læsere
 
 Når opgaven eller den styrende arbejdsgang kræver afprøvning med læsere, brug
-[proceduren for afprøvning](publication-verification.md#reader-testing) og dens danske tillæg.
+[proceduren for afprøvning](readability-and-reader-testing.md#reader-testing) og dens danske tillæg.
 
 ## Betegnelser og kildegrundlag
 

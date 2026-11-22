@@ -2,8 +2,16 @@
 
 Apply this branch when supplied prose is edited or reviewed, when you revise your own draft after
 feedback, or when a voice sample guides new prose.
-Use the request and prior decisions to determine the authorised editing scope, including
-permission to normalise the prose.
+
+## Before editing or reviewing
+
+1. Use the request and prior decisions to determine the authorised editing scope, including
+   permission to normalise the prose.
+2. When the user scopes an edit to all of a body of work, such as a whole repository, list every
+   file or document in it before editing, and give each exclusion a reason the user can overrule.
+3. Before a change that cannot be undone, such as an edit outside version control, save a snapshot.
+
+## Editing and review scope
 
 When the user requests copyediting for a named defect, change only text that carries it. When the
 user requests a review without edits, report findings without changing files. For a consistency

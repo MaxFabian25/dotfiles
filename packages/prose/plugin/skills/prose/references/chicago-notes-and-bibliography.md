@@ -17,11 +17,11 @@ and bibliography policy before drafting.
 - Place it after punctuation except when it precedes a dash.
 - Normally place it after a closing parenthesis.
 - Put it inside only when the note applies solely to parenthetical material.
-- Do not put a marker in a chapter title.
-- Put chapter-wide material in an unnumbered note, not a title marker.
+- Put chapter-wide material in an unnumbered note rather than placing a note marker in a chapter
+  title.
 - Use one marker for all citations and commentary at the same location.
-- Never reuse a note number out of sequence.
-- Repeat the material under a new number or use a verified cross-reference.
+- Assign a fresh sequential note number for each new note, repeating material under a new number or
+  using a verified cross-reference rather than reusing an earlier number out of sequence.
 
 ## Shortened citations
 
@@ -35,7 +35,7 @@ and bibliography policy before drafting.
 - Add given names or initials only to distinguish identical surnames.
 - Usually keep a title of four words or fewer in full.
 - Prefer shortened notes to *ibid.*
-- Do not use *idem*, *op. cit.*, or *loc. cit.* in ordinary Chicago notes.
+- Use shortened notes in ordinary Chicago notes rather than *idem*, *op. cit.*, or *loc. cit.*
 - Before shortening a non-English title, verify that omitted words do not govern retained words.
 - Get language-qualified review when that dependency is uncertain.
 
@@ -43,8 +43,8 @@ and bibliography policy before drafting.
 
 - When a note supports main-text material and adds commentary, put the source first.
 - Separate that citation from commentary with a full stop.
-- For a quotation inside a note, put its source after the quotation's terminal punctuation.
-- Do not wrap the whole source in parentheses.
+- For a quotation inside a note, put its source after the quotation's terminal punctuation without
+  wrapping the whole source in parentheses.
 
 ## Several citations in one note
 
@@ -69,7 +69,7 @@ and bibliography policy before drafting.
 
 - Record whether the bibliography is full, selected, or omitted.
 - Record whether it is a single list or segmented.
-- Omit the bibliography only when the notes supply complete publication details.
+- Include a bibliography unless the notes supply complete publication details for every cited work.
 - Prefer a full bibliography for a book-length work.
 - Include every substantially used and cited work in a full bibliography.
 - Exclude works merely mentioned but not relied on. Exclude personal communications by default, as
@@ -87,16 +87,17 @@ and bibliography policy before drafting.
 - In a full or shortened note, name one or two authors; for more than two, give the first followed
   by *et al.* In a work without a bibliography, give the first full note the [bibliography author
   list](chicago-source-forms.md#citation-forms).
-- Do not invert a name that already uses family-name-first order.
+- Keep a name that already uses family-name-first order in that order without inverting it.
 - Verify uncertain name order with the author or an authoritative source.
 - Preserve the source's name form unless a verified identification adjustment is needed.
 - Preserve source spelling, hyphenation, punctuation, number forms, and diacritics except for
   verified Chicago citation adjustments.
-- Use sentence case for non-English titles under the source language's capitalisation rules.
-- Do not alter unfamiliar capitalisation without language-qualified review.
+- Use sentence case for non-English titles under the source language's capitalisation rules,
+  obtaining language-qualified review before changing any unfamiliar capitalisation.
 - Retain an initial non-English definite article because it may govern following inflection.
 - When adding an English translation, place it in brackets and use sentence case.
 
-Complete this branch when note markers and placement follow the selected note policy, shortened
-citations identify the full source, and bibliography entries follow the recorded coverage, name,
-and title rules.
+Complete this branch when note numbers run sequentially in text with markers placed outside chapter
+titles, shortened notes identify each full source without *idem*, *op. cit.*, or *loc. cit.*, the
+bibliography policy is recorded and matched, and author names and non-English titles preserve
+verified order, diacritics, and case.

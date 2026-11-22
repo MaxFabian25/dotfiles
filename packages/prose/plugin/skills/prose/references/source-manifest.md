@@ -60,8 +60,10 @@ applies.
 
 ## Reproduction boundary
 
-The skill contains source designations and independently worded adaptations. It contains no
-extended source text.
+The skill contains source designations and independently worded adaptations across its style and
+reference modules (including APA, Apple, Diátaxis, Google developer documentation, and IBCS). It
+contains no extended source text and does not claim publisher endorsement or full conformity with an
+external house style outside each module's recorded rules.
 
 Base reproduction on an applicable licence, grant, or governing legal authority. Apply [Rights,
 permissions, and credit lines](references-and-citations.md#rights-permissions-and-credit-lines).

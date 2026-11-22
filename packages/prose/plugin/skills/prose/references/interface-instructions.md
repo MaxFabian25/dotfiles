@@ -4,7 +4,7 @@ Apply this branch when an instruction tells a reader to interact with software, 
 interface.
 
 Apply a selected host or product terminology adapter with these rules. For Google developer
-documentation, apply the [Google UI terminology adapter](google-developer-documentation-style.md#google-ui-terminology-adapter).
+documentation, apply the [Google UI terminology adapter](google-developer-ui-and-word-list.md#google-ui-terminology-adapter).
 For user documentation on an Apple platform, apply [Apple style](apple-style.md).
 Apply [Interface copy](interface-copy.md) only when user-visible product text is written or reviewed.
 Apply the [authority and preservation rules](../SKILL.md#authority-and-preservation) to every
@@ -26,7 +26,8 @@ label, state, message, command, and product term below.
   and *Mobile Data* on a British English device, and keep one interface language throughout, even
   when the supplied text mixes them. When the readers' interface language is not stated, use the
   one that matches the document's English variety.
-- Omit a trailing interface ellipsis from a generic command reference.
+- Write a generic command reference with the command label alone, dropping any trailing interface
+  ellipsis.
 - Give context when naming a control outside a procedure. State its purpose or action in the
   preceding prose.
 - Document each specialised accessibility feature that the product provides. State its purpose,

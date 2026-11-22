@@ -16,12 +16,13 @@ Apply these inclusive-language rules:
 - When examples depict people, vary relevant names, naming structures, genders, ages, body types,
   abilities, families, cultures, and locations. Vary occupations and economic circumstances when
   relevant.
-- Do not imply that one ethnicity, gender, culture, family, ability, or income level is the default.
+- Treat every ethnicity, gender, culture, family, ability, and income level on equal footing rather
+  than implying that one is the default.
 - When an example names several regions, use equivalent references. Compare countries with
   countries, states with states, and continents with continents. Verify disputed place names with
   the applicable authority.
-- Do not generalise about people, countries, regions, or cultures, including with positive or
-  neutral stereotypes.
+- Describe people, countries, regions, and cultures with specific, verified facts rather than
+  generalisations or positive, neutral, or negative stereotypes.
 - Keep each example truthful to its subject and purpose.
 - Research the current usage and history of a non-inclusive term.
   Consider the audience and context before retaining or replacing it.
@@ -66,8 +67,8 @@ Apply these inclusive-language rules:
 - Avoid gendered terms. Preserve a gendered term when an official title or designation requires it.
 - Do not infer a person's gender, pronouns, or title from a name or appearance. If a required title
   is unknown, use the person's name alone when controlling style permits it.
-- Do not assume binary gender categories in examples or generalisations unless the distinction is
-  material and supported.
+- Keep gender categories open rather than assuming binary categories in examples or generalisations
+  unless a distinction is material and supported.
 - Clarify a person's pronouns when they may be unclear to readers.
 - Use singular *they* for a person whose gender is unknown or irrelevant and for a person who uses
   those pronouns. Use it in place of generic *he*, *she*, or alternating gendered pronouns.

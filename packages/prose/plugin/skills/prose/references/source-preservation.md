@@ -10,7 +10,10 @@ LaTeX `~` and spacing required by a governing number, locale, or quotation conve
 spacing, not transfer damage.
 
 Preserve source identity, lexical content, official spelling, and terminology defined or designated
-by the source. In a quotation, preserve capitalisation and punctuation except for a change that the
+by the source. When the user overrides fidelity to a source, such as by asking for a changed
+quotation, comply in the documents they name and keep raw records such as transcripts verbatim
+unless they name those too. Name any clash with a style selected later among the departures from
+that style. In a quotation, preserve capitalisation and punctuation except for a change that the
 applicable quotation convention permits. Mark the change where that convention requires a mark. In
 a citation or reference list entry, let the citation style control element order, title
 capitalisation, punctuation, and italics. Let that style also control permitted omissions and
@@ -23,8 +26,8 @@ metadata.
   authorised.
 - Retain governed Unicode characters, diacritics, orthography, capitalisation, plural forms, and
   internal character order.
-- Do not transliterate, anglicise, or reverse right-to-left text merely to fit the surrounding
-  English passage.
+- Keep non-English text in its source script and text direction rather than transliterating,
+  anglicising, or reversing right-to-left text merely to fit the surrounding English passage.
 - For passage language, script, and rendering metadata, use [Multilingual
   source](multilingual-source.md#basic-rules).
 - For a non-English title, preserve source-language spelling. Let the selected editorial or
@@ -32,5 +35,8 @@ metadata.
 - Stop and obtain qualified review before changing characters or forms in a language you cannot
   verify.
 
-Complete this module when source content and identity are preserved and each permitted alteration
-follows its governing convention.
+Complete this module when every quotation, official name, source title, locator, and source
+metadata field matches its direct source (or names an explicit user override while keeping raw
+records verbatim), transfer damage is repaired against the original, every permitted alteration is
+marked as its governing convention requires, and any unverifiable non-English form is flagged for
+qualified review.

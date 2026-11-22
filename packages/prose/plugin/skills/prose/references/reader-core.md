@@ -4,6 +4,27 @@ Use this reference for clarity, organisation, or presentation work in English or
 the [authority and preservation rules](../SKILL.md#authority-and-preservation); language and
 specialist references govern their own forms.
 
+## Workflow
+
+1. **Before drafting for another reader:** Settle in one round of questions what the request leaves
+   open: the reader and what they already know, whether they want a recommendation or a neutral
+   comparison, the options really available, the criteria and features in scope, a length budget,
+   and how the document will reach them.
+2. **When the user sets a loose quality bar** (such as text that must not read as machine-written):
+   Adopt a published checklist for it at once, name it to the user, and run it on your own drafts
+   before each showing.
+3. **While researching for a deliverable:** Keep each factual claim with its source passage and
+   link, or mark it as your inference. When the sources are silent, say the point is not stated;
+   silence is not a *No*. Give a legal or regulatory conclusion in the authority's own words with
+   its citation, or label it as your reading.
+4. **Before handing over a document written for another reader** (such as a briefing, comparison, or
+   assessment): Have a fresh agent read only the document and a short description of that reader,
+   flagging passages that mislead, repeat a fact, leave a term unexplained, or answer a question the
+   reader did not ask, and resolve each one. When the writer is a model whose maker the document
+   assesses, also have a model from another maker check the factual claims and look for framing that
+   favours the writer's maker; if the host cannot run a model from another maker, disclose that gap
+   at handoff.
+
 ## Plain language in practice
 
 Plain language makes relevant information findable, understandable, and usable for its intended
@@ -14,13 +35,9 @@ quantitative explanations, identify material differences in reader knowledge, nu
 comprehension before choosing the explanation. Consult the [plain-science source
 scope](source-evidence/plain-language.md#plain-language) when that designation matters.
 
-- When you write for a reader other than the person asking, settle in one round of questions what
-  the request leaves open: the reader and what they already know, whether they want a
-  recommendation or a neutral comparison, the options really available, the criteria and features
-  in scope, a length budget, and how the document will reach them.
-- When the user sets a loose quality bar, such as text that must not read as machine-written, adopt
-  a published checklist for it at once, name it to the user, and run it on your own drafts before
-  each showing.
+- In a plain-language rewrite for lay readers, apply the [drafting-label
+  rule](terminology-selection.md#definitions) to labels coined for the document, such as *the
+  Issuer* or party initialisms.
 - In a neutral comparison, keep any favourite out of the scope, labels, and order. When you cut text
   about how a comparison was produced, also cut any verdict that text supported, unless the author
   owns that verdict.
@@ -50,10 +67,6 @@ scope](source-evidence/plain-language.md#plain-language) when that designation m
   comparison basis. Say which quantity a number measures. Match the strength of the claim to the
   evidence. Remove redundant hedges while keeping distinct conditions and limitations. State what an
   evidence gap prevents you from concluding.
-- While researching for a deliverable, keep each factual claim with its source passage and link,
-  or mark it as your inference. When the sources are silent, say the point is not stated; silence
-  is not a *No*. Give a legal or regulatory conclusion in the authority's own words with its
-  citation, or label it as your reading.
 - Show an abstract financial or contractual mechanism through one worked example that follows one
   person with the supplied terms. Label any assumed figure as illustrative.
 - Keep figurative language restrained in analytical claims and understandable across the intended
@@ -127,16 +140,10 @@ record from the first draft on.
 ## Reader testing
 
 When the task includes testing reader understanding, use the [reader-testing
-process](publication-verification.md#reader-testing).
+process](readability-and-reader-testing.md#reader-testing).
 
-Before you hand over a document written for a reader other than the person asking, such as a
-briefing, comparison, or assessment, have a fresh agent read only the document and a short
-description of that reader. Ask it for passages that mislead, repeat a fact, leave a term
-unexplained, or answer a question the reader did not ask, and resolve each one. When the writer is
-a model whose maker the document assesses, also have a model from another maker check the factual
-claims and look for framing that favours the writer's maker; if the host cannot run a model from
-another maker, disclose that gap at handoff.
-
-Complete the requested prose when it holds the information its reader needs, meets the selected
-rules and each rule above that applies to it, resolves each passage a fresh reader flagged, and
-keeps each claim faithful to its source.
+Complete the requested prose when every open brief question is settled, each factual claim carries
+its source passage or explicit inference label, no empty wording, placeholder, or process trail
+leaks into the finished deliverable, every passage flagged by a fresh reader is resolved (and any
+second-maker check or host gap is disclosed), and the document answers the reader's needed decision
+or action directly.

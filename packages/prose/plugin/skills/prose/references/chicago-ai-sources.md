@@ -33,8 +33,8 @@ Summarise multiple prompts when a conversation is too long to reproduce.
 - Otherwise, retain a copy of the prompt and AI-generated content when privacy, law, policy, and
   security permit it.
 - Record where the publicly archived or retained copy is stored and any access restriction.
-- Do not publish a prompt or AI-generated content that exposes confidential or personal
-  information.
+- Redact or withhold any prompt or AI-generated content that exposes confidential or personal
+  information before publishing.
 
 ## Citation forms
 
@@ -54,9 +54,10 @@ AI-generated content.
 ## Authority, permission, and reuse rights
 
 - Treat AI-generated content as a primary source only for claims about that content.
-- Verify each substantive claim against the authority or original source that governs it.
-- Do not cite AI-generated content as authority when an authoritative source supports the claim.
-- Do not infer permission, licence, ownership, or reuse rights from generation or public access.
+- Verify each substantive claim against the governing authority or original source and cite that
+  authoritative source rather than AI-generated output.
+- Confirm permission, licence, ownership, and reuse rights at the governing source rather than
+  inferring them from generation or public access.
 - Apply [Rights, permissions, and credit
   lines](references-and-citations.md#rights-permissions-and-credit-lines) separately to copied or
   adapted material.

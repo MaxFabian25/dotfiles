@@ -44,8 +44,8 @@ reuse or replace a platform's governing requirements.
 - For music, select the composer, performer, conductor, or ensemble according to the cited focus.
 - For an untitled item, supply a concise description without making it look like a source title.
 - Record each item, track or episode, series or album, and platform in order.
-- Do not let an uploader or channel replace the person, group, or entity responsible for the
-  original content.
+- Credit the person, group, or entity responsible for the original content in the creator position,
+  and record any uploader or channel separately in its actual role.
 - Record the publisher, label, distributor, network, sponsor, platform, or channel in its actual
   role.
 - Verify uncertain recording details against an authoritative catalogue or responsible publisher.
@@ -63,8 +63,7 @@ reuse or replace a platform's governing requirements.
   copy.
 - Record enough facts about both objects when the consulted copy differs from the original.
 - Prefer a copy supplied by the author, performer, publisher, sponsor, repository, or authorised
-  distributor.
-- Do not treat an unaffiliated upload as evidence of authenticity or permission.
+  distributor, and treat an unaffiliated upload as evidence of neither authenticity nor permission.
 - Apply [Rights, permissions, and credit
   lines](references-and-citations.md#rights-permissions-and-credit-lines) before reproducing or adapting
   protected media.
@@ -77,8 +76,8 @@ reuse or replace a platform's governing requirements.
 - Make every locator match the consulted version rather than another release.
 - Record the version when different releases have different timings, tracks, scenes, or levels.
 - Include total duration only when it helps readers identify or assess the item.
-- Test every URL and specific locator against the source record.
-- Do not invent a track or scene label for an unindexed work.
+- Test every URL and specific locator against the source record, using only locators the work
+  actually supplies rather than inventing a track or scene label for an unindexed work.
 - For a live performance, identify the venue, place, and date. Include enough information to
   identify the performance.
 
@@ -98,5 +97,6 @@ reuse or replace a platform's governing requirements.
   the URL, [Citation placement and style](references-and-citations.md#citation-placement-and-style)
   to the version and date, and [Locators](chicago-source-forms.md#locators) to the locator.
 
-Complete this branch when every cited source meets its medium's metadata, availability, locator,
-and citation-form requirements. Report any unresolved required field.
+Complete this branch when each multimedia source is classified by medium, credits its original
+creator and actual distributor separately, distinguishes recording and release dates/versions,
+supplies a tested locator matching the consulted copy, and reports any unresolved required field.

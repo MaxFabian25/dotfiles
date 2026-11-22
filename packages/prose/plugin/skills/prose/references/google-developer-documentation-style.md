@@ -5,18 +5,19 @@ technical practitioners. It covers API references, quickstarts, tutorials, how-t
 command-line documentation, and code-adjacent explanations. A software mention alone does not
 select this module.
 
-The Google authorities in [source provenance](source-manifest.md) identify the consulted pages and
-their licences. This module contains independently worded adaptations. It does not claim full
-conformity with Google's house style.
+The Google authorities in [source provenance](source-manifest.md) identify the consulted pages,
+adaptation boundary, and licences.
 
 ## Source map
 
 Use the [Google Page Register](google-developer-documentation-pages.csv) for page-level provenance,
 scope, disposition, and revision dates. It is evidence, not a rule selector.
 
-Use this module only for Google product rules, Google style choices adopted by Prose, interface
-terminology, and word-list choices. Use the relevant references for instruction structure,
-interface text, technical content, APIs, quantities, accessibility, source handling, and citations.
+Use this module for Google product rules, Google style choices adopted by Prose, headings,
+procedures, placeholders, and notices. For Google UI element names or targeted Google word-list
+lookups, open [Google UI terminology and word-list lookup](google-developer-ui-and-word-list.md).
+Use the relevant references for instruction structure, interface text, technical content, APIs,
+quantities, accessibility, source handling, and citations.
 
 ## Authority and scope
 
@@ -118,7 +119,8 @@ selection](terminology-selection.md). Keep source, conventional, and descriptive
   form and apply it consistently.
 - Use a more informative placeholder instead of a single `x` or a series of `x` characters. Retain
   the series only when a governing standard or exact source syntax requires it.
-- Do not include possessive adjectives such as `MY_` or `YOUR_` in a placeholder.
+- Name placeholders with neutral role or value words rather than possessive prefixes such as `MY_`
+  or `YOUR_`.
 - Explain a placeholder the first time it appears. After a command with multiple placeholders,
   list them in their order of appearance. Introduce the list with *Replace the following:*.
 - Distinguish placeholders in sample code and commands from placeholders in example output. Tell
@@ -140,71 +142,8 @@ selection](terminology-selection.md). Keep source, conventional, and descriptive
   *Warning* notices.
   Route an actual visible status message to [interface copy](interface-copy.md).
 
-## Google UI terminology adapter
-
-Apply [Interface instructions](interface-instructions.md) to the task, labels, input methods, and
-interaction verbs. Apply this adapter only to Google developer documentation.
-
-- Use *command* for an item in a desktop menu. Keep *menu item* only for documentation about
-  interface construction.
-- Express a menu path in prose or by using angle brackets (`>`). Format the entire sequence
-  together. Use this notation only for a menu path. Do not use it to describe a combination of
-  different UI elements. Use the host's method for making a screen reader interpret each angle
-  bracket as *and then*.
-- Use *window* for an entire desktop application or a modular element that readers can open and
-  close.
-- Use *page* for a web page or a subpage of a console. Use *dialog* for a smaller window that appears
-  in front of the main application window.
-- Use *pane* or *panel* for a distinct region inside a larger window. Use *section* for a labelled
-  grouping of options and controls.
-- Use *navigation menu* for a control that contains a list of items. The items take readers to pages
-  in an application or website. Use *toolbar* for a set of buttons for common user actions.
-- Use *menu button* for a button that opens a menu. Use *button* for a control that starts an action.
-- Use *icon* for a symbol or image representing an object or function. Use *tab* for a navigation
-  element that looks like a file tab.
-- Use *box* for a text box, combo box, or spin box. Use *list* for a list box when clearer.
-- Use *checkbox* for a small box that indicates whether an option is on or off. Use *radio button*
-  for one option in a mutually exclusive group.
-- Use *expander arrow* for the UI element used to expand or collapse a section. Use *toggle* for
-  the UI element that switches between on and off states.
-- In Google Cloud and Google Workspace documentation, use *field* instead of *box*. Elsewhere,
-  follow host terminology.
-
-## Word-list evidence
-
-Use this module's recorded adopted guidance for ordinary drafting. When project terminology and
-that guidance leave a material word choice unresolved, use the [entry
-register](google-developer-documentation-word-list-entries.csv). Find the exact anchor, then use every
-`decision_ids` value to open the matching row in the [decision
-register](google-developer-documentation-word-list-decisions.csv).
-Use fixed-string search and read only matching rows. Do not load either register end-to-end.
-
-Treat `source_status` as evidence about Google's heading, not as a local adoption decision.
-`unmarked` records no source icon. `caution` and `do-not-use` record the corresponding source
-markers. Apply `product_markers` only inside each named product scope.
-
-The decision categories identify adaptation, conflict, product or host scope, exact text routed out
-of prose, a governing source, or an added local rule. Read the matching treatments before following
-their destinations. Select only decisions whose conditions match the word's use in the current
-passage. For each selected decision, use its first destination for the shared rule and each
-additional destination only under its stated condition. Reuse sections already read. Apply unique
-adoption treatments within the entry's scope and the authority order.
-
-Consult the current official [word-list entry](https://developers.google.com/style/word-list) when
-its exact clause is needed to resolve that choice. Report a discrepancy that changes the affected
-recommendation or its scope, and continue authorised work that does not depend on it. Distinguish
-recorded guidance from what the live source verifies. If no anchor applies, use [terminology
-selection](terminology-selection.md). Keep an established conventional term instead of inventing a
-paraphrase.
-
-Preserve a term covered by *Don't use* or *Use with caution* guidance when code or an interface
-requires it. Format it as exact text. Apply the entry's guidance about alternative terms in prose
-thereafter. Keep Google product terminology inside its product scope.
-
-For a requested rule audit, record each recommendation's controlling rule, scope, and material
-source conflicts. When updating adopted guidance or recorded evidence, apply the [source
-maintenance procedure](source-manifest.md#source-drift).
-
-Complete this branch when the developer documentation follows the applicable Google style choices,
-house adaptations, heading and procedure forms, placeholder rules, and word-list decisions within
-the governing authority order.
+Complete this branch when host, project, British English, contraction, quotation-mark, date, and
+requirement-language overrides hold, Google product and API names follow their article rules,
+headings and procedures use bare-infinitive/noun-phrase and bulleted/numbered forms, placeholders
+are uppercase with underscores and explained in order, and any UI-element or word-list check uses
+[Google UI terminology and word-list lookup](google-developer-ui-and-word-list.md).

@@ -37,12 +37,13 @@ When the Chicago scope includes citations, select exactly one system for the wor
 | [Notes and bibliography](chicago-notes-and-bibliography.md) | Numbered source notes and a recorded bibliography decision. |
 | [Author-date](chicago-author-date.md) | Parenthetical author–year citations and a corresponding reference list. |
 
-- Use the system named by the governing requirement or by publisher or journal instructions. When
-  none names a system, ask the user to choose one and record the choice.
-- Do not select a system solely from the work's discipline.
-- Do not combine the two citation systems within one work.
-- Explanatory notes may accompany author-date when the governing requirement permits them.
-- Do not use those notes as a second notes and bibliography system.
+- Use the system named by the governing requirement or by publisher or journal instructions rather
+  than inferring a system from the work's discipline alone. When none names a system, ask the user
+  to choose one and record the choice.
+- Keep one citation system throughout the work rather than combining both systems.
+- Explanatory notes may accompany author-date when the governing requirement permits them; keep
+  those notes to substantive commentary rather than turning them into a second notes-and-bibliography
+  system.
 
 ## APA boundary
 

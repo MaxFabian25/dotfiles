@@ -9,7 +9,7 @@ Exclude comments that do not publish a public API contract.
 Host reference templates, markup, generated signatures, and language-specific conventions control
 their exact forms.
 
-This branch independently adapts `GOOGLE-STYLE-005` (*API reference code comments*) and
+Source provenance for this branch sits under `GOOGLE-STYLE-005` (*API reference code comments*) and
 `GOOGLE-STYLE-054` (*Verb forms in reference documentation*) in the
 [Google Page Register](google-developer-documentation-pages.csv) and
 [source provenance](source-manifest.md). These sources govern public API reference prose, not
@@ -25,10 +25,10 @@ program behaviour or generated markup.
 - Give each programming element a unique first sentence that states its purpose, action, or
   represented value.
 - Add information that readers cannot deduce from the programming element's name and signature.
-- Do not repeat the programming element's name or begin with a generic description of its element
-  type.
-- Do not put a full stop before the actual end of the first sentence.
-  Some document generators end the short description at the first full stop.
+- Open with the element's specific behaviour or purpose rather than repeating its name or starting
+  with a generic description of its element type.
+- Put the first full stop only at the actual end of the first sentence, because some document
+  generators end the short description at the first full stop.
 - Put setup, history, extended guidance, and implementation details after the first sentence.
 
 ## Types, methods, and members
@@ -43,7 +43,8 @@ program behaviour or generated markup.
 - For each property or field, describe its value and default. Ensure its signature or description
   identifies the data type.
 - State applicable language and platform requirements. Name every required security permission.
-- Do not phrase a programming element's description as an imperative task instruction.
+- Phrase each programming element's description declaratively rather than as an imperative task
+  instruction.
 
 ## Parameters, return values, and exceptions
 

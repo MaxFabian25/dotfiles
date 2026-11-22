@@ -88,10 +88,9 @@ punctuation, short-title, and locator rules.
 - Record where any available transcript or recording may be found. Preserve any collection title,
   institution name, interview number, or other locator needed to find it.
 - Record the time stamp for a cited passage in a recording when it is useful to another reader.
-- If the interviewee remains unnamed, use brief identifying information appropriate in context.
-  Explain any confidentiality agreement or decision to withhold the name in the work's method or
-  source note.
-- Do not reveal an identity withheld under a confidentiality agreement.
+- If the interviewee remains unnamed, use brief identifying information appropriate in context,
+  withhold any identity protected by a confidentiality agreement, and explain the decision in the
+  work's method or source note.
 - Cite an interview that has been published or broadcast or made available online under the
   interviewee. Record the interviewer. Then apply the rules for the periodical, website, or
   recording consulted.

@@ -29,16 +29,18 @@ Each reference owns its rules and scope.
 | Markdown affecting the writing | [Markdown files](markdown-files.md) |
 | Commit messages and pull requests | [Commit and pull-request prose](commit-and-pull-request-prose.md), [technical prose](technical-and-code-prose.md) |
 | Indexes and index cross-references | [Indexing and cross-references](indexing-and-cross-references.md) |
-| Final publication, research records, rights clearance, LIX, or reader testing | The matching section of [publication verification](publication-verification.md) |
-| Accessibility statements or conformance claims | [Final-format publication](publication-verification.md#final-format-publication) |
+| Final-format publication or accessibility conformance claims | [Final-format publication and accessibility](publication-and-accessibility.md#final-format-publication) |
+| Research archives, citation libraries, or rights clearance records | [Research records and rights clearance](research-and-rights-records.md) |
+| LIX reporting or formal reader testing | [Readability reporting and reader testing](readability-and-reader-testing.md) |
 
 ## Technical writing and interfaces
 
 | Work | Reference |
 | --- | --- |
-| Technical or code-adjacent prose | [Technical and code prose](technical-and-code-prose.md) |
+| Technical or code-adjacent prose (literals, paths, placeholders, claims, versions, release notes) | [Technical and code prose](technical-and-code-prose.md) |
+| Storage terminology, technical dates, example addresses, CLI syntax, internal APIs, code examples, or comments | [Technical formats, commands, and code samples](technical-formats-and-code-samples.md) |
 | Tutorials, how-tos, explanations, or reference documentation | [Diátaxis](diataxis.md) and [technical prose](technical-and-code-prose.md) |
-| Authored English developer documentation | [Google developer style and house adaptations](google-developer-documentation-style.md), [technical prose](technical-and-code-prose.md), [terminology](terminology-selection.md) |
+| Authored English developer documentation | [Google developer style and house adaptations](google-developer-documentation-style.md), [Google UI terminology and word-list lookup](google-developer-ui-and-word-list.md) when naming Google UI or checking word-list entries, [technical prose](technical-and-code-prose.md), and [terminology](terminology-selection.md) |
 | Public API references in English | [API reference prose](api-reference-prose.md) and [technical prose](technical-and-code-prose.md) |
 | Instructions, procedures, requirements, or warnings | [Instructional prose](instructional-prose.md) |
 | Interface labels and messages | [Interface copy](interface-copy.md) |
@@ -52,7 +54,7 @@ Each reference owns its rules and scope.
 | Academic source use, citations, references, links, or attribution | [References and citations](references-and-citations.md), [source preservation](source-preservation.md), [source text](source-text.md) |
 | Quotations, source titles, official wording, or metadata | [Source preservation](source-preservation.md) and [source text](source-text.md) |
 | Translated titles, non-Latin scripts, or multilingual source attribution | [Source preservation](source-preservation.md) and [multilingual sources](multilingual-source.md) |
-| Choosing or verifying a governed designation | [Terminology selection](terminology-selection.md); [technical terminology](technical-terminology.md) for designations in its listed fields |
+| Choosing or verifying a governed designation | [Terminology selection](terminology-selection.md); [technical terminology](technical-terminology.md) for designations in its listed fields; [terminology register maintenance](terminology-register-maintenance.md) when maintaining term records |
 | Prose's registered source or term provenance | [Source provenance](source-manifest.md) |
 | Quantities, measurements, estimates, and comparisons | [Quantitative prose](quantitative-prose.md) |
 | Number forms, dates, times, or units | [Number forms](number-forms.md) |
