@@ -14,7 +14,8 @@ to widen it.
 
 [Prose](../prose/SKILL.md) owns the words in and around a display. Its [tables and
 figures](../prose/references/tables-and-figures.md) rules govern titles, labels, notes, sources,
-and text alternatives. When a user, organisation, or project requires IBCS notation, read [IBCS
+and text alternatives, narrowed by [Delivery](#delivery) below for charts and dashboards. When a
+user, organisation, or project requires IBCS notation, read [IBCS
 charts](references/ibcs-charts.md) before drawing.
 
 ## Marks

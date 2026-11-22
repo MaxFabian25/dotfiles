@@ -861,16 +861,19 @@ def _validate_reach(
 ) -> None:
     """Every file in a skill's references/ needs a chain of links from its SKILL.md."""
     for skill in sorted(snapshot.skills):
-        entry = f"skills/{skill}/SKILL.md"
+        skill_prefix = f"skills/{skill}/"
+        entry = f"{skill_prefix}SKILL.md"
         if entry not in snapshot.files:
             continue
         reached = {entry}
         pending = [entry]
         while pending:
             for target in edges.get(pending.pop(), set()) - reached:
+                if not target.startswith(skill_prefix):
+                    continue
                 reached.add(target)
                 pending.append(target)
-        prefix = f"skills/{skill}/references/"
+        prefix = f"{skill_prefix}references/"
         for relative in sorted(snapshot.files):
             if relative.startswith(prefix) and relative not in reached:
                 _append(

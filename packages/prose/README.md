@@ -37,7 +37,8 @@ Codex loads project skills from `.agents/skills`; see the official
 [local skill documentation](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills).
 
 If you already use a marketplace that lists Prose, install its plugin entry instead. The release
-payload is the repository's `plugin/` directory. Writing with Prose requires no Python runtime.
+payload is the repository's `plugin/` directory. Writing prose requires no build step; running the
+bundled helper scripts (`scan_prose.py`, `contrast.py`, and `page_width.py`) uses Python 3.
 
 ## How it works
 
@@ -62,8 +63,9 @@ exact technical text keep their required forms.
 ## Develop Prose
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for editing, checks, and release instructions. The
-`prose-maintainer` skill applies those instructions to repository work. Agents can invoke any of
-the four skills implicitly when a task matches its description.
+`prose-maintainer` skill applies those instructions to repository work. In the raw plugin source,
+all four skills allow implicit invocation; the dotfiles setup marks `prose-maintainer`
+explicit-only.
 
 The current tree contains the writing library and its development tools. Dotfiles contains a
 fresh source import; it does not import Prose's earlier history or retired experiments.

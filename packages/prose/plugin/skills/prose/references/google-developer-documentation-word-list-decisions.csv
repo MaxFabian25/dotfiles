@@ -39,7 +39,7 @@
 "GWL-038","add","references/english-usage.md#abbreviations-and-grammatical-forms","Apply the entry's plural and grammatical-number distinction. Preserve the established convention of the applicable field."
 "GWL-039","add","references/english-usage.md#abbreviations-and-grammatical-forms","Apply the entry's complete conjunction pattern and semantic distinction; retain every element needed to state that relationship."
 "GWL-040","conflict","references/english-core.md#usage-and-word-choice;references/apa-style.md#capitalisation-emphasis-and-abbreviations","Use that is in technical prose. When APA writing style is selected, apply its Latin-abbreviation treatment within that scope."
-"GWL-041","conflict","references/google-developer-documentation-style.md#google-style-choices","For this Google adaptation, expand contractions in original technical prose. Use let us only when that meaning is necessary."
+"GWL-041","conflict","references/technical-and-code-prose.md#contractions","The contractions section owns the technical-prose contraction rule that replaces Google's contraction preference."
 "GWL-042","conflict","references/instructional-prose.md#requirement-language","The requirement-language section owns the permission, capability, and possibility meanings that replace Google's modal preference."
 "GWL-043","conflict","references/instructional-prose.md#procedures","State a requirement, procedure, or failure message directly. Retain please only for a genuine request for permission or forgiveness, or in preserved correspondence."
 "GWL-044","conflict;exact-out","references/technical-and-code-prose.md#system-behaviour","Preserve persist as an established API, state, or code term. Otherwise describe the persistent state or use make persistent."

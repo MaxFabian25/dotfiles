@@ -30,8 +30,8 @@ interface text, technical content, APIs, quantities, accessibility, source handl
   language](instructional-prose.md#requirement-language). These local rules replace Google's
   conflicting US English and modal guidance. Preserve the actor and semantic role when changing a
   modal. Consult the word-list decision when the modal choice remains unresolved.
-- Apply the house rules that replace further Google guidance: the contraction rule under [Google
-  style choices](#google-style-choices), the [quotation-mark
+- Apply the house rules that replace further Google guidance: the [technical-prose contraction
+  rule](technical-and-code-prose.md#contractions), the [quotation-mark
   default](english-core.md#punctuation-and-mechanics) for the placement of full stops and commas,
   and the [house date form](number-forms.md#dates-and-times) for day, month, and year order.
 - When ASD-STE100 is explicitly selected, apply its [adopted rules](asd-ste100.md) before a
@@ -84,8 +84,7 @@ selection](terminology-selection.md). Keep source, conventional, and descriptive
 - Keep the voice direct, conversational, friendly, and respectful. Centre the developer's task,
   not the author's personality.
 - Use straight quotation marks and apostrophes in original prose.
-- Unlike Google, expand contractions in original technical prose. Write *let us* only when that
-  meaning is needed.
+- Unlike Google, apply the [technical-prose contraction rule](technical-and-code-prose.md#contractions).
 
 ## Headings, titles, and procedures
 
@@ -101,8 +100,9 @@ selection](terminology-selection.md). Keep source, conventional, and descriptive
 - Write headings as unlinked text.
 - Avoid code items in headings. When a code item is necessary for findability or accuracy, put it
   in code font and add a descriptive noun.
-- Format single-step procedures as one sentence in a bulleted list. Use a numbered list for two or
-  more ordered steps.
+- Format single-step procedures as one sentence in a bulleted list; this overrides the one-item
+  prose default in [Presentation choices](reader-core.md#presentation-choices) within Google
+  developer documentation. Use a numbered list for two or more ordered steps.
 
 ## Prose around code samples, commands, and placeholders
 
@@ -112,8 +112,10 @@ selection](terminology-selection.md). Keep source, conventional, and descriptive
 - Provide a click-to-copy command example that requires no editing after copying, except for
   replacing placeholders. Avoid optional arguments, mutually exclusive arguments, and repeated
   arguments in click-to-copy examples.
-- Use uppercase characters with underscore delimiters for placeholder text. If that form is a poor
-  fit for the context, use another clear form and apply it consistently.
+- Use uppercase characters with underscore delimiters for placeholder text; this replaces the
+  italics placeholder default in [Placeholders](technical-and-code-prose.md#placeholders) within
+  Google developer documentation. If that form is a poor fit for the context, use another clear
+  form and apply it consistently.
 - Use a more informative placeholder instead of a single `x` or a series of `x` characters. Retain
   the series only when a governing standard or exact source syntax requires it.
 - Do not include possessive adjectives such as `MY_` or `YOUR_` in a placeholder.
