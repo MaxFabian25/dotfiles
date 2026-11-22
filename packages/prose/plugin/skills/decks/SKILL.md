@@ -105,7 +105,7 @@ the words on and around it.
   its page and evidence.
 - **Reader as the audience.** Brief a second fresh reviewer with the rendered pages alone, to read
   them as the audience will, as Prose's [reader
-  testing](../prose/references/publication-verification.md#reader-testing) does, and to mark every
+  testing](../prose/references/readability-and-reader-testing.md#reader-testing) does, and to mark every
   line about the making.
 - **A correction names a class.** When the user overrides a recommendation or repeats a request,
   such as drawings over tables, take it as naming a class of pages. Have a fresh reviewer sweep

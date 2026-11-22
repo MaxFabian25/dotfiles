@@ -40,8 +40,8 @@ jurisdiction.
 - Check established English forms separately. Retain one when an owning authority, community
   usage, dictionary, or audience scope supports it.
 - Preserve system-required word division, case, punctuation, diacritics, and character
-  distinctions.
-- Do not omit diacritics unless the selected system or an established English form permits it.
+  distinctions, retaining diacritics unless the selected system or an established English form
+  permits omitting them.
 - Do not transliterate or romanise a language you cannot verify. Obtain qualified language or
   community review when risk justifies it.
 
@@ -170,12 +170,12 @@ When no stronger convention controls, use these house mechanics and, for English
 
 - Use the selected convention's omission marker.
 - Without one, use the house ellipsis character (`…`) for an editorial omission.
-- Never let an omission distort the source's meaning.
-- Do not join statements whose original separation materially affects meaning.
+- Keep every omission faithful to the source's meaning, and keep statements separate whenever their
+  original separation materially affects meaning.
 - Preserve paragraph and verse structure around every omission.
 - Mark missing whole lines or paragraphs under the selected convention.
-- Do not add an omission marker at a quotation's boundary unless incompleteness or structure
-  requires it and no selected convention forbids it.
+- Place omission markers inside a quotation, adding a boundary marker only when incompleteness or
+  structure requires it and no selected convention forbids it.
 - Preserve any ellipsis that belongs to the source.
 - Distinguish source and editorial ellipses when readers could confuse them.
 - Use bracketed ellipses only when the selected convention requires them or a project note defines

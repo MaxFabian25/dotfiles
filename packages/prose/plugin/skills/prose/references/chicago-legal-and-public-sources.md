@@ -22,12 +22,12 @@ advice.
   citation guide.
 - For international material, apply the issuing body or tribunal's system before any project
   supplement.
-- For another jurisdiction, use its official guidance or an accepted local citation guide.
-- Do not default to a United States system merely because Chicago discusses it.
+- For another jurisdiction, use its official guidance or an accepted local citation guide rather
+  than defaulting to a United States system merely because Chicago discusses it.
 - Verify the selected stylebook's or citation guide's current edition before drafting.
 - Stop rendering when the applicable citation guide, requirement, or jurisdiction remains
-  unresolved.
-- Do not present an unresolved form as conforming to a named legal system.
+  unresolved, and mark the form unresolved rather than presenting it as conforming to a named legal
+  system.
 
 Chicago identifies the recommended stylebooks and the boundary for ordinary secondary works. The
 applicable citation guide or requirement controls citation form, abbreviations, typefaces, ordering,
@@ -73,8 +73,8 @@ appear and in what order.
 - Prefer a print source when the applicable citation guide requires or recommends one.
 - Treat an online version authenticated by a government entity as print when the citation guide
   permits it. Apply the same treatment to an official version or exact copy of the official version.
-- Record which of these descriptions applies to the version consulted.
-- Do not treat a URL or government domain alone as proof of authentication.
+- Record which of these descriptions applies to the version consulted, verifying government
+  authentication explicitly rather than relying on a URL or government domain alone.
 - Distinguish an official reporter, gazette, code, or archive from a commercial reproduction.
 - For a commercial database, record its name and any applicable identification number. For
   constitutions and statutes, also record database currency.
@@ -87,8 +87,8 @@ appear and in what order.
 - Distinguish daily, provisional, and permanent legislative records when their contents or locators
   differ.
 - Verify amendments, repeal, supersession, and currency when the claim depends on current law.
-- When no official version is available, identify the version consulted accurately.
-- Do not describe a copy as an official version or exact copy without verification.
+- When no official version is available, identify the version consulted accurately, reserving
+  *official version* and *exact copy* strictly for verified sources.
 
 ## Keep document identity separate from the page number or other locator
 
@@ -102,8 +102,7 @@ appear and in what order.
 - Record parallel or neutral citations only when the applicable citation guide requires or permits
   them.
 - Preserve court, reporter, code, docket, and document abbreviations from the applicable citation
-  guide.
-- Do not invent a legal abbreviation from a Chicago example.
+  guide rather than inventing an abbreviation from a Chicago example.
 - Test official URLs and database identifiers without replacing legal identity with a link.
 - For archival public records, apply [Papers, contracts, reports, and manuscript
   collections](chicago-unpublished-and-archival-sources.md) without replacing this module.
@@ -111,8 +110,9 @@ appear and in what order.
 ## Render under the selected system
 
 - Apply the citation guide's sequence, punctuation, typefaces, and short forms.
-- Apply its rules for notes, textual citations, bibliographies, and reference lists.
-- Do not mix Bluebook, ALWD, Canadian, UK, international, or local forms within one governed scope.
+- Apply its rules for notes, textual citations, bibliographies, and reference lists, keeping one
+  consistent system (Bluebook, ALWD, Canadian, UK, international, or local) within each governed
+  scope.
 - Record any project departure and the higher requirement that controls it.
 - Use ordinary Chicago source-type rules for secondary scholarship when governing policy permits.
 - Use the citation guide that governs the legal form. Apply Chicago to the surrounding work only

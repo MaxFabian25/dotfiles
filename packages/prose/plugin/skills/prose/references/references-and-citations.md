@@ -66,7 +66,7 @@ publication or revision date.
 
 When the requested work includes maintaining a research archive, importing citation records, or
 converting a citation library to plain text, read [Research records and citation
-libraries](publication-verification.md#research-records-and-citation-libraries). These operations
+libraries](research-and-rights-records.md#research-records-and-citation-libraries). These operations
 need durable records and checks beyond formatting a citation.
 
 ## Footnotes
@@ -90,7 +90,7 @@ when it has one. Otherwise, use *reprinted* for an unchanged reproduction, *adap
 item, and *data from* for a new display based on source data.
 
 When the task requests rights clearance or a permissions record, read [Rights and permissions
-records](publication-verification.md#rights-and-permissions-records). If requested reuse exceeds a
+records](research-and-rights-records.md#rights-and-permissions-records). If requested reuse exceeds a
 confirmed basis, identify the unresolved scope and obtain clearance from the grantor or applicable
 authority. A link or independent paraphrase may meet a task that does not need exact reproduction.
 

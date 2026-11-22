@@ -22,8 +22,8 @@ punctuation, author counts, suffixes, or ordering.
 - For a shared first author, alphabetise multiauthor entries by the coauthors' surnames.
 - For identical author sequences and years, append lowercase letters to the year without spaces.
 - Order those entries alphabetically by title, ignoring initial *A*, *An*, or *The*.
-- Use one suffix sequence across author, editor, compiler, and translator roles.
-- Do not share a suffix sequence between works with different author order.
+- Use one suffix sequence across author, editor, compiler, and translator roles, and give works
+  with different author orders separate suffix sequences.
 - Use *n.d.-a* and *forthcoming-a* forms for undated and forthcoming works.
 
 ## Author-date text citations
@@ -40,8 +40,8 @@ punctuation, author counts, suffixes, or ordering.
 - Use *vol.* when citing a whole volume without pages.
 - Use a stable heading phrase when a source lacks numbered locators.
 - Place a parenthetical citation before the following sentence punctuation.
-- After a block quotation, place the citation after the quotation's terminal punctuation.
-- Do not add a full stop after that closing parenthesis.
+- After a block quotation, place the citation after the quotation's terminal punctuation, ending on
+  the closing parenthesis without a following full stop.
 - For repeated same-page references in one paragraph, place one citation after the last reference.
 - For changing pages, give a full first citation, then page-only citations.
 
@@ -64,13 +64,14 @@ punctuation, author counts, suffixes, or ordering.
 
 ## Author-date system with notes
 
-- Reserve author-date footnotes and endnotes for substantive commentary.
+- Reserve author-date footnotes and endnotes for substantive commentary, keeping author-date source
+  citations in the main text.
 - Format citations inside those notes exactly like text citations.
-- Do not move author-date source citations from the text into notes.
 - For permitted notes, apply [Note numbers](chicago-notes-and-bibliography.md#note-numbers) and
   [Footnotes versus endnotes](chicago-notes-and-bibliography.md#footnotes-versus-endnotes).
 - Those links do not select the notes and bibliography system.
 
-Complete this branch when text citations and reference entries match under the source-type rules,
-grouped references follow the selected ordering and disambiguation rules, and permitted notes
-preserve the author-date system.
+Complete this branch when every text citation resolves to one matching reference-list entry under
+the same author and year, years carry no parentheses in the list and no punctuation after the
+author in text, grouped citations use semicolons and required disambiguation, and any notes hold
+only substantive commentary.

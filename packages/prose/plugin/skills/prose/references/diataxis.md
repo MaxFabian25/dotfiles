@@ -3,9 +3,9 @@
 Apply this branch to durable technical or product documentation that serves learning, task,
 information, or understanding needs. A software mention alone does not select this branch.
 
-The Diátaxis authorities in [source provenance](source-manifest.md) identify the official guidance.
-This module contains independently worded adaptations. It uses the four types as purposes, not
-mandatory navigation labels.
+The Diátaxis authorities in [source provenance](source-manifest.md) identify the official guidance
+and adaptation boundary. This module uses the four types as purposes, not mandatory navigation
+labels.
 
 ## Classify the user need
 

@@ -5,7 +5,7 @@ for an app on one, and wherever Apple style is explicitly selected. Apply
 [Interface instructions](interface-instructions.md) first. The forms below replace the house forms
 they name. House spelling, punctuation, dates, and units still govern the surrounding prose.
 
-These rules are independently worded from `AUTH-APPLE-STYLE-2026`. See the [Apple
+Authority `AUTH-APPLE-STYLE-2026` is the source basis; see [Apple
 evidence](source-evidence/apple-style.md).
 
 ## Apple UI terminology adapter

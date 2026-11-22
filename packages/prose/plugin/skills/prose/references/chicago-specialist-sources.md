@@ -58,8 +58,7 @@ The table identifies the required record. The governing authority controls the r
 - Verify a patent's creators, jurisdiction, patent number, year of filing, and issue date independently.
 - Use the official patent register or office as the source of identity.
 - Verify a standard's designation, edition, amendments, status, and cited clause at the standards
-  organisation.
-- Do not let a title replace a standard's designation or edition.
+  organisation, and include the designation and edition alongside any title.
 - Distinguish a citation for a work of art from its caption, credit, alternative text, and rights
   record.
 - Apply [Visual and media prose](visual-and-media-prose.md) when a work of art or map is
@@ -72,11 +71,11 @@ The table identifies the required record. The governing authority controls the r
 
 - Select the authority and cited tradition, version, edition, or translation before abbreviating.
 - Use book, chapter, verse, section, line, or other identifying numbers when the governing authority
-  defines them.
-- Do not substitute page numbers for those identifying numbers unless modern editorial content
+  defines them, keeping them rather than substituting page numbers unless modern editorial content
   requires pages.
-- Preserve the cited source's numbering and letter case when the governing authority requires them.
-- Do not invent or mix abbreviations from different traditions, disciplines, or editions.
+- Preserve the cited source's numbering and letter case when the governing authority requires them,
+  and use abbreviations from one verified tradition, discipline, and edition rather than inventing
+  or mixing abbreviations across traditions.
 - Cite modern introductions, notes, translations, and commentary through their published source
   type.
 

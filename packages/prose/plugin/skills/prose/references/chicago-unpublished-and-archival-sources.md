@@ -56,14 +56,13 @@ The source type controls the available fields.
 
 ## Unpublished manuscripts and private contracts, wills, and such
 
-- Keep a privately shared unpublished manuscript in text or a note by default.
+- Keep a privately shared unpublished manuscript in text or a note by default, adding a bibliography
+  entry only when governing policy and reader need justify it.
 - Put its specific title in quotation marks and identify its unpublished status.
-- Do not add it to a bibliography unless governing policy and reader need justify the entry.
 - Keep an unarchived contract, will, or comparable private document in text or a note by default.
 - In place of the depository, write *in the author's possession* or *private collection*, as
-  applicable. Omit the location.
-- Do not invent a depository, collection, or locator, or claim that others can consult the
-  source.
+  applicable, omitting any location and recording only verified repository, collection, locator, and
+  public-access facts.
 - Apply confidentiality, permission, and [Rights, permissions, and credit
   lines](references-and-citations.md#rights-permissions-and-credit-lines)
   limits before quoting private material.
@@ -92,5 +91,7 @@ The source type controls the available fields.
   a date.
 - Let proximity, abbreviations, and readers' convenience determine each shortened form.
 
-Complete this branch when every cited source meets its source type's metadata, availability, and
-citation-form requirements. Report any unresolved required field.
+Complete this branch when each unpublished, archival, contractual, or report source is classified
+under its specific row, records verified availability and access limits, separates private
+possession from depository holdings with exact container and item locators, applies the selected
+Chicago citation form, and flags any unresolved required field.

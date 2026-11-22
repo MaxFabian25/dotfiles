@@ -11,10 +11,9 @@ sections within that scope. When the requirement selects APA Style without a nar
 every relevant section to the prose unit. An instructor's or institution's requirement overrides
 APA Style within its stated scope.
 
-This module is an independently worded implementation of authority `AUTH-APA-7` in [source
-provenance](source-manifest.md), checked against the manual's text. It identifies the skill's
-APA-specific house departures. APA guidance published after the manual comes from
-`AUTH-APA-STYLE-WEB`.
+Authority `AUTH-APA-7` in [source provenance](source-manifest.md) is the manual basis, and
+`AUTH-APA-STYLE-WEB` covers APA guidance published after the manual. House departures are stated
+where they apply.
 
 Apply English spelling, word choice, grammar, sentence punctuation, date conventions, and APA title
 case only to authored English prose. For authored English, apply the [English house choices](english-core.md),
@@ -220,5 +219,7 @@ unverified. Claim conformity only to the selected rules.
 | The APA heading and category for citations presented in the text | in-text citation |
 | The APA heading and category for the list of credited references | reference list |
 
-Complete this branch when every applicable section matches the recorded APA scope and every
-overlapping requirement has one controlling rule.
+Complete this branch when the selecting authority and APA scope are recorded, every in-scope
+number, grammar, capitalisation, abbreviation, punctuation, heading, and quotation form matches
+these rules (with house British English, date, and equation-numbering departures applied where
+applicable), and any unlisted convention is verified or flagged as unverified.

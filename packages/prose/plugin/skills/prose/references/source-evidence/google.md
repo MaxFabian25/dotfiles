@@ -4,7 +4,7 @@
 
 The [entry register](../google-developer-documentation-word-list-entries.csv) maps Google's
 word-list anchors and source markers to the [local adoption decisions](../google-developer-documentation-word-list-decisions.csv).
-The [Google guidance](../google-developer-documentation-style.md#word-list-evidence) explains
+The [Google UI terminology and word-list lookup](../google-developer-ui-and-word-list.md#word-list-evidence) explains
 targeted lookup and when to check the live source.
 
 The [page register](../google-developer-documentation-pages.csv) records the pages reviewed on

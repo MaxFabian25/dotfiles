@@ -130,5 +130,7 @@ Apply the postal authority for the destination and the selected locale. Preserve
 order, abbreviations, punctuation, and postal code. When reproducing an address, preserve its source
 form. Apply ordinary-prose conventions only outside that scope.
 
-Complete this branch when each form follows its selected language, document, locale, source,
-technical, or data convention without changing governed content.
+Complete this branch when one convention governs each numerical category consistently, decimal
+markers, digit grouping, unit spacing, minus signs, multiplication signs, and ranges match the
+selected language and style, dates and clock times use one unambiguous form, and governed source
+forms, identifiers, and machine values remain intact.

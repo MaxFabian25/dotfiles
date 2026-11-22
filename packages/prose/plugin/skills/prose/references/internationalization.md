@@ -32,9 +32,9 @@ under publication.
 - Use the prose unit's language equivalent of *country or region* for list headings and descriptions.
 - Use the same form in other contexts that might include named dependencies or disputed
   territories.
-- In general discussions, the prose unit's language equivalent of *country* is acceptable.
-- Do not use the prose unit's language equivalents of *geography* or *geo* as synonyms for *country*
-  or *country or region*.
+- In general discussions, the prose unit's language equivalent of *country* is acceptable. Use
+  the language equivalent of *country* or *country or region* rather than using *geography* or
+  *geo* as synonyms for them.
 - Identify currencies under [Currency](quantitative-prose.md#comparisons-and-statistical-claims).
 - Add a time zone when readers outside the local zone must act on the time.
 - Use a calendar period instead of a season. State the hemisphere when the season matters.

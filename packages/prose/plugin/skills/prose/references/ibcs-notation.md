@@ -7,8 +7,7 @@ where it differs from the forms below. Within this scope, these forms replace th
 forms in [number forms](number-forms.md) and the [currency
 forms](quantitative-prose.md#comparisons-and-statistical-claims) in quantitative prose.
 
-This module is an independently worded implementation of authority `AUTH-IBCS-2` in [source
-provenance](source-manifest.md), checked against the standard's text.
+Authority `AUTH-IBCS-2` in [source provenance](source-manifest.md) is the standard basis.
 
 - **Titles.** Write the title in three descriptive lines: the reporting unit, the measure with its
   unit (*Net sales in mEUR*), and the period followed by its scenarios (*2026-Q3 AC and BU*).

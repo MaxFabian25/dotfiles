@@ -5,77 +5,59 @@ description: Draft, edit, or review English or Danish prose, such as reports, ac
 
 # Prose
 
-Apply the house choices and reference sections relevant to the requested writing. For clarity,
-organisation, or presentation work, use [Reader core](references/reader-core.md). Use
-[Authored prose](references/authored-prose.md) when drafting essays, talks, or personal narratives,
-or working on their development or craft, and its
-[development guidance](references/authored-prose.md#development) for the argument of an academic
-paper, report, or thesis. When revising your own draft after feedback, use the
-[revision guidance](references/editorial-practice.md#revisions-after-feedback). Use the
-[reference index](references/index.md) for editing, review, and specialist work.
+## Workflow
+
+1. **Select routes.** Open the core reference below that matches the work, and open the
+   [reference index](references/index.md) for any specialist branch (editing, technical or interface
+   writing, citations, terminology, numbers, displays, publication, or named styles).
+2. **Apply governing rules.** Follow [Authority and preservation](#authority-and-preservation),
+   [House choices](#house-choices), and the rules in every opened reference.
+3. **Scan English prose.** Before handing over English prose longer than a few paragraphs, run
+   `scripts/scan_prose.py FILE` on the HTML, Markdown, or text file and settle each finding in
+   context. It flags serial-comma gaps, house-style word and punctuation slips, and filler, cliché,
+   and conversational leftovers. When the text keeps a style that omits the serial comma, add
+   `--no-serial-comma`, or set `serial_comma = false` in `.prose.toml` at the repository root.
+4. **Hand over.** Return the requested artefact when each requested change is made, the rules of
+   each opened reference are applied, and each finding of `scan_prose.py` is settled. When the user
+   asks for the artefact alone, begin the reply with its first line. When you report a check's
+   result, also say what the check exempted, because a pass says nothing about exempted text.
+   Disclose missing information or unavailable guidance that materially limits the result. Include
+   method when the user requests it.
+
+## Routes
+
+| Work | Open |
+| --- | --- |
+| Clarity, organisation, or presentation | [Reader core](references/reader-core.md) |
+| Essays, talks, personal narratives, or the argument of a paper, report, or thesis | [Authored prose](references/authored-prose.md) (`#development` for academic arguments) |
+| Editing, reviewing, proofreading, or revising a draft after feedback | [Editorial practice](references/editorial-practice.md) |
+| New or edited English prose | [English core](references/english-core.md) |
+| New or edited Danish prose | [Danish core](references/danish-core.md) |
+| Specialist work (technical, interface, citations, terminology, numbers, tables/figures, publication, or APA/Chicago/IBCS/Apple) | [Reference index](references/index.md) |
 
 ## Authority and preservation
 
-Follow the governing instructions and the editing scope authorised by the user. Preserve supplied
-meaning, claim scope, voice, dialect, genre, and established terminology. In a plain-language rewrite
-for lay readers, apply the [drafting-label rule](references/terminology-selection.md#definitions) to
-labels coined for the document, such as *the Issuer* or party initialisms. When editing or extending
-supplied prose, keep its established mechanics, such as serial-comma use, quotation marks, and date
-form, in rewritten and added sentences unless a selected style governs them or the user authorises
-normalisation. Treat the predominant form in the text, or a form set by its typesetting
-configuration, as established; report minority variants as inconsistencies, and use the house
-choice when the text sets none. Keep official names, source identities, quotations, and technical
-literals in their governed forms; the applicable quotation or citation convention controls
-permitted transformations.
-
-When the user scopes an edit to all of a body of work, such as a whole repository, list every file
-or document in it before editing, and give each exclusion a reason the user can overrule.
-
-Before a change that cannot be undone, such as an edit outside version control, save a snapshot.
-
-When the user overrides fidelity to a source, such as by asking for a changed quotation, comply in
-the documents they name and keep raw records such as transcripts verbatim unless they name those
-too. Name any clash with a style selected later among the departures from that style. When you
-report a check's result, also say what the check exempted, because a pass says nothing about
-exempted text.
-
-Project, publisher, product, and explicitly selected style requirements control their stated scope.
-Apply language and general prose preferences to the remainder. Keep different languages and styles
-within their requested parts. Resolve overlapping rules by their authority and specific scope;
-report an unresolved conflict only for the work it affects. A registered source supports a rule
-only within its [recorded role and scope](references/source-manifest.md#evidence-roles).
+- Follow the governing instructions and the editing scope authorised by the user.
+- Preserve supplied meaning, claim scope, voice, dialect, genre, and established terminology.
+- When editing or extending supplied prose, keep its established mechanics, such as serial-comma
+  use, quotation marks, and date form, in rewritten and added sentences unless a selected style
+  governs them or the user authorises normalisation. Treat the predominant form in the text, or a
+  form set by its typesetting configuration, as established; report minority variants as
+  inconsistencies, and use the house choice when the text sets none.
+- Keep official names, source identities, quotations, and technical literals in their governed
+  forms; the applicable quotation or citation convention controls permitted transformations.
+- Project, publisher, product, and explicitly selected style requirements control their stated
+  scope. Apply language and general prose preferences to the remainder. Keep different languages and
+  styles within their requested parts. Resolve overlapping rules by their authority and specific
+  scope; report an unresolved conflict only for the work it affects.
+- A registered source supports a rule only within its [recorded role and
+  scope](references/source-manifest.md#evidence-roles).
 
 ## House choices
 
-For new English prose, use British spelling, including *-ise*/*-isation*, *licence* as a noun, and
-*practise* as a verb. The [English house choices](references/english-core.md) cover word choice and
-mechanics. Supplied prose keeps its dialect unless a change is requested.
-
-Use [Danish house choices](references/danish-core.md) for new Danish prose, including omission of the
-optional start comma, a decimal comma, and a fixed space before %. Preserve machine formats.
-
-## References
-
-For citations and source text, use [references and citations](references/references-and-citations.md),
-[source preservation](references/source-preservation.md), [source text](references/source-text.md),
-and the selected style's reference under [Named styles](references/index.md#named-styles).
-For a governed designation, use [terminology selection](references/terminology-selection.md). For
-Prose's registered source or term provenance, use [source provenance](references/source-manifest.md).
-For an accessibility statement or conformance claim, use [publication
-verification](references/publication-verification.md#final-format-publication). For instructions
-that name a screen, control, or device, use [interface
-instructions](references/interface-instructions.md). For technical or code-adjacent prose, such as
-release notes, use [technical prose](references/technical-and-code-prose.md).
-
-## Hand over
-
-Before you hand over English prose longer than a few paragraphs, run `scripts/scan_prose.py FILE`
-on the HTML, Markdown, or text file and settle each finding in context. It flags serial-comma gaps,
-house-style word and punctuation slips, and filler, cliché, and conversational leftovers. When the
-text keeps a style that omits the serial comma, add `--no-serial-comma`, or set
-`serial_comma = false` in `.prose.toml` at the repository root.
-
-Return the requested artefact when each requested change is made, the rules of each reference you
-opened are applied, and each finding of `scan_prose.py` is settled. When the user asks for the
-artefact alone, begin the reply with its first line. Disclose missing information or unavailable
-guidance that materially limits the result. Include method when the user requests it.
+- **English:** For new English prose, use British spelling, including *-ise*/*-isation*, *licence*
+  as a noun, and *practise* as a verb. Use [English core](references/english-core.md) for word
+  choice and mechanics. Supplied prose keeps its dialect unless a change is requested.
+- **Danish:** For new Danish prose, use [Danish core](references/danish-core.md), including omission
+  of the optional start comma, a decimal comma, and a fixed space before `%`. Preserve machine
+  formats.

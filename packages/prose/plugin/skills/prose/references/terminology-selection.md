@@ -109,23 +109,9 @@ short forms.
   affects the reader's rights or obligations, and explain it at first use. Such labels are not
   established terminology for that reader.
 
-## Maintaining a terminology register
-
-Apply this section only when the task creates or maintains term records. Record the concept,
-subject field, selected form, scope, source, and evidence basis. ISO 704 distinguishes objects,
-concepts, definitions, and designations: a definition defines a concept, and the selected
-`preferred_designation` names it.
-
-Use the narrowest authoritative locator. Record the whole entry only when it is the narrowest
-source for the designation. Distinguish a source that *defines a concept*, a source that *uses a
-designation*, *established usage* demonstrated by professional literature, and a *local description*
-that makes no external-usage claim. These evidence bases are separate from a source's stated
-preferred, admitted, or deprecated term status. Record only a status the source supplies.
-
-Keep exact-form requirements separate in `verbatim_form_required`. A local label for quoted or
-official wording does not become an externally defined term. Record each additional authority and
-its actual concept; naming a source alone establishes neither a definition nor a designation.
+When creating or updating term records in a register, open [Maintaining a terminology
+register](terminology-register-maintenance.md).
 
 Complete the terminology task when the selected words identify the intended concepts, every defined
 term appears in the text, protected names and literals remain intact, and any requested term
-records contain their source evidence.
+records follow [Maintaining a terminology register](terminology-register-maintenance.md).

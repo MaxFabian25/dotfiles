@@ -9,14 +9,13 @@ rules below do not settle. When the output explicitly selects IBCS notation, app
 notation](ibcs-notation.md) to the display's text.
 
 - **Data tables.** Use a data table only when row-and-column relationships carry meaning. Use a
-  list for a sequence or one-dimensional set. Use the output format's layout and spacing controls
-  for presentation.
-- **Tables used for layout.** Do not use a table for page or code layout. Do not divide a
-  one-dimensional list between table columns.
-- **Procedures and tables.** Keep the primary numbered procedure outside tables. Do not put a table
-  inside a numbered procedure. Do not hide a procedural step in a table cell.
-- **Merged cells.** Do not merge cells. Split a complex table when distinct rows and columns cannot
-  express its relationships.
+  list for a sequence or one-dimensional set, and use the output format's layout and spacing
+  controls for presentation rather than using a table for page or code layout or splitting a
+  one-dimensional list across table columns.
+- **Procedures and tables.** Keep the primary numbered procedure outside tables, keep tables
+  outside numbered procedures, and keep every procedural step out of table cells.
+- **Unmerged cells.** Give every cell one distinct row and column; split a complex table whenever
+  distinct rows and columns cannot express its relationships without merging cells.
 - **Table captions and header cells.** Associate each caption with its table through the output
   format's structural markup. Associate every data cell with each header cell needed for
   interpretation.
