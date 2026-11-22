@@ -13,8 +13,6 @@ ROOTS = ('skills', 'packages')
 # Copies found on 2026-11-14 that wait for issue 238. Delete an entry once its copy is gone, and add none: fix a new
 # copy instead.
 ALLOWED = {
-    ('skills/excel-com-wsl', 'scripts/excel.py', 'SKILL.md'):
-        'not in the review: the REF and exit-status paragraphs restate the docstring; on issue 238',
     ('skills/excel-com-wsl', 'scripts/office-logs.ps1', 'references/office-logs.md'):
         'not in the review: restates the script\'s header in a reference read only when a log is left; on issue 238',
 }
