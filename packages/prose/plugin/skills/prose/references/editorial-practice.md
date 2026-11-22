@@ -12,7 +12,9 @@ criteria. Distinguish an error or inconsistency from a discretionary style choic
 beyond the authorised scope without editing it.
 
 When reviewing a whole piece, lead with any problem that most limits its purpose, then order
-passage-level findings by their effect on the reader.
+passage-level findings by their effect on the reader. Before you post a critique of other people's
+text in the user's name, run the same review criteria or checklist on the user's own part of the
+work, because a critique whose faults the user's own text shares undercuts the user.
 
 Query uncertainty that would materially affect meaning, factual basis, voice, or scope. Write
 neutral, concise, answerable queries and offer concrete alternatives when known. Use prior answers
@@ -34,12 +36,6 @@ passage out unless the user restores it.
 
 Fix a reviewer's finding in the passage that carries it. Add a caveat only when no existing passage
 can carry the limit, and check first that the piece does not already state it.
-
-When the user sets a loose quality bar, such as text that must not read as machine-written, adopt a
-published checklist for it at once, name it to the user, and run it on your own drafts before each
-showing. Before you post a critique of other people's text in the user's name, run the same
-checklist on the user's own part of the work, because a critique whose faults the user's own text
-shares undercuts the user.
 
 ## Voice samples
 
@@ -76,3 +72,7 @@ edit. Route each recommendation to the author or governing authority for decisio
 technical, and accessibility conformance review separately when those authorities apply.
 
 Give each suggestion an answer, decision, or recorded owner and status.
+
+Complete the editorial task when every change stays within the authorised scope, each review
+finding or query has a resolution or recorded owner, and the affected consistency checks under
+[Editorial verification](editorial-verification.md) are settled.

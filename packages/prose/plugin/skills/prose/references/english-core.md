@@ -133,6 +133,9 @@ supports British data prose within that scope.
   three full stops in code, source text, or a required format.
 - Outside ASD-STE100 prose, use an en dash when an adjectival phrase contains an open or hyphenated
   compound.
+- Omit em dashes in original prose; recast the sentence with a full stop, comma pair, parentheses,
+  or colon. [Creative and dialogue prose](creative-and-dialogue-prose.md) controls intentional
+  literary or dialogue dashes.
 - Use a serial comma before the final conjunction in a series of three or more items.
 - Without a selected quotation convention, put a direct quotation in double quotation marks and a
   quotation within it in single marks. Put a full stop or comma inside the closing mark only when it
@@ -161,13 +164,13 @@ supports British data prose within that scope.
 - Use *user* for a named role or defined domain term. Use *end user* only to distinguish that role
   from another technical role.
 - Use a named role for another person.
-- Use *we* only for a stated organisation or author group.
-- State a recommendation directly instead of *we recommend* unless authorship matters. Name the
-  recommending person or organisation when it does.
+- Under the [group-authorship rule](reader-core.md#presentation-choices), state a recommendation
+  directly instead of *we recommend* unless authorship matters, and reserve *we* for a stated
+  organisation or author group.
 - Italicise an authored word, phrase, or letter when referring to it as language. Keep plurals, past
   tenses, and other grammatical changes outside italics.
-- State an inclusive choice as *A or B, or both*. State an exclusive choice as *either A or B, but
-  not both*.
+- Where the [choice rule](reader-core.md#presentation-choices) requires an explicit boundary, state
+  an inclusive choice as *A or B, or both* and an exclusive choice as *either A or B, but not both*.
 
 ## Remove empty English wording
 

@@ -21,7 +21,8 @@ Overfør ikke en engelsk ordvalgsregel til dansk alene fordi de to sprog har et 
 
 ## APA i dansk prosa
 
-Når APA Style er valgt, anvend [APA-reglerne](apa-style.md) og [APA-reglerne for henvisninger og
+Når APA Style er valgt, anvend [APA-reglerne](apa-style.md),
+[APA-tabeller og -figurer](apa-tables-and-figures.md) og [APA-reglerne for henvisninger og
 referencer](apa-citations-and-references.md) inden for det valgte område. Brug dansk grammatik og
 tegnsætning i prosaen. Følg den danske udformning af kildehenvisninger som institutionen
 foreskriver. APA har ingen dansk udgave, så formerne nedenfor er interne valg der bygger på danske

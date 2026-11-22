@@ -64,10 +64,10 @@ notation](ibcs-notation.md) to the display's text.
 - **Table notes.** Put information that applies to the whole table in its title or an adjacent note.
   Qualify an individual cell with a consistent footnote reference. Follow the governing format's
   note and marker conventions.
-- **Blank data cells.** Do not leave a data cell blank when the absence has meaning. Use `0` only for a true zero. Otherwise, write an explicit status in the document language, such as *No data*, *Not applicable*, or *Not stated* when the sources consulted are silent. Never record silence in the sources as *No*. Follow a selected style module's empty-cell convention, such as [APA tables and figures](apa-style.md#tables-and-figures).
+- **Blank data cells.** Do not leave a data cell blank when the absence has meaning. Use `0` only for a true zero. Otherwise, write an explicit status in the document language, such as *No data*, *Not applicable*, or *Not stated* when the sources consulted are silent. Never record silence in the sources as *No*. Follow a selected style module's empty-cell convention, such as [APA tables and figures](apa-tables-and-figures.md).
 - **Table units.** Put a shared measurement unit in the column or row header. Put a table-wide unit
   in the table title. Follow a selected style module when it places table-wide units elsewhere,
-  such as the general note under [APA tables and figures](apa-style.md#tables-and-figures).
+  such as the general note under [APA tables and figures](apa-tables-and-figures.md).
 - **Chart titles.** Write an explanatory chart title as a testable main message supported by the displayed data. Use a subtitle to identify any measure, scope, or period that the title and chart do not make clear. When the governing format fixes the figure elements, as APA Style does, give that information in the title, axis titles, or note instead of a subtitle. Use a neutral topic title for exploratory charts.
 - **Data-display sources.** Give each data table and chart an adjacent source block that names and links the exact dataset or publication. Name every source used. Put material caveats and the data date or version in that block. Link the exact source rather than an organisation homepage. When a citation style governs, attribute sources in the form and position that style requires. The [charts skill](../../charts/SKILL.md#delivery) exempts a share card linked to the publication that cites its source.
 - **Reused display credits.** Apply [Rights, permissions, and credit

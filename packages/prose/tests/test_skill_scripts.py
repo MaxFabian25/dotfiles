@@ -291,6 +291,35 @@ class ScanTests(unittest.TestCase):
     def test_markdown_code_fence_is_skipped(self) -> None:
         self.assertEqual(self.checks("```\nx — y... and/or z\n```\n"), [])
 
+    def test_yaml_frontmatter_is_skipped_and_body_line_numbers_hold(self) -> None:
+        text = (
+            "---\n"
+            "title: My Guide To Good Prose Style\n"
+            "description: Draft, edit or review prose.\n"
+            "---\n"
+            "\n"
+            "Bring pens and/or paper.\n"
+        )
+        result = run(SCAN, "--json", "-", stdin=text)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        findings = [json.loads(line) for line in result.stdout.splitlines()]
+        self.assertEqual(
+            [(f["check"], f["line"]) for f in findings],
+            [("and-or", 6)],
+        )
+
+    def test_horizontal_rules_around_prose_are_not_treated_as_frontmatter(self) -> None:
+        text = "---\n\nBring pens and/or paper.\n\n---\n"
+        self.assertEqual(self.checks(text), ["and-or"])
+
+    def test_mid_sentence_colon_guidance_permits_explanations(self) -> None:
+        text = "The note explains the decision clearly: every check passed without error.\n"
+        result = run(SCAN, "--json", "-", stdin=text)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        [finding] = [json.loads(line) for line in result.stdout.splitlines()]
+        self.assertEqual(finding["check"], "mid-sentence-colon")
+        self.assertNotIn("only before a list or example", finding["message"])
+
     def test_unslop_patterns_are_flagged(self) -> None:
         found = self.checks("It is not just fast but robust — it delves into data.\n")
         self.assertTrue({"em-dash", "vocabulary", "not-just"} <= set(found))

@@ -18,9 +18,8 @@ paper, report, or thesis. When revising your own draft after feedback, use the
 
 Follow the governing instructions and the editing scope authorised by the user. Preserve supplied
 meaning, claim scope, voice, dialect, genre, and established terminology. In a plain-language rewrite
-for lay readers, replace a document's [drafting labels](references/terminology-selection.md#definitions),
-such as *the Issuer* or an initialism coined for the document, with plain names, and keep a defined
-term whose exact scope affects the reader's rights, explained at first use. When editing or extending
+for lay readers, apply the [drafting-label rule](references/terminology-selection.md#definitions) to
+labels coined for the document, such as *the Issuer* or party initialisms. When editing or extending
 supplied prose, keep its established mechanics, such as serial-comma use, quotation marks, and date
 form, in rewritten and added sentences unless a selected style governs them or the user authorises
 normalisation. Treat the predominant form in the text, or a form set by its typesetting
@@ -71,10 +70,10 @@ release notes, use [technical prose](references/technical-and-code-prose.md).
 ## Hand over
 
 Before you hand over English prose longer than a few paragraphs, run `scripts/scan_prose.py FILE`
-on the HTML, Markdown, or text file and settle each finding in context. It flags serial-comma gaps
-and other house mechanics, and the patterns the unslop writing passes remove. When the text keeps a
-style that omits the serial comma, add `--no-serial-comma`, or set `serial_comma = false` in
-`.prose.toml` at the repository root.
+on the HTML, Markdown, or text file and settle each finding in context. It flags serial-comma gaps,
+house-style word and punctuation slips, and filler, cliché, and conversational leftovers. When the
+text keeps a style that omits the serial comma, add `--no-serial-comma`, or set
+`serial_comma = false` in `.prose.toml` at the repository root.
 
 Return the requested artefact when each requested change is made, the rules of each reference you
 opened are applied, and each finding of `scan_prose.py` is settled. When the user asks for the

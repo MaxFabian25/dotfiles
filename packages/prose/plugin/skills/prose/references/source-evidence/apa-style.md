@@ -6,7 +6,8 @@ The skill uses Chapters 1, 2, 4–10, and 12 of the manual; Chapter 11 was check
 chapters used cover scholarly communication, paper format, grammar, usage, word choice, voice,
 bias-free language, mechanics, tables, figures, citations, references, reference examples, and
 copyright attribution. The [APA Style
-module](../apa-style.md), [APA citations and references](../apa-citations-and-references.md), and
+module](../apa-style.md), [APA tables and figures](../apa-tables-and-figures.md), [APA citations
+and references](../apa-citations-and-references.md), and
 [source-text rules for quotations in relation to text](../source-text.md#quotations-in-relation-to-text)
 contain independently worded adaptations, checked against the full text of the manual. The APA
 module keeps the 40-word block threshold of Section 8.27 inside APA scope. Source Text provides

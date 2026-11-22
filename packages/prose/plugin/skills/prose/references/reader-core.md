@@ -18,6 +18,9 @@ scope](source-evidence/plain-language.md#plain-language) when that designation m
   the request leaves open: the reader and what they already know, whether they want a
   recommendation or a neutral comparison, the options really available, the criteria and features
   in scope, a length budget, and how the document will reach them.
+- When the user sets a loose quality bar, such as text that must not read as machine-written, adopt
+  a published checklist for it at once, name it to the user, and run it on your own drafts before
+  each showing.
 - In a neutral comparison, keep any favourite out of the scope, labels, and order. When you cut text
   about how a comparison was produced, also cut any verdict that text supported, unless the author
   owns that verdict.
@@ -131,7 +134,8 @@ briefing, comparison, or assessment, have a fresh agent read only the document a
 description of that reader. Ask it for passages that mislead, repeat a fact, leave a term
 unexplained, or answer a question the reader did not ask, and resolve each one. When the writer is
 a model whose maker the document assesses, also have a model from another maker check the factual
-claims and look for framing that favours the writer's maker.
+claims and look for framing that favours the writer's maker; if the host cannot run a model from
+another maker, disclose that gap at handoff.
 
 Complete the requested prose when it holds the information its reader needs, meets the selected
 rules and each rule above that applies to it, resolves each passage a fresh reader flagged, and

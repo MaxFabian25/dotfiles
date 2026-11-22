@@ -202,3 +202,7 @@ thereafter. Keep Google product terminology inside its product scope.
 For a requested rule audit, record each recommendation's controlling rule, scope, and material
 source conflicts. When updating adopted guidance or recorded evidence, apply the [source
 maintenance procedure](source-manifest.md#source-drift).
+
+Complete this branch when the developer documentation follows the applicable Google style choices,
+house adaptations, heading and procedure forms, placeholder rules, and word-list decisions within
+the governing authority order.
