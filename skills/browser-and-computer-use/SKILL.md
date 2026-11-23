@@ -1,6 +1,6 @@
 ---
 name: browser-and-computer-use
-description: Drive browsers (`agent-browser`) and native apps (`cua-driver`) across Windows, WSL, Linux, and macOS. Use before telling the user you cannot reach or click something, giving click steps, or saying only they can act on a signed-in site; for web testing, local HTML width screenshots or image exports (even with an HTML preview tool), paywalled news, X post text, 403 or bot walls, the user's Chrome, UI-only app values, or cleaning up installed tools.
+description: Drive browsers (`agent-browser`) and native apps (`cua-driver`) across Windows, WSL, Linux, and macOS. Use before telling the user you cannot reach or click something, giving click steps, or saying only they can act on a signed-in site; for web testing, local HTML width screenshots or image exports (even with an HTML preview tool), Playwright Chromium screenshots on WSL, paywalled news, X post text, 403 or bot walls, the user's Chrome, UI-only app values, or cleaning up installed tools.
 ---
 
 # Browser and computer use
@@ -20,7 +20,7 @@ Use Vercel Labs' `agent-browser` from the shell for browser automation, verifica
 - When `open` times out on a heavy page ("CDP command timed out: Page.navigate" or "no response came back"), check `get url` or a snapshot before treating `open` as failed.
 - Keep launch flags (`--profile`, `--headed`, `--idle-timeout`, `--user-agent`) identical on every command (`get url`, `tab list` and `close` included) so the browser does not restart and lose sign-in. On macOS and Linux, run every command through `scripts/ab_session.py`, which saves flags once per session; on Windows, pass them on every command. Verify the user's own Chrome is not running on a profile folder before passing it to `--profile`.
 - Write screenshots, PDFs, HAR files and recordings to explicit paths in a scratch directory.
-- To render or screenshot a page at a set width, measure layout with `scripts/page_check.py`, test hover styles, probe page timers, or download files, read [references/page-checks.md](references/page-checks.md).
+- To render or screenshot a page at a set width, take screenshots with Playwright's Chromium on WSL, measure layout with `scripts/page_check.py`, test hover styles, probe page timers, or download files, read [references/page-checks.md](references/page-checks.md).
 - Keep Chrome profile paths and sockets (`cua-driver serve --socket`) short (for example a `tempfile.mkdtemp()` folder under `/tmp`) so Unix socket paths stay under 108 bytes.
 - Use the host's HTML preview tool (such as T3 Code's `html_preview`) only to show results to the user; inspect behaviour or layout at set widths yourself with `agent-browser` at `file://<path>`.
 - After inspecting the page, run known multi-step actions in one `batch --bail` call from a scratch JSON file of argument arrays (`[["fill", "#email", "a@example.test"], ["click", "#save"], ["wait", "--text", "Saved"], ["get", "text", "#status"]]`), passed on stdin (`agent-browser --session <name> batch --bail < steps.json`, or in PowerShell `Get-Content -Raw steps.json | agent-browser --session <name> batch --bail`). End with the expected wait and state check, and keep a snapshot checkpoint whenever the next action depends on page state.
