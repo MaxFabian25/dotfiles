@@ -98,22 +98,6 @@ branch governs, with these ASD-STE100 rules:
 - Write capital-letter abbreviations without full stops, including `UK` and `US`. This overrides
   APA's `U.K.` and `U.S.` forms only within the ASD-STE100 branch.
 
-## Terminology
-
-| Scope | Preferred designation |
-| --- | --- |
-| The controlled natural language and international standard | ASD-STE100 Simplified Technical English |
-| Short form after the registered name is established | Simplified Technical English (STE) |
-| The ASD Simplified Technical English Maintenance Group's classification of STE | controlled natural language |
-| Part 1 of ASD-STE100 | writing rules |
-| Part 2 of ASD-STE100 | dictionary |
-| A dictionary word approved in STE | approved word |
-| A meaning approved for an STE word | approved meaning |
-| A dictionary word that is not approved in STE | word that is not approved |
-| An alternative that the ASD dictionary supplies | approved alternative |
-| A noun term admitted through the ASD-STE100 technical vocabulary rules | technical noun |
-| A verb term admitted through the ASD-STE100 technical vocabulary rules | technical verb |
-
 Complete this branch when every in-scope instruction, warning, and caution stays within 20 words,
 every descriptive sentence or note stays within 25 words, descriptive paragraphs stay within six
 sentences, multi-word nouns stay within three words (or use the established-term handling), voice,

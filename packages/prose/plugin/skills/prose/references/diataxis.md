@@ -84,17 +84,5 @@ Explanation develops understanding of a defined subject.
 Complete this type when the reader can relate the subject to its context, reasons, and alternatives
 without performing a task.
 
-## Terminology
-
-Use these source designations within the Diátaxis scope:
-
-| Scope | Preferred designation |
-| --- | --- |
-| Systematic approach to technical documentation content, architecture, and form based on user needs | Diátaxis |
-| Learning-oriented practical documentation in which a learner acquires skill by doing | tutorial |
-| Goal-oriented directions for a competent reader completing a real task or solving a problem | how-to guide |
-| Information-oriented technical description that a reader consults while working | reference |
-| Understanding-oriented treatment that adds context and supports reflection | explanation |
-
 Complete this branch when every unit has one recorded primary type and meets its type criterion.
 Place secondary material in a distinct unit and link it from the point of need.

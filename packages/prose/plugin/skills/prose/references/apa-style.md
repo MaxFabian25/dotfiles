@@ -114,17 +114,6 @@ differ, follow the manual, except on a topic the manual does not address, such a
 and record the conflict. Otherwise, preserve the existing treatment and record the convention as
 unverified. Claim conformity only to the selected rules.
 
-## Terminology
-
-| Scope | Preferred designation |
-| --- | --- |
-| The American Psychological Association style system | APA Style |
-| The source manual's title | Publication Manual of the American Psychological Association |
-| Writing in the manual's scholarly communication scope | scholarly writing |
-| Punctuation, spelling, capitalisation, italics, abbreviations, numbers, mathematical copy, equations, and lists | mechanics of style |
-| The APA heading and category for citations presented in the text | in-text citation |
-| The APA heading and category for the list of credited references | reference list |
-
 Complete this branch when the selecting authority and APA scope are recorded, paper organisation,
 headings, title case, and quotations match these rules (with [APA mechanics](apa-mechanics.md),
 [APA tables and figures](apa-tables-and-figures.md), [APA citations and

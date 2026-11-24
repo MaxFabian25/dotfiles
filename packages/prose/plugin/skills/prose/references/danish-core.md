@@ -107,21 +107,6 @@ efter reglerne dér.
 Når opgaven eller den styrende arbejdsgang kræver afprøvning med læsere, brug
 [proceduren for afprøvning](readability-and-reader-testing.md#reader-testing) og dens danske tillæg.
 
-## Betegnelser og kildegrundlag
-
-| Anvendelsesområde | Foretrukken betegnelse |
-| --- | --- |
-| Den officielle danske retskrivningsordbog | Retskrivningsordbogen |
-| Læsbarhedsindeks anvendt på dansk | LIX |
-| Substantiv der er dannet af et verbum eller betegner en proces | verbalsubstantiv |
-| Forældet eller unødigt bureaukratisk stil | kancellistil |
-| Ord der kan være præget af bureaukratisk stil | papirord |
-| Afprøvning hvor en læser sætter ord på sine reaktioner | tænke-højt-test |
-| Det forhold at læseren forstår teksten | forståelighed |
-| Dansk betegnelse for plain language | klarsprog |
-| Det forhold at en tekst er let at læse | læsbarhed |
-| Komma foran en ledsætning, som hovedregel valgfrit | startkomma |
-
 Arbejdet med dansk prosa er afsluttet når alle relevante danske regler er fulgt: stavning, bøjning
 og tegnsætning følger *Retskrivningsordbogen* 5.1 (uden valgfrit startkomma i ny tekst, med
 decimalkomma og fast mellemrum foran `%`), sammensatte substantiver, genitiver og oversatte

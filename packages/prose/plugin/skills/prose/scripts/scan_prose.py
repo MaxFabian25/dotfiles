@@ -5,9 +5,13 @@ Usage:
   scan_prose.py FILE [FILE ...]
   scan_prose.py - < draft.txt
 Options:
-  --only house    only the English house choices in references/english-core.md
+  --only house    only house choices (English by default, or Danish with --lang da)
   --only unslop   only filler, cliché, and AI-style punctuation checks
-  --passive       also flag passive verbs with no "by" actor (noisy)
+  --lang {en,da}  prose language (default: en, overriding .prose.toml)
+  --us-english    skip British-only spelling and day-month-year date checks
+  --british-english
+                  enforce British spelling and date checks, overriding .prose.toml
+  --passive       also flag passive verbs with no "by" actor (noisy, English only)
   --serial-comma  force the serial-comma check on, overriding .prose.toml
   --no-serial-comma
                   skip the serial-comma check, for text whose style omits it
@@ -16,6 +20,8 @@ Options:
 Optional `.prose.toml` config (discovered by walking up from each file or cwd
 for `-`, stopping at the repository root containing `.git`):
   serial_comma = false   skip the serial-comma check unless --serial-comma is set
+  us_english = true      skip British-only spelling and date checks unless --british-english is set
+  lang = "da"            use Danish checks unless --lang is set
 
 HTML is read block by block (paragraphs, list items, table cells, headings,
 captions), so table cells are never joined into one sentence, and code, pre,
@@ -43,7 +49,8 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 fallback
     tomllib = None
 
 CONFIG_NAME = ".prose.toml"
-CONFIG_KEYS = frozenset({"serial_comma"})
+CONFIG_KEYS = frozenset({"serial_comma", "us_english", "lang"})
+VALID_LANGS = frozenset({"en", "da"})
 
 WORD = r"[\w'’-]+"
 ITEM = rf"{WORD}(?: {WORD}){{0,2}}"
@@ -343,6 +350,8 @@ class Check:
     pattern: re.Pattern[str]
     message: str
     kinds: frozenset[str] = frozenset({"para", "item", "cell", "caption", "heading"})
+    langs: frozenset[str] = frozenset({"en"})
+    skip_if_us: bool = False
 
 
 def words(*items: str) -> str:
@@ -350,6 +359,55 @@ def words(*items: str) -> str:
 
 
 IGNORE = re.IGNORECASE
+MONTHS_EN = (
+    r"(?:January|February|March|April|May|June|July|August|September|October|"
+    r"November|December)"
+)
+MONTHS_DA_UPPER = (
+    r"(?:Januar|Februar|Marts|April|Maj|Juni|Juli|August|September|Oktober|"
+    r"November|December)"
+)
+MONTHS_DA_LOWER = (
+    r"(?:januar|februar|marts|april|maj|juni|juli|august|september|oktober|"
+    r"november|december)"
+)
+DAY = r"(?:[1-9]|[12]\d|3[01])"
+US_SPELLING = re.compile(
+    words(
+        r"(?:analyz|optimiz|organiz|prioritiz|summariz|categoriz|standardiz|"
+        r"normaliz|customiz|finaliz|localiz|capitaliz|italiciz|minimiz|maximiz|"
+        r"recogniz|realiz|characteriz|emphasiz|stabiliz|synchroniz|authoriz|"
+        r"visualiz)(?:e|es|ed|ing|er|ers|ation|ations)",
+        r"color(?:s|ed|ing)?",
+        r"behavior(?:s|al)?",
+        r"favor(?:s|ed|ing|able|ite|ites)?",
+        r"honor(?:s|ed|ing|able)?",
+        r"labor(?:s|ed|ing)?",
+        r"neighbor(?:s|ed|ing|hood|hoods)?",
+        r"humor(?:s|ed|ing)?",
+        r"flavor(?:s|ed|ing)?",
+        r"center(?:s|ed|ing)?",
+        r"fibers?",
+        r"liters?",
+        r"theaters?",
+        r"gray",
+        r"defense",
+        r"offense",
+        r"pretense",
+        r"cancel(?:ed|ing)",
+        r"label(?:ed|ing)",
+        r"model(?:ed|ing)",
+        r"travel(?:ed|ing|ers?)",
+        r"fulfill(?:s|ment)?",
+        r"enroll(?:s|ment)?",
+        r"installments?",
+        r"skillful",
+        r"willful",
+        r"artifacts?",
+        r"catalog(?:s|ed|ing)?",
+    ),
+    IGNORE,
+)
 CHECKS = [
     Check(
         "house",
@@ -431,6 +489,153 @@ CHECKS = [
         "comprised-of",
         re.compile(r"\bcomprised of\b", IGNORE),
         "state the relation with an exact verb, such as 'consists of'",
+    ),
+    Check(
+        "house",
+        "us-spelling",
+        US_SPELLING,
+        "use British spelling in new English prose (or pass --us-english when keeping US English)",
+        skip_if_us=True,
+    ),
+    Check(
+        "house",
+        "ordinal-date",
+        re.compile(
+            rf"\b(?:{DAY}(?:st|nd|rd|th)\s+(?:of\s+)?{MONTHS_EN}|"
+            rf"{MONTHS_EN}\s+{DAY}(?:st|nd|rd|th))\b"
+        ),
+        "write an English date without ordinal endings, such as '13 April 2026'",
+    ),
+    Check(
+        "house",
+        "us-date",
+        re.compile(rf"\b{MONTHS_EN}\s+{DAY},\s+\d{{4}}\b"),
+        "write an English date as '13 April 2026' (or pass --us-english when keeping US English)",
+        skip_if_us=True,
+    ),
+    Check(
+        "house",
+        "twelve-clock",
+        re.compile(
+            r"(?<!:)\b12(?::00\s*(?:[ap]\.?m\.?|[AP]\.?M\.?)|"
+            r"\s*(?:[ap]\.m\.|[AP]\.M\.|[AP]M\b)|(?:[ap]m\b))"
+        ),
+        "write 'noon' instead of '12 p.m.', or give an unambiguous date and time instead of '12 a.m.'",
+    ),
+    Check(
+        "house",
+        "english-percent-space",
+        re.compile(r"(?<!\w)\d+(?:\.\d+)?\s+%(?!\w)"),
+        "close '%' up to the numeral in English prose, as in '25%'",
+    ),
+    Check(
+        "house",
+        "hard-copy",
+        re.compile(r"\bhard[- ]cop(?:y|ies)\b", IGNORE),
+        "name the exact medium, such as 'printed copy', unless preserving a governed term",
+    ),
+    Check(
+        "house",
+        "action-noun",
+        re.compile(
+            r"\b(?:perform(?:s|ed|ing)?\s+(?:a|an)\s+(?:restart|restore|analysis|"
+            r"review|check|audit|backup|update|upgrade|migration|comparison|"
+            r"calculation|evaluation|verification|validation|installation|search|"
+            r"scan|reset|rollback)|"
+            r"conduct(?:s|ed|ing)?\s+(?:a|an)\s+(?:analysis|review|audit|"
+            r"comparison|evaluation|assessment|investigation|inspection|study)|"
+            r"(?:make|makes|made|making)\s+(?:a|an)\s+(?:decision|comparison|"
+            r"recommendation|selection|modification|adjustment|calculation))\b",
+            IGNORE,
+        ),
+        "prefer the direct verb unless the noun names an established technical concept",
+    ),
+    Check(
+        "house",
+        "24x7",
+        re.compile(r"\b24x7\b", IGNORE),
+        "write '24/7' or '24 hours a day, 7 days a week' instead of '24x7'",
+    ),
+    Check(
+        "house",
+        "print-out",
+        re.compile(
+            r"(?<!\ba )(?<!\bA )(?<!\bthe )(?<!\bThe )\bprint(?:s|ed|ing)?\s+out\b(?!\s+of\b)",
+            IGNORE,
+        ),
+        "write 'print' without 'out'",
+    ),
+    Check(
+        "house",
+        "click-on",
+        re.compile(
+            r"(?<!\ba )(?<!\bA )(?<!\bthe )(?<!\bThe )\bclick(?:s|ed|ing)?\s+on\b",
+            IGNORE,
+        ),
+        "write 'click' directly before its object, without 'on'",
+    ),
+    # Checks for a missing space before '%'; HTML block normalisation collapses
+    # whitespace and Markdown prose routinely uses an ASCII space.
+    Check(
+        "house",
+        "danish-percent-space",
+        re.compile(r"(?<!\w)\d+(?:,\d+)?%(?!\d)"),
+        "sæt et fast mellemrum før '%' i dansk prosa, fx '25 %'",
+        langs=frozenset({"da"}),
+    ),
+    Check(
+        "house",
+        "danish-clock",
+        re.compile(r"\b(?:kl\.?|klokken)\s*\d{1,2}:\d{2}\b", IGNORE),
+        "brug punktum mellem timer og minutter i danske klokkeslæt, fx 'kl. 16.00'",
+        langs=frozenset({"da"}),
+    ),
+    Check(
+        "house",
+        "danish-date-month-case",
+        re.compile(
+            rf"\b(?:(?:den|d\.)\s+{DAY}\.?\s+{MONTHS_DA_UPPER}\b|"
+            rf"{DAY}\.?\s+{MONTHS_DA_UPPER}\s+\d{{4}}\b)"
+        ),
+        "skriv danske månedsnavne med lille begyndelsesbogstav, fx '13. april 2026'",
+        langs=frozenset({"da"}),
+    ),
+    Check(
+        "house",
+        "danish-date-dot",
+        re.compile(rf"\b{DAY}\s+{MONTHS_DA_LOWER}\b"),
+        "sæt punktum efter dagen i danske datoer, fx '13. april 2026'",
+        langs=frozenset({"da"}),
+    ),
+    Check(
+        "house",
+        "danish-empty-opener",
+        re.compile(r"\bdet\s+bemærkes,?\s+at\b", IGNORE),
+        "erstat 'det bemærkes, at' med selve påstanden medmindre henvisningen har betydning",
+        langs=frozenset({"da"}),
+    ),
+    Check(
+        "house",
+        "danish-24x7",
+        re.compile(r"\b24x7\b", IGNORE),
+        "skriv '24/7' eller 'døgnet rundt' i stedet for '24x7'",
+        langs=frozenset({"da"}),
+    ),
+    Check(
+        "unslop",
+        "danish-em-dash",
+        re.compile(r"—|\s--\s"),
+        "omskriv tankestregen med punktum, komma, parentes eller kolon",
+        langs=frozenset({"da"}),
+    ),
+    Check(
+        "unslop",
+        "danish-emoji",
+        re.compile(
+            r"(?:[\U0001f1e6-\U0001f1ff]{2}|[\U0001f300-\U0001faff\u2600-\u266c\u2670-\u27bf⭐✅❌])"
+        ),
+        "udtryk tilstanden med ord",
+        langs=frozenset({"da"}),
     ),
     Check(
         "unslop",
@@ -574,7 +779,9 @@ CHECKS = [
     Check(
         "unslop",
         "emoji",
-        re.compile("[\U0001f300-\U0001faff☀-➿⭐✅❌]"),
+        re.compile(
+            r"(?:[\U0001f1e6-\U0001f1ff]{2}|[\U0001f300-\U0001faff\u2600-\u266c\u2670-\u27bf⭐✅❌])"
+        ),
         "express the state in words",
     ),
 ]
@@ -717,7 +924,9 @@ def text_blocks(source: str) -> list[Block]:
                 if cell and not re.fullmatch(r":?-{2,}:?", cell):
                     blocks.append(Block(cell, "cell", number))
             continue
-        if re.match(r"\s*(?:[-*+]|\d+[.)])\s", line):
+        if re.match(r"\s*(?:[-*+]|\d+[.)])\s", line) and not re.match(
+            rf"\s*{DAY}\.\s+(?:{MONTHS_DA_UPPER}|{MONTHS_DA_LOWER})\b", line
+        ):
             flush()
             kind, start = "item", number
             lines = [re.sub(r"^\s*(?:[-*+]|\d+[.)])\s+", "", line)]
@@ -776,11 +985,21 @@ def snippet(text: str, start: int, match: str) -> str:
 
 
 def scan(
-    blocks: list[Block], groups: set[str], passive: bool, serial: bool
+    blocks: list[Block],
+    groups: set[str],
+    passive: bool,
+    serial: bool,
+    *,
+    lang: str = "en",
+    us_english: bool = False,
 ) -> list[dict[str, object]]:
     findings = []
-    checks = [c for c in CHECKS if c.group in groups]
-    if passive and "unslop" in groups:
+    checks = [
+        c
+        for c in CHECKS
+        if c.group in groups and lang in c.langs and not (us_english and c.skip_if_us)
+    ]
+    if passive and lang == "en" and "unslop" in groups:
         checks.append(PASSIVE)
 
     def add(
@@ -811,7 +1030,8 @@ def scan(
                     match.group(0),
                 )
         if (
-            serial
+            lang == "en"
+            and serial
             and "house" in groups
             and block.kind in ("para", "item", "cell", "caption")
         ):
@@ -824,7 +1044,12 @@ def scan(
                     start,
                     text,
                 )
-        if "unslop" in groups and block.kind == "heading" and title_case(block):
+        if (
+            lang == "en"
+            and "unslop" in groups
+            and block.kind == "heading"
+            and title_case(block)
+        ):
             add(block, "unslop", "title-case", "use sentence case", 0, block.text)
     return findings
 
@@ -844,13 +1069,13 @@ class ConfigError(ValueError):
 
 def _parse_simple_toml(text: str, config_path: Path) -> dict[str, object]:
     data: dict[str, object] = {}
-    for line_no, raw in enumerate(text.splitlines(), 1):
-        line = raw.split("#", 1)[0].strip()
+    for line_no, raw in enumerate(text.replace("\r\n", "\n").split("\n"), 1):
+        line = raw.split("#", 1)[0].strip(" \t")
         if not line:
             continue
         if "=" not in line:
             raise ConfigError(f"{config_path}:{line_no}: invalid TOML line")
-        key, value = (part.strip() for part in line.split("=", 1))
+        key, value = (part.strip(" \t\r") for part in line.split("=", 1))
         if not re.fullmatch(r"[A-Za-z0-9_-]+", key):
             raise ConfigError(f"{config_path}:{line_no}: unsupported key {key!r}")
         if key in data:
@@ -859,6 +1084,17 @@ def _parse_simple_toml(text: str, config_path: Path) -> dict[str, object]:
             data[key] = True
         elif value == "false":
             data[key] = False
+        elif (
+            len(value) >= 6 and value[:3] == value[-3:] and value[:3] in ('"""', "'''")
+        ):
+            data[key] = value[3:-3]
+        elif (
+            len(value) >= 2
+            and value[0] == value[-1]
+            and value[0] in ("'", '"')
+            and value[0] not in value[1:-1]
+        ):
+            data[key] = value[1:-1]
         else:
             raise ConfigError(
                 f"{config_path}:{line_no}: unsupported value {value!r} for {key!r}"
@@ -883,6 +1119,14 @@ def _load_config(config_path: Path) -> dict[str, object]:
         raise ConfigError(f"{config_path}: unknown keys: {', '.join(unknown)}")
     if "serial_comma" in data and not isinstance(data["serial_comma"], bool):
         raise ConfigError(f"{config_path}: serial_comma must be a boolean")
+    if "us_english" in data and not isinstance(data["us_english"], bool):
+        raise ConfigError(f"{config_path}: us_english must be a boolean")
+    if "lang" in data and (
+        not isinstance(data["lang"], str) or data["lang"] not in VALID_LANGS
+    ):
+        raise ConfigError(
+            f"{config_path}: lang must be one of {', '.join(sorted(VALID_LANGS))}"
+        )
     return data
 
 
@@ -900,21 +1144,38 @@ def find_config(start_dir: Path) -> Path | None:
         current = parent
 
 
-def resolve_serial_comma(
+def resolve_settings(
     path: str,
-    cli_override: bool | None,
+    cli_serial: bool | None,
+    cli_us_english: bool | None,
+    cli_lang: str | None,
     cache: dict[Path, dict[str, object]],
-) -> bool:
-    if cli_override is not None:
-        return cli_override
+) -> tuple[bool, bool, str]:
     start_dir = Path.cwd() if path == "-" else Path(path).resolve().parent
     config_path = find_config(start_dir)
-    if config_path is None:
-        return True
-    if config_path not in cache:
-        cache[config_path] = _load_config(config_path)
-    value = cache[config_path].get("serial_comma")
-    return True if value is None else bool(value)
+    config: dict[str, object] = {}
+    if config_path is not None:
+        if config_path not in cache:
+            cache[config_path] = _load_config(config_path)
+        config = cache[config_path]
+    serial = (
+        cli_serial
+        if cli_serial is not None
+        else (
+            True if config.get("serial_comma") is None else bool(config["serial_comma"])
+        )
+    )
+    us_english = (
+        cli_us_english
+        if cli_us_english is not None
+        else (False if config.get("us_english") is None else bool(config["us_english"]))
+    )
+    lang = (
+        cli_lang
+        if cli_lang is not None
+        else (str(config["lang"]) if "lang" in config else "en")
+    )
+    return serial, us_english, lang
 
 
 def main(argv: list[str]) -> int:
@@ -923,7 +1184,21 @@ def main(argv: list[str]) -> int:
     )
     parser.add_argument("files", nargs="+")
     parser.add_argument("--only", choices=("house", "unslop"))
+    parser.add_argument("--lang", choices=sorted(VALID_LANGS), default=None)
     parser.add_argument("--passive", action="store_true")
+    dialect_group = parser.add_mutually_exclusive_group()
+    dialect_group.add_argument(
+        "--us-english",
+        dest="us_english",
+        action="store_true",
+        default=None,
+    )
+    dialect_group.add_argument(
+        "--british-english",
+        dest="us_english",
+        action="store_false",
+        default=None,
+    )
     serial_group = parser.add_mutually_exclusive_group()
     serial_group.add_argument(
         "--serial-comma",
@@ -944,11 +1219,20 @@ def main(argv: list[str]) -> int:
     total = 0
     for path in args.files:
         try:
-            serial = resolve_serial_comma(path, args.serial_comma, config_cache)
+            serial, us_english, lang = resolve_settings(
+                path, args.serial_comma, args.us_english, args.lang, config_cache
+            )
         except ConfigError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
-        for finding in scan(read_blocks(path), groups, args.passive, serial):
+        for finding in scan(
+            read_blocks(path),
+            groups,
+            args.passive,
+            serial,
+            lang=lang,
+            us_english=us_english,
+        ):
             total += 1
             if args.json:
                 print(json.dumps({"file": path, **finding}, ensure_ascii=False))

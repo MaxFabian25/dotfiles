@@ -60,18 +60,6 @@ scope is selected.
 - **Command labels.** Use familiar words such as *help*, *settings*, *start over*, and *stop*
   to label supported bot commands.
 
-## Terminology
-
-| Scope | Preferred designation |
-| --- | --- |
-| Visible text or another component with a text alternative that identifies a component | label |
-| Name of a user interface element as exposed by a platform accessibility API | accessible name |
-| A content change, not a change of context, that informs the user of success or results, waiting state, progress, or errors | status message |
-| Component that lets people choose between a pair of opposing states, such as on and off | toggle |
-| Directions needed to complete an input | instruction |
-| Message about an input error in a web form | error message |
-| Small, transient view that briefly describes how to use a component in the interface | tooltip |
-
 Complete this branch when every visible action control names its specific outcome verb, every input
 has a persistent label with advance constraints, every error or empty state identifies the problem
 and next safe action neutrally, every destructive confirmation names the affected object and

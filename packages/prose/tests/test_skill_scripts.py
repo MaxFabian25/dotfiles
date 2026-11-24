@@ -138,6 +138,7 @@ class ScanTests(unittest.TestCase):
             path = Path(folder) / f"draft{suffix}"
             path.write_text(text, encoding="utf-8")
             result = run(SCAN, "--json", *extra, str(path))
+        self.assertIn(result.returncode, (0, 1), result.stderr)
         return [json.loads(line)["check"] for line in result.stdout.splitlines()]
 
     def test_missing_serial_comma_is_flagged(self) -> None:
@@ -266,6 +267,8 @@ class ScanTests(unittest.TestCase):
     def test_invalid_prose_toml_exits_two(self) -> None:
         for body in (
             "serial_comma = 'no'\n",
+            "us_english = 'yes'\n",
+            "lang = 'de'\n",
             "unknown_key = true\n",
             "not valid = [[\n",
         ):
@@ -387,6 +390,117 @@ class ScanTests(unittest.TestCase):
     def test_clean_text_exits_zero(self) -> None:
         result = run(SCAN, "-", stdin="The plans cost the same.\n")
         self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_new_english_house_checks_flag_slips_and_allow_us_opt_out(self) -> None:
+        text = (
+            "We will analyze the color on April 13, 2026 and April 13th at 12 p.m.\n"
+            "Growth reached 25 % on the hard copy.\n"
+            "Click on Save to print out the 24x7 report and perform a restart.\n"
+        )
+        found = set(self.checks(text))
+        self.assertTrue(
+            {
+                "us-spelling",
+                "us-date",
+                "ordinal-date",
+                "twelve-clock",
+                "english-percent-space",
+                "hard-copy",
+                "click-on",
+                "print-out",
+                "24x7",
+                "action-noun",
+            }
+            <= found
+        )
+
+        us_found = set(self.checks(text, ".md", "--us-english"))
+        self.assertNotIn("us-spelling", us_found)
+        self.assertNotIn("us-date", us_found)
+        self.assertIn("ordinal-date", us_found)
+        self.assertIn("twelve-clock", us_found)
+
+    def test_british_english_forms_are_not_flagged(self) -> None:
+        text = (
+            "We will analyse the colour on 13 April 2026 at noon and at 9:12 p.m.\n"
+            "The talk was humorous, the bond length is 12 pm, and 24 × 7 = 168.\n"
+            "Growth reached 25% on the printed copy.\n"
+            "Set the print out of reach after we heard a click on the line.\n"
+            "Click Save to print the 24/7 report and restart the service.\n"
+            "Play F♯ on 1 May 2026.\n"
+        )
+        self.assertEqual(self.checks(text), [])
+
+    def test_prose_toml_us_english_and_british_override(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / ".prose.toml").write_text("us_english = true\n", encoding="utf-8")
+            draft = root / "draft.md"
+            draft.write_text(
+                "We will analyze the color on April 13, 2026.\n", encoding="utf-8"
+            )
+
+            result = run(SCAN, "--json", str(draft))
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+            override = run(SCAN, "--json", "--british-english", str(draft))
+            self.assertEqual(override.returncode, 1, override.stderr)
+            found = {json.loads(line)["check"] for line in override.stdout.splitlines()}
+            self.assertEqual(found, {"us-spelling", "us-date"})
+
+    def test_danish_checks_flag_slips_and_permit_danish_conventions(self) -> None:
+        bad = (
+            "13. April 2026:\n"
+            "Det bemærkes, at væksten var 25% kl. 16:00 og klokken 17:30 "
+            "den 13 april 2026 og 14. Maj 2026.\n"
+            "Tjenesten kører 24x7 — se status ✅ 🇩🇰.\n"
+        )
+        found = set(self.checks(bad, ".md", "--lang", "da"))
+        self.assertEqual(
+            found,
+            {
+                "danish-empty-opener",
+                "danish-percent-space",
+                "danish-clock",
+                "danish-date-dot",
+                "danish-date-month-case",
+                "danish-24x7",
+                "danish-em-dash",
+                "danish-emoji",
+            },
+        )
+        self.assertEqual(
+            self.checks("13. April 2026 markerer starten.\n", ".md", "--lang", "da"),
+            ["danish-date-month-case"],
+        )
+
+        good = (
+            "Væksten var 25\u00a0% kl. 16.00 den 13. april 2026 og 14. maj 2026.\n"
+            "Se punkt 2. Maj er årets femte måned, 24 × 7 = 168, og tonen er F♯.\n"
+            "Vi købte æbler, pærer og blommer – og tallene dækker 200-250 rækker.\n"
+        )
+        self.assertEqual(self.checks(good, ".md", "--lang", "da"), [])
+
+    def test_prose_toml_lang_da_and_cli_override(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / ".prose.toml").write_text('lang = """da"""\n', encoding="utf-8")
+            draft = root / "draft.md"
+            draft.write_text("Satsen var 25% kl. 16:00.\n", encoding="utf-8")
+
+            da = run(SCAN, "--json", str(draft))
+            self.assertEqual(da.returncode, 1, da.stderr)
+            self.assertEqual(
+                {json.loads(line)["check"] for line in da.stdout.splitlines()},
+                {"danish-percent-space", "danish-clock"},
+            )
+
+            en = run(SCAN, "--json", "--lang", "en", str(draft))
+            self.assertEqual(en.returncode, 0, en.stdout + en.stderr)
+
+            (root / ".prose.toml").write_text('lang\u00a0= "da"\n', encoding="utf-8")
+            bad = run(SCAN, "--json", str(draft))
+            self.assertEqual(bad.returncode, 2, bad.stdout + bad.stderr)
 
 
 if __name__ == "__main__":

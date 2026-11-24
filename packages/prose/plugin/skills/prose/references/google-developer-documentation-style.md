@@ -42,6 +42,9 @@ quantities, accessibility, source handling, and citations.
   Assess a general clause separately from a product-marker clause.
 - When Diátaxis is selected, let it set the user need, documentation type, and type boundaries.
   Apply Google developer-documentation style within those boundaries.
+- Use the Google source designation in [terminology records](terminology-records.csv) when its
+  concept applies; otherwise apply [Terminology selection](terminology-selection.md), keeping
+  source, conventional, and descriptive terms distinct.
 
 ## Accessibility scope
 
@@ -49,28 +52,6 @@ quantities, accessibility, source handling, and citations.
   a web-conformance claim and cite the applicable success criterion.
 - Apply WAI-ARIA only within its semantic scope. Host rules control DOM, CSS, focus behaviour,
   native elements, keyboard handling, and implementation details.
-
-## Source and conventional terminology
-
-Use the source designation when its concept applies. Otherwise, apply [Terminology
-selection](terminology-selection.md). Keep source, conventional, and descriptive terms distinct.
-
-| Scope | Preferred designation |
-| --- | --- |
-| Official title of the source work | Google developer documentation style guide |
-| Documentation for software developers and other technical practitioners within the guide's scope | developer documentation |
-| Language variety in which Google states that it writes its developer documentation | US English |
-| Heading for task content | task-based heading |
-| Grammatical form that starts a task-based heading | bare infinitive |
-| Heading for conceptual or non-task content | conceptual or non-task-based heading |
-| Grammatical form used for a conceptual or non-task-based heading | noun phrase |
-| Procedures that consist of one step | single-step procedures |
-| Example source code in developer documentation | code sample |
-| Runnable command example intended for readers to copy | click-to-copy command example |
-| Reference that supplies the complete list of arguments for a command | command reference |
-| Text that readers replace in sample input or that represents a variable value in example output | placeholder |
-| Named component of a user interface | UI element |
-| Documentation that recommends a way to complete tasks and achieve goals | prescriptive documentation |
 
 ## Google product, tool, API, and feature names
 
