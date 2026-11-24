@@ -54,10 +54,10 @@ notation](ibcs-notation.md) to the display's text.
 - **Table notes.** Put information that applies to the whole table in its title or an adjacent note.
   Qualify an individual cell with a consistent footnote reference. Follow the governing format's
   note and marker conventions.
-- **Blank data cells.** Fill every data cell where an absent value has meaning: use `0` only for a true zero, and otherwise write an explicit status in the document language, such as *No data*, *Not applicable*, or *Not stated* when the sources consulted are silent (never recording silence in the sources as *No*). Follow a selected style module's empty-cell convention, such as [APA tables and figures](apa-tables-and-figures.md).
+- **Blank data cells.** Fill every data cell where an absent value has meaning: use `0` only for a true zero, and otherwise write an explicit status in the document language, such as *No data*, *Not applicable*, or *Not stated* when the sources consulted are silent (never recording silence in the sources as *No*). Follow a selected style module's empty-cell convention, such as [APA table layout and cells](apa-tables-and-figures.md#table-layout-cells-and-figures).
 - **Table units.** Put a shared measurement unit in the column or row header. Put a table-wide unit
   in the table title. Follow a selected style module when it places table-wide units elsewhere,
-  such as the general note under [APA tables and figures](apa-tables-and-figures.md).
+  such as the general note under [APA notes and units](apa-tables-and-figures.md#notes-and-units).
 
 ## Figures and charts
 

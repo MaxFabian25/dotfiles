@@ -9,7 +9,7 @@ accessibility terminology, or non-inclusive terms are present.
   name, title, or pronoun is unclear and direct consultation is practical and in scope, ask the
   person. For a name with a prefix, such as *de* or *van*, follow the form the person uses in their
   publications or official records; otherwise, apply the [personal-name
-  rule](reader-core.md#presentation-choices). Let the selected citation style control
+  rule](reader-core.md#typography-and-social-wording). Let the selected citation style control
   alphabetisation.
 - Use the terms that communities use for themselves. If preferences differ within a community, do
   not present one term as universal.

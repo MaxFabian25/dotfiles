@@ -13,9 +13,11 @@ evidence](source-evidence/apple-style.md).
 - Name each interface element in plain text, with the words and capitals the readers' interface
   shows. Put quotation marks around a name of two or more words that the interface shows in
   sentence-style capitals, such as turn on "Sync with iCloud". Leave a title-style menu command,
-  such as Back Up Now, unquoted. This replaces the house bold label.
+  such as Back Up Now, unquoted. This replaces the [house bold
+  label](interface-instructions.md#tasks-labels-and-controls).
 - Join a key combination with hyphens in plain text, such as Shift-Command-E. This replaces the
-  house `Control+S` form and monospace keys. Order modifiers Fn, Control, Option, Shift, Command. On
+  [house `Control+S` form and monospace
+  keys](interface-instructions.md#input-methods-and-keyboard-paths). Order modifiers Fn, Control, Option, Shift, Command. On
   first use, say that a hyphen means holding the earlier keys down while pressing the last one.
 - Keep every Apple product name in its singular, non-possessive noun form rather than making it
   plural, possessive, or a verb, rewriting the sentence when needed, such as on every Mac you use

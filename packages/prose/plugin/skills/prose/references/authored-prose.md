@@ -2,7 +2,8 @@
 
 Use this reference for drafting, development, or craft work on English or Danish essays, talks,
 or personal narratives. Its [Development](#development) section also applies to the argument of an
-academic paper, report, or thesis. Follow the requested genre and [editing scope](editorial-practice.md).
+academic paper, report, or thesis. Follow the requested genre and [editing
+scope](editorial-practice.md#editing-and-review-scope).
 When matching a supplied style sample, use the [rules for voice samples](editorial-practice.md#voice-samples).
 
 ## Missing author material

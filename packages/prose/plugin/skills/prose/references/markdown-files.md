@@ -18,8 +18,8 @@ formatter rules control their stated scope. Apply these portable defaults otherw
 
 - Use ATX-style headings. Put one space after the `#` characters.
 - Put a blank line before and after each heading.
-- For document titles, heading text, and hierarchy, apply [Durable document
-  structure](durable-document-structure.md).
+- For document titles, heading text, and hierarchy, apply [Structure and
+  navigation](durable-document-structure.md#structure-and-navigation).
 
 ## Table of contents
 

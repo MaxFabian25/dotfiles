@@ -21,8 +21,8 @@ which readers find it.
 - Use the host format's built-in styles for headings, tables, lists, notes, and tips. Apply each
   style consistently.
 - Give each document one title heading, marked as the level-1 heading in Markdown or HTML. Order
-  the other headings under [Presentation choices](reader-core.md#presentation-choices). Format a
-  selected style's heading levels, such as APA Level 1, under that style.
+  the other headings under [Headings and parentheses](reader-core.md#headings-and-parentheses).
+  Format a selected style's heading levels, such as APA Level 1, under that style.
 - Give every heading unique text within its document.
 - Add introductory text between a heading and its first child heading when readers need context or
   navigation that the headings do not supply.

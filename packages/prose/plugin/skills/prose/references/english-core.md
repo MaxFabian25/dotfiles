@@ -79,8 +79,9 @@ supports British data prose within that scope.
 - When choosing between *that* and *which*, use *that* for a restrictive clause and *which* for a
   nonrestrictive clause. Retain *which* after a preposition. Set off a nonrestrictive clause with
   commas.
-- Where the [choice rule](reader-core.md#presentation-choices) requires an explicit boundary, state
-  an inclusive choice as *A or B, or both* and an exclusive choice as *either A or B, but not both*.
+- Where the [choice rule](reader-core.md#lists-comparisons-and-next-steps) requires an explicit
+  boundary, state an inclusive choice as *A or B, or both* and an exclusive choice as *either A or
+  B, but not both*.
 
 ### Precision and house word choices
 
@@ -174,9 +175,9 @@ supports British data prose within that scope.
 - Use *user* for a named role or defined domain term. Use *end user* only to distinguish that role
   from another technical role.
 - Use a named role for another person.
-- Under the [group-authorship rule](reader-core.md#presentation-choices), state a recommendation
-  directly instead of *we recommend* unless authorship matters, and reserve *we* for a stated
-  organisation or author group.
+- Under the [group-authorship rule](reader-core.md#voice-roles-and-first-person), state a
+  recommendation directly instead of *we recommend* unless authorship matters, and reserve *we* for
+  a stated organisation or author group.
 
 ## Remove empty English wording
 

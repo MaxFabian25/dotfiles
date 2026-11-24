@@ -44,8 +44,8 @@ Apply this section when the recorded APA scope includes English writing style or
 
 Apply this section when the recorded APA scope includes English writing style or mechanics.
 Heading and display-title case belongs to [Paper organisation and
-headings](apa-style.md#paper-organisation-and-headings) and [APA tables and
-figures](apa-tables-and-figures.md).
+headings](apa-style.md#paper-organisation-and-headings) and [Numbering and
+titles](apa-tables-and-figures.md#numbering-and-titles).
 
 | Convention | Adopted form |
 | --- | --- |
@@ -85,7 +85,7 @@ Apply this section when the recorded APA scope includes English writing style or
 | Parenthesis punctuation | Put the full stop inside the closing parenthesis only when the entire sentence is parenthetical. Otherwise put sentence punctuation after the closing parenthesis. |
 | Em dash | Recast original prose with a sentence break, a comma pair, parentheses, or a colon rather than using an em dash. |
 | En dash | Spans, ranges, and paired relationships (`--` in LaTeX) |
-| Quotation marks | Use double marks for an ordinary quotation. Use them also for a word or phrase referred to as itself, and at first use only for an ironic, slang, or coined expression or a newly introduced label. Use italics instead for a key term being defined. Do not use quotation marks for emphasis, hedging, or ordinary technical terms. Put full stops and commas inside the closing mark, except when exact governed text requires external punctuation or a citation follows the quotation at the end of a sentence. Put colons and semicolons outside. Put a question mark or exclamation mark inside only when it belongs to the quoted material. Otherwise put it outside. |
+| Quotation marks | Use double marks for an ordinary quotation. Use them also for a word or phrase referred to as itself, and at first use only for an ironic, slang, or coined expression or a newly introduced label. Use italics instead for a key term being defined. Do not use quotation marks for emphasis, hedging, or ordinary technical terms. Put full stops and commas inside the closing mark (overriding the [house logical-punctuation default](english-core.md#punctuation-and-mechanics) within APA scope), except when exact governed text requires external punctuation or a citation follows the quotation at the end of a sentence. Put colons and semicolons outside. Put a question mark or exclamation mark inside only when it belongs to the quoted material. Otherwise put it outside. |
 
 The em dash and slash rules narrow options that APA Style permits. The coordinate-adjective,
 question-mark, and exclamation-mark rows, the plural-possessive sentences, and the semicolon row's

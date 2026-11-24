@@ -23,9 +23,11 @@ them, the stub and cell entries, and the notes in sentence case. Left-align stub
 other cell entries, left-aligns long text, and permits numerical values to be aligned on the
 decimal. For a column of numbers, the house [numeric table
 alignment](tables-and-figures.md#table-structure-and-editing) rule
-replaces the centring. Carry comparable values to the same number of decimal places. Leave a cell
-blank when data are not applicable, explaining it in a note when needed. Insert a dash when data
-were not obtained or not reported, and explain the dash in the general note.
+replaces the centring. Carry comparable values to the same number of decimal places. Within APA
+scope, these empty-cell forms override the house [blank data
+cells](tables-and-figures.md#table-titles-notes-cells-and-units) rule: leave a cell blank when data
+are not applicable (explaining it in a note when needed), and insert a dash when data were not
+obtained or not reported (explaining the dash in the general note).
 
 Use horizontal rules at the top and bottom and below the column headings, and optionally above a row
 of totals. Use no vertical rules and no borders around cells. Leave cells unshaded unless shading is
@@ -50,9 +52,10 @@ general, specific, probability.
 
 Put a unit that applies to one column or row in its heading or stub entry, where a symbol form such
 as *$ millions* may stand without a numeral. State a unit that applies to the whole table in words in
-the general note, such as *Amounts are in millions of U.S. dollars*. The manual places units in headings
-and stub entries and gives the general note to information about the whole table; the general-note
-placement of a table-wide unit extends those rules.
+the general note, such as *Amounts are in millions of U.S. dollars*; within APA scope this replaces
+the table-title placement in [Table units](tables-and-figures.md#table-titles-notes-cells-and-units).
+The manual places units in headings and stub entries and gives the general note to information about
+the whole table; the general-note placement of a table-wide unit extends those rules.
 
 ## Sources, attributions, and accessibility
 
