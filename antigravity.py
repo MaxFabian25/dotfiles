@@ -159,6 +159,11 @@ def plan(setup: Setup, roots: DeviceRoots, platform: Platform, *, adopted: bool 
             ))
     if selected.rules is not None:
         configurations.append(FileConfiguration('antigravity-rules', gemini_home / 'AGENTS.md', selected.rules.text))
+    # T3 Code runs agy with each of its profiles as the Antigravity home, so a profile's config folder gets the same
+    # MCP servers and hooks as ~/.gemini/config. The hooks keep naming the adapter there.
+    profiles = sorted(path for path in (roots.home / '.t3/userdata/providers/antigravity').glob('*/config')
+                      if path.is_dir())
+    profile_configurations: list[Configuration] = []
     if settings.get('mcp'):
         cua = _cua(roots, platform)
         filters = json.loads((source.parent.parent / 'mcp-tool-filters/filters.json').read_bytes())
@@ -168,6 +173,10 @@ def plan(setup: Setup, roots: DeviceRoots, platform: Platform, *, adopted: bool 
         cua['disabledTools'] = list(excluded)
         configurations.append(JsonConfiguration('antigravity-mcp', config_dir / 'mcp_config.json',
                                                 {('mcpServers', 'cua-driver'): cua}))
+        profile_configurations.extend(
+            JsonConfiguration(f'antigravity-t3-mcp-{profile.parent.name}', profile / 'mcp_config.json',
+                              {('mcpServers', 'cua-driver'): cua})
+            for profile in profiles)
     if cli_settings := settings.get('cli_settings'):
         cli_fields = _leaf_fields(cli_settings, ())
         if not cli_fields:
@@ -192,6 +201,9 @@ def plan(setup: Setup, roots: DeviceRoots, platform: Platform, *, adopted: bool 
         }
         configurations.append(FileConfiguration('antigravity-hook-adapter', adapter_dest, adapter_path.read_bytes()))
         configurations.append(JsonConfiguration('antigravity-hooks', config_dir / 'hooks.json', rendered_hooks))
+        profile_configurations.extend(
+            JsonConfiguration(f'antigravity-t3-hooks-{profile.parent.name}', profile / 'hooks.json', rendered_hooks)
+            for profile in profiles)
     native_reserved: set[str] = set()
     for directory in (config_dir / 'skills', gemini_home / 'antigravity-cli/skills'):
         native_reserved.update(path.parent.name for path in collect_skills(directory))
@@ -217,7 +229,7 @@ def plan(setup: Setup, roots: DeviceRoots, platform: Platform, *, adopted: bool 
     }
     return AntigravityPlan(
         tuple(packages), tuple(loose), destination, bytes_digest(_json(_canonical(fingerprint))),
-        tuple(exports), tuple(configurations), tuple(unsupported), tuple(sorted(reserved)),
+        tuple(exports), (*configurations, *profile_configurations), tuple(unsupported), tuple(sorted(reserved)),
         tuple(sorted(native_reserved)),
     )
 

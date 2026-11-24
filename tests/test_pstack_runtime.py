@@ -68,6 +68,32 @@ class PstackRuntimeTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Unconfirmed Claude alias for claude-code/recall readers: gpt"):
                     runtime.validate_models(codex_home, value.replace(b"haiku", b"gpt"), codex_home=codex_home)
 
+    def test_opencode_seats_are_claude_aliases_or_codex_models_checked_like_claude_codes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            codex_home = Path(folder)
+            pages = [{'data': [{'model': 'gpt-6.2-sol',
+                               'supportedReasoningEfforts': [{'reasoningEffort': 'xhigh'}]}], 'nextCursor': None}]
+            value = (b'## claude-code\nbug-fix: opus@high\n## codex\nbug-fix: gpt-6.2-sol@xhigh\n'
+                     b'## opencode\nbug-fix: opus@high\narena runners: haiku@medium, codex:gpt-6.2-sol@xhigh\n')
+            with patch.object(runtime.portable, "claude_cli", return_value="claude"), \
+                    patch.object(runtime.portable, "codex_cli", return_value="codex"), \
+                    patch.object(runtime.subprocess, 'Popen', side_effect=lambda *a, **kw: self.native_process(pages)):
+                self.assertEqual(runtime.validate_models(codex_home, value, codex_home=codex_home), 5)
+                with self.assertRaisesRegex(ValueError, "Unconfirmed Claude alias for opencode/bug-fix: claude-opus-5-5"):
+                    runtime.validate_models(codex_home, value.replace(b'opencode\nbug-fix: opus', b'opencode\nbug-fix: claude-opus-5-5'),
+                                            codex_home=codex_home)
+                with self.assertRaisesRegex(ValueError, "Unavailable Codex model or effort for opencode/arena runners"):
+                    runtime.validate_models(codex_home, value.replace(b'codex:gpt-6.2-sol@xhigh\n', b'codex:gpt-6.2-sol@low\n'),
+                                            codex_home=codex_home)
+        with self.assertRaisesRegex(ValueError, "Both pstack harness sections"):
+            runtime.model_entries(b'## claude-code\nx: opus@high\n## opencode\nx: opus@high\n')
+
+    def test_opencode_runs_each_seat_on_its_managed_provider(self):
+        self.assertEqual(set(runtime.OPENCODE_CLAUDE_MODELS), runtime.CLAUDE_ALIASES)
+        self.assertEqual(runtime.opencode_model('opus', 'high'), 'anthropic-api/claude-opus-5-5#high')
+        self.assertEqual(runtime.opencode_model('claude:fable', 'high'), 'anthropic-api/claude-fable-5-2#high')
+        self.assertEqual(runtime.opencode_model('codex:gpt-6.2-astra', 'xhigh'), 'openai-api/gpt-6.2-astra#xhigh')
+
     def test_rejects_model_or_effort_missing_from_native_catalog(self):
         with tempfile.TemporaryDirectory() as folder:
             home = Path(folder)

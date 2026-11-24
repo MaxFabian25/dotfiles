@@ -19,20 +19,23 @@ from sync_sources import Builder, BuildError
 
 
 class OpenCodeTests(unittest.TestCase):
-    def fixture(self, home, *, modes=None, names=('auto', 'manual', 'hidden', 'forced')):
+    def fixture(self, home, *, modes=None, names=('auto', 'manual', 'hidden', 'forced'), package_name='kit', extra=None):
         source = home.roots.home / 'source'
         for name in names:
             home.skill(source, name, explicit_sidecar=name == 'manual', frontmatter_explicit=name == 'forced')
-        home.write(source / '.codex-plugin/plugin.json', '{"name":"kit","version":"1.0.0"}\n')
+        home.write(source / '.codex-plugin/plugin.json', '{"name":"%s","version":"1.0.0"}\n' % package_name)
         home.write(source / 'references/shared.md', 'Package-relative support.\n')
-        package = Package('kit', Visibility.PUBLIC, '', LocalSource('source', home.roots.tree_digest(source)),
+        for path, text in (extra or {}).items():
+            home.write(source / path, text)
+        package = Package(package_name, Visibility.PUBLIC, '', LocalSource('source', home.roots.tree_digest(source)),
                           modes or {}, ToolNotes.AUDIT, CodexPlacement((EngineInstall(True),)), None)
         setup = Setup(Roots(home.roots.home / 'setup', home.roots.home / 'private/setup'),
-                      {'kit': package}, {}, {}, {}, Rules(b'Shared instructions.\n'), (), frozenset(), {})
+                      {package_name: package}, {}, {}, {}, Rules(b'Shared instructions.\n'), (), frozenset(), {})
         home.write(setup.roots.private.parent / 'config/opencode/setup.toml', 'enabled = true\nbaseline = "codex"\n')
         builder = Builder(setup, home.roots, home.roots.engine)
         built = builder.codex(package, verify=False)
-        setup = replace(setup, lock={'kit': Lock(intent(package, {}), {Host.CODEX: LockedTree(built.version, built.digest)})})
+        setup = replace(setup, lock={package_name: Lock(intent(package, {}),
+                                                        {Host.CODEX: LockedTree(built.version, built.digest)})})
         return setup, Builder(setup, home.roots, home.roots.engine), source
 
     def generated(self, home, setup, builder, name='output'):
@@ -224,7 +227,8 @@ class OpenCodeTests(unittest.TestCase):
             path = setup.roots.private.parent / 'config/opencode/setup.toml'
             for settings in ('enabled = true\nbaseline = "claude"\n',
                              'enabled = "yes"\nbaseline = "codex"\n',
-                             'enabled = true\nbaseline = "codex"\nmcp = ["t3-code"]\n'):
+                             'enabled = true\nbaseline = "codex"\nmcp = ["t3-code"]\n',
+                             'enabled = true\nbaseline = "codex"\nhooks = "yes"\n'):
                 home.write(path, settings)
                 with self.assertRaises(ValueError):
                     opencode.plan(setup, home.roots, Platform.LINUX)
@@ -285,6 +289,102 @@ class OpenCodeTests(unittest.TestCase):
             with self.assertRaisesRegex(BuildError, 'not a contained file'):
                 opencode._copy(source, home.roots.home / 'escaped')
             self.assertFalse((home.roots.home / 'escaped').exists())
+
+    def test_hooks_run_antigravitys_pre_tool_hooks_through_its_adapter(self):
+        with Home() as home:
+            setup, _, _ = self.fixture(home)
+            config = setup.roots.private.parent / 'config'
+            home.write(config / 'antigravity/hooks.json', json.dumps({
+                'credential-guard': {'PreToolUse': [{'matcher': '*', 'hooks': [
+                    {'type': 'command', 'command': '{python} -I "{adapter}" credential-guard'}]}]},
+                'git-force-push-ask': {'PreToolUse': [{'matcher': 'run_command', 'hooks': [
+                    {'type': 'command', 'command': '{python} -I "{adapter}" git-force-push-ask'}]}]},
+                'session-start-context': {'SessionStart': [
+                    {'type': 'command', 'command': '{python} -I "{adapter}" session-start'}]}}))
+            home.write(config / 'antigravity/hook_adapter.py', 'print("adapter")\n')
+            home.write(config / 'opencode/guards.js.in',
+                       'const ADAPTER = __DOTFILES_HOOK_ADAPTER__\nconst HOOKS = __DOTFILES_PRE_TOOL_HOOKS__\n')
+            names = {item.name for item in opencode.plan(setup, home.roots, Platform.LINUX).configurations}
+            self.assertNotIn('opencode-guards-plugin', names)
+            home.write(config / 'opencode/setup.toml', 'enabled = true\nbaseline = "codex"\nhooks = true\n')
+            by_name = {item.name: item for item in opencode.plan(setup, home.roots, Platform.LINUX).configurations}
+            adapter = by_name['opencode-hook-adapter']
+            self.assertEqual(adapter.destination, home.roots.home / '.config/opencode/hook-adapter.py')
+            self.assertEqual(adapter.data, b'print("adapter")\n')
+            plugin = by_name['opencode-guards-plugin']
+            self.assertEqual(plugin.destination, home.roots.home / '.config/opencode/plugins/guards.js')
+            lines = plugin.data.decode().splitlines()
+            self.assertEqual(json.loads(lines[0].split(' = ', 1)[1]), [sys.executable, '-I', str(adapter.destination)])
+            self.assertEqual(json.loads(lines[1].split(' = ', 1)[1]),
+                             [{'mode': 'credential-guard', 'matcher': '*'},
+                              {'mode': 'git-force-push-ask', 'matcher': 'run_command'}])
+            home.write(config / 'antigravity/hooks.json', json.dumps({'other': {'PreToolUse': [
+                {'matcher': '*', 'hooks': [{'type': 'command', 'command': 'python3 other.py'}]}]}}))
+            with self.assertRaisesRegex(ValueError, 'cannot run this Antigravity PreToolUse hook'):
+                opencode.plan(setup, home.roots, Platform.LINUX)
+
+    def test_skill_mentions_plugin_is_installed_beside_the_other_plugins(self):
+        with Home() as home:
+            setup, _, _ = self.fixture(home)
+            home.write(setup.roots.private.parent / 'config/opencode/skill-mentions.js', 'export default {}\n')
+            by_name = {item.name: item for item in opencode.plan(setup, home.roots, Platform.LINUX).configurations}
+            mentions = by_name['opencode-skill-mentions-plugin']
+            self.assertEqual(mentions.destination, home.roots.home / '.config/opencode/plugins/skill-mentions.js')
+            self.assertEqual(mentions.data, b'export default {}\n')
+
+    def test_pstack_seats_become_subagents_and_the_built_in_agents_run_on_opus(self):
+        with Home() as home:
+            agents = {'agents/poteto-agent.md': '---\nname: poteto-agent\ndescription: Delegate.\n---\n\n# Poteto\n\n'
+                                                'Read [harnesses.md](../skills/poteto-mode/references/harnesses.md).\n',
+                      'agents/comment-sicko.md': '---\nname: comment-sicko\ndescription: Hater.\n---\n# Sicko\n'}
+            setup, builder, _ = self.fixture(home, package_name='pstack', names=('poteto-mode',), extra=agents)
+            models = setup.roots.private.parent / 'config/pstack/models.md'
+            home.write(models, '# routing\n## claude-code\nbug-fix: opus@high\n## codex\nbug-fix: gpt-6.2-sol@xhigh\n')
+            plan = opencode.plan(setup, home.roots, Platform.LINUX)
+            self.assertFalse(any(path[0] == 'agents' for path in plan.configurations[0].fields))
+            home.write(models, models.read_text() + '## opencode\nbug-fix: opus@high\njudgment and prose: opus@xhigh\n'
+                       'arena runners: opus@high, codex:gpt-6.2-sol@xhigh\nrecall readers: inherit-parent@low\n')
+            plan = opencode.plan(setup, home.roots, Platform.LINUX)
+            fields = plan.configurations[0].fields
+            agents_path = (plan.destination / 'agents').as_posix()
+            self.assertEqual({path[1] for path in fields if path[0] == 'agents'},
+                             {'pstack-opus-high', 'pstack-opus-xhigh', 'pstack-gpt-6-2-sol-xhigh', 'comment-sicko',
+                              'general', 'explore'})
+            high = fields[('agents', 'pstack-opus-high')]
+            self.assertEqual((high['mode'], high['model'], high['system']),
+                             ('subagent', 'anthropic-api/claude-opus-5-5#high', '{file:' + agents_path + '/poteto-agent.md}'))
+            self.assertIn('`bug-fix`, `arena runners`', high['description'])
+            self.assertEqual(fields[('agents', 'pstack-gpt-6-2-sol-xhigh')]['model'], 'openai-api/gpt-6.2-sol#xhigh')
+            self.assertEqual(fields[('agents', 'pstack-opus-xhigh')]['model'], 'anthropic-api/claude-opus-5-5#xhigh')
+            sicko = fields[('agents', 'comment-sicko')]
+            self.assertEqual((sicko['model'], sicko['system']),
+                             ('anthropic-api/claude-opus-5-5#high', '{file:' + agents_path + '/comment-sicko.md}'))
+            self.assertEqual(fields[('agents', 'general', 'model')], 'anthropic-api/claude-opus-5-5#high')
+            self.assertEqual(fields[('agents', 'explore', 'model')], 'anthropic-api/claude-opus-5-5#high')
+            mine = json.loads(patch_fields(b'{"agents":{"general":{"color":"accent"}}}', fields, 'json'))['agents']
+            self.assertEqual(mine['general'], {'color': 'accent', 'model': 'anthropic-api/claude-opus-5-5#high'})
+            output = opencode.materialise(plan, builder, home.roots.home / 'output')
+            harnesses = (plan.destination / 'payload/pstack/skills/poteto-mode/references/harnesses.md').as_posix()
+            self.assertEqual((output / 'agents/poteto-agent.md').read_text(),
+                             f'# Poteto\n\nRead [harnesses.md]({harnesses}).\n')
+            self.assertEqual((output / 'agents/comment-sicko.md').read_text(), '# Sicko\n')
+
+    def test_pstack_seats_need_pstack_exported_and_its_agent_definitions(self):
+        with Home() as home:
+            setup, builder, _ = self.fixture(home)
+            home.write(setup.roots.private.parent / 'config/pstack/models.md',
+                       '## claude-code\nx: opus@high\n## codex\nx: gpt-6.2-sol@xhigh\n## opencode\nx: opus@high\n')
+            with self.assertRaisesRegex(ValueError, 'pstack package exported'):
+                opencode.plan(setup, home.roots, Platform.LINUX)
+        with Home() as home:
+            setup, builder, _ = self.fixture(home, package_name='pstack', names=('poteto-mode',),
+                                             extra={'agents/poteto-agent.md': '---\nname: poteto-agent\n---\nBody.\n'})
+            home.write(setup.roots.private.parent / 'config/pstack/models.md',
+                       '## claude-code\nx: opus@high\n## codex\nx: gpt-6.2-sol@xhigh\n## opencode\nx: opus@high\n')
+            plan = opencode.plan(setup, home.roots, Platform.LINUX)
+            with self.assertRaisesRegex(BuildError, 'agents/comment-sicko.md'):
+                opencode.materialise(plan, builder, home.roots.home / 'output')
+            self.assertFalse((home.roots.home / 'output').exists())
 
     def test_runtime_support_is_receipted_on_windows_without_static_credentials_or_provider(self):
         with Home() as home:

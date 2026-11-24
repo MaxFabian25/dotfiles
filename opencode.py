@@ -15,7 +15,12 @@ from configuration import BlockedConfiguration, Configuration, FileConfiguration
 from description import LooseSkill, Package, Setup, SkillRoot, LocalSource, _canonical
 from host_state import DeviceRoots, Digest, EntryName, Host, Platform, SkillMode, bytes_digest
 from invocation_overrides import collect_skills, frontmatter, skill_paths
+from pstack_runtime import model_entries, model_target, opencode_model
 from sync_sources import Builder, BuildError, child
+
+EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
+# Pstack's agent definitions that OpenCode subagents run, as the projection holds them, without their frontmatter.
+PSTACK_AGENTS = ('poteto-agent', 'comment-sicko')
 
 
 @dataclass(frozen=True)
@@ -43,6 +48,7 @@ class OpenCodePlan:
     configurations: tuple[Configuration, ...]
     unsupported: tuple[str, ...]
     reserved: tuple[str, ...]
+    agents: bool = False
 
 
 def _json(value) -> bytes:
@@ -68,10 +74,12 @@ def plan(setup: Setup, roots: DeviceRoots, platform: Platform, *, adopted: bool 
     if source is None or not source.is_file():
         return None
     settings = tomllib.loads(source.read_text(encoding='utf-8'))
-    if (set(settings) - {'enabled', 'baseline', 'mcp', 'retain'}
+    if (set(settings) - {'enabled', 'baseline', 'mcp', 'hooks', 'retain'}
             or type(settings.get('enabled')) is not bool or settings.get('baseline') != 'codex'
-            or settings.get('mcp', []) not in ([], ['cua-driver'])):
-        raise ValueError('OpenCode setup needs enabled, baseline = "codex", and optional mcp = ["cua-driver"]')
+            or settings.get('mcp', []) not in ([], ['cua-driver'])
+            or type(settings.get('hooks', False)) is not bool):
+        raise ValueError('OpenCode setup needs enabled, baseline = "codex", optional mcp = ["cua-driver"] '
+                         'and optional boolean hooks')
     if not settings['enabled']:
         return None
     retained = settings.get('retain', {})
@@ -165,6 +173,16 @@ def plan(setup: Setup, roots: DeviceRoots, platform: Platform, *, adopted: bool 
         if platform == Platform.WINDOWS:
             configurations += (FileConfiguration('opencode-launcher', roots.home / '.local/bin/opencode-anthropic.cmd',
                                                  (source.parent / 'opencode-anthropic.cmd').read_bytes()),)
+    if settings.get('hooks'):
+        configurations += _guards(source.parent, destination.parent)
+    mentions = source.parent / 'skill-mentions.js'
+    if mentions.is_file():
+        configurations += (FileConfiguration('opencode-skill-mentions-plugin',
+                                             destination.parent / 'plugins/skill-mentions.js', mentions.read_bytes()),)
+    agents = _agents(source.parent.parent / 'pstack/models.md', destination)
+    if agents and 'pstack' not in {package.name for package in packages}:
+        raise ValueError('OpenCode pstack seats need the pstack package exported to OpenCode')
+    fields.update(agents)
     if (destination.parent / 'opencode.jsonc').exists():
         configurations += (BlockedConfiguration('opencode-jsonc', destination.parent / 'opencode.jsonc',
                            'OpenCode opencode.jsonc exists; review its migration before adopting JSON fields'),)
@@ -175,7 +193,7 @@ def plan(setup: Setup, roots: DeviceRoots, platform: Platform, *, adopted: bool 
         if conflicts:
             configurations += (BlockedConfiguration('opencode-adoption', configuration.destination,
                                'OpenCode arrays need reviewed retain entries before adoption: ' + ', '.join(conflicts)),)
-    fingerprint = {'renderer': 1, 'settings': settings, 'packages': packages, 'loose': loose, 'skills': exports,
+    fingerprint = {'renderer': 2, 'settings': settings, 'packages': packages, 'loose': loose, 'skills': exports,
                    'locks': {item.name: selected.lock[item.name] for item in packages},
                    'rules': selected.rules.digest if selected.rules else None, 'fields': list(fields.items())}
     reserved = set(selected.loose)
@@ -184,7 +202,72 @@ def plan(setup: Setup, roots: DeviceRoots, platform: Platform, *, adopted: bool 
         reserved.update(path.stem for path in directory.glob('*.md') if path.is_file())
     fingerprint['reserved'] = sorted(reserved)
     return OpenCodePlan(tuple(packages), tuple(loose), destination, bytes_digest(_json(_canonical(fingerprint))),
-                        tuple(exports), configurations, tuple(unsupported), tuple(sorted(reserved)))
+                        tuple(exports), configurations, tuple(unsupported), tuple(sorted(reserved)), bool(agents))
+
+
+def _guards(source: Path, config: Path) -> tuple[Configuration, ...]:
+    """The plugin that runs Antigravity's PreToolUse hooks before each OpenCode tool call, and the adapter it runs."""
+    hooks = json.loads((source.parent / 'antigravity/hooks.json').read_bytes())
+    pre_tool = []
+    for spec in hooks.values():
+        for entry in spec.get('PreToolUse', []):
+            for hook in entry['hooks']:
+                mode = re.fullmatch(r'\{python\} -I "\{adapter\}" ([a-z-]+)', hook['command'])
+                if mode is None or not isinstance(entry['matcher'], str):
+                    raise ValueError(f'OpenCode cannot run this Antigravity PreToolUse hook: {hook["command"]!r}')
+                pre_tool.append({'mode': mode[1], 'matcher': entry['matcher']})
+    if not pre_tool:
+        raise ValueError('OpenCode hooks need PreToolUse hooks in config/antigravity/hooks.json')
+    adapter = config / 'hook-adapter.py'
+    plugin = (source / 'guards.js.in').read_text(encoding='utf-8')
+    if plugin.count('__DOTFILES_HOOK_ADAPTER__') != 1 or plugin.count('__DOTFILES_PRE_TOOL_HOOKS__') != 1:
+        raise ValueError('OpenCode guards plugin must contain one adapter command and one hook list')
+    plugin = (plugin.replace('__DOTFILES_HOOK_ADAPTER__', json.dumps([sys.executable, '-I', str(adapter)]))
+                    .replace('__DOTFILES_PRE_TOOL_HOOKS__', json.dumps(pre_tool)))
+    return (FileConfiguration('opencode-hook-adapter', adapter,
+                              (source.parent / 'antigravity/hook_adapter.py').read_bytes()),
+            FileConfiguration('opencode-guards-plugin', config / 'plugins/guards.js', plugin.encode()))
+
+
+def _agents(models: Path, destination: Path) -> dict[tuple[str, ...], object]:
+    """opencode.json agent fields for the ## opencode section of pstack's models.md: one subagent per seat, which runs
+    pstack's poteto-agent, and comment-sicko and the built-in general and explore agents on Opus at the lowest effort
+    the section lists for it, as Claude Code's subagent hook runs a spawn that names no model."""
+    if not models.is_file():
+        return {}
+    seats: dict[str, tuple[str, list[str]]] = {}
+    opus = []
+    for section, role, model, effort in model_entries(models.read_bytes()):
+        if section != 'opencode' or model in {'auto', 'inherit-parent'}:
+            continue
+        target = model_target(section, model)
+        seats.setdefault('pstack-' + _id(target[1] + '-' + effort), (opencode_model(model, effort), []))[1].append(role)
+        if target == ('claude-code', 'opus'):
+            opus.append(effort)
+    system = {name: '{file:' + (destination / 'agents' / (name + '.md')).as_posix() + '}' for name in PSTACK_AGENTS}
+    fields: dict[tuple[str, ...], object] = {}
+    for name, (reference, roles) in seats.items():
+        fields[('agents', name)] = {
+            'description': (f'pstack poteto-agent on {reference}. Spawn it for the pstack roles '
+                            + ', '.join(f'`{role}`' for role in roles)
+                            + ', as ~/.config/pstack/models.md routes them under ## opencode.'),
+            'mode': 'subagent', 'model': reference, 'system': system['poteto-agent']}
+    if opus:
+        default = opencode_model('opus', min(opus, key=EFFORTS.index))
+        fields[('agents', 'comment-sicko')] = {
+            'description': 'pstack comment-sicko, which the no-comments skill spawns to find comments and '
+                           'workaround code to delete.',
+            'mode': 'subagent', 'model': default, 'system': system['comment-sicko']}
+        fields[('agents', 'general', 'model')] = default
+        fields[('agents', 'explore', 'model')] = default
+    return fields
+
+
+def _agent_text(source: Path, payload: Path) -> bytes:
+    """An agent definition's body, with its links resolved to the payload that holds the files they name."""
+    text = source.read_text(encoding='utf-8')
+    body = text[frontmatter(text)[0].end():].lstrip('\n')
+    return re.sub(r'\]\((\.\./[^)\s]+)\)', lambda link: '](' + (payload / link[1][3:]).as_posix() + ')', body).encode()
 
 
 def _cua(roots: DeviceRoots, platform: Platform) -> dict:
@@ -244,7 +327,7 @@ def materialise(plan: OpenCodePlan, builder: Builder, destination: Path) -> Path
         if name.casefold() in used:
             raise BuildError(f'OpenCode native skill ID collision: {name}')
         used[name.casefold()] = ('loose', name)
-    records, wrappers, payloads = [], [], []
+    records, wrappers, payloads, agents = [], [], [], {}
 
     def wrapper(identity, package, skill, source, mode, digest, relative):
         owner = (package, skill)
@@ -277,6 +360,12 @@ def materialise(plan: OpenCodePlan, builder: Builder, destination: Path) -> Path
         if any(relative_root == previous for _, previous, _ in payloads):
             raise BuildError(f'OpenCode package payload ID collision: {package.name}')
         payloads.append((effective, relative_root, builder.roots.tree_digest(effective)))
+        if plan.agents and package.name == 'pstack':
+            for name in PSTACK_AGENTS:
+                definition = effective / 'agents' / (name + '.md')
+                if not definition.is_file():
+                    raise BuildError(f'pstack: missing the agent definition OpenCode runs: agents/{name}.md')
+                agents[name] = _agent_text(definition, plan.destination / relative_root)
         modes = {item.source_skill: item.mode for item in plan.skills if item.package == package.name}
         for name, path in sorted(paths.items()):
             relative = relative_root / path.resolve().relative_to(effective.resolve())
@@ -314,6 +403,9 @@ def materialise(plan: OpenCodePlan, builder: Builder, destination: Path) -> Path
         path = destination / 'skills' / identity / 'SKILL.md'
         path.parent.mkdir(parents=True)
         path.write_bytes(data)
+    for name, data in agents.items():
+        (destination / 'agents').mkdir(exist_ok=True)
+        (destination / 'agents' / (name + '.md')).write_bytes(data)
     (destination / 'projection.json').write_bytes(_json({'schema': 1, 'intent': plan.intent,
                       'skills': records, 'payloads': [{'path': path.as_posix(), 'digest': digest}
                                                      for _, path, digest in payloads], 'unsupported': plan.unsupported}))
