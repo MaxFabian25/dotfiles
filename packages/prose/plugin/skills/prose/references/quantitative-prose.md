@@ -53,7 +53,7 @@ Apply `AUTH-OSR-CODE-3` only to public communication of statistics, data, or wid
   three-letter ISO 4217 currency code, written before the amount with a space, as in `USD 120`.
 - **Statistical significance.** In a statistical context, reserve *significant* for the phrase *statistically significant*.
 - **Robustness claims.** Use *robust* for a statistical estimate, test, or analysis only when a
-  named test or sensitivity analysis supports the term. State that support in the prose unit or a
+  named test or sensitivity analysis supports the term. State that support in the passage or a
   cited display. Otherwise, state the tested property.
 
 ## Quantities and units

@@ -101,11 +101,12 @@ Let content determine the number of list items. Use prose for one item or a conn
 reasoning; use a list for a genuine set and a table for comparison across dimensions. State whether
 items are requirements, alternatives, or examples. Number them when order, rank, count, or later
 reference matters. Keep item syntax consistent, introduce the list's purpose, and nest only for a
-real parent-child relationship. State whether a choice permits both alternatives or exactly one.
-Check that adjacent recommendations can be carried out together; when two proposals conflict,
-present them as alternatives rather than sequential steps.
-Answer in the body any question the gathered sources can answer, for each option compared, and keep
-a list of next steps to actions only the reader can take.
+real parent-child relationship.
+
+State whether a choice permits both alternatives or exactly one. Check that adjacent recommendations
+can be carried out together; when two proposals conflict, present them as alternatives rather than
+sequential steps. Answer in the body any question the gathered sources can answer, for each option
+compared, and keep a list of next steps to actions only the reader can take.
 
 ### Voice, roles, and first person
 

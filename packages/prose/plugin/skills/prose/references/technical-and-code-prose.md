@@ -90,9 +90,9 @@ A *code span* is an inline sequence of code-formatted characters in CommonMark.
 - Refer to a single status code with its number and name, such as an HTTP `400 Bad Request`
   status code. Call it a status code in ordinary documentation. Use *error* only when the protocol
   class and described situation establish an error.
-- When describing system behaviour, do not use an action noun as a verb if a precise verb names the
-  operation. For *message* or *output*, state whether the system sends, displays, writes, or returns
-  the content. Retain a verb established by the governing technical authority.
+- When describing system behaviour and a precise verb names the operation, use that verb instead of
+  an action noun. For *message* or *output*, state whether the system sends, displays, writes, or
+  returns the content. Retain a verb established by the governing technical authority.
 - In user materials, name the observable problem, consequence, and recovery action
   before unfamiliar technical terminology. Describe an unresponsive system or application as *not
   responding* or name its measured state (rather than *hang* after a system error), reserve *freeze*

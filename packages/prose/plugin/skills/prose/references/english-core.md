@@ -187,6 +187,9 @@ empty action-noun phrase, such as *perform a restart*. Retain a noun that names 
 technical concept or state. Remove needless *moreover*, *furthermore*, and *in addition*. Apply the
 [reader-core content check](reader-core.md#remove-wording-that-carries-no-content) to other filler.
 
+Run [scan_prose.py](../scripts/scan_prose.py) (with `--us-english` when keeping US English) on
+English prose longer than a few paragraphs and settle each finding in context.
+
 Complete the English edit when the applicable house choices hold: new prose uses British spelling
 (*-ise*/*-isation*, *licence* noun, *practise* verb), serial commas, logical quotation punctuation
 when no other quotation convention is selected, no em dashes or *and/or*/*etc.* leftovers, direct

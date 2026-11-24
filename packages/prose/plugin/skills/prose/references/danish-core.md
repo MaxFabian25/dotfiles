@@ -107,6 +107,9 @@ efter reglerne dér.
 Når opgaven eller den styrende arbejdsgang kræver afprøvning med læsere, brug
 [proceduren for afprøvning](readability-and-reader-testing.md#reader-testing) og dens danske tillæg.
 
+Kør [scan_prose.py](../scripts/scan_prose.py) med `--lang da` på dansk prosa længere end et par
+afsnit, og tag stilling til hvert fund i sin sammenhæng.
+
 Arbejdet med dansk prosa er afsluttet når alle relevante danske regler er fulgt: stavning, bøjning
 og tegnsætning følger *Retskrivningsordbogen* 5.1 (uden valgfrit startkomma i ny tekst, med
 decimalkomma og fast mellemrum foran `%`), sammensatte substantiver, genitiver og oversatte

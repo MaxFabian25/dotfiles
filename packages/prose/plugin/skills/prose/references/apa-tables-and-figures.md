@@ -23,8 +23,9 @@ them, the stub and cell entries, and the notes in sentence case. Left-align stub
 other cell entries, left-aligns long text, and permits numerical values to be aligned on the
 decimal. For a column of numbers, the house [numeric table
 alignment](tables-and-figures.md#table-structure-and-editing) rule
-replaces the centring. Carry comparable values to the same number of decimal places. Within APA
-scope, these empty-cell forms override the house [blank data
+replaces the centring. Carry comparable values to the same number of decimal places.
+
+Within APA scope, these empty-cell forms override the house [blank data
 cells](tables-and-figures.md#table-titles-notes-cells-and-units) rule: leave a cell blank when data
 are not applicable (explaining it in a note when needed), and insert a dash when data were not
 obtained or not reported (explaining the dash in the general note).

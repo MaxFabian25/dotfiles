@@ -127,14 +127,16 @@ citation that a source suggests into this form.
   title of a work that stands alone, such as a book, report, data set, or webpage. Leave the title of
   an article, chapter, or other part in roman type without quotation marks, and italicise the larger
   work in the source element: a periodical title in title case and an edited book title in sentence
-  case. Put a report number or edition in parentheses after the title. After the title, add the
-  bracketed description that the manual's example for the source type shows, such as
-  `[Press release]`, `[Data set]`, or `[Presentation slides]`, capitalised and in roman type, and
-  include one when in doubt. An article, chapter, book, report, or webpage takes none. For an untitled
-  work, put the description in square brackets in place of the title. For a work in a language other
-  than the paper's, keep the original title and add a translation of it in square brackets. Keep a
-  title's own wording, including its date form; in a title or description you compose, use the
-  [house date form](number-forms.md#dates-and-times).
+  case. Put a report number or edition in parentheses after the title.
+- **Bracketed title descriptions and untitled works.** After the title, add the bracketed description
+  that the manual's example for the source type shows, such as `[Press release]`, `[Data set]`, or
+  `[Presentation slides]`, capitalised and in roman type, and include one when in doubt. An article,
+  chapter, book, report, or webpage takes none. For an untitled work, put the description in square
+  brackets in place of the title.
+- **Translated titles and source wording.** For a work in a language other than the paper's, keep the
+  original title and add a translation of it in square brackets. Keep a title's own wording, including
+  its date form; in a title or description you compose, use the [house date
+  form](number-forms.md#dates-and-times).
 - **Source.** Give the publisher without a business designation such as *Inc.* or *LLC*. Omit the
   publisher when it is also the author, and omit any publisher location, giving a place only for a
   work tied to one, such as a conference presentation.

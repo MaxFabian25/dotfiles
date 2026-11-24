@@ -574,6 +574,43 @@ CHECKS = [
         ),
         "write 'click' directly before its object, without 'on'",
     ),
+    Check(
+        "house",
+        "e-mail",
+        re.compile(r"(?<![@\w.-])\be-mail(?:s|ed|ing)?\b(?![\w.+-]*@)", IGNORE),
+        "write 'email' as one word",
+    ),
+    # Inspects Markdown and plain-text blocks where intra-line spaces survive;
+    # HTML block normalisation collapses runs of whitespace.
+    Check(
+        "house",
+        "double-space",
+        re.compile(r"[.!?]  +(?=[A-Z“‘\"'(])"),
+        "use one space after sentence-ending punctuation",
+    ),
+    # Checks '°C'/'°F' only; bare '300K' is omitted to avoid colliding with '300K' for thousands.
+    Check(
+        "house",
+        "temp-space",
+        re.compile(r"(?<!\w)\d+(?:[.,]\d+)?°[CF](?!\w)"),
+        "put a space between a temperature value and '°C' or '°F', as in '50 °C'",
+    ),
+    Check(
+        "house",
+        "kelvin-degree",
+        re.compile(r"(?<!\w)\d+(?:[.,]\d+)?\s*°K(?!\w)"),
+        "omit the degree symbol with kelvin, as in '300 K'",
+    ),
+    Check(
+        "house",
+        "range-percent",
+        re.compile(
+            r"(?<![\w%.,])\d+(?:[.,]\d+)?\s*"
+            r"(?:[–-]\s*\d+(?:[.,]\d+)?\s*%(?!\d)|"
+            r"%\s*[–-]\s*\d+(?:[.,]\d+)?(?![.,]\d|\s*%|\w))"
+        ),
+        "repeat '%' at both endpoints of a range, as in '25%–30%'",
+    ),
     # Checks for a missing space before '%'; HTML block normalisation collapses
     # whitespace and Markdown prose routinely uses an ASCII space.
     Check(
@@ -619,6 +656,31 @@ CHECKS = [
         "danish-24x7",
         re.compile(r"\b24x7\b", IGNORE),
         "skriv '24/7' eller 'døgnet rundt' i stedet for '24x7'",
+        langs=frozenset({"da"}),
+    ),
+    Check(
+        "house",
+        "danish-temp-space",
+        re.compile(r"(?<!\w)\d+(?:[.,]\d+)?°[CF](?!\w)"),
+        "sæt mellemrum mellem tal og '°C' eller '°F', fx '50 °C'",
+        langs=frozenset({"da"}),
+    ),
+    Check(
+        "house",
+        "danish-kelvin-degree",
+        re.compile(r"(?<!\w)\d+(?:[.,]\d+)?\s*°K(?!\w)"),
+        "udelad gradtegnet ved kelvin, fx '300 K'",
+        langs=frozenset({"da"}),
+    ),
+    Check(
+        "house",
+        "danish-range-percent",
+        re.compile(
+            r"(?<![\w%.,])\d+(?:[.,]\d+)?\s*"
+            r"(?:[–-]\s*\d+(?:[.,]\d+)?\s*%(?!\d)|"
+            r"%\s*[–-]\s*\d+(?:[.,]\d+)?(?![.,]\d|\s*%|\w))"
+        ),
+        "gentag '%' ved begge endepunkter i et interval, fx '25 %-30 %'",
         langs=frozenset({"da"}),
     ),
     Check(
@@ -971,6 +1033,64 @@ def serial_comma(block: Block) -> list[tuple[int, str]]:
     return found
 
 
+RANGE_UNIT = re.compile(
+    r"\b\d+(?:\.\d+)?\s+to\s+\d+(?:\.\d+)?\s+"
+    r"(?:kg|g|mg|km|m|cm|mm|ms|kB|MB|GB|TB|KiB|MiB|GiB|TiB|kW|MW|MHz|GHz|°C|°F)(?!\w)"
+)
+IDENTIFIER_NOUNS = {
+    "batch",
+    "case",
+    "channel",
+    "chapter",
+    "class",
+    "example",
+    "figure",
+    "flask",
+    "group",
+    "id",
+    "item",
+    "level",
+    "line",
+    "model",
+    "no",
+    "node",
+    "number",
+    "option",
+    "part",
+    "phase",
+    "pin",
+    "plate",
+    "port",
+    "row",
+    "sample",
+    "section",
+    "slot",
+    "stage",
+    "step",
+    "table",
+    "test",
+    "tier",
+    "trial",
+    "tube",
+    "type",
+    "unit",
+    "version",
+    "vial",
+    "well",
+}
+
+
+def range_unit(block: Block) -> list[tuple[int, str]]:
+    found = []
+    for match in RANGE_UNIT.finditer(block.text):
+        before = block.text[: match.start()].rstrip()
+        prev = re.search(r"([A-Za-z]+)\.?$", before)
+        if prev and prev.group(1).lower() in IDENTIFIER_NOUNS:
+            continue
+        found.append((match.start(), match.group(0)))
+    return found
+
+
 def title_case(block: Block) -> bool:
     tokens = re.findall(r"[A-Za-z][\w'’-]*", block.text)
     long = [t for t in tokens[1:] if len(t) >= 3]
@@ -1028,6 +1148,16 @@ def scan(
                     check.message,
                     match.start(),
                     match.group(0),
+                )
+        if lang == "en" and "house" in groups:
+            for start, text in range_unit(block):
+                add(
+                    block,
+                    "house",
+                    "range-unit",
+                    "repeat the unit at both endpoints or group the range, as in '10 kg to 12 kg' or '(10 to 12) kg'",
+                    start,
+                    text,
                 )
         if (
             lang == "en"
