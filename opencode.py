@@ -23,6 +23,12 @@ EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 PSTACK_AGENTS = ('poteto-agent', 'comment-sicko')
 # The filters.json lists whose tools the tool-filter plugin removes, by the MCP server that serves them.
 HIDDEN_TOOLS = {'t3-code': ('t3_browser_tools', 't3_device_tools'), 'cua-driver': ('cua_browser_tools',)}
+# OpenCode's own plugins that its config removes. `opencode.browser` drives the OpenCode desktop app's browser; no
+# desktop app attaches to a T3 thread, so its tools fail there, and T3 brings its own browser tools.
+REMOVED_PLUGINS = ('opencode.browser',)
+# The folders OpenCode 2.3.2's skill scan skips besides dot entries, and how deep it goes.
+SCAN_SKIPPED = frozenset({'node_modules', '.git', '.venv', 'venv', '__pycache__'})
+SCAN_DEPTH = 6
 
 
 @dataclass(frozen=True)
@@ -69,6 +75,27 @@ def _loose_mode(setup: Setup, skill: LooseSkill, root: SkillRoot) -> SkillMode |
     subject = '{' + token + '}/skills/' + skill.name + '/SKILL.md'
     return setup.host_skills.get(Host.CODEX, {}).get(subject,
                                                   None if skill.place[root] else SkillMode.OFF)
+
+
+def _opencode_skill_ids(root: Path) -> set[str]:
+    found, level = set(), [root]
+    for depth in range(SCAN_DEPTH + 1):
+        below = []
+        for directory in level:
+            try:
+                entries = [entry for entry in directory.iterdir()
+                           if not entry.name.startswith('.') and entry.name not in SCAN_SKIPPED]
+            except OSError:
+                continue
+            if any(entry.name == 'SKILL.md' and entry.is_file() for entry in entries):
+                found.add(directory.name)
+                continue
+            if depth == 0:
+                found.update(entry.stem for entry in entries if entry.suffix == '.md' and entry.is_file())
+            if depth < SCAN_DEPTH:
+                below.extend(entry for entry in entries if entry.is_dir())
+        level = below
+    return found
 
 
 def plan(setup: Setup, roots: DeviceRoots, platform: Platform, *, adopted: bool = False) -> OpenCodePlan | None:
@@ -128,10 +155,24 @@ def plan(setup: Setup, roots: DeviceRoots, platform: Platform, *, adopted: bool 
             denied.add(subject)
         elif mode == SkillMode.OFF and subject.endswith('/SKILL.md'):
             denied.add(subject.rsplit('/', 2)[1])
+    # OpenCode also loads ~/.claude/skills.
+    claude_only = (_opencode_skill_ids(roots.claude_home / 'skills') - _opencode_skill_ids(roots.agents_home / 'skills')
+                   - {item.skill.name for item in loose})
     destination = roots.home / '.config/opencode/dotfiles'
-    fields = {('update',): 'disable', ('skills',): [*retained.get('skills', []), str(destination / 'skills')]}
-    permissions = [*retained.get('permissions', []),
-                   *({'action': 'skill', 'resource': name, 'effect': 'deny'} for name in sorted(denied))]
+    runtime = source.parent / 'runtime.toml'
+    providers = ([{'action': 'provider.use', 'resource': '*', 'effect': 'deny'},
+                  {'action': 'provider.use', 'resource': 'anthropic-api', 'effect': 'allow'},
+                  {'action': 'provider.use', 'resource': 'openai-api', 'effect': 'allow'}] if runtime.is_file() else [])
+    # Skills are denied by policy, not permission, because T3's full-access threads allow every permission again.
+    fields: dict[tuple[str, ...], object] = {
+        ('update',): 'disable',
+        ('skills',): [*retained.get('skills', []), str(destination / 'skills')],
+        ('plugins',): ['-' + name for name in REMOVED_PLUGINS],
+        ('policies',): [*retained.get('policies', []), *providers,
+                        *({'action': 'skill.use', 'resource': name, 'effect': 'deny'}
+                          for name in sorted(denied | claude_only))],
+    }
+    permissions = [*retained.get('permissions', [])]
     if settings.get('mcp'):
         fields[('mcp', 'servers', 'cua-driver')] = _cua(roots, platform)
         filters = json.loads((source.parent.parent / 'mcp-tool-filters/filters.json').read_bytes())
@@ -145,7 +186,6 @@ def plan(setup: Setup, roots: DeviceRoots, platform: Platform, *, adopted: bool 
     configurations: tuple[Configuration, ...] = (configuration,)
     if selected.rules is not None:
         configurations += (FileConfiguration('opencode-rules', destination.parent / 'AGENTS.md', selected.rules.text),)
-    runtime = source.parent / 'runtime.toml'
     if runtime.is_file():
         runtime_settings = tomllib.loads(runtime.read_text(encoding='utf-8'))
         model = runtime_settings.get('model', '')
@@ -156,10 +196,6 @@ def plan(setup: Setup, roots: DeviceRoots, platform: Platform, *, adopted: bool 
                 or not re.fullmatch(r'anthropic-api/claude-opus-[a-z0-9.-]+(?:#(?:low|medium|high|xhigh|max))?', model)):
             raise ValueError('OpenCode runtime needs an Agents vault reference and a native anthropic-api Opus model')
         fields[('model',)] = model
-        fields[('policies',)] = [*retained.get('policies', []),
-                                  {'action': 'provider.use', 'resource': '*', 'effect': 'deny'},
-                                  {'action': 'provider.use', 'resource': 'anthropic-api', 'effect': 'allow'},
-                                  {'action': 'provider.use', 'resource': 'openai-api', 'effect': 'allow'}]
         slug = model.split('/', 1)[1].split('#', 1)[0]
         helper = json.dumps([sys.executable, '-I', str(destination.parent / 'runtime.py'), 'credential'])
         plugin = (source.parent / 'credentials.js.in').read_text(encoding='utf-8')
@@ -192,7 +228,8 @@ def plan(setup: Setup, roots: DeviceRoots, platform: Platform, *, adopted: bool 
                            'OpenCode opencode.jsonc exists; review its migration before adopting JSON fields'),)
     elif not adopted and configuration.destination.exists():
         current = read_fields(configuration.destination.read_bytes(), fields, 'json')
-        conflicts = [path[0] for path in fields if len(path) == 1 and path[0] in {'skills', 'permissions', 'policies'}
+        conflicts = [path[0] for path in fields
+                     if len(path) == 1 and path[0] in {'skills', 'permissions', 'policies', 'plugins'}
                      and current[path].get('value') not in (None, [], fields[path], retained.get(path[0], []))]
         if conflicts:
             configurations += (BlockedConfiguration('opencode-adoption', configuration.destination,

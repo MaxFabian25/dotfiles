@@ -76,12 +76,12 @@ class InstallerTests(unittest.TestCase):
         self.apply(updated, home)
         native = home.roots.home / '.config/opencode'
         self.assertFalse((native / 'dotfiles/skills/kit-auto').exists())
-        self.assertIn({'action': 'skill', 'resource': 'kit-auto', 'effect': 'deny'},
-                      json.loads((native / 'opencode.json').read_bytes())['permissions'])
+        self.assertIn({'action': 'skill.use', 'resource': 'kit-auto', 'effect': 'deny'},
+                      json.loads((native / 'opencode.json').read_bytes())['policies'])
         updated = replace(setup, host_skills={Host.CODEX: {'kit:auto': SkillMode.OFF, 'kit:hidden': SkillMode.OFF}})
         self.apply(updated, home)
-        self.assertIn({'action': 'skill', 'resource': 'kit-hidden', 'effect': 'deny'},
-                      json.loads((native / 'opencode.json').read_bytes())['permissions'])
+        self.assertIn({'action': 'skill.use', 'resource': 'kit-hidden', 'effect': 'deny'},
+                      json.loads((native / 'opencode.json').read_bytes())['policies'])
         wrapper = native / 'dotfiles/skills/kit-manual/SKILL.md'
         wrapper.write_bytes(b'User edit that must remain.\n')
         owner = AcceptedInstallations(updated, Device(Platform.LINUX, home.roots, (), ()))
