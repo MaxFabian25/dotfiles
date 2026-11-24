@@ -7,7 +7,10 @@
 //   node chrome-broker.mjs open URL [--new-context]
 //                                                 a page in a window of its own, in the user's profile or in a new
 //                                                 cookie-less context; prints its page ID, context ID and visibility
-//   node chrome-broker.mjs read PAGE              the page's text, and each input with its value's length only
+//   node chrome-broker.mjs read PAGE [--fresh]    the page's text, and each input with its value's length only;
+//                                                 --fresh, for a time-sensitive value such as a one-time code, is
+//                                                 refused while the page is hidden, because Chrome stops rendering
+//                                                 hidden pages (open and status report "visible" or "hidden")
 //   node chrome-broker.mjs eval PAGE EXPRESSION   the expression's value, awaited, hidden like a read
 //   node chrome-broker.mjs close PAGE
 //   node chrome-broker.mjs dispose CONTEXT        close a cookie-less context and every page in it
@@ -46,7 +49,7 @@ const CALL_MS = 30_000;
 const LOAD_MS = 30_000;
 const START_MS = 120_000;
 const USAGE =
-	'usage: node chrome-broker.mjs start | status [PAGE] | open URL [--new-context] | read PAGE | eval PAGE EXPRESSION |\n' +
+	'usage: node chrome-broker.mjs start | status [PAGE] | open URL [--new-context] | read PAGE [--fresh] | eval PAGE EXPRESSION |\n' +
 	'  store NAME < value | read-field PAGE SELECTOR NAME | type-held PAGE SELECTOR NAME [--enter] |\n' +
 	'  eq-held PAGE SELECTOR NAME | held | drop NAME | close PAGE | dispose CONTEXT | stop';
 const MASK = /^[•●*·]+$/u;
@@ -352,8 +355,14 @@ class Broker {
 		return { page: id, context, ...facts, loaded };
 	}
 
-	async read(id) {
-		return { page: id, ...(await this.evaluate(this.page(id), PAGE_FACTS)) };
+	async read(id, fresh) {
+		const facts = await this.evaluate(this.page(id), PAGE_FACTS);
+		if (facts.visibility !== 'hidden') return { page: id, ...facts };
+		if (fresh)
+			throw new Failure(
+				`${id} is hidden, and Chrome stops rendering hidden pages, so a fresh read could show a stopped countdown or an unrendered page; bring its window to the front and read again`,
+			);
+		return { page: id, note: 'this page is hidden, and Chrome stops rendering hidden pages', ...facts };
 	}
 
 	async status(id) {
@@ -395,7 +404,7 @@ class Broker {
 		const [command, ...rest] = argv;
 		const flags = new Set(rest.filter((arg) => arg.startsWith('--')));
 		const args = rest.filter((arg) => !arg.startsWith('--'));
-		const known = { open: ['--new-context'], 'type-held': ['--enter'] }[command] ?? [];
+		const known = { open: ['--new-context'], read: ['--fresh'], 'type-held': ['--enter'] }[command] ?? [];
 		const unknown = [...flags].filter((flag) => !known.includes(flag));
 		if (unknown.length) throw new Failure(`${command} does not take ${unknown.join(', ')}`);
 		switch (command) {
@@ -407,7 +416,7 @@ class Broker {
 			case 'open':
 				return this.open(args[0], flags.has('--new-context'));
 			case 'read':
-				return this.read(args[0]);
+				return this.read(args[0], flags.has('--fresh'));
 			case 'eval': {
 				if (args.length !== 2) throw new Failure('eval needs PAGE EXPRESSION');
 				return { value: await this.evaluate(this.page(args[0]), args[1]) };
