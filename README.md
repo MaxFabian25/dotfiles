@@ -204,6 +204,15 @@ prints `Home file left as it is` with its path, applies the rest, records the pa
 has no record, so it takes over only the copies that already match. A pull removes no file that a release
 dropped from that folder. Without `--apply` it prints `Home file to deliver` for each file and exits 1.
 
+After the home files, a Linux pull points the `cua-driver` MCP server of Claude Code (`~/.claude.json`) and Codex
+(`~/.codex/config.toml`) at `~/.local/bin/cua-driver-defaults` when the private `config/cua-driver/mcp.toml` says
+`wrapper = true` and that wrapper is there, and back at the driver otherwise (`cua_mcp.py`). Each host registers the
+server by hand, so the pull writes only its command and `CUA_DRIVER_BIN`, and only from the driver run with `mcp` to
+the wrapper with that driver in `CUA_DRIVER_BIN`, and back. It writes `~/.claude.json` under Claude Code's own lock
+folder, `~/.claude.json.lock`, and saves each file under `~/.local/state/dotfiles/mcp-server-backups/` before its first
+change. A server in another shape, or a file a Claude process holds locked, stays as it is: the pull prints
+`MCP server left as it is` and exits 1. Without `--apply` it prints `MCP server to point` and exits 1.
+
 A private test file runs by itself, as `python -I -B FILE`, so it needs its own `sys.path` line for a module
 beside it, and `unittest.main()` at its end.
 
