@@ -49,11 +49,22 @@ abbreviation. For its grammatical form:
 - Use a hyphen in numbers that are spelt out.
 - Put terminal punctuation inside a closing parenthesis only when the entire sentence is
   parenthetical. Otherwise, put it after the closing parenthesis.
-- Put a comma after an introductory word or phrase.
+- Separate two independent clauses with a full stop, a semicolon, or a comma plus a coordinating
+  conjunction.
+- Use a semicolon between closely related independent clauses or list items that already contain
+  commas. Use a full stop when clauses carry separate ideas.
+- Put a comma after an introductory word, clause, or phrase. After a short introductory phrase the
+  comma is optional; keep it when leaving it out could cause a misreading.
 - Put a comma before a coordinating conjunction that joins two independent clauses. Omit it before
   a shared predicate unless clarity requires it.
-- Put a comma after a conjunctive adverb that opens a sentence. Start a new sentence before an
-  independent restatement.
+- Between independent clauses, put a semicolon (or a full stop) before *however*, *therefore*,
+  *nevertheless*, or another conjunctive adverb, and put a comma after it. Put a comma after a
+  conjunctive adverb that opens a sentence, and start a new sentence before an independent
+  restatement.
+- Put a comma between adjectives that independently modify the same noun and can be reversed or
+  joined by *and*. Write cumulative adjectives without a comma.
+- Comma-bracket a nonessential or nonrestrictive clause, phrase, or appositive, leaving information
+  that identifies or restricts the noun unbracketed.
 - Keep a restrictive clause introduced by *because* without a preceding comma, adding a comma when
   the clause is nonrestrictive or omission could mislead.
 - Close every comma-delimited interruption with a second comma when the sentence continues.
@@ -67,7 +78,8 @@ abbreviation. For its grammatical form:
 - Use a colon after a complete clause to introduce an explanation, example, or list. Keep a verb or
   preposition beside its completion.
 - End a complete sentence with a full stop unless a direct question or permitted exclamation
-  requires another mark.
+  requires another mark. Use a question mark for a direct question, and use a full stop for an
+  indirect question or a sentence that only describes a question.
 - Begin a sentence with *And* or *But* when the word states the intended addition or contrast
   clearly.
 - Retain a conjunction or clause-introducing *that* when omission could obscure a clause boundary or

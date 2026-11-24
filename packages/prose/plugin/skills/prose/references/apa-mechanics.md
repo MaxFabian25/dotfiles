@@ -69,35 +69,31 @@ The typographic-emphasis rule narrows options that APA Style permits.
 
 Apply this section when the recorded APA scope includes English writing style or mechanics. Apply
 [English punctuation and mechanics](english-core.md#punctuation-and-mechanics) for serial commas and
-single spaces after sentence-ending punctuation, plus the APA rules and supplements below:
+single spaces after sentence-ending punctuation, and [English
+usage](english-usage.md#punctuation-and-mechanics) for general English sentence punctuation
+(semicolons, independent clauses, introductory and nonrestrictive commas, coordinate adjectives,
+conjunctive adverbs, question marks, and parenthesis punctuation; within APA scope, recast a
+compound predicate that needs a break instead of inserting a comma). Apply the APA rules and
+supplements below:
 
 | Convention | Adopted form |
 | --- | --- |
 | Spacing after punctuation marks | In ordinary prose, use no space before a full stop, comma, colon, or semicolon and one space after it. Do not put a space after an internal full stop in an abbreviation (*U.S.*, *e.g.*) or around the colon in a ratio (*1:8*). Mathematical notation, URLs, source code, and LaTeX-command syntax keep their required spacing. |
-| Semicolon | Use between closely related independent clauses or list items that already contain commas. Use a full stop when clauses carry separate ideas. |
-| Independent clauses | Separate two independent clauses with a full stop, a semicolon, or a comma plus a coordinating conjunction. |
-| Independent clauses with a coordinating conjunction | Put a comma before a coordinating conjunction that joins two independent clauses. Do not put a comma between the two parts of a compound predicate; recast the sentence when it needs a break for clarity. |
-| Introductory comma | Put a comma after an introductory clause or phrase. After a short introductory phrase the comma is optional; keep it when leaving it out could cause a misreading. |
-| Nonessential or nonrestrictive elements | Comma-bracket a nonessential or nonrestrictive clause, phrase, or appositive. Leave information that identifies or restricts the noun unbracketed. |
-| Coordinate adjectives | Put a comma between adjectives that independently modify the same noun and can be reversed or joined by *and*. Write cumulative adjectives without a comma. |
-| Conjunctive adverb | Between independent clauses, put a semicolon before *however*, *therefore*, *nevertheless*, or another conjunctive adverb, and put a comma after it. A full stop may replace the semicolon. |
 | Ampersand | Write *and* in prose. Keep `&` only in an official name, an established abbreviation, APA citation output, or a citation in a table or figure. |
 | Slash | In running prose, keep the slash for a numerator and denominator (*X/Y*), a unit with a numeric value, an established term, or APA citation output, such as a republished work's dates (*1920/2013*). Write a ratio with a colon (*1:8*). Otherwise write *and*, *or*, or *versus*. |
 | Possessive apostrophes | Add apostrophe-*s* to a singular noun or proper name, including one that ends in *s*. Add an apostrophe alone to a plural noun that ends in *s*. Add apostrophe-*s* to a plural noun that does not end in *s*. Form an ordinary plural without an apostrophe. |
-| Question mark | Use for a direct question. Use a full stop for an indirect question or a sentence that only describes a question. |
 | Exclamation mark | In original prose within the selected APA writing-style scope, reserve exclamation marks for verbatim quotations and official titles. |
 | Adjacent parentheses | Recast back-to-back prose parenthetical groups when possible, or combine them in one set separated by a semicolon. |
-| Parenthesis punctuation | Put the full stop inside the closing parenthesis only when the entire sentence is parenthetical. Otherwise put sentence punctuation after the closing parenthesis. |
 | Em dash | Recast original prose with a sentence break, a comma pair, parentheses, or a colon rather than using an em dash. |
 | En dash | Spans, ranges, and paired relationships (`--` in LaTeX) |
 | Quotation marks (uses) | Use double marks for an ordinary quotation. Use them also for a word or phrase referred to as itself, and at first use only for an ironic, slang, or coined expression or a newly introduced label. Use italics instead for a key term being defined. Do not use quotation marks for emphasis, hedging, or ordinary technical terms. |
 | Quotation marks (punctuation placement) | Put full stops and commas inside the closing mark (overriding the [house logical-punctuation default](english-core.md#punctuation-and-mechanics) within APA scope), except when exact governed text requires external punctuation or a citation follows the quotation at the end of a sentence. Put colons and semicolons outside. Put a question mark or exclamation mark inside only when it belongs to the quoted material. Otherwise put it outside. |
 
-The em dash and slash rules narrow options that APA Style permits. The coordinate-adjective,
-question-mark, and exclamation-mark rows, the plural-possessive sentences, and the semicolon row's
-separate-ideas sentence are house supplements; the manual leaves general grammar to other writing
-guides. APA Manual Sections 4.8, 4.16–4.24, 6.1–6.17, 6.22–6.29, and 6.32–6.47 supply the mechanics
-basis.
+The em dash and slash rules narrow options that APA Style permits. The exclamation-mark row and the
+plural-possessive sentences are house supplements; general English punctuation lives in [English
+usage](english-usage.md#punctuation-and-mechanics), as the manual leaves general grammar to other
+writing guides. APA Manual Sections 4.8, 4.16–4.24, 6.1–6.17, 6.22–6.29, and 6.32–6.47 supply the
+mechanics basis.
 
 Complete this branch when every in-scope number, date, equation, grammar, capitalisation,
 abbreviation, and punctuation form matches these tables (with the stated house British English,
