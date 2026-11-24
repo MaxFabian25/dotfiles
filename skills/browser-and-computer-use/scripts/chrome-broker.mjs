@@ -1,39 +1,15 @@
 #!/usr/bin/env node
 // One long-lived DevTools connection to the user's Windows Chrome, shared by every agent command, so Chrome asks
-// "Allow remote debugging?" once per start and no client of its own leaves that prompt behind.
-//
-//   node chrome-broker.mjs start                  start the broker as a systemd user unit, or report the running one
-//   node chrome-broker.mjs status [PAGE]          the connection and the broker's pages, or one page
-//   node chrome-broker.mjs open URL [--new-context]
-//                                                 a page in a window of its own, in the user's profile or in a new
-//                                                 cookie-less context; prints its page ID, context ID and visibility
-//   node chrome-broker.mjs read PAGE [--fresh]    the page's text, and each input with its value's length only;
-//                                                 --fresh, for a time-sensitive value such as a one-time code, is
-//                                                 refused while the page is hidden, because Chrome stops rendering
-//                                                 hidden pages (open and status report "visible" or "hidden")
-//   node chrome-broker.mjs eval PAGE EXPRESSION   the expression's value, awaited, hidden like a read
-//   node chrome-broker.mjs close PAGE
-//   node chrome-broker.mjs dispose CONTEXT        close a cookie-less context and every page in it
-//   node chrome-broker.mjs stop                   close the broker's pages and contexts, then the connection
-//
-// Held values carry a secret from one page to another without showing it:
-//   node chrome-broker.mjs store NAME < value     hold a value given on standard input, never as an argument
-//   node chrome-broker.mjs read-field PAGE SELECTOR NAME
-//                                                 hold a field's value; prints its length
-//   node chrome-broker.mjs type-held PAGE SELECTOR NAME [--enter]
-//   node chrome-broker.mjs eq-held PAGE SELECTOR NAME
-//                                                 "yes" when the field holds the value, otherwise "no"
-//   node chrome-broker.mjs held | drop NAME       list names and lengths, or forget one
-// store and read-field refuse a mask, a value made only of •, ●, * or ·, such as a password manager shows in place
-// of a password. SELECTOR is a CSS selector.
+// "Allow remote debugging?" once per start and no client of its own leaves that prompt behind. Run with --help for
+// the commands.
 //
 // Commands reach only the pages and contexts the broker opened. Every reply and error hides every held value, raw
 // and JSON-escaped, input values (as their length), hex runs of 32 characters or more, base64 runs of 24 or more
 // that mix upper case, lower case and digits, 1Password Secret Key groups (A3-...) and every line that holds a "•".
-// Clients talk to the broker over HTTP on a
-// Unix socket with mode 0600, never TCP, because under WSL's mirrored networking a localhost port is open to every
-// Windows program and to every page in Chrome. When Chrome drops the connection, the broker answers "disconnected"
-// and never reconnects by itself, since each connection raises a new prompt on the user's screen; `start` reconnects.
+// Clients talk to the broker over HTTP on a Unix socket with mode 0600, never TCP, because under WSL's mirrored
+// networking a localhost port is open to every Windows program and to every page in Chrome. When Chrome drops the
+// connection, the broker answers "disconnected" and never reconnects by itself, since each connection raises a new
+// prompt on the user's screen; `start` reconnects.
 //
 // It finds Windows Chrome's DevToolsActivePort file under Windows' LOCALAPPDATA. CHROME_BROKER_PORT_FILE names
 // another one, CHROME_BROKER_SOCKET another socket and CHROME_BROKER_UNIT another unit name, as the tests do.
@@ -47,11 +23,36 @@ import { fileURLToPath } from 'node:url';
 const SCRIPT = fileURLToPath(import.meta.url);
 const CALL_MS = 30_000;
 const LOAD_MS = 30_000;
+const ELEMENT_MS = 10_000;
 const START_MS = 120_000;
-const USAGE =
-	'usage: node chrome-broker.mjs start | status [PAGE] | open URL [--new-context] | read PAGE [--fresh] | eval PAGE EXPRESSION |\n' +
-	'  store NAME < value | read-field PAGE SELECTOR NAME | type-held PAGE SELECTOR NAME [--enter] |\n' +
-	'  eq-held PAGE SELECTOR NAME | held | drop NAME | close PAGE | dispose CONTEXT | stop';
+const USAGE = `usage: node chrome-broker.mjs start | stop | status [PAGE] | COMMAND ...
+  start                          start the broker as a systemd user unit, or report the running one
+  stop                           close the broker's pages and contexts, then its connection
+  status [PAGE]                  the connection and the broker's pages, or one page's URL and visibility
+  open URL [--new-context | --context CONTEXT]
+                                 a page in a window of its own, in the user's profile, a new cookie-less context
+                                 or one the broker opened; prints its page ID, context ID and "visible" or "hidden"
+  nav PAGE URL | activate PAGE | close PAGE | dispose CONTEXT
+                                 dispose closes a cookie-less context and every page in it
+  read PAGE [--fresh] [--frame URL-PART]
+                                 the text, and each input with its value's length only; --fresh, for a
+                                 time-sensitive value such as a one-time code, is refused while the page is hidden,
+                                 because Chrome stops rendering hidden pages
+  eval PAGE EXPRESSION [--frame URL-PART | --hold NAME]
+                                 the expression's value, awaited; --frame runs it in each frame whose URL holds
+                                 URL-PART; --hold keeps the value as NAME and prints its length
+  click PAGE SELECTOR | type PAGE SELECTOR TEXT [--enter] | key PAGE KEY
+                                 a real mouse click at the element's centre, plain text typed, or one key
+                                 (Enter, Tab, Escape, Backspace, Space or an arrow)
+Held values carry a secret from one page to another without showing it:
+  store NAME < value             hold a value given on standard input, never as an argument
+  read-field PAGE SELECTOR NAME  hold a field's value; prints its length
+  type-held PAGE SELECTOR NAME [--enter]
+  eq-held PAGE SELECTOR NAME     "yes" when the field holds the value, otherwise "no"
+  held | drop NAME               list names and lengths, or forget one
+store, read-field and eval --hold refuse a mask, a value made only of •, ●, * or ·, as a password manager shows in
+place of a password. SELECTOR is a CSS selector, or text=Words for a visible button, link, label or option whose
+text is or holds Words; commands wait up to ${ELEMENT_MS / 1000} s for it to appear.`;
 const MASK = /^[•●*·]+$/u;
 const MASK_REFUSAL = 'this is a mask; read the item with `op read` or press Reveal first';
 
@@ -178,7 +179,7 @@ function connectDevTools(portFile, onClose) {
 		});
 		return done;
 	};
-	return { opened, call, once, close: () => socket.close() };
+	return { opened, call, once, listen: (listener) => listeners.add(listener), close: () => socket.close() };
 }
 
 // ---- The broker ---------------------------------------------------------------------------------------------------
@@ -223,6 +224,7 @@ class Broker {
 			return;
 		}
 		this.devtools = devtools;
+		devtools.listen((message) => this.trackFrames(message));
 		devtools.opened.then(
 			() => {
 				if (this.devtools === devtools) this.state = 'connected';
@@ -234,6 +236,14 @@ class Broker {
 				this.error = error.message;
 			},
 		);
+	}
+
+	// Chrome attaches each out-of-process iframe of a broker page to that page's session, as setAutoAttach asks.
+	trackFrames({ method, params, sessionId }) {
+		if (method === 'Target.attachedToTarget' && params.targetInfo.type === 'iframe') {
+			for (const page of this.pages.values()) if (page.sessionId === sessionId) page.frames.add(params.sessionId);
+		}
+		if (method === 'Target.detachedFromTarget') for (const page of this.pages.values()) page.frames.delete(params.sessionId);
 	}
 
 	summary() {
@@ -257,27 +267,103 @@ class Broker {
 		return page;
 	}
 
-	async evaluate(page, expression) {
+	async evaluate(page, expression, { sessionId = page.sessionId, contextId } = {}) {
 		const { result, exceptionDetails } = await this.call(
 			'Runtime.evaluate',
-			{ expression, returnByValue: true, awaitPromise: true },
-			page.sessionId,
+			{ expression, returnByValue: true, awaitPromise: true, ...(contextId && { contextId }) },
+			sessionId,
 		);
 		if (exceptionDetails) throw new Failure(`page error: ${exceptionDetails.exception?.description ?? exceptionDetails.text}`);
 		return result.value;
 	}
 
-	// Runs fn(element, ...args) in the page on the element SELECTOR finds, and returns its result by value.
+	// The page's frames whose URL contains MATCH: same-process frames in an isolated world, and out-of-process
+	// iframes through their own sessions.
+	async frames(id, match) {
+		const page = this.page(id);
+		const found = [];
+		const { frameTree } = await this.call('Page.getFrameTree', {}, page.sessionId);
+		const visit = async (node) => {
+			if (node.frame.url.includes(match)) {
+				const world = await this.call('Page.createIsolatedWorld', { frameId: node.frame.id, worldName: 'chrome-broker' }, page.sessionId).catch(() => null);
+				if (world) found.push({ url: node.frame.url, sessionId: page.sessionId, contextId: world.executionContextId });
+			}
+			for (const child of node.childFrames ?? []) await visit(child);
+		};
+		await visit(frameTree);
+		for (const sessionId of page.frames) {
+			const url = await this.evaluate(page, 'location.href', { sessionId }).catch(() => null);
+			if (url?.includes(match) && !found.some((frame) => frame.url === url)) found.push({ url, sessionId });
+		}
+		if (!found.length) throw new Failure(`no frame of ${id} has a URL containing ${match}`);
+		return found;
+	}
+
+	async inFrames(id, match, expression) {
+		const page = this.page(id);
+		const results = [];
+		for (const { url, ...where } of await this.frames(id, match)) {
+			const value = await this.evaluate(page, expression, where).then(
+				(found) => ({ value: found }),
+				(error) => ({ error: error.message }),
+			);
+			results.push({ frame: url, ...value });
+		}
+		return results;
+	}
+
+	// Runs fn(element, ...args) on the element SELECTOR finds, waiting up to ELEMENT_MS for it to appear, and returns
+	// fn's result by value. "text=Words" finds a visible button, link, label or option whose text is Words, or holds it.
 	async onElement(page, selector, fn, ...args) {
 		if (!selector) throw new Failure('a selector is needed');
 		const expression = `(() => {
-			const element = document.querySelector(${JSON.stringify(selector)});
+			const selector = ${JSON.stringify(selector)};
+			const find = () => {
+				if (!selector.startsWith('text=')) return document.querySelector(selector);
+				const want = selector.slice(5).trim().toLowerCase();
+				const shown = [...document.querySelectorAll('button, a, label, summary, [role=button], [role=link], [role=option], [role=menuitem], [role=tab], input[type=submit], input[type=button]')]
+					.filter((e) => e.getClientRects().length)
+					.map((e) => [e, (e.innerText || e.value || e.getAttribute('aria-label') || '').trim().replace(/\\s+/g, ' ').toLowerCase()]);
+				return (shown.find(([, text]) => text === want) ?? shown.find(([, text]) => text.includes(want)))?.[0];
+			};
+			const element = find();
 			if (!element) return { missing: true };
 			return { value: (${fn})(element, ...${JSON.stringify(args)}) };
 		})()`;
-		const reply = await this.evaluate(page, expression);
-		if (reply.missing) throw new Failure(`nothing on the page matches ${selector}`);
-		return reply.value;
+		const deadline = Date.now() + ELEMENT_MS;
+		for (;;) {
+			const reply = await this.evaluate(page, expression).catch((error) => {
+				if (/context|navigat|Cannot find/i.test(error.message) && Date.now() < deadline) return { missing: true };
+				throw error;
+			});
+			if (!reply.missing) return reply.value;
+			if (Date.now() > deadline) throw new Failure(`nothing on the page matches ${selector}`);
+			await new Promise((resolve) => setTimeout(resolve, 200));
+		}
+	}
+
+	async click(id, selector) {
+		const page = this.page(id);
+		const [x, y] = await this.onElement(page, selector, (element) => {
+			element.scrollIntoView({ block: 'center', inline: 'center' });
+			const box = element.getBoundingClientRect();
+			return [box.x + box.width / 2, box.y + box.height / 2];
+		});
+		for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased'])
+			await this.call('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: type === 'mouseMoved' ? 0 : 1 }, page.sessionId);
+		return { clicked: selector };
+	}
+
+	async type(id, selector, text, enter) {
+		if (text === undefined) throw new Failure('type needs PAGE SELECTOR TEXT');
+		const page = this.page(id);
+		await this.onElement(page, selector, (element) => {
+			element.focus();
+			element.select?.();
+		});
+		await this.call('Input.insertText', { text }, page.sessionId);
+		if (enter) await this.press(page, 'Enter');
+		return { typed: text.length };
 	}
 
 	heldValue(name) {
@@ -331,11 +417,16 @@ class Broker {
 		return loaded;
 	}
 
-	async open(url, newContext) {
+	async open(url, newContext, inContext) {
 		if (!url) throw new Failure('open needs a URL');
 		let context = 'default';
 		let browserContextId;
-		if (newContext) {
+		if (inContext !== undefined) {
+			if (newContext) throw new Failure('open takes --new-context or --context, not both');
+			browserContextId = this.contexts.get(inContext);
+			if (!browserContextId) throw new Failure(`${inContext} is not a context this broker opened`);
+			context = inContext;
+		} else if (newContext) {
 			({ browserContextId } = await this.call('Target.createBrowserContext', { disposeOnDetach: true }));
 			context = `c${++this.counter}`;
 			this.contexts.set(context, browserContextId);
@@ -347,22 +438,42 @@ class Broker {
 		});
 		const { sessionId } = await this.call('Target.attachToTarget', { targetId, flatten: true });
 		const id = `p${++this.counter}`;
-		const page = { targetId, sessionId, context };
+		const page = { targetId, sessionId, context, frames: new Set() };
 		this.pages.set(id, page);
 		await this.call('Page.enable', {}, sessionId);
-		const loaded = await this.navigate(page, url);
-		const facts = await this.evaluate(page, '({ url: location.href, visibility: document.visibilityState })');
-		return { page: id, context, ...facts, loaded };
+		await this.call('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sessionId);
+		return { page: id, context, ...(await this.nav(id, url)) };
 	}
 
-	async read(id, fresh) {
+	async nav(id, url) {
+		if (!url) throw new Failure('nav needs PAGE URL');
+		const page = this.page(id);
+		const loaded = await this.navigate(page, url);
+		const facts = await this.evaluate(page, '({ url: location.href, visibility: document.visibilityState })');
+		return { ...facts, loaded };
+	}
+
+	async read(id, fresh, frame) {
 		const facts = await this.evaluate(this.page(id), PAGE_FACTS);
-		if (facts.visibility !== 'hidden') return { page: id, ...facts };
-		if (fresh)
+		if (facts.visibility === 'hidden' && fresh)
 			throw new Failure(
 				`${id} is hidden, and Chrome stops rendering hidden pages, so a fresh read could show a stopped countdown or an unrendered page; bring its window to the front and read again`,
 			);
-		return { page: id, note: 'this page is hidden, and Chrome stops rendering hidden pages', ...facts };
+		const note = facts.visibility === 'hidden' && { note: 'this page is hidden, and Chrome stops rendering hidden pages' };
+		if (frame !== undefined) {
+			const frames = (await this.inFrames(id, frame, PAGE_FACTS)).map(({ value, ...where }) => ({ ...where, ...value }));
+			return { page: id, ...note, visibility: facts.visibility, frames };
+		}
+		return { page: id, ...note, ...facts };
+	}
+
+	async evalCommand(id, expression, frame, hold) {
+		if (expression === undefined) throw new Failure('eval needs PAGE EXPRESSION');
+		if (frame !== undefined && hold !== undefined) throw new Failure('eval takes --frame or --hold, not both');
+		if (frame !== undefined) return { frames: await this.inFrames(id, frame, expression) };
+		const value = await this.evaluate(this.page(id), expression);
+		if (hold === undefined) return { value };
+		return this.store(hold, typeof value === 'string' ? value : JSON.stringify(value) ?? '');
 	}
 
 	async status(id) {
@@ -402,11 +513,22 @@ class Broker {
 
 	async run(argv, stdin) {
 		const [command, ...rest] = argv;
-		const flags = new Set(rest.filter((arg) => arg.startsWith('--')));
-		const args = rest.filter((arg) => !arg.startsWith('--'));
-		const known = { open: ['--new-context'], read: ['--fresh'], 'type-held': ['--enter'] }[command] ?? [];
-		const unknown = [...flags].filter((flag) => !known.includes(flag));
-		if (unknown.length) throw new Failure(`${command} does not take ${unknown.join(', ')}`);
+		const known = {
+			open: ['--new-context', '--context='],
+			read: ['--fresh', '--frame='],
+			eval: ['--frame=', '--hold='],
+			type: ['--enter'],
+			'type-held': ['--enter'],
+		}[command] ?? [];
+		const flags = new Map();
+		const args = [];
+		for (let at = 0; at < rest.length; at++) {
+			const arg = rest[at];
+			if (!arg.startsWith('--')) args.push(arg);
+			else if (known.includes(arg)) flags.set(arg, true);
+			else if (known.includes(`${arg}=`) && at + 1 < rest.length) flags.set(arg, rest[++at]);
+			else throw new Failure(`${command} does not take ${arg}${known.includes(`${arg}=`) ? ' without a value' : ''}`);
+		}
 		switch (command) {
 			case 'status':
 				return this.status(args[0]);
@@ -414,13 +536,23 @@ class Broker {
 				this.connect();
 				return this.summary();
 			case 'open':
-				return this.open(args[0], flags.has('--new-context'));
+				return this.open(args[0], flags.has('--new-context'), flags.get('--context'));
+			case 'nav':
+				return { page: args[0], ...(await this.nav(args[0], args[1])) };
+			case 'activate':
+				await this.call('Target.activateTarget', { targetId: this.page(args[0]).targetId });
+				return { activated: args[0] };
 			case 'read':
-				return this.read(args[0], flags.has('--fresh'));
-			case 'eval': {
-				if (args.length !== 2) throw new Failure('eval needs PAGE EXPRESSION');
-				return { value: await this.evaluate(this.page(args[0]), args[1]) };
-			}
+				return this.read(args[0], flags.has('--fresh'), flags.get('--frame'));
+			case 'eval':
+				return this.evalCommand(args[0], args[1], flags.get('--frame'), flags.get('--hold'));
+			case 'click':
+				return this.click(args[0], args[1]);
+			case 'type':
+				return this.type(args[0], args[1], args[2], flags.has('--enter'));
+			case 'key':
+				await this.press(this.page(args[0]), args[1]);
+				return { pressed: args[1] };
 			case 'store':
 				if (args.length !== 1 || stdin === undefined)
 					throw new Failure('store takes NAME alone and its value on standard input only, as in: store NAME < file');
