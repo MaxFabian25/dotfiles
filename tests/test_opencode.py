@@ -332,6 +332,27 @@ class OpenCodeTests(unittest.TestCase):
             self.assertEqual(mentions.destination, home.roots.home / '.config/opencode/plugins/skill-mentions.js')
             self.assertEqual(mentions.data, b'export default {}\n')
 
+    def test_tool_filter_plugin_hides_the_tools_filters_json_names_by_server(self):
+        with Home() as home:
+            setup, _, _ = self.fixture(home)
+            config = setup.roots.private.parent / 'config'
+            home.write(config / 'mcp-tool-filters/filters.json', json.dumps({
+                't3_browser_tools': ['preview_open', 't3_preview_list'], 't3_device_tools': ['device_list'],
+                't3_allowed_tools': ['html_preview'], 'cua_browser_tools': ['page', 'browser_click']}))
+            names = {item.name for item in opencode.plan(setup, home.roots, Platform.LINUX).configurations}
+            self.assertNotIn('opencode-tool-filter-plugin', names)
+            home.write(config / 'opencode/tool-filter.js.in', 'const HIDDEN = __DOTFILES_HIDDEN_TOOLS__\n')
+            by_name = {item.name: item for item in opencode.plan(setup, home.roots, Platform.LINUX).configurations}
+            plugin = by_name['opencode-tool-filter-plugin']
+            self.assertEqual(plugin.destination, home.roots.home / '.config/opencode/plugins/tool-filter.js')
+            self.assertEqual(json.loads(plugin.data.decode().split(' = ', 1)[1]),
+                             {'t3-code': ['device_list', 'preview_open', 't3_preview_list'],
+                              'cua-driver': ['browser_click', 'page']})
+            home.write(config / 'mcp-tool-filters/filters.json', json.dumps({'t3_browser_tools': ['preview_open'],
+                                                                             'cua_browser_tools': ['page']}))
+            with self.assertRaisesRegex(ValueError, 't3_browser_tools, t3_device_tools'):
+                opencode.plan(setup, home.roots, Platform.LINUX)
+
     def test_pstack_seats_become_subagents_and_the_built_in_agents_run_on_opus(self):
         with Home() as home:
             agents = {'agents/poteto-agent.md': '---\nname: poteto-agent\ndescription: Delegate.\n---\n\n# Poteto\n\n'
