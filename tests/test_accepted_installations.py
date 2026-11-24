@@ -285,6 +285,14 @@ class InstallationTest(unittest.TestCase):
         backup, = (self.roots.codex_home / 'skills').glob('.sync-loose-*/displaced')
         return backup
 
+    def assert_check_blocks(self):
+        """The check blocks on content the pull cannot account for, and a pull stops on that check before writing."""
+        current = plan(self.setup, self.device)
+        self.assertEqual(current.exit_code, 2)
+        self.assertIn('an independently pinned baseline is required', ' '.join(d.detail for d in current.blocked))
+        with self.assertRaisesRegex(RuntimeError, '^Sync is blocked'):
+            self.run_apply(current)
+
     def apply_reporting(self, current=None):
         """Run a sync that exits 0 and give what it printed to stderr."""
         with patch('sys.stderr', new_callable=io.StringIO) as stderr:
@@ -358,10 +366,17 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual(self.run_apply().exit_code, 0)
         self.setup = replace(self.setup, note_rules=(NoteRule('Read', 'use the reviewed replacement'),))
         self.revise_loose('A second loose skill.\n')
-        (self.roots.codex_home / 'skills/loose/SKILL.md').write_text('My local edit.\n')
+        build = Builder.codex
+
+        def edit_while_building(builder, package, **kwargs):
+            # The check would block on an edit made before the sync, so this one comes while it builds the plugins.
+            (self.roots.codex_home / 'skills/loose/SKILL.md').write_text('My local edit.\n')
+            return build(builder, package, **kwargs)
+
         stopped = None
         try:
-            self.run_apply()
+            with patch.object(Builder, 'codex', edit_while_building):
+                self.run_apply()
         except ConcurrentEdit as error:
             stopped = error   # its traceback keeps the owner alive, so collecting the owner cannot remove the trees
         self.assertIn('Unverified existing content preserved: codex:LOOSE_SKILL', str(stopped))
@@ -1311,6 +1326,36 @@ class InstallationTest(unittest.TestCase):
                 self.assertEqual(path.read_bytes(), b'local work\n')
                 path.write_bytes(original)
 
+    def test_the_check_blocks_an_edited_loose_skill_whose_release_changed_as_the_pull_does(self):
+        # On 24 November 2026 a session had edited a loose skill's installed copy on one machine, and a release then
+        # changed that skill. The installed copy held the old SKILL.md, the new release's script and a test cache, so it
+        # matched neither the copy the sync had accepted nor the new release. sync.py --check reported no blocking
+        # issue, and the pull stopped on it.
+        installed = self.roots.codex_home / 'skills/loose'
+        source = self.public / 'owned/loose'
+        (source / 'scripts').mkdir()
+        (source / 'scripts/build.py').write_text('old = 1\n')
+        self.revise_loose('A loose skill.\n')
+        self.assertEqual(self.run_apply().exit_code, 0)
+        (source / 'scripts/build.py').write_text('new = 2\n')
+        self.revise_loose('A second loose skill.\n')
+        (installed / 'scripts/build.py').write_text('new = 2\n')
+        (installed / 'scripts/.pytest_cache').mkdir()
+        (installed / 'scripts/.pytest_cache/README.md').write_text('pytest cache directory\n')
+        current = plan(self.setup, self.device)
+        self.assertEqual(current.exit_code, 2)
+        self.assertEqual([d.detail for d in current.blocked], [
+            'codex:LOOSE_SKILL:{codex_home}/skills/loose: Unverified existing content preserved: '
+            'codex:LOOSE_SKILL:{codex_home}/skills/loose; an independently pinned baseline is required'])
+        with self.assertRaisesRegex(RuntimeError, '^Sync is blocked'):
+            self.run_apply(current)
+        self.assertEqual((installed / 'SKILL.md').read_text(), 'A loose skill.\n')
+        # Once the installed copy is the new release, the check and the pull both take it.
+        shutil.rmtree(installed / 'scripts/.pytest_cache')
+        (installed / 'SKILL.md').write_text('A second loose skill.\n')
+        self.assertEqual(plan(self.setup, self.device).blocked, ())
+        self.assertEqual(self.run_apply().exit_code, 0)
+
     def test_receiptless_exact_content_is_independently_adopted_without_content_writes(self):
         self.run_apply()
         for path in self.receipt_paths():
@@ -1345,7 +1390,7 @@ class InstallationTest(unittest.TestCase):
             path.unlink()
         (self.roots.codex_home / 'AGENTS.md').write_text('unknown historical bytes\n')
         current = plan(self.setup, self.device)
-        self.assertEqual(current.exit_code, 1)
+        self.assertEqual(current.exit_code, 2)
         owner = AcceptedInstallations(self.setup.for_platform(self.device.platform), self.device)
         before = self.snapshot()
         with self.assertRaisesRegex(ConcurrentEdit, 'rules:.*independently pinned baseline'):
@@ -1835,8 +1880,7 @@ class InstallationTest(unittest.TestCase):
                         + entry.replace('.bin', 'other'))
         self.assertEqual(self.run_apply().exit_code, 0)
         config_source.write_text('[tools]\nnode = "24"\n' + entry)
-        with self.assertRaises(ConcurrentEdit):
-            self.run_apply()
+        self.assert_check_blocks()
         self.assertIn('/node_modules/other', live.read_text())
         live.write_text(live.read_text().replace('/node_modules/other', '/node_modules/.bin'))
         before = live.read_bytes()
@@ -1900,8 +1944,7 @@ class InstallationTest(unittest.TestCase):
     def test_agent_browser_gets_the_first_installed_chrome_and_keeps_other_keys(self):
         (a, b), live = self.chrome_candidates('chrome-b')
         live.write_text('{"headed": true, "executablePath": "/cft/chrome"}')
-        with self.assertRaises(ConcurrentEdit):
-            self.run_apply()
+        self.assert_check_blocks()
         live.write_text('{"headed": true}')
         self.assertEqual(self.run_apply().exit_code, 0)
         self.assertEqual(json.loads(live.read_text()), {'headed': True, 'executablePath': b})
@@ -1978,8 +2021,7 @@ class InstallationTest(unittest.TestCase):
         live = self.roots.home / '.config/mise/config.toml'
         live.parent.mkdir(parents=True)
         live.write_text('[tools]\nnode = "20"\n[env]\nSECRET = "test-only-local"\n')
-        with self.assertRaises(ConcurrentEdit):
-            self.run_apply()
+        self.assert_check_blocks()
         self.assertEqual(live.read_text(), '[tools]\nnode = "20"\n[env]\nSECRET = "test-only-local"\n')
         self.assertEqual(self.calls, [])
 

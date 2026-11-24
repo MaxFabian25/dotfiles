@@ -27,7 +27,7 @@ from host_state import (ENGINE_MARKETPLACE, FactKey, Host, InstallDetail, Releas
                         named_for, version_folder)
 from portable import StillHeld, staging_directory, staging_folder, replace as replace_path, while_held
 from sync_files import ConcurrentEdit, contents
-from sync_sources import BuildError
+from sync_sources import BuildError, Builder
 
 
 _ABSENT = {'kind': 'absent'}
@@ -577,6 +577,40 @@ class AcceptedInstallations:
             return actual
         raise ConcurrentEdit(f'Unverified existing content preserved: {artifact.identity}; an independently pinned baseline is required')
 
+    def _before(self, artifact, target, accepted, read, verified):
+        """What a replacement starts from, and what its destination holds, or ConcurrentEdit where prepare refuses
+        to replace it. It starts from the installed content when that is already the release, or else from a baseline
+        _baseline verifies. Without a target, which the check has for no plugin, role or projection, only from such a
+        baseline."""
+        at_target = read(artifact.destination)
+        before = (read(artifact.current) if target is not None and _same(at_target, target)
+                  else self._baseline(artifact, accepted, read, verified))
+        self._destination_admissible(artifact, at_target)
+        return before, at_target
+
+    def _desired(self, artifact, builder=None):
+        """The image prepare installs, for the artifacts whose release needs no build: files, fields and loose skills.
+        None for the others."""
+        if artifact.kind in ('file', 'fields'):
+            return self._target(artifact, None, artifact.data)
+        if artifact.kind == 'loose':
+            return self._target(artifact, self._loose_source(artifact, builder), None)
+        return None
+
+    def _loose_source(self, artifact, builder=None):
+        skill = self.setup.loose[artifact.entry.name]
+        root_name = next(root for root in SkillRoot if self._skill_root(root) / skill.name == artifact.destination)
+        if isinstance(skill.source, LocalSource):
+            builder = builder or Builder(self.setup, self.roots, self.roots.engine)
+            source = builder.local(skill.visibility, skill.source, root_name)
+        else:
+            if self.setup.roots.private is None:
+                raise BuildError(f'{skill.name}: its snapshot requires the private repository')
+            source = self.setup.roots.private / 'snapshots' / str(skill.source.snapshots[root_name]).removeprefix('sha256:')
+        if self.roots.tree_digest(source) != artifact.expected.digest:
+            raise BuildError(f'{skill.name}: source bytes do not match the locked loose skill')
+        return source
+
     def _destination_admissible(self, artifact, at_target):
         if any(part in {'.git', 'node_modules'} for path in at_target.get('entries', {}) for part in Path(path).parts):
             raise ConcurrentEdit(f'Unowned tree content preserved: {artifact.destination}')
@@ -608,11 +642,18 @@ class AcceptedInstallations:
             if state is None:
                 raise ConcurrentEdit(f'Unknown partial installation preserved: {artifact.identity}')
             accepted, read, verified = self._taken_over(artifact, receipt, state)
-            self._baseline(artifact, accepted, read, verified)
-            self._destination_admissible(artifact, read(artifact.destination))
+            self._before(artifact, self._desired(artifact), accepted, read, verified)
             return Kind.CHANGED, 'Take over a stopped replacement for the newer release'
-        actual = self._read(artifact)
         accepted = receipt and receipt.get('accepted')
+        kind, detail = self._step(artifact, accepted)
+        if kind is Kind.CHANGED and (target := self._desired(artifact)) is not None:
+            # prepare replaces only content it can account for, so the check asks prepare's question wherever it has
+            # the release's image without a build.
+            self._before(artifact, target, accepted, partial(self._read, artifact), [])
+        return kind, detail
+
+    def _step(self, artifact, accepted):
+        actual = self._read(artifact)
         if accepted:
             if Path(accepted['path']) != artifact.current:
                 return Kind.CHANGED, 'Verify the installation at its new location'
@@ -644,7 +685,7 @@ class AcceptedInstallations:
                 kind, detail = self._assessment(artifact)
             except ConcurrentEdit as error:
                 kind, detail = Kind.LOCAL_EDIT, str(error)
-            except (OSError, ValueError, KeyError, TypeError) as error:
+            except (OSError, ValueError, KeyError, TypeError, BuildError) as error:
                 kind, detail = Kind.INCOMPLETE, str(error)
             if kind is not None:
                 differences.append(Difference(kind, artifact.key, artifact.expected, None, artifact.entry,
@@ -756,16 +797,7 @@ class AcceptedInstallations:
                 if bytes_digest(self.roots.neutral(data)) != artifact.expected.digest:
                     raise BuildError(f'Prepared role differs from its lock: {artifact.identity}')
             elif artifact.kind == 'loose':
-                skill = self.setup.loose[artifact.entry.name]
-                root_name = next(root for root in SkillRoot if self._skill_root(root) / skill.name == artifact.destination)
-                if isinstance(skill.source, LocalSource):
-                    source = builder.local(skill.visibility, skill.source, root_name)
-                else:
-                    if self.setup.roots.private is None:
-                        raise BuildError(f'{skill.name}: its snapshot requires the private repository')
-                    source = self.setup.roots.private / 'snapshots' / str(skill.source.snapshots[root_name]).removeprefix('sha256:')
-                if self.roots.tree_digest(source) != artifact.expected.digest:
-                    raise BuildError(f'{skill.name}: source bytes do not match the locked loose skill')
+                source = self._loose_source(artifact, builder)
             prepared.append(self._prepare_artifact(artifact, self._target(artifact, source, data), source, data, pristine))
         validate_runtime(self.configurations, self.roots, proposed=True)
         tokens = tuple(object() for _ in prepared)
@@ -898,10 +930,7 @@ class AcceptedInstallations:
             if state is None:
                 raise ConcurrentEdit(f'Unknown partial installation preserved: {artifact.identity}')
             accepted, read, verified = self._taken_over(artifact, receipt, state)
-        at_target = read(artifact.destination)
-        before = (read(artifact.current) if _same(at_target, target)
-                  else self._baseline(artifact, accepted, read, verified))
-        self._destination_admissible(artifact, at_target)
+        before, at_target = self._before(artifact, target, accepted, read, verified)
         return _PreparedArtifact(artifact, target, before, artifact.current,
                                  _bindings((*artifact.aliases, artifact.current)), at_target, pristine, source, data,
                                  taken_over=pending or None)
