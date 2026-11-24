@@ -18,6 +18,7 @@ import unittest
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs
 from urllib.request import urlopen
 
 BROKER = Path(__file__).resolve().parents[1] / 'skills/browser-and-computer-use/scripts/chrome-broker.mjs'
@@ -30,6 +31,9 @@ B64_23 = 'aB3dE5fG7hJ9kL1mN3pQ5rS'
 PLAIN_VALUE = 'correct horse battery staple'
 KEY_GROUP = 'A3-ABC123-XYZ789'
 MASK_REFUSAL = 'this is a mask; read the item with `op read` or press Reveal first'
+FAKE_PASSWORD = 'Fake pass phrase for 616 #7'
+PASSWORD_PAGE = """<!doctype html><title>Password</title><form method="post" action="/session">
+<label>Password <input id="password" name="password" type="password"></label><button type="submit">Sign in</button></form>"""
 
 PAGES = {
     '/planted': f"""<!doctype html><title>Planted</title>
@@ -44,6 +48,8 @@ PAGES = {
 <p>Plain text stays.</p>
 <label>Typed <input id="typed"></label>""",
     '/plain': '<!doctype html><title>Plain</title><p>Nothing secret here.</p>',
+    '/login': """<!doctype html><title>Sign in</title><form method="post" action="/password">
+<label>Email <input id="email" name="email"></label><button id="next" type="submit">Continue</button></form>""",
     '/counter': """<!doctype html><title>Counter</title><p>Frames <span id="frames">0</span></p>
 <script>let frames = 0; (function tick() { document.getElementById('frames').textContent = ++frames;
 requestAnimationFrame(tick); })();</script>""",
@@ -89,16 +95,40 @@ def skip_reason():
 
 
 class Pages(BaseHTTPRequestHandler):
+    """The test pages, and a fake sign-in: an email page, a password page that sets a session cookie, and /whoami,
+    which shows the cookies the browser sent."""
+
+    def answer(self, body, cookie=None, status=200):
+        self.send_response(status)
+        self.send_header('content-type', 'text/html; charset=utf-8')
+        if cookie:
+            self.send_header('set-cookie', f'{cookie}; Path=/')
+        self.end_headers()
+        self.wfile.write(body.encode())
+
     def do_GET(self):
         path = self.path.split('?')[0]
         if path == '/slow':
             time.sleep(3)
             path = '/plain'
+        if path == '/framed':
+            port = self.server.server_address[1]
+            return self.answer('<!doctype html><p>Outer page</p><iframe src="/frame-inner?same"></iframe>'
+                               f'<iframe src="http://localhost:{port}/frame-inner?cross"></iframe>')
+        if path == '/frame-inner':
+            return self.answer(f'<!doctype html><p>Inner {self.path.split("?")[1]} {HEX64}</p>')
+        if path == '/whoami':
+            return self.answer(f'<!doctype html><p>Cookies: {self.headers.get("cookie") or "none"}</p>')
         body = PAGES.get(path)
-        self.send_response(200 if body else 404)
-        self.send_header('content-type', 'text/html; charset=utf-8')
-        self.end_headers()
-        self.wfile.write((body or 'not found').encode())
+        self.answer(body or 'not found', status=200 if body else 404)
+
+    def do_POST(self):
+        form = parse_qs(self.rfile.read(int(self.headers.get('content-length', 0))).decode())
+        if self.path == '/password':
+            return self.answer(PASSWORD_PAGE, cookie='pending=1')
+        if self.path == '/session' and form.get('password') == [FAKE_PASSWORD]:
+            return self.answer('<!doctype html><p>Welcome, you are signed in</p>', cookie='session=signed-in')
+        self.answer('<!doctype html><p role="alert">Incorrect email address or password</p>')
 
     def log_message(self, format, *args):
         pass
@@ -257,6 +287,13 @@ class HidingTest(BrokerRig):
         self.assertIn('not a page this broker opened', refused.stderr)
         self.assertNotIn(HEX64[:32], refused.stderr)
 
+    def test_eval_replies_are_hidden_like_reads(self):
+        for expression in ("document.querySelector('#webhook').value", 'document.body.innerText'):
+            with self.subTest(expression=expression):
+                result = self.ok('eval', self.page, expression)
+                self.assertIn('[hidden hex]', json.dumps(result))
+                self.assertNotIn(HEX64[:32], json.dumps(result))
+
     def test_pages_and_contexts_it_did_not_create_are_refused(self):
         own_tab = next(target for target, url in self.chrome.page_urls() if url == 'about:blank')
         for args in (('read', own_tab), ('read', own_tab[:8]), ('close', 'p999'), ('status', 'p999'),
@@ -270,6 +307,9 @@ class HidingTest(BrokerRig):
     def test_a_new_context_is_disposed_with_its_pages(self):
         opened = self.ok('open', f'{self.site}/plain', '--new-context')
         self.assertRegex(opened['context'], r'^c\d+$')
+        other = self.ok('open', f'{self.site}/plain', '--new-context')
+        self.assertNotEqual(other['context'], opened['context'])
+        self.ok('dispose', other['context'])
         self.assertEqual(self.ok('dispose', opened['context']), {'disposed': opened['context']})
         refused = self.broker('read', opened['page'])
         self.assertNotEqual(refused.returncode, 0)
@@ -385,6 +425,76 @@ class HiddenPageTest(BrokerRig):
         self.set_window(url, 'normal')
         self.wait_for(page, 'visible')
         self.assertEqual(self.ok('read', page, '--fresh')['visibility'], 'visible')
+
+
+class ReplayTest(BrokerRig):
+    """The 2026-11-24 sign-in in a cookie-less context, replayed through broker commands on a fake sign-in site."""
+
+    def test_a_sign_in_in_a_new_context_leaves_no_cookie_and_no_password(self):
+        replies = []
+
+        def step(*args, stdin=None):
+            result = self.broker(*args, stdin=stdin)
+            replies.append(result)
+            self.assertEqual(result.returncode, 0, f'{args[0]}: {result.stderr}')
+            return json.loads(result.stdout)
+
+        opened = step('open', f'{self.site}/login', '--new-context')
+        page, context = opened['page'], opened['context']
+        step('type', page, '#email', 'it@example.test')
+        step('click', page, 'text=Continue')
+        step('store', 'password', stdin=FAKE_PASSWORD)
+        step('type-held', page, '#password', 'password')
+        self.assertEqual(step('eq-held', page, '#password', 'password')['same'], 'yes')
+        step('click', page, 'text=Sign in')
+        deadline = time.monotonic() + 10
+        while 'Welcome' not in step('read', page)['text'] and time.monotonic() < deadline:
+            time.sleep(0.2)
+        self.assertIn('Welcome, you are signed in', step('read', page)['text'])
+        held_here = step('open', f'{self.site}/whoami', '--context', context)
+        self.assertIn('session=signed-in', step('read', held_here['page'])['text'])
+        step('drop', 'password')
+        step('dispose', context)
+
+        fresh = step('open', f'{self.site}/whoami', '--new-context')
+        self.assertIn('Cookies: none', step('read', fresh['page'])['text'])
+        step('dispose', fresh['context'])
+        for result in replies:
+            for form in held_forms(FAKE_PASSWORD):
+                self.assertNotIn(form, result.stdout + result.stderr)
+
+
+class InteractionTest(BrokerRig):
+    def test_nav_type_key_activate_and_eval_hold(self):
+        page = self.ok('open', f'{self.site}/plain')['page']
+        self.assertEqual(self.ok('nav', page, f'{self.site}/login')['url'], f'{self.site}/login')
+        self.assertEqual(self.ok('activate', page), {'activated': page})
+        self.ok('type', page, '#email', 'it@example.test')
+        self.ok('key', page, 'Enter')
+        deadline = time.monotonic() + 10
+        while '/password' not in self.ok('status', page)['url'] and time.monotonic() < deadline:
+            time.sleep(0.2)
+        self.assertIn({'tag': 'input', 'type': 'password', 'name': 'password', 'id': 'password', 'label': 'Password',
+                       'length': 0}, self.ok('read', page)['inputs'])
+        self.assertEqual(self.ok('eval', page, "'Fake value 11'", '--hold', 'from-eval'),
+                         {'held': 'from-eval', 'length': 13})
+        refused = self.broker('eval', page, "'••••'", '--hold', 'masked')
+        self.assertEqual(refused.stderr.strip(), MASK_REFUSAL)
+        self.assertNotEqual(self.broker('key', page, 'F13').returncode, 0)
+        self.assertNotEqual(self.broker('click', page, '#nothing-like-this', timeout=30).returncode, 0)
+        self.ok('close', page)
+
+    def test_frames_are_read_by_url_and_hidden_like_pages(self):
+        page = self.ok('open', f'{self.site}/framed')['page']
+        time.sleep(1)
+        read = self.ok('read', page, '--frame', 'frame-inner')
+        texts = sorted(frame['text'] for frame in read['frames'])
+        self.assertEqual(texts, ['Inner cross [hidden hex]', 'Inner same [hidden hex]'])
+        evaluated = self.ok('eval', page, 'location.search', '--frame', 'frame-inner')
+        self.assertEqual(sorted(frame['value'] for frame in evaluated['frames']), ['?cross', '?same'])
+        refused = self.broker('read', page, '--frame', 'no-such-frame')
+        self.assertIn('no frame of', refused.stderr)
+        self.ok('close', page)
 
 
 class DropTest(BrokerRig):
