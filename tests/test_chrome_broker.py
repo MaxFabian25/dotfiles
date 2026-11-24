@@ -200,7 +200,7 @@ class BrokerRig(unittest.TestCase):
     @classmethod
     def broker(cls, *args, timeout=60, stdin=None):
         return subprocess.run(['node', str(BROKER), *args], env=cls.env, capture_output=True, text=True,
-                              timeout=timeout, input=stdin)
+                              encoding='utf-8', timeout=timeout, input=stdin)
 
     def ok(self, *args, **kwargs):
         result = self.broker(*args, **kwargs)
@@ -533,13 +533,15 @@ class DropTest(BrokerRig):
 @unittest.skipUnless(shutil.which('node'), 'node is not installed')
 class UsageTest(unittest.TestCase):
     def test_help_and_unknown_commands(self):
-        helped = subprocess.run(['node', str(BROKER), '--help'], capture_output=True, text=True, timeout=30)
+        helped = subprocess.run(['node', str(BROKER), '--help'], capture_output=True, text=True, encoding='utf-8',
+                                timeout=30)
         self.assertEqual(helped.returncode, 0)
         self.assertIn('usage: node chrome-broker.mjs start', helped.stdout)
 
     def test_no_broker_names_start(self):
         env = {**os.environ, 'CHROME_BROKER_SOCKET': '/nonexistent/broker.sock'}
-        result = subprocess.run(['node', str(BROKER), 'status'], env=env, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(['node', str(BROKER), 'status'], env=env, capture_output=True, text=True,
+                                encoding='utf-8', timeout=30)
         self.assertEqual(result.returncode, 1)
         self.assertIn('no broker is running', result.stderr)
 
