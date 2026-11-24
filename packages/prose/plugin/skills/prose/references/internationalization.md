@@ -13,6 +13,8 @@ publication.
 
 ## Basic rules
 
+### Language, culture, and translation
+
 - Resolve an unsettled spelling, usage, or terminology choice with an authority for the target
   language or region.
 - Choose examples and images that avoid unstated cultural, geographic, or socioeconomic
@@ -29,6 +31,10 @@ publication.
 - Limit long coordinated clauses and unexplained sentence fragments.
 - Keep paragraphs concise when the content will be translated, because text can expand after
   translation.
+- For machine-translated content, verify that acronyms resembling ordinary words remain unchanged.
+
+### Places, dates, currencies, and forms
+
 - Use an unambiguous date form in reader-facing prose.
 - Name a country or region when a place name could be ambiguous.
 - Use the passage language's equivalent of *country or region* for list headings and descriptions.
@@ -45,7 +51,6 @@ publication.
 - Use a symbol only when intended readers recognise it or the format requires it.
 - Use *24/7* only when intended readers recognise it. Otherwise, express *24 hours a day, 7 days a
   week* in the passage's language. Do not use *24x7*.
-- For machine-translated content, verify that acronyms resembling ordinary words remain unchanged.
 
 ## English localisation adapter
 

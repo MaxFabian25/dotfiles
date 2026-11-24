@@ -4,6 +4,8 @@ Apply this branch to an instruction, procedure, requirement, warning, or caution
 
 ## Procedures
 
+### Imperatives and phrasing
+
 - Write instructions in the imperative form. Name the action directly.
 - Use *install* for the action in an instruction. Use *installation* for a named procedure or
   result. Outside [ASD-STE100](asd-ste100.md), write *perform a clean or custom installation*, not
@@ -11,24 +13,30 @@ Apply this branch to an instruction, procedure, requirement, warning, or caution
   dictionary does not approve. Preserve product commands and defined technical terms.
 - Write instructions directly without *please*, keeping *please* only in a genuine request for
   permission or forgiveness, correspondence, quotation, or source text.
+- Describe an observable event instead of assuming that a reader sees, hears, or speaks. Retain
+  sensory wording when the sense is the action, the wording is exact, or a common expression remains
+  clear.
+- Replace *if necessary* with the observable circumstance that requires the action.
+
+### Prerequisites, paths, and conditions
+
 - Put every required starting state, tool, input, permission, and access condition before the
   first procedural action.
 - Document one primary input method. If several methods are available to the intended readers,
   choose the shortest, simplest path.
 - Include an alternative only when a supported input method, stated reader constraint, or failure
   condition requires it.
-- Within one procedure, refer to an earlier repeated action only when readers can identify it
-  without searching.
-- In a procedure, put one action in each sentence unless the actions occur at the same time.
 - State a procedural goal before the action when the goal helps the reader choose or understand it.
-- Describe an observable event instead of assuming that a reader sees, hears, or speaks. Retain
-  sensory wording when the sense is the action, the wording is exact, or a common expression remains
-  clear.
 - Put any condition or context needed to apply an instruction before its action. State an expected
   result separately in the same step when it helps readers recognise completion or choose the next
   step.
 - Begin an optional procedural step with *Optional:*. Begin a conditional step with its condition.
-- Replace *if necessary* with the observable circumstance that requires the action.
+
+### Step structure and sequencing
+
+- Within one procedure, refer to an earlier repeated action only when readers can identify it
+  without searching.
+- In a procedure, put one action in each sentence unless the actions occur at the same time.
 - Keep only skippable background information in notes; keep each instruction, limit, permission,
   and result in its work step.
 - Keep a numbered procedure contiguous. Put explanations inside a step or outside the sequence.

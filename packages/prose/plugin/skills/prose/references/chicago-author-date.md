@@ -7,6 +7,8 @@ punctuation, author counts, suffixes, and ordering separate from APA forms.
 
 ## Author-date reference lists
 
+### Placement and entry format
+
 - Title the list *References* or *Works Cited*.
 - Place it at the work's end before any index.
 - Give each journal article its own list.
@@ -16,6 +18,9 @@ punctuation, author counts, suffixes, and ordering separate from APA forms.
 - When no author or editor is listed, begin the entry with the title, then the year.
 - Use *and*, not an ampersand, between the final names.
 - List authors under the [author count for reference lists](chicago-source-forms.md#citation-forms).
+
+### Ordering and year suffixes
+
 - Alphabetise entries word by word unless governing instructions select letter by letter.
 - For identical author sequences, arrange works from oldest to newest.
 - Place a single-author entry before multiauthor entries beginning with the same name.

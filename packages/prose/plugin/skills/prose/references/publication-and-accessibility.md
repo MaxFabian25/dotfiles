@@ -22,6 +22,8 @@ Keep enough evidence to reproduce the relevant checks:
 | Accessibility | Applicable tool and version, reviewer perspective, governing standard, result, and unresolved barriers |
 | Corrections | Material correction, exception, responsible person, and result after rechecking |
 
+## Accessibility conformance claims
+
 When the task includes accessibility conformance or material barriers to the intended readers, use
 applicable tools and human review. Review alternatives, captions, table meaning, keyboard use,
 reflow, and contrast as applicable. For an accessibility conformance claim, name the standard, its
@@ -29,6 +31,8 @@ version, and the success criterion or clause, such as WCAG 2.2 success criterion
 V4.1.1 clause 10.1.4.1. When the source does not give the version, ask for it instead of supplying
 one. Describe each known barrier by its effect on users and its planned fix. Report unperformed
 checks instead of claiming conformance from proofreading.
+
+## Version of record and reader notices
 
 Use ordinary host history when an earlier version cannot affect a reader's decision. When readers
 can discover and rely on an earlier version, keep this publication record:

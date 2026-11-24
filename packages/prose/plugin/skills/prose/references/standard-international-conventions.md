@@ -7,12 +7,17 @@ order](quantitative-prose.md#comparisons-and-statistical-claims) in quantitative
 
 ## Basic rules
 
+### Countries and currencies
+
 - Write a country name in reader-facing prose unless the code itself is the subject.
 - When a code represents a country, use the country code required by the data contract. Otherwise,
   use an applicable ISO 3166-1 country code.
 - When a country code appears as data, label it as a country code and identify its required format.
 - Express currency amounts with an ISO 4217 alphabetic code unless the data contract requires
   another representation. Put the amount first, followed by a space and the code in capitals.
+
+### Dates, times, and languages
+
 - Write machine-readable dates and dates governed by standard international conventions as
   `YYYY-MM-DD`. Use a 24-hour clock with colons between time fields.
 - Represent Coordinated Universal Time (UTC) with `Z`. Represent local time with an offset to UTC
@@ -24,6 +29,9 @@ order](quantitative-prose.md#comparisons-and-statistical-claims) in quantitative
 - Preserve the registered identifier length and each extension required by the data contract.
 - When a language identifier appears as data, label it as a language code rather than a language
   reference name.
+
+### Telephone numbers and SI units
+
 - Start an international telephone number with `+` and its country code. Apply spacing from the
   governing numbering plan or data contract.
 - In reader-facing prose, introduce a telephone extension number with the full, unabbreviated
