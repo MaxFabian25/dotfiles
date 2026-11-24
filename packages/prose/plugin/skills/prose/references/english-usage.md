@@ -38,6 +38,8 @@ abbreviation. For its grammatical form:
 
 ## Punctuation and mechanics
 
+### Hyphens
+
 - Use the dictionary form for established compounds. Hyphenate an adjectival phrase before a noun
   only when the hyphen improves clarity.
 - Leave *very* and adverbs ending in *-ly* unhyphenated from the word they modify, and normally
@@ -47,8 +49,9 @@ abbreviation. For its grammatical form:
 - Hyphenate a prefix before a proper name, numeral, or date. Use a prefix hyphen to prevent ambiguity
   or mispronunciation.
 - Use a hyphen in numbers that are spelt out.
-- Put terminal punctuation inside a closing parenthesis only when the entire sentence is
-  parenthetical. Otherwise, put it after the closing parenthesis.
+
+### Clauses, semicolons, and commas
+
 - Separate two independent clauses with a full stop, a semicolon, or a comma plus a coordinating
   conjunction.
 - Use a semicolon between closely related independent clauses or list items that already contain
@@ -77,11 +80,19 @@ abbreviation. For its grammatical form:
   word when omission could mislead.
 - Use a colon after a complete clause to introduce an explanation, example, or list. Keep a verb or
   preposition beside its completion.
+
+### Parentheses, sentence endings, and openings
+
+- Put terminal punctuation inside a closing parenthesis only when the entire sentence is
+  parenthetical. Otherwise, put it after the closing parenthesis.
 - End a complete sentence with a full stop unless a direct question or permitted exclamation
   requires another mark. Use a question mark for a direct question, and use a full stop for an
   indirect question or a sentence that only describes a question.
 - Begin a sentence with *And* or *But* when the word states the intended addition or contrast
   clearly.
+
+### Clause connectors and phrasing
+
 - Retain a conjunction or clause-introducing *that* when omission could obscure a clause boundary or
   change coordination; for new prose, also apply [Abbreviations and grammatical
   forms](english-core.md#abbreviations-and-grammatical-forms).

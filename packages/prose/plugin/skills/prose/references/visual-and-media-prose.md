@@ -56,7 +56,7 @@ responsive layouts are present.
 - **Contrast.** Meet the applicable WCAG contrast requirements. Verify text and essential graphics
   under applicable high-contrast themes. For chart contrast thresholds and measurement, use the
   [charts skill](../../charts/SKILL.md#marks); for WCAG conformance claims, use
-  [Final-format publication](publication-and-accessibility.md#final-format-publication).
+  [Final-format publication and accessibility](publication-and-accessibility.md).
 - **Text backgrounds.** Keep text off backgrounds, watermarks, and images that reduce contrast.
 - **Reflow and enlargement.** Preserve meaning and reading order during reflow, zoom, and text
   enlargement. Keep stacked columns and sidebars in logical order.

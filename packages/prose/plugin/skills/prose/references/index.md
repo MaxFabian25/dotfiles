@@ -29,7 +29,7 @@ Each reference owns its rules and scope.
 | Markdown affecting the writing | [Markdown files](markdown-files.md) |
 | Commit messages and pull requests | [Commit and pull-request prose](commit-and-pull-request-prose.md), [technical prose](technical-and-code-prose.md) |
 | Indexes and index cross-references | [Indexing and cross-references](indexing-and-cross-references.md) |
-| Final-format publication or accessibility conformance claims | [Final-format publication and accessibility](publication-and-accessibility.md#final-format-publication) |
+| Final-format publication or accessibility conformance claims | [Final-format publication and accessibility](publication-and-accessibility.md) |
 | Research archives, citation libraries, or rights clearance records | [Research records and rights clearance](research-and-rights-records.md) |
 | LIX reporting or formal reader testing | [Readability reporting and reader testing](readability-and-reader-testing.md) |
 
@@ -69,20 +69,9 @@ Apply a named style within its explicitly selected scope. For citation work, the
 [citation rules](references-and-citations.md) and [source preservation](source-preservation.md)
 also apply.
 
-- APA: [APA Style](apa-style.md) for scope, paper organisation, headings, and quotations,
-  [APA mechanics](apa-mechanics.md) for numbers, grammar, capitalisation, abbreviations, and
-  punctuation, [APA tables and figures](apa-tables-and-figures.md) for tables, figures, and display
-  attributions, [APA citations and references](apa-citations-and-references.md) for in-text
-  citations and reference entries, and [APA source forms and generative AI](apa-source-forms.md)
-  for specific source forms and AI citations. Danish adaptations are in the
-  [Danish core](danish-core.md#apa-i-dansk-prosa).
-- Chicago: [scope and system selection](chicago-scope-and-systems.md) covers the requested writing,
-  mechanics, or quotation scope. For citations, use the selected [author-date](chicago-author-date.md)
-  or [notes and bibliography](chicago-notes-and-bibliography.md) system.
-  [Source forms](chicago-source-forms.md) links to the rules for books, periodicals, reviews,
-  web and personal sources, AI output, unpublished and archival material, specialist and Indigenous
-  sources, multimedia, and legal or public documents.
-- IBCS: [IBCS notation](ibcs-notation.md) for the text of business reports, presentations, and
-  dashboards.
-- Apple: [Apple style](apple-style.md) for user documentation and interface instructions on Apple
-  platforms.
+| Style | Modules |
+| --- | --- |
+| APA | [APA Style](apa-style.md) (scope, paper organisation, headings, quotations); [APA mechanics](apa-mechanics.md) (numbers, grammar, capitalisation, abbreviations, punctuation); [APA tables and figures](apa-tables-and-figures.md) (tables, figures, display attributions); [APA citations and references](apa-citations-and-references.md) (in-text citations, reference entries); [APA source forms and generative AI](apa-source-forms.md) (specific source forms, AI citations); Danish adaptations in [Danish core](danish-core.md#apa-i-dansk-prosa) |
+| Chicago | [Scope and system selection](chicago-scope-and-systems.md) (writing, mechanics, quotations, system choice); [Notes and bibliography](chicago-notes-and-bibliography.md) or [Author-date](chicago-author-date.md) for the selected citation system; [Source forms](chicago-source-forms.md) for books, periodicals, reviews, web and personal sources, AI output, unpublished and archival material, specialist and Indigenous sources, multimedia, and legal or public documents |
+| IBCS | [IBCS notation](ibcs-notation.md) for the text of business reports, presentations, and dashboards |
+| Apple | [Apple style](apple-style.md) for user documentation and interface instructions on Apple platforms |

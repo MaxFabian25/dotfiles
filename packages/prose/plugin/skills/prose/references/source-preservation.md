@@ -1,8 +1,8 @@
 # Source preservation
 
 Preserve source content in quotations, official names, source titles, locators, and source metadata.
-The selected [quotations](quotations.md), [source-text](source-text.md), or multilingual module
-governs its additional treatment.
+The selected [quotations](quotations.md), [source-text](source-text.md), or [multilingual
+source](multilingual-source.md) module governs its additional treatment.
 
 ## Fidelity, overrides, and citation formatting
 

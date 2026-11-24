@@ -35,6 +35,8 @@ quantitative explanations, identify material differences in reader knowledge, nu
 comprehension before choosing the explanation. Consult the [plain-science source
 scope](source-evidence/plain-language.md#plain-language) when that designation matters.
 
+### Framing, order, and structure
+
 - In a plain-language rewrite for lay readers, apply the [drafting-label
   rule](terminology-selection.md#definitions) to labels coined for the document, such as *the
   Issuer* or party initialisms.
@@ -52,6 +54,9 @@ scope](source-evidence/plain-language.md#plain-language) when that designation m
   add a transition only when that relationship needs stating.
 - Fix argument and organisation before polishing sentences and words. When a word substitution
   changes the claim, recast the sentence and check the evidence and caveat again.
+
+### Verbs, subjects, and voice
+
 - Prefer a direct verb and the shortest exact word. Name the technical object, state, or action;
   preserve an established term and explain it when readers may not know it. Use one designation
   consistently for one concept.
@@ -63,6 +68,9 @@ scope](source-evidence/plain-language.md#plain-language) when that designation m
 - Prefer active voice when responsibility matters. Passive voice can serve an unknown, irrelevant,
   or deliberately backgrounded actor. Keep modifiers and pronouns attached to their intended
   targets; check the scope of negation, conditions, and comparisons.
+
+### Evidence, examples, and shared guides
+
 - Use familiar context to introduce new information. Compare like with like and name an unclear
   comparison basis. Say which quantity a number measures. Match the strength of the claim to the
   evidence. Remove redundant hedges while keeping distinct conditions and limitations. State what an
