@@ -3,7 +3,7 @@ public = true
 [source]
 build = "generic"
 repository = "https://github.com/cursor/plugins.git"
-commit = "792440e8a560a4a3f63748cdee70491ecd412982"
+commit = "9e278fe4d4ecd8bfe98b1b79bf4be662efb338cc"
 subdirectory = "pstack"
 manifest = ".cursor-plugin/plugin.json"
 packaging = 3
@@ -56,6 +56,7 @@ select = [
   "./skills/principle-type-system-discipline",
   "./skills/recall",
   "./skills/reflect",
+  "./skills/reframe",
   "./skills/setup-pstack",
   "./skills/sharpen",
   "./skills/show-me-your-work",
@@ -96,6 +97,7 @@ on = [
   "principle-subtract-before-you-add",
   "principle-test-behavior-not-implementation",
   "principle-type-system-discipline",
+  "reframe",
   "tdd",
   "typescript-best-practices",
 ]
@@ -139,7 +141,7 @@ tool_notes = "exempt"
 
 [codex]
 install = [{ via = "personal", enabled = true }]
-adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "7ef5949aaca808ec4951124deb4608d45259ac72", adapted = "8d7e5bbdf59740f0747aa208b3571bfad2d6eed5", harness = "skills/poteto-mode/references/harnesses.md" }
+adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "1de6049845e4c27684fdfb439b6551a47523483a", adapted = "3dc98b673275addc5dac463c6ea3513bf30cf236", harness = "skills/poteto-mode/references/harnesses.md" }
 
 # Text changes that name a skill outside pstack sit here, because other users of the adaptation lack those skills:
 # two of the three ideas the user chose from Matt Pocock's skills on 2026-11-15 (hard bugs built to the owned
@@ -166,6 +168,11 @@ replace = '''- Prose, your reply included → **unslop**. Agent-facing prose, su
 path = 'skills/unslop/SKILL.md'
 find = '''Scan for the patterns below, then rewrite. Preserve meaning and match the intended tone.'''
 replace = '''Scan for the patterns below, then rewrite. Preserve meaning and match the intended tone. When the **prose** skill or a project style guide is active, follow it for punctuation, quotation marks, headings, and register.'''
+
+[[codex.replace]]
+path = 'skills/reframe/SKILL.md'
+find = '''Teach the expert words for what the operator is building, borrow words from neighboring fields that solved the same problem, then rewrite their description with them. Use for /reframe.'''
+replace = '''Use when the user asks what an unfamiliar problem is called, how experts frame it, or which terms to search for. Check examples across fields and rewrite their description with the terms that fit.'''
 
 [codex.roles]
 from = "plugin"
