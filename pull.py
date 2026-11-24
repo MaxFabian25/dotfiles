@@ -110,6 +110,23 @@ def home_files(private, state, apply):
     return bool(delivery.left) or (not apply and bool(delivery.written))
 
 
+def mcp_servers(private, state, apply):
+    """Point the cua-driver MCP server of Claude Code and Codex where the private checkout says (cua_mcp.py)."""
+    if private is None or not sys.platform.startswith('linux'):
+        return False
+    from cua_mcp import reconcile
+    try:
+        outcome = reconcile(private, Path.home(), state, apply=apply)
+    except (OSError, ValueError) as error:
+        print(f'MCP servers not pointed: {error}', file=sys.stderr, flush=True)
+        return True
+    if outcome is None:
+        return False
+    for line in outcome.lines(apply):
+        print(line, file=sys.stderr if line.startswith('MCP server left') else sys.stdout, flush=True)
+    return bool(outcome.left) or (not apply and bool(outcome.changed))
+
+
 def seconds(text):
     value = float(text)
     if not 0 <= value < float('inf'):
@@ -167,6 +184,8 @@ def run(args):
         # Before the tools, so that a failed install holds back no home file. It stops nothing itself, so the
         # receipt and the tools follow whatever it finds.
         left = home_files(private, state, args.apply) if status in (0, 1) else False
+        # After the home files, which bring the wrapper it points the servers at.
+        left = (mcp_servers(private, state, args.apply) if status in (0, 1) else False) or left
         if status == 1 and args.apply:
             print('Dotfiles pull: managed changes remain after applying, listed above under drift; the pair is not '
                   'recorded as applied, and the next pull retries them', file=sys.stderr)
@@ -187,7 +206,7 @@ def run(args):
             for build in old_builds.sweep(claude_home(Path.home()), state / 'builds-out-of-use.json', time.time(),
                                           old_builds.started()):
                 print(f'Dotfiles pull: removed the old plugin build {build}', file=sys.stderr)
-        # 1 from a pair that is applied and recorded says that a home file still differs from it.
+        # 1 from a pair that is applied and recorded says that a home file or an MCP server still differs from it.
         return status or int(left)
 
 
