@@ -44,7 +44,34 @@ PAGES = {
 <p>Plain text stays.</p>
 <label>Typed <input id="typed"></label>""",
     '/plain': '<!doctype html><title>Plain</title><p>Nothing secret here.</p>',
+    '/counter': """<!doctype html><title>Counter</title><p>Frames <span id="frames">0</span></p>
+<script>let frames = 0; (function tick() { document.getElementById('frames').textContent = ++frames;
+requestAnimationFrame(tick); })();</script>""",
 }
+
+# Sets the window state of the test Chrome's page at a URL, through a DevTools connection of the test's own.
+WINDOW_STATE = r"""
+const [port, url, windowState] = process.argv.slice(1);
+const pages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+const { webSocketDebuggerUrl } = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
+const targetId = pages.find((page) => page.url === url).id;
+const socket = new WebSocket(webSocketDebuggerUrl);
+await new Promise((resolve) => socket.addEventListener('open', resolve, { once: true }));
+let id = 0;
+const call = (method, params) => new Promise((resolve, reject) => {
+    const mine = ++id;
+    socket.addEventListener('message', function answer(event) {
+        const message = JSON.parse(event.data);
+        if (message.id !== mine) return;
+        socket.removeEventListener('message', answer);
+        message.error ? reject(new Error(message.error.message)) : resolve(message.result);
+    });
+    socket.send(JSON.stringify({ id: mine, method, params }));
+});
+const { windowId } = await call('Browser.getWindowForTarget', { targetId });
+await call('Browser.setWindowBounds', { windowId, bounds: { windowState } });
+socket.close();
+"""
 
 
 def skip_reason():
@@ -318,6 +345,46 @@ class HeldTest(BrokerRig):
         self.assertNotEqual(refused.returncode, 0)
         self.assertIn('standard input only', refused.stderr)
         self.assertNotIn('"argument"', self.broker('held').stdout)
+
+
+class HiddenPageTest(BrokerRig):
+    def set_window(self, url, state):
+        subprocess.run(['node', '--input-type=module', '-e', WINDOW_STATE, str(self.chrome.port), url, state],
+                       check=True, timeout=30)
+
+    def wait_for(self, page, visibility):
+        deadline = time.monotonic() + 10
+        while self.ok('status', page)['visibility'] != visibility and time.monotonic() < deadline:
+            time.sleep(0.2)
+        self.assertEqual(self.ok('status', page)['visibility'], visibility)
+
+    def frames(self, page):
+        return int(re.search(r'Frames (\d+)', self.ok('read', page)['text']).group(1))
+
+    def test_a_hidden_page_is_reported_and_refuses_fresh_reads(self):
+        url = f'{self.site}/counter?case=hidden'
+        opened = self.ok('open', url)
+        page = opened['page']
+        self.assertEqual(opened['visibility'], 'visible')
+        first = self.frames(page)
+        time.sleep(1)
+        self.assertGreater(self.frames(page), first)
+        self.assertEqual(self.ok('status', page)['visibility'], 'visible')
+        self.assertNotIn('note', self.ok('read', page, '--fresh'))
+
+        self.set_window(url, 'minimized')
+        self.wait_for(page, 'hidden')
+        refused = self.broker('read', page, '--fresh')
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn(f'{page} is hidden', refused.stderr)
+        self.assertIn('Chrome stops rendering hidden pages', refused.stderr)
+        plain = self.ok('read', page)
+        self.assertEqual(plain['visibility'], 'hidden')
+        self.assertIn('this page is hidden', plain['note'])
+
+        self.set_window(url, 'normal')
+        self.wait_for(page, 'visible')
+        self.assertEqual(self.ok('read', page, '--fresh')['visibility'], 'visible')
 
 
 class DropTest(BrokerRig):
