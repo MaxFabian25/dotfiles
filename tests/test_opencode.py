@@ -66,7 +66,7 @@ class OpenCodeTests(unittest.TestCase):
             self.assertEqual(home.roots.tree_digest(source), before)
             fields = plan.configurations[0].fields
             self.assertEqual(fields[('update',)], 'disable')
-            self.assertIn({'action': 'skill', 'resource': 'kit-hidden', 'effect': 'deny'}, fields[('permissions',)])
+            self.assertIn({'action': 'skill.use', 'resource': 'kit-hidden', 'effect': 'deny'}, fields[('policies',)])
             original = b'{"theme":"user-choice","accounts":{"synthetic":"preserve"}}\n'
             configured = patch_fields(original, fields, 'json')
             self.assertEqual(json.loads(configured)['accounts'], {'synthetic': 'preserve'})
@@ -189,9 +189,24 @@ class OpenCodeTests(unittest.TestCase):
             self.assertTrue(manual['disable-model-invocation'])
             self.assertFalse(manual['metadata']['opencode/autoinvoke'])
             self.assertIn('native', next(record for record in receipt['skills'] if record['id'] == 'ordinary'))
-            self.assertIn({'action': 'skill', 'resource': 'hidden', 'effect': 'deny'},
-                          plan.configurations[0].fields[('permissions',)])
+            self.assertIn({'action': 'skill.use', 'resource': 'hidden', 'effect': 'deny'},
+                          plan.configurations[0].fields[('policies',)])
             self.assertFalse((output / 'payload/loose/ordinary').exists())
+
+    def test_skills_only_claude_code_reads_and_the_desktop_browser_are_removed_by_policy(self):
+        with Home() as home:
+            setup, _, _ = self.fixture(home, modes={'hidden': SkillMode.OFF})
+            claude = home.roots.claude_home / 'skills'
+            for path in ('claude-only/SKILL.md', 'claude-only/nested/SKILL.md', 'synced/account/docx/SKILL.md',
+                         'shared/SKILL.md', '.sync-account/dotted/SKILL.md',
+                         'node_modules/vendored/SKILL.md', 'note.md'):
+                home.write(claude / path, '---\nname: synthetic\ndescription: synthetic\n---\n')
+            home.skill(home.roots.agents_home, 'shared')
+            fields = opencode.plan(setup, home.roots, Platform.LINUX).configurations[0].fields
+            denied = {rule['resource'] for rule in fields[('policies',)] if rule['action'] == 'skill.use'}
+            self.assertEqual(denied, {'kit-hidden', 'claude-only', 'docx', 'note'})
+            self.assertFalse(any(rule['action'] == 'skill' for rule in fields[('permissions',)]))
+            self.assertEqual(fields[('plugins',)], ['-opencode.browser'])
 
     def test_cua_transport_and_browser_permissions_are_platform_native(self):
         with Home() as home:
