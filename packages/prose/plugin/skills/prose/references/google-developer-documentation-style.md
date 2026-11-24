@@ -101,8 +101,9 @@ selection](terminology-selection.md). Keep source, conventional, and descriptive
 - Write headings in plain prose rather than code items; when a code item is necessary for
   findability or accuracy, put it in code font and add a descriptive noun.
 - Format single-step procedures as one sentence in a bulleted list; this overrides the one-item
-  prose default in [Presentation choices](reader-core.md#presentation-choices) within Google
-  developer documentation. Use a numbered list for two or more ordered steps.
+  prose default in [Lists, comparisons, and next
+  steps](reader-core.md#lists-comparisons-and-next-steps) within Google developer documentation.
+  Use a numbered list for two or more ordered steps.
 
 ## Prose around code samples, commands, and placeholders
 
@@ -139,7 +140,8 @@ selection](terminology-selection.md). Keep source, conventional, and descriptive
   error-free status, leaving ordinary static pages without one.
 - Apply [Warnings and cautions](instructional-prose.md#warnings-and-cautions) to *Caution* and
   *Warning* notices.
-  Route an actual visible status message to [interface copy](interface-copy.md).
+  Route an actual visible status message to [Errors, statuses, and empty
+  states](interface-copy.md#errors-statuses-and-empty-states).
 
 Complete this branch when host, project, British English, contraction, quotation-mark, date, and
 requirement-language overrides hold, Google product and API names follow their article rules,

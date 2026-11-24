@@ -82,7 +82,7 @@ Apply these rules after classification:
 - If *The* or *A* starts the title, include it in the italics.
 - Apply the controlling document convention to a source term discussed as language. Use code
   treatment only when the term is exact technical text.
-- Apply the [rules for bold and italic text](reader-core.md#presentation-choices) to
+- Apply the [rules for bold and italic text](reader-core.md#typography-and-social-wording) to
   punctuation and grammatical changes around a title or phrase.
 
 Complete this branch when every translation records its source and translator without retranslating

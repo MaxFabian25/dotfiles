@@ -1,7 +1,7 @@
 # Technical and code-adjacent prose
 
 Apply this branch to durable technical documentation, commands, paths, identifiers, docstrings,
-release notes, and other code-adjacent prose. Read the sections needed for the current choice. For
+release notes, and other code-adjacent prose. For
 storage terminology, technical dates, example network or phone values, command-line syntax, internal
 API documentation, code examples, or source-code comments, also open [Technical formats, commands,
 and code samples](technical-formats-and-code-samples.md). Follow the authority and preservation rules

@@ -1,7 +1,7 @@
 # English usage
 
 Consult this reference for an English grammar or usage question, a grammar-focused copyedit, or a
-specific unresolved grammatical choice. Apply only the sections relevant to that question.
+specific unresolved grammatical choice.
 [English core](english-core.md) owns house spelling and usage choices. The [authority and
 preservation rules](../SKILL.md#authority-and-preservation) protect intentional dialect, literary
 voice, and governed source forms during a grammar edit.
@@ -71,7 +71,8 @@ abbreviation. For its grammatical form:
 - Begin a sentence with *And* or *But* when the word states the intended addition or contrast
   clearly.
 - Retain a conjunction or clause-introducing *that* when omission could obscure a clause boundary or
-  change coordination.
+  change coordination; for new prose, also apply [Abbreviations and grammatical
+  forms](english-core.md#abbreviations-and-grammatical-forms).
 - Use *who* as a subject or subject complement. Use *whom* as an object when the document's register
   requires the distinction.
 - Use *because* before a causal clause and *because of* or *owing to* before a causal noun phrase.

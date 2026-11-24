@@ -9,7 +9,7 @@ Each reference owns its rules and scope.
 | Clarity, organisation, and presentation | [Reader core](reader-core.md) |
 | Drafting, development, or craft work on essays, talks, or personal narratives | [Authored prose](authored-prose.md) |
 | Academic papers, reports, and theses | [Reader core](reader-core.md), the [development guidance](authored-prose.md#development) in authored prose, [references and citations](references-and-citations.md), [source preservation](source-preservation.md), the selected [named style](#named-styles), and the [English core](english-core.md) or [Danish core](danish-core.md); also [quantitative prose](quantitative-prose.md), [number forms](number-forms.md), and [tables and figures](tables-and-figures.md) when numbers, units, or displays are present |
-| Messages or posts sent in the user's name | [Reader core](reader-core.md#presentation-choices); before posting a critique of others' text, also [Editorial practice](editorial-practice.md) |
+| Messages or posts sent in the user's name | [Reader core](reader-core.md#presentation-choices); before posting a critique of others' text, also [Editorial practice](editorial-practice.md#editing-and-review-scope) |
 | Matching a supplied voice sample | [Voice samples](editorial-practice.md#voice-samples) |
 | English house word choices and mechanics | [English core](english-core.md) |
 | English grammar or a usage question | [English usage](english-usage.md) |

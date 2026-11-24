@@ -3,8 +3,9 @@
 Select this branch only when a user, organisation, or project explicitly requires IBCS notation for
 a business report, presentation, or dashboard. It covers the text elements of each page: the key
 message, titles, headers, labels, and notes. An organisation's documented IBCS notation controls
-where it differs from the forms below. Within this scope, these forms replace the date and range
-forms in [number forms](number-forms.md) and the [currency
+where it differs from the forms below. Within this scope, these forms replace the [date
+forms](number-forms.md#dates-and-times) and [range
+forms](number-forms.md#operators-dimensions-and-ranges) in number forms and the [currency
 forms](quantitative-prose.md#comparisons-and-statistical-claims) in quantitative prose.
 
 Authority `AUTH-IBCS-2` in [source provenance](source-manifest.md) is the standard basis.

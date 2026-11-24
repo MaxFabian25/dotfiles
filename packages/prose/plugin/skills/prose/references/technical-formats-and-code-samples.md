@@ -2,8 +2,7 @@
 
 Apply this branch alongside [Technical and code-adjacent prose](technical-and-code-prose.md) when
 the work includes storage terminology, technical dates, example network or phone values,
-command-line syntax, internal API documentation, code examples, or source-code comments. Read only
-the sections needed for the current task.
+command-line syntax, internal API documentation, code examples, or source-code comments.
 
 ## Storage terminology
 
