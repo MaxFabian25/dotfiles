@@ -47,8 +47,8 @@ around it when practical.
   without a unit below 10 in words, as in *two scenarios*, and from 10 in numerals. Use numerals for
   every count of the same kind in a sentence that includes a count of 10 or more.
 - **Ordinal numbers.** In English prose outside APA and governed compact formats, spell out *first*
-  through *tenth*. For larger ordinal numbers, use a numeral followed by *st*, *nd*, *rd*, or *th*.
-  Do not superscript these endings.
+  through *tenth*. For larger ordinal numbers, use a numeral followed by *st*, *nd*, *rd*, or *th*
+  on the baseline (without superscripting).
 - **Roman numerals.** Use a Roman numeral only when an official name, source form, or governed label
   requires it. Otherwise, use an Arabic numeral in ordinary prose. Preserve the required case and
   form.
@@ -58,13 +58,12 @@ around it when practical.
 ## Dates and times
 
 - **Dates.** Outside machine-readable values, governed formats, and source text, write an English date as
-  `13 April 2026`. Put the date before the month. Do not add *st*, *nd*, *rd*, or *th*. Omit commas.
+  `13 April 2026`, placing the plain day numeral (without ordinal endings or commas) before the month.
   Write a Danish date as `13. april 2026`, with a full stop after the day and a lowercase month.
 - **Combined date and time.** Put the date before the time unless a governed format requires another
   order.
 - **Time zones.** Preserve the timestamp format in the user interface when available. Otherwise,
-  spell out the region and include the applicable UTC or GMT label. Do not abbreviate the name of
-  the time zone.
+  spell out the full region name (unabbreviated) and include the applicable UTC or GMT label.
 - **12- and 24-hour clocks.** Use either the 12- or 24-hour clock, not both in the same text.
   Preserve clock forms in governed or quoted text.
 - **Danish clock times.** In Danish prose, use the 24-hour clock and separate hours and minutes with
@@ -86,8 +85,9 @@ around it when practical.
 - **Spaces in units of measurement.** Put a space between a number and its unit symbol. In English prose, close `%` up to the numeral, as APA and ONS require. This form departs from the SI Brochure's space rule. In Danish prose and interface text, keep the fixed space before `%`. Omit the space before `°`, `′`, and `″` when they denote plane angle. Keep a number and its unit symbol together with a non-breaking space (`\,` in LaTeX).
 - **Temperature spacing.** Write `50 °C`, `50 °F`, or `300 K`. Keep a non-breaking space between the
   number and scale. Use no degree symbol with kelvin.
-- **Decimal and binary units.** Use the same system to measure bytes as the source technology. Distinguish
-  `kB`, `MB`, and `GB` from `KiB`, `MiB`, and `GiB`. Do not substitute one system for the other.
+- **Decimal and binary units.** Use the same system to measure bytes as the source technology,
+  keeping decimal (`kB`, `MB`, `GB`) and binary (`KiB`, `MiB`, `GiB`) units strictly within their
+  own systems without substituting one for the other.
 - **Rates.** Use *per* in running prose. Use a slash or established abbreviation only in a compact
   or governed format.
 
@@ -98,9 +98,9 @@ around it when practical.
   establish it. Preserve an official format or exact source notation.
 - **Multiplication and dimensions.** Use `×`, not the letter `x`, as the multiplication operator in
   reader-facing arithmetic. In ordinary prose, write dimensions with *by*. For a compact
-  specification or resolution, use its governed separator and spacing, such as `1024 x 768`. Do not
-  treat that separator as arithmetic. Use `\times` in LaTeX. Code keeps its language operator.
-- **Minus sign.** Use `−` for subtraction and negative values in reader-facing text. Use `-` only where a hyphen or technical syntax is required. Space the sign as [operator spacing](quantitative-prose.md#equations-and-notation) sets out. A financial table may instead show negative values in parentheses; use one convention within each display and state it in a note when readers may not know it. Do not let a sign and a row label, such as *less* or *loss*, both express the same negative.
+  specification or resolution, use its governed literal separator and spacing, such as `1024 x 768`,
+  treating it as a label rather than arithmetic. Use `\times` in LaTeX. Code keeps its language operator.
+- **Minus sign.** Use `−` for subtraction and negative values in reader-facing text. Use `-` only where a hyphen or technical syntax is required. Space the sign as [operator spacing](quantitative-prose.md#equations-and-notation) sets out. A financial table may instead show negative values in parentheses; use one convention within each display and state it in a note when readers may not know it. Express a negative once: either through the sign (or parentheses) or through a row label such as *less* or *loss*, never both.
 - **Numerical ranges.** In English prose, write a range as *from A to B* or *between A and B*. In Danish prose, use *fra A til B* or *mellem A og B*.
 - **Compact ranges.** In compact English technical content, use an unspaced en dash rather than a hyphen, as in `200–250`. In compact Danish content, use a hyphen, as in `200-250`; between long expressions, a spaced en dash may replace it (*Retskrivningsordbogen* § 57.9). Reserve *from*, *fra*, *between*, and *mellem* for worded ranges. Write both endpoints in full. Repeat a percentage or currency symbol at both endpoints, as in `25%–30%` in English and `25 %-30 %` in Danish.
 - **Ranges of numbers with units.** Attach the unit name or symbol to both limits. Repeat a closed-up symbol at

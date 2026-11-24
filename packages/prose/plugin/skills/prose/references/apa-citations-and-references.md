@@ -40,8 +40,8 @@ placement and style](references-and-citations.md#citation-placement-and-style).
   and omit the quotation's own full stop.
 - When other text shares the parentheses, put commas around the year when the text runs through the
   citation, as in *(see Koehler, 2016, for more detail)*, and put a semicolon between separate text
-  and the citation, as in *(e.g., falsely balanced news coverage; Koehler, 2016)*. Do not nest
-  parentheses.
+  and the citation, as in *(e.g., falsely balanced news coverage; Koehler, 2016)*, keeping all
+  material in one unnested pair of parentheses.
 - Repeat the citation rather than using *ibid.* After the first narrative citation of a work in a
   paragraph, omit the year from later narrative citations of it in that paragraph, but keep the year
   in every parenthetical citation and whenever you cite more than one work by the same authors.
@@ -55,9 +55,9 @@ Use a group author when the cover or title page names only the organisation. Whe
 individuals, list them as authors and give the organisation in the source element. Use the most
 specific responsible agency as the author and give a parent body as the publisher. Abbreviate a
 group author only when the abbreviation is well known, avoids cumbersome repetition, or appears at
-least three times. Define it once at the first citation, as in *(National Institute of Mental
-Health [NIMH], 2020)* or *National Institute of Mental Health (NIMH, 2020)*, and then use the
-abbreviation alone. Do not abbreviate two groups that would share an abbreviation.
+least three times, and write out both groups in full whenever they would share an abbreviation.
+Define it once at the first citation, as in *(National Institute of Mental Health [NIMH], 2020)* or
+*National Institute of Mental Health (NIMH, 2020)*, and then use the abbreviation alone.
 
 ### Locators
 
@@ -91,17 +91,18 @@ communication.
 
 ### Ordering
 
-Include a reference entry for each recoverable work cited in the text, and cite each listed work in
-the text. Order entries alphabetically by the first word of the entry, letter by letter, so that
-*Loft* precedes *Loftus*, and file a group author under its full name. Ignore an initial *A*, *An*,
-or *The* only in a title that stands in the author position or that breaks a tie between works.
-Place one-author entries before multiple-author entries with the same first author. Order
-multiple-author entries that share a first author by the second author's surname, then the third,
-whatever their dates. List works by the same author or authors by date: *n.d.* first, then dated
-works from the earliest, then *in press*. Among works with the same author and year, put entries
-with only a year first, then entries with fuller dates in date order, and order entries with
-identical dates by title. Keep parts of a series in series order. Assign letter suffixes in that
-order. Use a hanging indent in the rendered list.
+- Include a reference entry for each recoverable work cited in the text, and cite each listed work
+  in the text. Use a hanging indent in the rendered list.
+- Order entries alphabetically by the first word of the entry, letter by letter, so that *Loft*
+  precedes *Loftus*, and file a group author under its full name. Ignore an initial *A*, *An*, or
+  *The* only in a title that stands in the author position or that breaks a tie between works.
+- Place one-author entries before multiple-author entries with the same first author, and order
+  multiple-author entries that share a first author by the second author's surname, then the third,
+  whatever their dates.
+- List works by the same author or authors by date: *n.d.* first, then dated works from the
+  earliest, then *in press*. Among works with the same author and year, put entries with only a year
+  first, then entries with fuller dates in date order, and order entries with identical dates by
+  title. Keep parts of a series in series order and assign letter suffixes in that order.
 
 ### Four elements
 
@@ -135,23 +136,23 @@ citation that a source suggests into this form.
   title's own wording, including its date form; in a title or description you compose, use the
   [house date form](number-forms.md#dates-and-times).
 - **Source.** Give the publisher without a business designation such as *Inc.* or *LLC*. Omit the
-  publisher when it is also the author. Do not give a publisher location; give a place only for a
+  publisher when it is also the author, and omit any publisher location, giving a place only for a
   work tied to one, such as a conference presentation.
 
 ### DOIs, URLs, and databases
 
-Give a DOI for every work that has one, whichever version you consulted, and check for one before
-treating a database article as a print work. Present a DOI as a `https://doi.org/` URL and give no
-other URL with it. Otherwise give a URL that leads directly to the work when readers can use it. Do
-not give a database name or URL for a work from an academic research database, such as EBSCOhost or
-JSTOR, apart from JSTOR's primary-sources collection. Name a database only when it publishes
-original proprietary works cited like articles, such as the *Cochrane Database of Systematic
-Reviews*, giving its name in italic title case like a periodical, or holds
-works of limited circulation, such as a dissertations database, giving its name in roman type like a
-publisher. Give its home or login page when the work's URL is session-specific. Do not write
-*Retrieved from* before a URL. Include a retrieval date, as in *Retrieved September 30, 2020, from*
-followed by the URL, only for content designed to change over time and not archived. End a DOI or
-URL without a full stop.
+- Give a DOI for every work that has one, whichever version you consulted, checking for one before
+  treating a database article as a print work. Present a DOI as a `https://doi.org/` URL with no
+  other URL beside it; otherwise give a direct URL when readers can use it.
+- Omit the database name and URL for a work from an academic research database such as EBSCOhost or
+  JSTOR (apart from JSTOR's primary-sources collection).
+- Name a database only when it publishes original proprietary works cited like articles, such as the
+  *Cochrane Database of Systematic Reviews* (in italic title case like a periodical), or holds works
+  of limited circulation such as a dissertations database (in roman type like a publisher), giving
+  its home or login page when the work's URL is session-specific.
+- Begin a bare URL directly without *Retrieved from*, adding a retrieval date (*Retrieved September
+  30, 2020, from* followed by the URL) only for content designed to change over time and not
+  archived. End every DOI or URL without a full stop.
 
 APA Manual Chapter 8 supplies the citation rules, Chapter 9 the reference elements and order, and
 Chapter 10 the examples. For specific source-type reference forms (reports, SEC filings, press

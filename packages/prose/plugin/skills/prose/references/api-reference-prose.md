@@ -37,7 +37,9 @@ program behaviour or generated markup.
 - Start a type description with its purpose or function.
 - Follow with its use, key features, prerequisites, best practices, and material pitfalls.
 - For a class or module, give a brief overview and put the simplest use case first.
-- Start a method description with the action that the method performs.
+- Start a method description with the action that the method performs, using present-tense
+  third-person verbs to describe what the method does rather than what a developer might use it to
+  do.
 - Describe prerequisites, dependencies, related APIs, and material exceptions. Explain how the
   method behaves when a dependency is missing.
 - Keep a member description brief and link the methods that use it when links are available.
@@ -65,11 +67,6 @@ program behaviour or generated markup.
 - Document each restriction and error condition.
 - Use the reference generator's exception form when it supplies words such as *Throws*.
 
-## Verb forms
-
-- Use present-tense third-person verbs in the main method description.
-- Describe what the method does, not what a developer might use it to do.
-
 ## Deprecations
 
 - Put deprecation status and the most important replacement advice in the first sentence.
@@ -95,15 +92,12 @@ program behaviour or generated markup.
 - Show expected output when the code sample has an observable result.
 - Compile or otherwise validate every code sample. Run it in each available documented environment.
 
-## Automatically generated reference documentation
+## Generated documentation and verification
 
 - Review automatically generated reference documentation and document comments for missing reader
   information. Add the missing information and remove unsuitable implementation or internal
   details.
-
-## Verification
-
-Test documented behaviour whenever you can run the code.
+- Test documented behaviour whenever you can run the code.
 
 Complete this branch when every public element in scope documents its contract, parameters,
 returns, errors, limits, and deprecation state. Examples match tested behaviour.

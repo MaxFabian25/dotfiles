@@ -4,6 +4,8 @@ Apply this branch when a durable reader-facing document or page has structural d
 navigation. Start by identifying the intended readers, the simplest use case, and the route by
 which readers find it.
 
+## Structure and navigation
+
 - Keep each document brief and utilitarian. Include only the author's knowledge that intended
   readers need.
 - Make the simplest use case easy to find. Keep optional or advanced detail from interfering with
@@ -26,6 +28,8 @@ which readers find it.
   navigation that the headings do not supply.
 - Keep each heading's link target descriptive and stable. Update every controlled inbound link when
   the target changes.
+
+## Post-change checks
 
 After a change to structure, headings, links, or navigation, render or build the document and read
 the output where its readers receive it. Check its headings, lists, links, navigation, and generated

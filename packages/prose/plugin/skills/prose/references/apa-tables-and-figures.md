@@ -28,14 +28,15 @@ blank when data are not applicable, explaining it in a note when needed. Insert 
 were not obtained or not reported, and explain the dash in the general note.
 
 Use horizontal rules at the top and bottom and below the column headings, and optionally above a row
-of totals. Use no vertical rules and no borders around cells. Avoid shading, and explain any
-necessary shading in the general note. The house [unmerged-cells
-rule](tables-and-figures.md#table-structure-and-editing)
-excludes the column spanners, and so the decked heads, that APA permits. Repeat the shared words in
-each column heading, group rows under a label in the stub, or split the table into separately
-numbered tables, not *Table 1A* and *Table 1B*. Repeat the heading row when a table continues on
-another page. In an English figure, write axis labels and legend text in title case and state units
-of measurement, such as in the axis title; in Danish, use Danish sentence case.
+of totals. Use no vertical rules and no borders around cells. Leave cells unshaded unless shading is
+necessary, and explain any necessary shading in the general note. The house [unmerged-cells
+rule](tables-and-figures.md#table-structure-and-editing) excludes the column spanners, and so the
+decked heads, that APA permits.
+
+Repeat the shared words in each column heading, group rows under a label in the stub, or split the
+table into separately numbered tables, not *Table 1A* and *Table 1B*. Repeat the heading row when a
+table continues on another page. In an English figure, write axis labels and legend text in title
+case and state units of measurement, such as in the axis title; in Danish, use Danish sentence case.
 
 ## Notes and units
 
@@ -56,13 +57,14 @@ placement of a table-wide unit extends those rules.
 ## Sources, attributions, and accessibility
 
 Cite data that you reconfigure or reanalyse to produce different numbers with ordinary author–date
-citations and locators in a note or source column, and list the sources in the reference list. When
-a table reproduces another source's data unchanged, end its general note with a copyright
-attribution that begins *Data are from*. As a house adaptation, when a table combines reproduced values with values you
-derive, give the attribution for the reproduced values and cite the sources of the derived values in
-the same general note. When you reproduce or adapt another work's display, end the
-general note with a copyright attribution that begins *From* or *Adapted from*. Give the source
-information in one of these forms, and then its copyright status:
+citations and locators in a note or source column, and list the sources in the reference list.
+
+When a table reproduces another source's data unchanged, end its general note with a copyright
+attribution that begins *Data are from*. As a house adaptation, when a table combines reproduced
+values with values you derive, give the attribution for the reproduced values and cite the sources
+of the derived values in the same general note. When you reproduce or adapt another work's display,
+end the general note with a copyright attribution that begins *From* or *Adapted from*. Give the
+source information in one of these forms, and then its copyright status:
 
 - Article: `"Title of Article," by A. A. Author and B. B. Author, Year, Journal Name, Volume(Issue),
   p. x (https://doi.org/...)`, with the journal name and volume in italics.

@@ -2,8 +2,8 @@
 
 Apply this branch when the selected Chicago citation system is author-date.
 
-Use the Chicago forms in [Chicago source forms](chicago-source-forms.md). Do not import APA
-punctuation, author counts, suffixes, or ordering.
+Use the Chicago forms in [Chicago source forms](chicago-source-forms.md), keeping Chicago's own
+punctuation, author counts, suffixes, and ordering separate from APA forms.
 
 ## Author-date reference lists
 
@@ -29,8 +29,8 @@ punctuation, author counts, suffixes, or ordering.
 ## Author-date text citations
 
 - Put author and year in parentheses with no punctuation between them.
-- When the text names the author, put the year in parentheses immediately after the name.
-- Do this even when the name is possessive.
+- When the text names the author, even in the possessive, put the year in parentheses immediately
+  after the name.
 - Use *and*, not an ampersand, for two authors.
 - For more than two authors, give the first surname followed by et al.
 - Keep et al. in roman type.

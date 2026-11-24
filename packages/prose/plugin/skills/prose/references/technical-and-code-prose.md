@@ -28,8 +28,8 @@ A *code span* is an inline sequence of code-formatted characters in CommonMark.
   language.
 - Follow the programming language or project's convention for punctuation spacing. Otherwise,
   choose one spacing pattern and use it consistently.
-- When instructions describe a casing style, explain what the requirements are and provide an
-  example. Do not use a casing style name alone.
+- When instructions describe a casing style, pair the casing style name with its requirements and
+  an example rather than using the name alone.
 - Use an ordinary verb to describe the operation of a function, method, or logical operator.
   Keep each code element's exact name unchanged. For plurals and possessives, add an ordinary noun
   after the exact code name and inflect that noun.
@@ -59,8 +59,8 @@ A *code span* is an inline sequence of code-formatted characters in CommonMark.
   capitalisation for each. Format a literal filename extension as code, including its leading full stop
   when the syntax requires one. For example, *JPEG* is a file type name, and `.jpg` is a filename
   extension.
-- Refer generically to a file type by its formal name, not by a filename extension. Do not use a
-  file type as a verb.
+- Refer generically to a file type by its formal name (not by a filename extension), pairing it
+  with an ordinary verb rather than using the file type as a verb.
 - In software instructions, use *file* for the broader class of stored objects. Use *document* only
   for an authored, user-editable file.
 - In developer materials, use *directory* for an organisational unit or container in a file system.
@@ -80,7 +80,7 @@ A *code span* is an inline sequence of code-formatted characters in CommonMark.
 - Use the host or project's placeholder convention in a path. Otherwise, use a visibly
   replaceable placeholder without brackets that readers could mistake for literal path syntax.
 - To refer to placeholder content, use *placeholder*, *sample*, *test*, *stub*, or another
-  alternative. Do not use *dummy*. Give every placeholder a descriptive name that cannot be mistaken
+  alternative rather than *dummy*. Give every placeholder a descriptive name that cannot be mistaken
   for literal input. Explain how to replace it when the surrounding task does not make that clear.
   Explain an exact project or API placeholder outside the literal.
 
@@ -95,9 +95,8 @@ A *code span* is an inline sequence of code-formatted characters in CommonMark.
   the content. Retain a verb established by the governing technical authority.
 - In user materials, name the observable problem, consequence, and recovery action
   before unfamiliar technical terminology. Describe an unresponsive system or application as *not
-  responding* or name its measured state. Use *freeze* only for pointer behaviour. Do not use
-  *hang* for a computer's behaviour after a system error. Explain any retained *bug*, *corrupted*,
-  or *crash* wording.
+  responding* or name its measured state (rather than *hang* after a system error), reserve *freeze*
+  for pointer behaviour, and explain any retained *bug*, *corrupted*, or *crash* wording.
 - Use *compatible with* or *works with* for interoperability. Retain *support* for customer
   assistance, maintenance, or a defined capability.
 - Name the relevant computer, storage device, component, or service instead of a generic *system*
@@ -142,7 +141,7 @@ A *code span* is an inline sequence of code-formatted characters in CommonMark.
   when the owning authority has approved publication and keeping unapproved plans out of examples
   and implications.
 - Use present tense for current capability.
-- Use *release* to refer to the issuing of software. Do not use it for a software version number.
+- Use *release* for the issuing of software and *version* for a software version number.
 - Include a version number with software names as needed, such as when describing a new version or
   comparing two versions. Otherwise, the version number can usually be omitted.
 - Use *earlier* or *later*, rather than *lower*, *higher*, *newer*, or *older*, when referring to
