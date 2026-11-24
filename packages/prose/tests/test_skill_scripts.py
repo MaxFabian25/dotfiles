@@ -502,6 +502,52 @@ class ScanTests(unittest.TestCase):
             bad = run(SCAN, "--json", str(draft))
             self.assertEqual(bad.returncode, 2, bad.stdout + bad.stderr)
 
+    def test_mechanical_unit_range_and_spacing_checks(self) -> None:
+        bad_en = (
+            "She e-mailed us.  ‘Start again.’ Temperature rose from 20°C to 350 °K.\n"
+            "Growth stayed at 25–30% and 25.0%–30.5 across (10 to 12 kg).\n"
+        )
+        self.assertEqual(
+            set(self.checks(bad_en)),
+            {
+                "e-mail",
+                "double-space",
+                "temp-space",
+                "kelvin-degree",
+                "range-percent",
+                "range-unit",
+            },
+        )
+        self.assertEqual(
+            self.checks("Growth stayed at 25%–30 overall.\n"), ["range-percent"]
+        )
+        self.assertEqual(self.checks("Done.  “Start again.”\n"), ["double-space"])
+
+        good_en = (
+            "Write to e-mail@example.org or e-mail.team@example.org, or send an email. "
+            "Temperature rose from 20\u00a0°C to 350\u00a0K at a 45° angle.\n"
+            "Growth fell by 10 per cent, stayed at 25.0%–30.5%, and covered 10 kg to 12 kg, "
+            "(10 to 12) kg, and 10 minutes to 12 minutes.\n"
+            "Add sample 10 to 12 g of buffer.\n"
+        )
+        self.assertEqual(self.checks(good_en), [])
+
+        bad_da = "Temperaturen steg fra 20°C til 350 °K ved 25-30 % og 25,0\u00a0%-30,5 fugtighed.\n"
+        self.assertEqual(
+            set(self.checks(bad_da, ".md", "--lang", "da")),
+            {"danish-temp-space", "danish-kelvin-degree", "danish-range-percent"},
+        )
+        self.assertEqual(
+            self.checks("Væksten lå på 25\u00a0%-30 i alt.\n", ".md", "--lang", "da"),
+            ["danish-range-percent"],
+        )
+
+        good_da = (
+            "Temperaturen steg fra 20\u00a0°C til 350\u00a0K ved 25,0\u00a0%-30,5\u00a0% "
+            "fugtighed og 45° hældning.\n"
+        )
+        self.assertEqual(self.checks(good_da, ".md", "--lang", "da"), [])
+
 
 if __name__ == "__main__":
     unittest.main()

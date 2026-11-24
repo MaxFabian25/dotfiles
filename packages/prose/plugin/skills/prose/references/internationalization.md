@@ -31,10 +31,10 @@ publication.
   translation.
 - Use an unambiguous date form in reader-facing prose.
 - Name a country or region when a place name could be ambiguous.
-- Use the prose unit's language equivalent of *country or region* for list headings and descriptions.
+- Use the passage language's equivalent of *country or region* for list headings and descriptions.
 - Use the same form in other contexts that might include named dependencies or disputed
   territories.
-- In general discussions, the prose unit's language equivalent of *country* is acceptable. Use
+- In general discussions, the passage language's equivalent of *country* is acceptable. Use
   the language equivalent of *country* or *country or region* rather than using *geography* or
   *geo* as synonyms for them.
 - Identify currencies under [Currency](quantitative-prose.md#comparisons-and-statistical-claims).
@@ -44,7 +44,7 @@ publication.
   address for every supported locale.
 - Use a symbol only when intended readers recognise it or the format requires it.
 - Use *24/7* only when intended readers recognise it. Otherwise, express *24 hours a day, 7 days a
-  week* in the prose unit's language. Do not use *24x7*.
+  week* in the passage's language. Do not use *24x7*.
 - For machine-translated content, verify that acronyms resembling ordinary words remain unchanged.
 
 ## English localisation adapter

@@ -8,7 +8,7 @@ Before applying an APA rule, record the selecting authority and exact scope. The
 editorial mechanics, paper format and organisation, headings, scholarly-writing style, quotation
 treatment, citations and references, tables and figures, or a stated combination. Apply only the
 sections within that scope. When the requirement selects APA Style without a narrower scope, apply
-every relevant section to the prose unit. An instructor's or institution's requirement overrides
+every relevant section to the passage. An instructor's or institution's requirement overrides
 APA Style within its stated scope.
 
 Authority `AUTH-APA-7` in [source provenance](source-manifest.md) is the manual basis, and

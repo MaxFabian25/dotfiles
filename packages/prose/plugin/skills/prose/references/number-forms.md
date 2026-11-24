@@ -130,6 +130,9 @@ Apply the postal authority for the destination and the selected locale. Preserve
 order, abbreviations, punctuation, and postal code. When reproducing an address, preserve its source
 form. Apply ordinary-prose conventions only outside that scope.
 
+Run [scan_prose.py](../scripts/scan_prose.py) (with `--lang da` for Danish) on longer drafts to
+check date, clock, percentage, temperature, and range-unit forms.
+
 Complete this branch when one convention governs each numerical category consistently, decimal
 markers, digit grouping, unit spacing, minus signs, multiplication signs, and ranges match the
 selected language and style, dates and clock times use one unambiguous form, and governed source

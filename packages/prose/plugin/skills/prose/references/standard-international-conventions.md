@@ -27,7 +27,7 @@ order](quantitative-prose.md#comparisons-and-statistical-claims) in quantitative
 - Start an international telephone number with `+` and its country code. Apply spacing from the
   governing numbering plan or data contract.
 - In reader-facing prose, introduce a telephone extension number with the full, unabbreviated
-  designation set by the prose unit's language authority. Preserve exact interface labels,
+  designation set by the passage language's authority. Preserve exact interface labels,
   data-contract fields, and machine-readable forms.
 - Express a freephone number in local style. When the publisher controls the contact information,
   give a toll number if one is available.
