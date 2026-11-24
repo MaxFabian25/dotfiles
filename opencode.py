@@ -11,7 +11,8 @@ import tomllib
 
 import yaml
 
-from configuration import BlockedConfiguration, Configuration, FileConfiguration, JsonConfiguration, read_fields
+from configuration import (BlockedConfiguration, Configuration, FileConfiguration, JsonConfiguration, cua_defaults,
+                           read_fields)
 from description import LooseSkill, Package, Setup, SkillRoot, LocalSource, _canonical
 from host_state import DeviceRoots, Digest, EntryName, Host, Platform, SkillMode, bytes_digest
 from invocation_overrides import collect_skills, frontmatter, skill_paths
@@ -346,6 +347,7 @@ def _cua(roots: DeviceRoots, platform: Platform) -> dict:
     if platform == Platform.LINUX:
         environment.update({'DISPLAY': ':99'} if 'microsoft' in operating_system.release().lower()
                            else {'CUA_DRIVER_RS_ENABLE_WAYLAND': '1'})
+        command = cua_defaults(roots, command, environment)
     return {'type': 'local', 'command': [command, 'mcp'], 'environment': environment}
 
 

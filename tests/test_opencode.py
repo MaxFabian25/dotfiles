@@ -228,6 +228,20 @@ class OpenCodeTests(unittest.TestCase):
                                      'CUA_DRIVER_DANGEROUSLY_BYPASS_APPROVALS': '1', 'CUA_TELEMETRY_ENABLED': 'false', **extra})
                     actions = {rule['action'] for rule in fields[('permissions',)] if rule['effect'] == 'deny'}
                     self.assertEqual(actions, {'cua-driver_browser_*', 'cua-driver_page'})
+            # Once the pull has delivered cua-driver-defaults, Linux runs the driver through it.
+            home.write(home.roots.home / '.local/bin/cua-driver-defaults', '#!/usr/bin/env python3\n')
+            for platform, kernel, runs_wrapper in [(Platform.LINUX, 'microsoft-standard-WSL2', True),
+                                                    (Platform.LINUX, 'arch-linux', True),
+                                                    (Platform.WINDOWS, 'windows', False)]:
+                with self.subTest(platform=platform, kernel=kernel, wrapper=True), \
+                        patch('opencode.shutil.which', return_value='cua-driver'), \
+                        patch('opencode.operating_system.release', return_value=kernel):
+                    transport = opencode.plan(setup, home.roots, platform).configurations[0].fields[
+                        ('mcp', 'servers', 'cua-driver')]
+                    wrapper = str(home.roots.home / '.local/bin/cua-driver-defaults')
+                    self.assertEqual(transport['command'], [wrapper if runs_wrapper else 'cua-driver', 'mcp'])
+                    self.assertEqual(transport['environment'].get('CUA_DRIVER_BIN'),
+                                     'cua-driver' if runs_wrapper else None)
             with patch('opencode.shutil.which', return_value=None):
                 with self.assertRaisesRegex(ValueError, 'installed cua-driver'):
                     opencode.plan(setup, home.roots, Platform.LINUX)

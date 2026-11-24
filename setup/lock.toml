@@ -5,8 +5,8 @@ intent = "sha256:c12186a865e8b4065dc3383e5252f1ad515f0a5d0b53eb0f631619b841d1ac4
 placements = { agents = "sha256:a68536af2ef1f45a4ddaab87fff2857e21fd2be5e69fc82e7bdf758182fbe54d", claude = "sha256:a68536af2ef1f45a4ddaab87fff2857e21fd2be5e69fc82e7bdf758182fbe54d" }
 
 [browser-and-computer-use]
-intent = "sha256:a625359b9225c1efa03a94f53c7ae45c201cfeff9fe8ea54340f88dcc9f31054"
-placements = { agents = "sha256:f2d196df432f41f30f835360669988b8f4ab7c67a241647fa5e4ebb79bf96c2f", claude = "sha256:f2d196df432f41f30f835360669988b8f4ab7c67a241647fa5e4ebb79bf96c2f" }
+intent = "sha256:3acac749646575cfdfbe03d15a8f595b34b649a3f964e2fe8b5f63e695b86118"
+placements = { agents = "sha256:e19c9b141657389f4c0eb4e5890d94565c53dd79852657a781353ce91fd8f59f", claude = "sha256:e19c9b141657389f4c0eb4e5890d94565c53dd79852657a781353ce91fd8f59f" }
 
 [build-iterated-agentic-loop]
 intent = "sha256:50dc05abdc9538dfb77c63c9fe87b73e9efebdbf9b48444f4e9f27038e35e06f"
