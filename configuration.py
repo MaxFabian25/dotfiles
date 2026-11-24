@@ -109,6 +109,17 @@ def desired(public: Path | None, private: Path | None, roots: DeviceRoots, platf
     return tuple(result)
 
 
+def cua_defaults(roots: DeviceRoots, command: str, environment: dict) -> str:
+    """The command a Linux cua-driver MCP entry runs: the private dotfiles' cua-driver-defaults wrapper when the pull
+    has delivered it, which gives a tree read without timeout_ms a longer budget and runs the driver that
+    CUA_DRIVER_BIN names, else the driver itself."""
+    wrapper = roots.home / '.local/bin/cua-driver-defaults'
+    if not wrapper.is_file():
+        return command
+    environment['CUA_DRIVER_BIN'] = command
+    return str(wrapper)
+
+
 def _leaf_fields(table: dict, prefix: tuple[str, ...]) -> dict[tuple[str, ...], object]:
     result = {}
     for key, value in table.items():

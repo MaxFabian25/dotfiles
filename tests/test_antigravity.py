@@ -179,6 +179,19 @@ class AntigravityTests(unittest.TestCase):
                     self.assertEqual(hooks.destination, home.roots.home / '.gemini/config/hooks.json')
                     cmd = hooks.fields[('credential-guard',)]['PreToolUse'][0]['hooks'][0]['command']
                     self.assertEqual(cmd, f'python3 -I "{adapter.destination.as_posix()}" pre-tool-use')
+            # Once the pull has delivered cua-driver-defaults, Linux runs the driver through it.
+            home.write(home.roots.home / '.local/bin/cua-driver-defaults', '#!/usr/bin/env python3\n')
+            for platform, kernel, runs_wrapper in [(Platform.LINUX, 'microsoft-standard-WSL2', True),
+                                                    (Platform.WINDOWS, 'windows', False)]:
+                with self.subTest(platform=platform, kernel=kernel, wrapper=True), \
+                        patch('antigravity.shutil.which', return_value='cua-driver'), \
+                        patch('antigravity.operating_system.release', return_value=kernel):
+                    plan = antigravity.plan(setup, home.roots, platform)
+                    cua = {item.name: item for item in plan.configurations}['antigravity-mcp'].fields[
+                        ('mcpServers', 'cua-driver')]
+                    wrapper = str(home.roots.home / '.local/bin/cua-driver-defaults')
+                    self.assertEqual(cua['command'], wrapper if runs_wrapper else 'cua-driver')
+                    self.assertEqual(cua['env'].get('CUA_DRIVER_BIN'), 'cua-driver' if runs_wrapper else None)
             with patch('antigravity.shutil.which', return_value=None):
                 with self.assertRaisesRegex(ValueError, 'installed cua-driver'):
                     antigravity.plan(setup, home.roots, Platform.LINUX)
