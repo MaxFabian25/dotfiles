@@ -78,21 +78,6 @@ Apply `AUTH-OSR-CODE-3` only to public communication of statistics, data, or wid
   spelled-out unit of measure forms a compound adjective, follow the selected language's hyphenation
   rules.
 
-## Terminology
-
-| Scope | Preferred designation |
-| --- | --- |
-| Property expressible by a number and reference | quantity |
-| Letter or sign that denotes a unit | unit symbol |
-| Arithmetic difference between two percentages | percentage point |
-| Reference quantity used in a measurement system | unit |
-| Number and reference that together express a quantity | quantity value |
-| Change relative to a starting value, expressed as a percentage | percentage change |
-| A survey-estimate difference that exceeds the stated statistical-significance threshold | statistically significant |
-| Desired future level against which performance is measured | target |
-| Expected future performance of a business | forecast |
-| Statistical or analytical value that carries stated uncertainty | estimate |
-
 Complete this branch when every formula and non-standard symbol is introduced and defined, every
 comparison names its measure, baseline, precision, and period when time bounds the values (with
 non-actual figures labelled by status), causal, *significant*, and *robust* claims match their

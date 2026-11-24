@@ -1,7 +1,8 @@
 # Inclusive language
 
 Apply this branch when people, communities, personal or demographic characteristics,
-accessibility terminology, or non-inclusive terms are present.
+accessibility terminology, or non-inclusive terms are present, including APA's *bias-free language*
+guidance for writing about people and groups.
 
 ## Names, self-identification, and examples
 
@@ -84,19 +85,6 @@ accessibility terminology, or non-inclusive terms are present.
 - Clarify a person's pronouns when they may be unclear to readers.
 - Use singular *they* for a person whose gender is unknown or irrelevant and for a person who uses
   those pronouns. Use it in place of generic *he*, *she*, or alternating gendered pronouns.
-
-## Terminology
-
-*Bias-free language* is APA guidance for writing about people and groups.
-
-| Scope | Preferred designation |
-| --- | --- |
-| Language that names the person before a characteristic or diagnosis | person-first language |
-| Language that names an identity before the person noun | identity-first language |
-| Terms that people use to identify themselves | self-identification |
-| Gender-neutral third-person singular pronoun | singular they |
-| Content, product, service, or environment that is easy to use for everyone, including people with disabilities | accessible |
-| Device, technology, or organisation that helps people with disabilities | assistive |
 
 Complete this branch when every reference to people or communities is accurate, relevant,
 self-identified when known, and avoids unsupported generalisation.

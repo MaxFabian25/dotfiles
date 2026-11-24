@@ -12,11 +12,13 @@ description: Draft, edit, or review English or Danish prose, such as reports, ac
    writing, citations, terminology, numbers, displays, publication, or named styles).
 2. **Apply governing rules.** Follow [Authority and preservation](#authority-and-preservation),
    [House choices](#house-choices), and the rules in every opened reference.
-3. **Scan English prose.** Before handing over English prose longer than a few paragraphs, run
-   `scripts/scan_prose.py FILE` on the HTML, Markdown, or text file and settle each finding in
-   context. It flags serial-comma gaps, house-style word and punctuation slips, and filler, cliché,
-   and conversational leftovers. When the text keeps a style that omits the serial comma, add
-   `--no-serial-comma`, or set `serial_comma = false` in `.prose.toml` at the repository root.
+3. **Scan prose.** Before handing over English or Danish prose longer than a few paragraphs, run
+   `scripts/scan_prose.py FILE` on the HTML, Markdown, or text file (add `--lang da` for Danish)
+   and settle each finding in context. It flags serial-comma gaps, British-spelling, date, clock,
+   unit-spacing, and house-style slips, and filler, cliché, and conversational leftovers. Add
+   `--no-serial-comma` when a style omits the serial comma, or `--us-english` when supplied or
+   target prose keeps US English (or set `serial_comma = false`, `us_english = true`, or
+   `lang = "da"` in `.prose.toml` at the repository root).
 4. **Hand over.** Complete the task under [Hand over](#hand-over).
 
 ## Routes
