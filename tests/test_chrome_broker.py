@@ -29,6 +29,7 @@ B64_28 = 'Zm9vYmFyQmF6UXV4MTIzNDU2Nzg5'
 B64_23 = 'aB3dE5fG7hJ9kL1mN3pQ5rS'
 PLAIN_VALUE = 'correct horse battery staple'
 KEY_GROUP = 'A3-ABC123-XYZ789'
+MASK_REFUSAL = 'this is a mask; read the item with `op read` or press Reveal first'
 
 PAGES = {
     '/planted': f"""<!doctype html><title>Planted</title>
@@ -40,7 +41,8 @@ PAGES = {
 <label>Phrase <input id="phrase" value="{PLAIN_VALUE}"></label>
 <p id="short-hex">{HEX31}</p>
 <p id="short-b64">{B64_23}</p>
-<p>Plain text stays.</p>""",
+<p>Plain text stays.</p>
+<label>Typed <input id="typed"></label>""",
     '/plain': '<!doctype html><title>Plain</title><p>Nothing secret here.</p>',
 }
 
@@ -244,6 +246,78 @@ class HidingTest(BrokerRig):
         self.assertEqual(self.ok('dispose', opened['context']), {'disposed': opened['context']})
         refused = self.broker('read', opened['page'])
         self.assertNotEqual(refused.returncode, 0)
+
+
+HELD = 'S3cret "quoted" \\ value 42!'
+
+
+def held_forms(value):
+    """The value raw, JSON-escaped once and twice, as a reply could carry it."""
+    once = json.dumps(value)[1:-1]
+    return [value, once, json.dumps(once)[1:-1]]
+
+
+class HeldTest(BrokerRig):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.page = json.loads(cls.broker('open', f'{cls.site}/planted').stdout)['page']
+
+    def assertNoHeld(self, result, value=HELD):
+        for form in held_forms(value):
+            self.assertNotIn(form, result.stdout + result.stderr)
+
+    def test_masks_are_refused_with_the_exact_message(self):
+        refused = self.broker('read-field', self.page, '#masked', 'from-mask')
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertEqual(refused.stderr.strip(), MASK_REFUSAL)
+        for mask in ('●●●●●●', '******', '······', ' •••• \n'):
+            with self.subTest(mask=mask):
+                refused = self.broker('store', 'mask', stdin=mask)
+                self.assertNotEqual(refused.returncode, 0)
+                self.assertEqual(refused.stderr.strip(), MASK_REFUSAL)
+        self.assertNotIn('from-mask', self.broker('held').stdout)
+        self.assertNotIn('"mask"', self.broker('held').stdout)
+
+    def test_a_field_is_held_by_its_length_and_compared_as_yes_or_no(self):
+        held = self.ok('read-field', self.page, '#phrase', 'phrase')
+        self.assertEqual(held, {'held': 'phrase', 'length': len(PLAIN_VALUE)})
+        self.assertEqual(self.ok('eq-held', self.page, '#phrase', 'phrase')['same'], 'yes')
+        self.assertEqual(self.ok('eq-held', self.page, '#webhook', 'phrase')['same'], 'no')
+        self.assertIn({'name': 'phrase', 'length': len(PLAIN_VALUE)}, self.ok('held'))
+
+    def test_a_typed_value_never_comes_back(self):
+        stored = self.broker('store', 'typed', stdin=HELD + '\n')
+        self.assertEqual(stored.returncode, 0, stored.stderr)
+        self.assertEqual(json.loads(stored.stdout), {'held': 'typed', 'length': len(HELD)})
+        typed = self.broker('type-held', self.page, '#typed', 'typed')
+        self.assertEqual(typed.returncode, 0, typed.stderr)
+        self.assertEqual(self.ok('eq-held', self.page, '#typed', 'typed')['same'], 'yes')
+        field = "document.querySelector('#typed').value"
+        replies = {
+            'read': self.broker('read', self.page),
+            'eval value': self.broker('eval', self.page, field),
+            'eval JSON': self.broker('eval', self.page, f'JSON.stringify({field})'),
+            'eval JSON twice': self.broker('eval', self.page, f'JSON.stringify(JSON.stringify({field}))'),
+            'eval object': self.broker('eval', self.page, f'({{ [{field}]: {field} }})'),
+            'error': self.broker('eval', self.page, f'(() => {{ throw new Error({field}) }})()'),
+            'held': self.broker('held'),
+        }
+        for name, result in replies.items():
+            with self.subTest(reply=name):
+                self.assertNoHeld(result)
+        self.assertEqual(replies['eval value'].returncode, 0)
+        self.assertIn('[hidden held typed]', replies['eval value'].stdout)
+        self.assertNotEqual(replies['error'].returncode, 0)
+        self.assertIn('[hidden held typed]', replies['error'].stderr)
+        self.assertEqual(self.ok('drop', 'typed'), {'dropped': 'typed'})
+        self.assertNotIn('"typed"', self.broker('held').stdout)
+
+    def test_store_takes_its_value_on_standard_input_only(self):
+        refused = self.broker('store', 'argument', 'a value on the command line', stdin='')
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn('standard input only', refused.stderr)
+        self.assertNotIn('"argument"', self.broker('held').stdout)
 
 
 class DropTest(BrokerRig):

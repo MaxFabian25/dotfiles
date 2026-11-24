@@ -8,13 +8,26 @@
 //                                                 a page in a window of its own, in the user's profile or in a new
 //                                                 cookie-less context; prints its page ID, context ID and visibility
 //   node chrome-broker.mjs read PAGE              the page's text, and each input with its value's length only
+//   node chrome-broker.mjs eval PAGE EXPRESSION   the expression's value, awaited, hidden like a read
 //   node chrome-broker.mjs close PAGE
 //   node chrome-broker.mjs dispose CONTEXT        close a cookie-less context and every page in it
 //   node chrome-broker.mjs stop                   close the broker's pages and contexts, then the connection
 //
-// Commands reach only the pages and contexts the broker opened. Every reply and error hides input values (as their
-// length), hex runs of 32 characters or more, base64 runs of 24 or more that mix upper case, lower case and digits,
-// 1Password Secret Key groups (A3-...) and every line that holds a "•". Clients talk to the broker over HTTP on a
+// Held values carry a secret from one page to another without showing it:
+//   node chrome-broker.mjs store NAME < value     hold a value given on standard input, never as an argument
+//   node chrome-broker.mjs read-field PAGE SELECTOR NAME
+//                                                 hold a field's value; prints its length
+//   node chrome-broker.mjs type-held PAGE SELECTOR NAME [--enter]
+//   node chrome-broker.mjs eq-held PAGE SELECTOR NAME
+//                                                 "yes" when the field holds the value, otherwise "no"
+//   node chrome-broker.mjs held | drop NAME       list names and lengths, or forget one
+// store and read-field refuse a mask, a value made only of •, ●, * or ·, such as a password manager shows in place
+// of a password. SELECTOR is a CSS selector.
+//
+// Commands reach only the pages and contexts the broker opened. Every reply and error hides every held value, raw
+// and JSON-escaped, input values (as their length), hex runs of 32 characters or more, base64 runs of 24 or more
+// that mix upper case, lower case and digits, 1Password Secret Key groups (A3-...) and every line that holds a "•".
+// Clients talk to the broker over HTTP on a
 // Unix socket with mode 0600, never TCP, because under WSL's mirrored networking a localhost port is open to every
 // Windows program and to every page in Chrome. When Chrome drops the connection, the broker answers "disconnected"
 // and never reconnects by itself, since each connection raises a new prompt on the user's screen; `start` reconnects.
@@ -32,7 +45,12 @@ const SCRIPT = fileURLToPath(import.meta.url);
 const CALL_MS = 30_000;
 const LOAD_MS = 30_000;
 const START_MS = 120_000;
-const USAGE = 'usage: node chrome-broker.mjs start | status [PAGE] | open URL [--new-context] | read PAGE | close PAGE | dispose CONTEXT | stop';
+const USAGE =
+	'usage: node chrome-broker.mjs start | status [PAGE] | open URL [--new-context] | read PAGE | eval PAGE EXPRESSION |\n' +
+	'  store NAME < value | read-field PAGE SELECTOR NAME | type-held PAGE SELECTOR NAME [--enter] |\n' +
+	'  eq-held PAGE SELECTOR NAME | held | drop NAME | close PAGE | dispose CONTEXT | stop';
+const MASK = /^[•●*·]+$/u;
+const MASK_REFUSAL = 'this is a mask; read the item with `op read` or press Reveal first';
 
 const socketPath = () =>
 	process.env.CHROME_BROKER_SOCKET ||
@@ -61,8 +79,24 @@ const HIDING_RULES = [
 	['secret-key', /\bA3-[A-Z0-9]+(?:-[A-Z0-9]+)*/g, () => '[hidden key]'],
 ];
 
-function hideText(text) {
-	let out = text
+// A held value's raw form and its JSON-escaped form, longest first, so no shorter form splits a longer one.
+function heldForms(held) {
+	const forms = [];
+	for (const [name, value] of held) {
+		const escaped = JSON.stringify(value).slice(1, -1);
+		forms.push([value, name], [escaped, name], [JSON.stringify(escaped).slice(1, -1), name]);
+	}
+	return forms.sort((a, b) => b[0].length - a[0].length);
+}
+
+function hideHeld(text, held) {
+	let out = text;
+	for (const [form, name] of heldForms(held)) out = out.split(form).join(`[hidden held ${name}]`);
+	return out;
+}
+
+function hideText(text, held = new Map()) {
+	let out = hideHeld(text, held)
 		.split(/(\r?\n)/)
 		.map((line) => (line.includes('•') ? '[hidden line]' : line))
 		.join('');
@@ -70,10 +104,17 @@ function hideText(text) {
 	return out;
 }
 
-function hide(value) {
-	if (typeof value === 'string') return hideText(value);
-	if (Array.isArray(value)) return value.map(hide);
-	if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, hide(v)]));
+function hide(value, held) {
+	if (typeof value === 'string') return hideText(value, held);
+	if (Array.isArray(value)) return value.map((item) => hide(item, held));
+	if (value && typeof value === 'object')
+		return Object.fromEntries(Object.entries(value).map(([k, v]) => [hideText(k, held), hide(v, held)]));
+	return value;
+}
+
+function refuseMask(value) {
+	if (typeof value !== 'string' || value.trim() === '') throw new Failure('the value is empty; nothing was held');
+	if (MASK.test(value.trim())) throw new Failure(MASK_REFUSAL);
 	return value;
 }
 
@@ -155,6 +196,7 @@ class Broker {
 		this.devtools = null;
 		this.pages = new Map();
 		this.contexts = new Map();
+		this.held = new Map();
 		this.counter = 0;
 	}
 
@@ -220,6 +262,63 @@ class Broker {
 		);
 		if (exceptionDetails) throw new Failure(`page error: ${exceptionDetails.exception?.description ?? exceptionDetails.text}`);
 		return result.value;
+	}
+
+	// Runs fn(element, ...args) in the page on the element SELECTOR finds, and returns its result by value.
+	async onElement(page, selector, fn, ...args) {
+		if (!selector) throw new Failure('a selector is needed');
+		const expression = `(() => {
+			const element = document.querySelector(${JSON.stringify(selector)});
+			if (!element) return { missing: true };
+			return { value: (${fn})(element, ...${JSON.stringify(args)}) };
+		})()`;
+		const reply = await this.evaluate(page, expression);
+		if (reply.missing) throw new Failure(`nothing on the page matches ${selector}`);
+		return reply.value;
+	}
+
+	heldValue(name) {
+		if (!this.held.has(name)) throw new Failure(`nothing is held as ${name ?? '(none)'}`);
+		return this.held.get(name);
+	}
+
+	store(name, value) {
+		if (!name) throw new Failure('store needs a NAME');
+		this.held.set(name, refuseMask(value));
+		return { held: name, length: value.length };
+	}
+
+	async readField(id, selector, name) {
+		if (!name) throw new Failure('read-field needs PAGE SELECTOR NAME');
+		const value = await this.onElement(this.page(id), selector, (element) => String(element.value ?? ''));
+		return this.store(name, value);
+	}
+
+	async typeHeld(id, selector, name, enter) {
+		const value = this.heldValue(name);
+		const page = this.page(id);
+		await this.onElement(page, selector, (element) => {
+			element.focus();
+			element.select?.();
+		});
+		await this.call('Input.insertText', { text: value }, page.sessionId);
+		if (enter) await this.press(page, 'Enter');
+		return { typed: name, length: value.length };
+	}
+
+	async eqHeld(id, selector, name) {
+		const value = this.heldValue(name);
+		const field = await this.onElement(this.page(id), selector, (element) => String(element.value ?? ''));
+		return { held: name, same: field === value ? 'yes' : 'no' };
+	}
+
+	async press(page, key) {
+		const keys = { Enter: [13, '\r'], Tab: [9], Escape: [27], Backspace: [8], ArrowDown: [40], ArrowUp: [38], ArrowLeft: [37], ArrowRight: [39], Space: [32, ' '] };
+		if (!Object.hasOwn(keys, key)) throw new Failure(`unknown key ${key}; use one of ${Object.keys(keys).join(', ')}`);
+		const [windowsVirtualKeyCode, text] = keys[key];
+		const event = { key: key === 'Space' ? ' ' : key, code: key, windowsVirtualKeyCode };
+		await this.call('Input.dispatchKeyEvent', { type: 'keyDown', ...event, ...(text && { text }) }, page.sessionId);
+		await this.call('Input.dispatchKeyEvent', { type: 'keyUp', ...event }, page.sessionId);
 	}
 
 	async navigate(page, url) {
@@ -292,11 +391,11 @@ class Broker {
 		return { stopped: true };
 	}
 
-	async run(argv) {
+	async run(argv, stdin) {
 		const [command, ...rest] = argv;
 		const flags = new Set(rest.filter((arg) => arg.startsWith('--')));
 		const args = rest.filter((arg) => !arg.startsWith('--'));
-		const known = { open: ['--new-context'] }[command] ?? [];
+		const known = { open: ['--new-context'], 'type-held': ['--enter'] }[command] ?? [];
 		const unknown = [...flags].filter((flag) => !known.includes(flag));
 		if (unknown.length) throw new Failure(`${command} does not take ${unknown.join(', ')}`);
 		switch (command) {
@@ -309,6 +408,25 @@ class Broker {
 				return this.open(args[0], flags.has('--new-context'));
 			case 'read':
 				return this.read(args[0]);
+			case 'eval': {
+				if (args.length !== 2) throw new Failure('eval needs PAGE EXPRESSION');
+				return { value: await this.evaluate(this.page(args[0]), args[1]) };
+			}
+			case 'store':
+				if (args.length !== 1 || stdin === undefined)
+					throw new Failure('store takes NAME alone and its value on standard input only, as in: store NAME < file');
+				return this.store(args[0], stdin);
+			case 'read-field':
+				return this.readField(...args.slice(0, 3));
+			case 'type-held':
+				return this.typeHeld(args[0], args[1], args[2], flags.has('--enter'));
+			case 'eq-held':
+				return this.eqHeld(...args.slice(0, 3));
+			case 'held':
+				return [...this.held].map(([name, value]) => ({ name, length: value.length }));
+			case 'drop':
+				if (!this.held.delete(args[0])) throw new Failure(`nothing is held as ${args[0] ?? '(none)'}`);
+				return { dropped: args[0] };
 			case 'close':
 				return this.close(args[0]);
 			case 'dispose':
@@ -341,15 +459,15 @@ async function serve(argv) {
 			let status = 200;
 			let reply;
 			try {
-				const { argv: commandArgv } = JSON.parse(body);
-				reply = { ok: true, result: await broker.run(commandArgv) };
+				const { argv: commandArgv, stdin } = JSON.parse(body);
+				reply = { ok: true, result: await broker.run(commandArgv, stdin) };
 			} catch (error) {
 				status = error instanceof Failure ? 400 : 500;
 				reply = { ok: false, error: error.message };
 			}
 			res.on('error', () => {});
 			res.writeHead(status, { 'content-type': 'application/json' });
-			res.end(JSON.stringify(hide(reply)));
+			res.end(hideHeld(JSON.stringify(hide(reply, broker.held)), broker.held));
 			if (reply.result?.stopped) server.close(() => process.exit(0));
 		});
 	});
@@ -370,7 +488,7 @@ async function serve(argv) {
 
 // ---- The client ---------------------------------------------------------------------------------------------------
 
-function request(socket, argv) {
+function request(socket, argv, stdin) {
 	return new Promise((resolve, reject) => {
 		const req = http.request({ socketPath: socket, path: '/', method: 'POST', headers: { 'content-type': 'application/json' } }, (res) => {
 			let body = '';
@@ -391,7 +509,7 @@ function request(socket, argv) {
 					: error,
 			),
 		);
-		req.end(JSON.stringify({ argv }));
+		req.end(JSON.stringify({ argv, ...(stdin !== undefined && { stdin }) }));
 	});
 }
 
@@ -442,7 +560,13 @@ async function main(argv) {
 		await serve(argv.slice(1));
 		return null;
 	}
-	const reply = command === 'start' ? await start() : await request(socketPath(), argv);
+	let stdin;
+	if (command === 'store') {
+		if (argv.length !== 2) throw new Failure('store takes NAME alone and its value on standard input only, as in: store NAME < file');
+		if (process.stdin.isTTY) throw new Failure('store reads its value from standard input, as in: store NAME < file');
+		stdin = readFileSync(0, 'utf8').replace(/\r?\n$/, '');
+	}
+	const reply = command === 'start' ? await start() : await request(socketPath(), argv, stdin);
 	if (!reply.ok) {
 		console.error(reply.error);
 		return 1;
