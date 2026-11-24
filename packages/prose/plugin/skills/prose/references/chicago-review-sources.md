@@ -16,4 +16,6 @@ information, and treatment for an unsigned review.
 - Finish the entry in the form required for the hosting journal, magazine, newspaper, or news site.
 - Alphabetise a bibliography entry under the reviewer.
 
-Complete this branch when each review has one type, an identified host, and complete fields.
+Complete this branch when each review names the reviewer (or uses the hosting periodical when
+unsigned), identifies the reviewed work and responsible people (plus identifying performance
+details when applicable), and completes the entry in the hosting periodical's Chicago form.

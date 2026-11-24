@@ -3,9 +3,8 @@
 Brug denne sprogkerne til selvstændigt formuleret dansk prosa. Bevar ellers et leveret dokuments
 etablerede tegnsætning, herunder startkomma, efter [reglerne om autoritet og
 bevaring](../SKILL.md#authority-and-preservation). Brug
-[læserkernen](reader-core.md) til arbejde med klarhed, opbygning og præsentation. Anvend ikke
-reglerne for britisk engelsk stavning, engelsk grammatik eller ord og sætninger i ASD-STE100 på
-dansk tekst.
+[læserkernen](reader-core.md) til arbejde med klarhed, opbygning og præsentation. Hold reglerne for
+britisk engelsk stavning, engelsk grammatik og ASD-STE100 ude af dansk tekst.
 
 Brug *Retskrivningsordbogen* 5.1 (2025) fra Dansk Sprognævn som kilde til dansk retskrivning,
 bøjning og tegnsætning. Brug en autoritativ kilde inden for det relevante fagområde til et
@@ -16,7 +15,8 @@ udgiver- eller fagvejledning gælder kun for de tekster og læsere som den selv 
 brugeren eller projektet udvider dens rolle. Brug praktikervejledninger som supplerende støtte
 efter styrende projekt-, udgiver-, fag- og retskrivningskilder.
 
-Overfør ikke en engelsk ordvalgsregel til dansk alene fordi de to sprog har et lignende udtryk.
+Vælg danske ord ud fra dansk sprogbrug og retskrivning frem for at overføre en engelsk ordvalgsregel
+til dansk alene fordi de to sprog har et lignende udtryk.
 
 ## APA i dansk prosa
 
@@ -54,7 +54,7 @@ disse punkter.
 
 ## Dansk retskrivning og interne valg
 
-- Brug ikke det valgfrie *startkomma* foran en ledsætning. Sæt altid komma foran en selvstændig
+- Udelad det valgfrie *startkomma* foran en ledsætning. Sæt altid komma foran en selvstændig
   ledsætning, herunder en parentetisk relativsætning og en ledsætning der indledes med fx *omend*,
   *hvorimod* eller kontrasterende *mens* (*Retskrivningsordbogen* § 47.5 og § 49.3). Sæt også
   komma foran en forklarende eller præciserende tilføjelse der indeholder en ledsætning, fx *De kom
@@ -96,14 +96,13 @@ Giv en oversat vending som *går stien* (*walks the path*) eller *træner på vo
 our data*) sin danske form, og skriv et fast udtryk i dets faste form, fx *den mindste modstands
 vej*. Slå formen op i *Den Danske Ordbog* når du er i tvivl.
 
-## Dokumentation for læsbarhed
+## Dokumentation for læsbarhed og afprøvning
 
-Oplys som udgangspunkt ikke et LIX-tal, et interval eller et numerisk mål for tekst til agenter eller
-udviklere. Sætningslængde og fraværet af frarådede ord dokumenterer ikke forståelse. Når et dokument
-oplyser LIX, læs [LIX-rapportering](readability-and-reader-testing.md#lix-reporting), og fastlæg
-optællingsmetoden efter reglerne dér.
-
-## Afprøvning med forskellige læsere
+Dokumenter forståelighed gennem indhold, opbygning og afprøvning frem for at oplyse et LIX-tal, et
+interval eller et numerisk mål for tekst til agenter eller udviklere. Sætningslængde og fraværet af
+frarådede ord dokumenterer ikke forståelse. Når et dokument oplyser LIX, læs
+[LIX-rapportering](readability-and-reader-testing.md#lix-reporting), og fastlæg optællingsmetoden
+efter reglerne dér.
 
 Når opgaven eller den styrende arbejdsgang kræver afprøvning med læsere, brug
 [proceduren for afprøvning](readability-and-reader-testing.md#reader-testing) og dens danske tillæg.

@@ -71,8 +71,8 @@ around it when practical.
   a full stop, as in `kl. 16.00`.
 - **Noon.** Write *noon* instead of *12 p.m.* Treat *12 a.m.* as midnight and apply the midnight
   rule below.
-- **Midnight.** Avoid *midnight* for a deadline because it can mean the beginning or end of a day.
-  State an unambiguous date and time instead. State the time zone when readers could differ.
+- **Midnight.** State an unambiguous date and time (with the time zone when readers could differ)
+  for a deadline rather than writing *midnight*, which can mean the beginning or end of a day.
 - **Decades.** Include the century in a decade reference unless the context makes it unambiguous.
 
 ## Decimal forms and digit grouping

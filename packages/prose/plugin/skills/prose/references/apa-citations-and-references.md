@@ -13,6 +13,8 @@ citation puts the author in the sentence and the year in parentheses beside the 
 the year also appears in the sentence, omit the parentheses. Place each citation under [Citation
 placement and style](references-and-citations.md#citation-placement-and-style).
 
+### Author counts, order, and punctuation
+
 - For a work with two authors, name both in every citation. Join them with `&` in a parenthetical
   citation and with *and* in a narrative citation. In a table or figure, use `&` in narrative
   citations too.
@@ -47,6 +49,8 @@ placement and style](references-and-citations.md#citation-placement-and-style).
   title is italic in the reference entry and in double quotation marks otherwise. Use *Anonymous*
   only for a work signed that way.
 
+### Group authors
+
 Use a group author when the cover or title page names only the organisation. When it names
 individuals, list them as authors and give the organisation in the source element. Use the most
 specific responsible agency as the author and give a parent body as the publisher. Abbreviate a
@@ -54,6 +58,8 @@ group author only when the abbreviation is well known, avoids cumbersome repetit
 least three times. Define it once at the first citation, as in *(National Institute of Mental
 Health [NIMH], 2020)* or *National Institute of Mental Health (NIMH, 2020)*, and then use the
 abbreviation alone. Do not abbreviate two groups that would share an abbreviation.
+
+### Locators
 
 Give a page number for a direct quotation from a paginated work, using *p.* for one page and *pp.*
 for a range. When pages are absent, give a paragraph number as *para.*, a heading or section name,
@@ -83,6 +89,8 @@ communication.
 
 ## Reference entries
 
+### Ordering
+
 Include a reference entry for each recoverable work cited in the text, and cite each listed work in
 the text. Order entries alphabetically by the first word of the entry, letter by letter, so that
 *Loft* precedes *Loftus*, and file a group author under its full name. Ignore an initial *A*, *An*,
@@ -94,6 +102,8 @@ works from the earliest, then *in press*. Among works with the same author and y
 with only a year first, then entries with fuller dates in date order, and order entries with
 identical dates by title. Keep parts of a series in series order. Assign letter suffixes in that
 order. Use a hanging indent in the rendered list.
+
+### Four elements
 
 Build each entry from four elements: author, date, title, and source. Preserve the source facts
 while applying APA element order, punctuation, capitalisation, and type treatment. Rewrite a
@@ -127,6 +137,8 @@ citation that a source suggests into this form.
 - **Source.** Give the publisher without a business designation such as *Inc.* or *LLC*. Omit the
   publisher when it is also the author. Do not give a publisher location; give a place only for a
   work tied to one, such as a conference presentation.
+
+### DOIs, URLs, and databases
 
 Give a DOI for every work that has one, whichever version you consulted, and check for one before
 treating a database article as a print work. Present a DOI as a `https://doi.org/` URL and give no

@@ -45,31 +45,20 @@ supports British data prose within that scope.
 
 ## Usage and word choice
 
+### Comparisons, prepositions, and clause connectors
+
 - Prefer *different from* when it keeps a noun comparison parallel. Use a clause construction for a
   genuine comparison between clauses.
 - Replace *comprise* when it obscures whether the subject is the whole or a part. State the intended
   relation with a more exact verb.
-- Use *titled*, *named*, or *called* for a work's name. Use *entitled* only for a genuine right or
-  legal entitlement.
 - Use *from X to Y* only for genuine endpoints on an ordered scale, span, or sequence. Otherwise,
   name the items.
 - Use *compared with* for similarities, differences, and quantitative values. Use *compared to*
   only for analogy. Use *in comparison with*, not *in comparison to*.
 - Use *according to* to attribute information to a named source. Use *in accordance with* for
   conformance with a requirement, method, or standard.
-- Use *exact* for identity, equality, or absence of approximation. Use *accurate* for agreement with
-  an authority or closeness to a true quantity value.
-- Use *correct* for conformance with a rule, method, or expected result. Preserve established terms
-  and source wording.
-- Use *require* for an obligation or dependency and *confirm* for verified status or human assent.
-  Qualify *support* with its object and evidence.
 - Use *respectively* only for a short, one-to-one mapping that remains clear. Otherwise, repeat the
   labels or use a table.
-- Use *alternate* for taking turns or occurring every other time. Use *alternative* for a choice
-  among possibilities.
-- Use *assure* for removing a person's doubt, *ensure* for making an outcome certain, and *insure*
-  for financial protection.
-- Retain *assurance* in established audit and quality-assurance terms.
 - Replace *former* and *latter* with the noun or a descriptive label.
 - When *with* could express several relationships, rewrite the sentence to state the intended one.
   Put a hidden controlling condition before the action.
@@ -82,6 +71,28 @@ supports British data prose within that scope.
 - Use *inside* or *outside* without *of* for a simple location. Retain *outside of* for *except for*
   or *apart from*.
 - Use *onto* for movement to a position. Write *on to* when *on* completes the preceding verb.
+- Use *between* for comparisons, differences, choices, or relationships between distinct items,
+  including more than two. Use *among* for membership in or inclusion within a group. Do not use
+  *amongst* in original prose.
+- Use *while* only for simultaneous events. Use *although*, *whereas*, *and*, or *but* for contrast.
+  Use *because* for cause when *since* could mean time.
+- When choosing between *that* and *which*, use *that* for a restrictive clause and *which* for a
+  nonrestrictive clause. Retain *which* after a preposition. Set off a nonrestrictive clause with
+  commas.
+- Where the [choice rule](reader-core.md#presentation-choices) requires an explicit boundary, state
+  an inclusive choice as *A or B, or both* and an exclusive choice as *either A or B, but not both*.
+
+### Precision and house word choices
+
+- Use *titled*, *named*, or *called* for a work's name. Use *entitled* only for a genuine right or
+  legal entitlement.
+- Use *exact* for identity, equality, or absence of approximation. Use *accurate* for agreement with
+  an authority or closeness to a true quantity value.
+- Use *correct* for conformance with a rule, method, or expected result. Preserve established terms
+  and source wording.
+- Use *require* for an obligation or dependency and *confirm* for verified status or human assent.
+  Qualify *support* with its object and evidence.
+- Retain *assurance* in established audit and quality-assurance terms.
 - Replace *functionality* with *feature*, *capability*, or the exact operation unless it names an
   established technical concept.
 - Drop *mode* when removing it preserves the meaning, retaining it for a defined state, operating
@@ -93,8 +104,6 @@ supports British data prose within that scope.
   means an unspecified subset.
 - Replace vague *desired* with the condition, object, or value that determines selection. Retain it
   for a defined target or stated preference.
-- Use *imply* for what evidence suggests without stating. Use *infer* for a conclusion that a reader
-  or analyst draws.
 - Replace a foreign expression with a clear English equivalent in original prose. Retain an
   established professional term and define it when readers may not know it.
 - Break up a noun string when its internal relationships are unclear.
@@ -105,6 +114,18 @@ supports British data prose within that scope.
 - Replace referential *such* with *this*, *these*, or the exact noun. Keep *such as* for examples.
 - Use *leverage* only for financial leverage or a formally defined mechanical meaning. Otherwise,
   use an exact verb.
+- Replace *and/or* with *and*, *or*, or *or both* to state the exact relationship.
+- Introduce an open list with *for example*, *such as*, or a category name. Omit *etc.* and *and so
+  on*.
+
+### Easily confused pairs
+
+- Use *alternate* for taking turns or occurring every other time. Use *alternative* for a choice
+  among possibilities.
+- Use *assure* for removing a person's doubt, *ensure* for making an outcome certain, and *insure*
+  for financial protection.
+- Use *imply* for what evidence suggests without stating. Use *infer* for a conclusion that a reader
+  or analyst draws.
 - Use *principal* for something first in importance and for money lent, borrowed, or invested,
   apart from interest. Use *principle* for a rule, standard, or fundamental proposition.
 - Use *affect* as a verb meaning *influence*. Use *effect* as a noun meaning *result* or as a verb
@@ -121,9 +142,6 @@ supports British data prose within that scope.
   authoritative source defines, such as *economic substance*, within that source's scope.
 - Use *historical* for past prices, values, filings, periods, events, and evidence. Reserve
   *historic* for something important in history.
-- Use *between* for comparisons, differences, choices, or relationships between distinct items,
-  including more than two. Use *among* for membership in or inclusion within a group. Do not use
-  *amongst* in original prose.
 - Use *continuous* for something that occurs without pause or interruption and *continual* for
   something that recurs. Keep a technical term within the scope its authoritative source defines.
 
@@ -142,14 +160,8 @@ supports British data prose within that scope.
   belongs to the quoted material; otherwise put it outside.
 - After a colon, capitalise the next word only when it begins a complete sentence.
 - Use one space after sentence-ending punctuation in original prose.
-- Use *while* only for simultaneous events. Use *although*, *whereas*, *and*, or *but* for contrast.
-  Use *because* for cause when *since* could mean time.
-- When choosing between *that* and *which*, use *that* for a restrictive clause and *which* for a
-  nonrestrictive clause. Retain *which* after a preposition. Set off a nonrestrictive clause with
-  commas.
-- Replace *and/or* with *and*, *or*, or *or both* to state the exact relationship.
-- Introduce an open list with *for example*, *such as*, or a category name. Omit *etc.* and *and so
-  on*.
+- Italicise an authored word, phrase, or letter when referring to it as language. Keep plurals, past
+  tenses, and other grammatical changes outside italics.
 - Use consistent end punctuation within one list. End complete-sentence items with sentence
   punctuation. Leave fragment items unpunctuated unless the controlling style requires otherwise.
 - Begin a complete-sentence list item with a capital. Begin a fragment with lowercase unless its
@@ -165,10 +177,6 @@ supports British data prose within that scope.
 - Under the [group-authorship rule](reader-core.md#presentation-choices), state a recommendation
   directly instead of *we recommend* unless authorship matters, and reserve *we* for a stated
   organisation or author group.
-- Italicise an authored word, phrase, or letter when referring to it as language. Keep plurals, past
-  tenses, and other grammatical changes outside italics.
-- Where the [choice rule](reader-core.md#presentation-choices) requires an explicit boundary, state
-  an inclusive choice as *A or B, or both* and an exclusive choice as *either A or B, but not both*.
 
 ## Remove empty English wording
 

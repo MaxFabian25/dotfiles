@@ -22,7 +22,8 @@ and specialist references govern their own forms.
    reader did not ask, and resolve each one. When the writer is a model whose maker the document
    assesses, also have a model from another maker check the factual claims and look for framing that
    favours the writer's maker; if the host cannot run a model from another maker, disclose that gap
-   at handoff.
+   at handoff. When the task also includes formal testing of reader understanding, follow the
+   [reader-testing process](readability-and-reader-testing.md#reader-testing).
 
 ## Plain language in practice
 
@@ -85,12 +86,16 @@ the unsupported inference. Retain the original rhetorical form when its meaning 
 
 ## Presentation choices
 
+### Headings and parentheses
+
 Use a specific heading that predicts its contents. In a divided document, use consecutive heading
 levels for hierarchy and peer subsections for genuine divisions. A conventional academic heading
 can identify a recognised function. Keep essential information in the main text; keep parentheses
 brief and avoid nesting them. Use [Quotations and quoted text](quotations.md) and [Source
 text](source-text.md) for quoted, interpolated, or translated wording and the governing convention
 for other bracketed forms.
+
+### Lists, comparisons, and next steps
 
 Let content determine the number of list items. Use prose for one item or a connected line of
 reasoning; use a list for a genuine set and a table for comparison across dimensions. State whether
@@ -102,6 +107,8 @@ present them as alternatives rather than sequential steps.
 Answer in the body any question the gathered sources can answer, for each option compared, and keep
 a list of next steps to actions only the reader can take.
 
+### Voice, roles, and first person
+
 Address the reader directly when useful. Use role names accurately and identify the author group or
 recommending authority when it matters. When one person drafts for a group, use *we* or *the group*
 only for what the group decided or did, and keep the label *suggested* on a suggestion through every
@@ -109,6 +116,8 @@ summary of it. In text the user will send or post in their own name, refer to th
 the first person, such as *my post*, and add no motive, feeling, or experience they did not give.
 Describe software, hardware, and services through observable functions or states.
 Present disagreement by stating what a source addresses and where it falls short.
+
+### Typography and social wording
 
 Use capitals for governed forms rather than emphasis. Use bold for useful structure, labels, or
 scan points whose following text adds information. Use italics sparingly and follow the controlling
@@ -136,11 +145,6 @@ From a finished deliverable, remove what only the writing process needs, such as
 working history, codebook codes, and pointers to files the reader cannot open, unless the reader
 needs them, as in a methods section that reports its codes. Keep any audit trail in a separate check
 record from the first draft on.
-
-## Reader testing
-
-When the task includes testing reader understanding, use the [reader-testing
-process](readability-and-reader-testing.md#reader-testing).
 
 Complete the requested prose when every open brief question is settled, each factual claim carries
 its source passage or explicit inference label, no empty wording, placeholder, or process trail

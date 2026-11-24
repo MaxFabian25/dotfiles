@@ -3,18 +3,23 @@
 Apply this branch when images, audio, video, animations, colour-dependent presentation, or
 responsive layouts are present.
 
+## Image use and privacy
+
 - **Images.** Use images sparingly. Use an image when it is easier to show something than to
   describe it.
 - **Repeated images.** Repeat an image only when readers need it at another point to understand or
   complete the task.
-- **New information in images.** Do not introduce information only through an image or symbol. Provide an
-  equivalent text explanation with it.
+- **New information in images.** Pair every informative image or symbol with an equivalent text
+  explanation rather than introducing information only through an image or symbol.
 - **Images of text.** Use authored text for prose, code samples, and terminal output. Use an image
   only when appearance is itself the subject.
 - **Personally identifying information (PII).** Exclude PII, credentials, and sensitive content
   from every image.
   Irreversibly redact necessary source evidence before publication. Do not rely on blur or mosaic
   effects.
+
+## Alternative text and descriptions
+
 - **Alternative text (alt text).** Give each informative image alt text that conveys its purpose or
   essential information.
 - **Decorative images.** Mark every purely decorative image so assistive technology ignores it.
@@ -28,6 +33,9 @@ responsive layouts are present.
 - **Complex-image descriptions.** Put the long description in
   surrounding prose or linked content. Give the image a short description that identifies it and
   leads readers to the long description.
+
+## Audio, video, animation, and image maps
+
 - **Audio-only transcripts.** Provide a transcript for informative audio-only content.
   Include speech and non-speech sounds needed for understanding.
 - **Video captions.** Provide synchronised captions for every informative video
@@ -40,6 +48,9 @@ responsive layouts are present.
   essential change or sequence.
 - **Image maps.** Provide text links for every image-map destination. Keep their
   order usable through keyboard navigation and with bidirectional text.
+
+## Colour, contrast, and reflow
+
 - **Colour alternatives.** Pair colour with text, pattern, shape, or another accessible cue that
   carries the same meaning.
 - **Contrast.** Meet the applicable WCAG contrast requirements. Verify text and essential graphics
