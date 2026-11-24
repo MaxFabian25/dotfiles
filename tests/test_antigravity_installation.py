@@ -79,6 +79,44 @@ class AntigravityInstallerTests(unittest.TestCase):
                          'Gemini 4 Carbon')
         self.assertEqual((gemini / 'config/config.json').read_text(), '{"userSettings":{"permissionPreset":"TURBO"}}\n')
 
+    def test_t3_profiles_get_the_same_mcp_servers_and_hooks_and_keep_their_other_files(self):
+        home = self.enterContext(Home())
+        setup, _, _ = test_antigravity.AntigravityTests().fixture(home)
+        source = setup.roots.private.parent / 'config/antigravity'
+        home.write(source / 'setup.toml', 'enabled = true\nbaseline = "codex"\nmcp = ["cua-driver"]\nhooks = true\n')
+        home.write(setup.roots.private.parent / 'config/mcp-tool-filters/filters.json',
+                   '{"cua_browser_tools":["browser_click"]}\n')
+        home.write(source / 'hooks.json', json.dumps({
+            'credential-guard': {
+                'PreToolUse': [{'matcher': '*', 'hooks': [{'type': 'command', 'command': '{python} -I "{adapter}" pre-tool-use'}]}]
+            }
+        }))
+        home.write(source / 'hook_adapter.py', 'print("{}")\n')
+        profile = home.roots.home / '.t3/userdata/providers/antigravity' / ('a' * 64) / 'config'
+        # agy writes an empty mcp_config.json into a profile T3 creates; T3 owns config.json and skills.json.
+        profile.mkdir(parents=True)
+        (profile / 'mcp_config.json').write_bytes(b'')
+        home.write(profile / 'config.json', '{"t3":"owned"}\n')
+        home.write(profile / 'skills.json', '{"entries":[]}\n')
+        (home.roots.home / '.t3/userdata/providers/antigravity/not-a-profile').write_bytes(b'')
+        with patch('antigravity.shutil.which', return_value='cua-driver'):
+            owner, _ = self.apply(setup, home)
+        gemini = home.roots.home / '.gemini/config'
+        self.assertEqual(json.loads((profile / 'mcp_config.json').read_bytes()),
+                         json.loads((gemini / 'mcp_config.json').read_bytes()))
+        self.assertEqual(json.loads((profile / 'hooks.json').read_bytes()),
+                         json.loads((gemini / 'hooks.json').read_bytes()))
+        self.assertIn((gemini / 'hook-adapter.py').as_posix(),
+                      json.loads((profile / 'hooks.json').read_bytes())['credential-guard']['PreToolUse'][0]['hooks'][0]['command'])
+        self.assertEqual((profile / 'config.json').read_text(), '{"t3":"owned"}\n')
+        self.assertEqual((profile / 'skills.json').read_text(), '{"entries":[]}\n')
+        self.assertEqual(sorted(path.name for path in profile.iterdir()),
+                         ['config.json', 'hooks.json', 'mcp_config.json', 'skills.json'])
+        with patch('antigravity.shutil.which', return_value='cua-driver'):
+            second, again = self.apply(setup, home)
+        self.assertEqual(again.artifacts, ())
+        self.assertEqual(second.inspect({})[1], ())
+
     def test_local_edit_blocks_sync_and_selection_changes_update_projection(self):
         home = self.enterContext(Home())
         setup, _, _ = test_antigravity.AntigravityTests().fixture(home)

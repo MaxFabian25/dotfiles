@@ -10,6 +10,11 @@ import portable
 OVERRIDE_KEY = "expose_spawn_agent_model_overrides"
 # The model values Claude Code's Agent tool accepts. `claude --help` names only some of them, as examples.
 CLAUDE_ALIASES = {"opus", "sonnet", "haiku", "fable"}
+# The model each Claude alias runs on in OpenCode's anthropic-api provider: the one Claude Code 2.1.331 resolves it to,
+# as `opencode models` listed it on 24 November 2026.
+OPENCODE_CLAUDE_MODELS = {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5-5", "haiku": "claude-haiku-5-5",
+                          "fable": "claude-fable-5-2"}
+HARNESSES = {"codex", "claude-code", "opencode"}
 
 
 def model_entries(data):
@@ -19,7 +24,7 @@ def model_entries(data):
     for line in data.decode("utf-8-sig").splitlines():
         if line.startswith("## "):
             section = line[3:]
-            if section not in {"codex", "claude-code"}:
+            if section not in HARNESSES:
                 raise ValueError(f"Unknown pstack harness: {section}")
         elif section and line.strip() and not line.startswith("#"):
             role, separator, values = line.partition(":")
@@ -31,7 +36,7 @@ def model_entries(data):
                 if not separator or effort not in {"low", "medium", "high", "xhigh", "max"}:
                     raise ValueError(f"Invalid pstack model value: {entry}")
                 entries.append((section, role, model, effort))
-    if {entry[0] for entry in entries} != {"codex", "claude-code"}:
+    if not {"codex", "claude-code"} <= {entry[0] for entry in entries}:
         raise ValueError("Both pstack harness sections must have roles")
     return entries
 
@@ -45,8 +50,18 @@ def cli_command(name, *args):
 
 
 def model_target(section: str, model: str) -> tuple[str, str]:
-    harness = "codex" if model.startswith("codex:") else "claude-code" if model.startswith("claude:") else section
+    """The harness whose catalog names the model, and its name there. OpenCode's own seats name Claude aliases."""
+    default = "claude-code" if section == "opencode" else section
+    harness = "codex" if model.startswith("codex:") else "claude-code" if model.startswith("claude:") else default
     return harness, model.split(":", 1)[-1]
+
+
+def opencode_model(model: str, effort: str) -> str:
+    """The OpenCode model reference that runs an opencode seat, with the effort as its variant."""
+    harness, slug = model_target("opencode", model)
+    if harness == "codex":
+        return f"openai-api/{slug}#{effort}"
+    return f"anthropic-api/{OPENCODE_CLAUDE_MODELS[slug]}#{effort}"
 
 
 def validate_models(home, data, *, codex_home=None):
