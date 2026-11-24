@@ -171,31 +171,40 @@ SKIP = skip_reason()
 
 @unittest.skipIf(SKIP is not None, SKIP or '')
 class BrokerRig(unittest.TestCase):
+    # Each part is stopped by a class cleanup registered as it starts, so a setUpClass that fails part-way, here or in
+    # a subclass, after which unittest skips tearDownClass, still leaves no Chrome, broker unit or folder behind.
     @classmethod
     def setUpClass(cls):
         cls.scratch = Path(tempfile.mkdtemp(prefix='cb.'))
+        cls.addClassCleanup(shutil.rmtree, cls.scratch, ignore_errors=True)
         cls.chrome = Chrome(cls.scratch / 'profile')
+        cls.addClassCleanup(cls.chrome.stop)
         cls.chrome.start()
         cls.server = ThreadingHTTPServer(('127.0.0.1', 0), Pages)
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+        cls.addClassCleanup(cls.server.shutdown)
         cls.site = f'http://127.0.0.1:{cls.server.server_address[1]}'
         cls.unit = f'chrome-broker-test-{uuid.uuid4().hex[:8]}'
         cls.socket = cls.scratch / 'broker.sock'
         cls.env = {**os.environ, 'CHROME_BROKER_SOCKET': str(cls.socket), 'CHROME_BROKER_UNIT': cls.unit,
                    'CHROME_BROKER_PORT_FILE': str(cls.scratch / 'profile/DevToolsActivePort')}
+        cls.addClassCleanup(cls.stop_broker)
         started = cls.broker('start')
         if started.returncode != 0:
-            cls.tearDownClass()
             raise RuntimeError(f'the broker did not start: {started.stderr}')
         cls.pid = json.loads(started.stdout)['pid']
 
     @classmethod
-    def tearDownClass(cls):
+    def open_page(cls, path):
+        opened = cls.broker('open', f'{cls.site}{path}')
+        if opened.returncode != 0:
+            raise RuntimeError(f'open {path} failed: {opened.stderr}')
+        return json.loads(opened.stdout)['page']
+
+    @classmethod
+    def stop_broker(cls):
         cls.broker('stop')
         subprocess.run(['systemctl', '--user', 'stop', cls.unit], capture_output=True)
-        cls.chrome.stop()
-        cls.server.shutdown()
-        shutil.rmtree(cls.scratch, ignore_errors=True)
 
     @classmethod
     def broker(cls, *args, timeout=60, stdin=None):
@@ -241,8 +250,7 @@ class HidingTest(BrokerRig):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        opened = cls.broker('open', f'{cls.site}/planted')
-        cls.page = json.loads(opened.stdout)['page']
+        cls.page = cls.open_page('/planted')
         cls.read = cls.broker('read', cls.page)
 
     def test_open_gives_a_page_id_its_context_and_visibility(self):
@@ -328,7 +336,7 @@ class HeldTest(BrokerRig):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.page = json.loads(cls.broker('open', f'{cls.site}/planted').stdout)['page']
+        cls.page = cls.open_page('/planted')
 
     def assertNoHeld(self, result, value=HELD):
         for form in held_forms(value):
