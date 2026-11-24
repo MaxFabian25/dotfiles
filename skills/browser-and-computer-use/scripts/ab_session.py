@@ -25,6 +25,10 @@ the process carries this session's name, and stops it.
 start also saves DISPLAY and WAYLAND_DISPLAY, and run and close put them back, so a browser that stopped
 starts again on the display it first used, such as the hidden :99, and not on the user's desktop.
 
+On Linux, start adds --force-renderer-accessibility to a --headed session's --args, so that AT-SPI tools such as
+cua-driver can read its pages: without it, Chrome showed them a stub of 3 nodes instead of a page's tree on
+24 November 2026. agent-browser does not pass ACCESSIBILITY_ENABLED=1 on to Chrome, so the flag is the route.
+
 The flags live in ~/.local/state/agent-browser-sessions/NAME.json. For macOS and Linux. On Windows, start the
 session with windows-session.ps1 and pass the same flags on every later command.
 """
@@ -42,6 +46,7 @@ import time
 STATE = pathlib.Path.home() / ".local/state/agent-browser-sessions"
 ATTACH = ["--auto-connect", "--pin-tab"]
 CHROME_LOCK = pathlib.Path.home() / ".config/google-chrome/SingletonLock"
+A11Y_FLAG = "--force-renderer-accessibility"
 # One agent-browser for every call: a shell started before an upgrade still has the older version first on its
 # PATH, and two versions on one session restart its daemon, which closes its pages.
 SHIMS = pathlib.Path.home() / ".local/share/mise/shims"
@@ -57,6 +62,23 @@ def state_file(name: str) -> pathlib.Path:
 
 def display() -> dict[str, str | None]:
     return {key: os.environ.get(key) for key in ("DISPLAY", "WAYLAND_DISPLAY")}
+
+
+def with_accessibility(flags: list[str]) -> list[str]:
+    if not sys.platform.startswith("linux") or "--headed" not in flags:
+        return flags
+    for index, flag in enumerate(flags):
+        if flag.startswith("--args="):
+            flag, value, rest = "--args", flag.split("=", 1)[1], flags[index + 1:]
+        elif flag == "--args" and index + 1 < len(flags):
+            value, rest = flags[index + 1], flags[index + 2:]
+        else:
+            continue
+        if A11Y_FLAG in re.split(r"[\n,]", value):
+            return flags
+        separator = "\n" if "\n" in value else ","   # --args takes one or the other
+        return [*flags[:index], flag, f"{value}{separator}{A11Y_FLAG}", *rest]
+    return [*flags, "--args", A11Y_FLAG]
 
 
 def use_display(saved: dict[str, str | None]) -> None:
@@ -158,6 +180,8 @@ def main(args: list[str]) -> int:
             sys.exit("ab_session: start needs FLAG... -- [COMMAND...]")
         cut = rest.index("--")
         flags, command = rest[:cut], rest[cut + 1:]
+        if not attach:
+            flags = with_accessibility(flags)
         record = {"flags": flags, "display": display()}
         if path.exists():
             saved = json.loads(path.read_text())

@@ -185,6 +185,30 @@ class SessionTest(unittest.TestCase):
         self.assertEqual((moved.returncode, moved.stdout), (1, ''))
         self.assertIn('close it first', moved.stderr)
 
+    @unittest.skipUnless(sys.platform.startswith('linux'), 'the accessibility flag is added on Linux only')
+    def test_a_headed_session_starts_chrome_readable_by_accessibility_tools_on_every_command(self):
+        tool = self.root / 'bin/agent-browser'
+        tool.parent.mkdir()
+        tool.write_text('#!/bin/sh\nprintf "%s|" "$@"\n')
+        tool.chmod(0o755)
+        environment = {**os.environ, 'HOME': str(self.root), 'PATH': f"{tool.parent}{os.pathsep}{os.environ['PATH']}"}
+
+        def session(*args):
+            return subprocess.run([sys.executable, ab_session.__file__, *args], env=environment, capture_output=True,
+                                  text=True).stdout
+
+        flag = '--force-renderer-accessibility'
+        self.assertEqual(session('start', 'seen', '--headed', '--', 'open', 'about:blank'),
+                         f'--session|seen|--headed|--args|{flag}|open|about:blank|')
+        self.assertEqual(session('run', 'seen', 'get', 'url'), f'--session|seen|--headed|--args|{flag}|get|url|')
+        self.assertEqual(session('start', 'own', '--headed', '--args', '--no-sandbox', '--', 'get', 'url'),
+                         f'--session|own|--headed|--args|--no-sandbox,{flag}|get|url|')
+        self.assertEqual(session('start', 'lines', '--headed', '--args=--a\n--b', '--', 'get', 'url'),
+                         f'--session|lines|--headed|--args|--a\n--b\n{flag}|get|url|')
+        self.assertEqual(session('start', 'twice', '--headed', '--args', f'--a,{flag}', '--', 'get', 'url'),
+                         f'--session|twice|--headed|--args|--a,{flag}|get|url|')
+        self.assertEqual(session('start', 'quiet', '--', 'get', 'url'), '--session|quiet|get|url|')
+
     def proc(self, pid, session):
         (self.root / 'proc' / str(pid)).mkdir(parents=True)
         (self.root / 'proc' / str(pid) / 'environ').write_bytes(f'HOME=/x\0AGENT_BROWSER_SESSION={session}\0'.encode())
