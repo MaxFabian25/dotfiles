@@ -213,8 +213,9 @@ class OpenCodeTests(unittest.TestCase):
             setup, _, _ = self.fixture(home)
             home.write(setup.roots.private.parent / 'config/opencode/setup.toml',
                        'enabled = true\nbaseline = "codex"\nmcp = ["cua-driver"]\n')
-            home.write(setup.roots.private.parent / 'config/mcp-tool-filters/filters.json',
-                       '{"cua_browser_tools":["browser_click","get_browser_state","page"]}\n')
+            home.write(setup.roots.private.parent / 'config/mcp-tool-filters/filters.json', json.dumps({
+                'claude_deny_rules': ['mcp__cua-driver__browser_*', 'mcp__cua-driver__page', 'mcp__t3-code__device_*'],
+                'cua_browser_tools': ['browser_click']}))
             for platform, kernel, extra in [(Platform.LINUX, 'microsoft-standard-WSL2', {'DISPLAY': ':99'}),
                                              (Platform.LINUX, 'arch-linux', {'CUA_DRIVER_RS_ENABLE_WAYLAND': '1'}),
                                              (Platform.WINDOWS, 'windows', {})]:
@@ -225,11 +226,8 @@ class OpenCodeTests(unittest.TestCase):
                     self.assertEqual(transport['command'], ['cua-driver', 'mcp'])
                     self.assertEqual(transport['environment'], {'CUA_DRIVER_PERMISSION_MODE': 'unrestricted',
                                      'CUA_DRIVER_DANGEROUSLY_BYPASS_APPROVALS': '1', 'CUA_TELEMETRY_ENABLED': 'false', **extra})
-                    actions = {rule['action'] for rule in fields[('permissions',)]}
-                    self.assertIn('cua-driver_browser_click', actions)
-                    self.assertIn('cua-driver_get_browser_state', actions)
-                    self.assertIn('cua-driver_page', actions)
-                    self.assertNotIn('cua-driver_click', actions)
+                    actions = {rule['action'] for rule in fields[('permissions',)] if rule['effect'] == 'deny'}
+                    self.assertEqual(actions, {'cua-driver_browser_*', 'cua-driver_page'})
             with patch('opencode.shutil.which', return_value=None):
                 with self.assertRaisesRegex(ValueError, 'installed cua-driver'):
                     opencode.plan(setup, home.roots, Platform.LINUX)
@@ -347,13 +345,14 @@ class OpenCodeTests(unittest.TestCase):
             self.assertEqual(mentions.destination, home.roots.home / '.config/opencode/plugins/skill-mentions.js')
             self.assertEqual(mentions.data, b'export default {}\n')
 
-    def test_tool_filter_plugin_hides_the_tools_filters_json_names_by_server(self):
+    def test_tool_filter_plugin_hides_the_tools_claude_code_denies_by_server(self):
         with Home() as home:
             setup, _, _ = self.fixture(home)
             config = setup.roots.private.parent / 'config'
             home.write(config / 'mcp-tool-filters/filters.json', json.dumps({
-                't3_browser_tools': ['preview_open', 't3_preview_list'], 't3_device_tools': ['device_list'],
-                't3_allowed_tools': ['html_preview'], 'cua_browser_tools': ['page', 'browser_click']}))
+                'claude_deny_rules': ['mcp__t3-code__preview_*', 'mcp__t3-code__t3_preview_*', 'mcp__t3-code__device_*',
+                                      'mcp__cua-driver__browser_*', 'mcp__cua-driver__page'],
+                't3_browser_tools': ['preview_open'], 'cua_browser_tools': ['browser_click']}))
             names = {item.name for item in opencode.plan(setup, home.roots, Platform.LINUX).configurations}
             self.assertNotIn('opencode-tool-filter-plugin', names)
             home.write(config / 'opencode/tool-filter.js.in', 'const HIDDEN = __DOTFILES_HIDDEN_TOOLS__\n')
@@ -361,12 +360,12 @@ class OpenCodeTests(unittest.TestCase):
             plugin = by_name['opencode-tool-filter-plugin']
             self.assertEqual(plugin.destination, home.roots.home / '.config/opencode/plugins/tool-filter.js')
             self.assertEqual(json.loads(plugin.data.decode().split(' = ', 1)[1]),
-                             {'t3-code': ['device_list', 'preview_open', 't3_preview_list'],
-                              'cua-driver': ['browser_click', 'page']})
-            home.write(config / 'mcp-tool-filters/filters.json', json.dumps({'t3_browser_tools': ['preview_open'],
-                                                                             'cua_browser_tools': ['page']}))
-            with self.assertRaisesRegex(ValueError, 't3_browser_tools, t3_device_tools'):
-                opencode.plan(setup, home.roots, Platform.LINUX)
+                             {'t3-code': ['device_*', 'preview_*', 't3_preview_*'], 'cua-driver': ['browser_*', 'page']})
+            for rules in (None, ['mcp__cua-driver__page', 'Bash(rm:*)'], ['mcp__cua-driver__browser click']):
+                with self.subTest(rules=rules):
+                    home.write(config / 'mcp-tool-filters/filters.json', json.dumps({'claude_deny_rules': rules}))
+                    with self.assertRaisesRegex(ValueError, 'claude_deny_rules'):
+                        opencode.plan(setup, home.roots, Platform.LINUX)
 
     def test_pstack_seats_become_subagents_and_the_built_in_agents_run_on_opus(self):
         with Home() as home:

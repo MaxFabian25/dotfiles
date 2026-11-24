@@ -21,8 +21,9 @@ from sync_sources import Builder, BuildError, child
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 # Pstack's agent definitions that OpenCode subagents run, as the projection holds them, without their frontmatter.
 PSTACK_AGENTS = ('poteto-agent', 'comment-sicko')
-# The filters.json lists whose tools the tool-filter plugin removes, by the MCP server that serves them.
-HIDDEN_TOOLS = {'t3-code': ('t3_browser_tools', 't3_device_tools'), 'cua-driver': ('cua_browser_tools',)}
+# Claude Code's deny rule for an MCP tool, `mcp__<server>__<tool>`, where a trailing `*` matches any tool name with
+# that prefix. OpenCode hides and denies the tools that filters.json's `claude_deny_rules` name.
+CLAUDE_MCP_RULE = re.compile(r'mcp__([A-Za-z0-9-]+)__([A-Za-z0-9_-]+\*?)')
 # OpenCode's own plugins that its config removes. `opencode.browser` drives the OpenCode desktop app's browser; no
 # desktop app attaches to a T3 thread, so its tools fail there, and T3 brings its own browser tools.
 REMOVED_PLUGINS = ('opencode.browser',)
@@ -175,12 +176,9 @@ def plan(setup: Setup, roots: DeviceRoots, platform: Platform, *, adopted: bool 
     permissions = [*retained.get('permissions', [])]
     if settings.get('mcp'):
         fields[('mcp', 'servers', 'cua-driver')] = _cua(roots, platform)
-        filters = json.loads((source.parent.parent / 'mcp-tool-filters/filters.json').read_bytes())
-        excluded = filters['cua_browser_tools']
-        if not isinstance(excluded, list) or any(not isinstance(name, str) for name in excluded):
-            raise ValueError('OpenCode cua-driver exclusions must be a list of tool names')
-        permissions.extend({'action': 'cua-driver_' + _tool(name), 'resource': '*', 'effect': 'deny'}
-                           for name in excluded)
+        hidden = _hidden_tools(source.parent.parent / 'mcp-tool-filters/filters.json')
+        permissions.extend({'action': 'cua-driver_' + tool, 'resource': '*', 'effect': 'deny'}
+                           for tool in hidden.get('cua-driver', []))
     fields[('permissions',)] = permissions
     configuration = JsonConfiguration('opencode', destination.parent / 'opencode.json', fields)
     configurations: tuple[Configuration, ...] = (configuration,)
@@ -270,21 +268,24 @@ def _guards(source: Path, config: Path) -> tuple[Configuration, ...]:
             FileConfiguration('opencode-guards-plugin', config / 'plugins/guards.js', plugin.encode()))
 
 
-def _tool(name: str) -> str:
-    """An MCP tool's name as OpenCode writes it after its server's name and `_`."""
-    return re.sub('[^a-zA-Z0-9_-]', '_', name)
+def _hidden_tools(filters: Path) -> dict[str, list[str]]:
+    """The tool names and `*` prefixes that Claude Code's deny rules in filters.json name, by MCP server, so that a
+    tool a server adds under a denied prefix is hidden in OpenCode too."""
+    rules = json.loads(filters.read_bytes()).get('claude_deny_rules')
+    hidden: dict[str, set[str]] = {}
+    for rule in rules if isinstance(rules, list) else [None]:
+        match = CLAUDE_MCP_RULE.fullmatch(rule) if isinstance(rule, str) else None
+        if match is None:
+            raise ValueError('OpenCode hides the MCP tools in filters.json claude_deny_rules, '
+                             'which must be a list of mcp__<server>__<tool> rules')
+        hidden.setdefault(match[1], set()).add(match[2])
+    return {server: sorted(tools) for server, tools in hidden.items()}
 
 
 def _tool_filter(source: Path, config: Path) -> FileConfiguration:
-    """The plugin that removes the tools filters.json hides from the model's tool list, by the MCP server that serves
+    """The plugin that removes the tools Claude Code denies from the model's tool list, by the MCP server that serves
     them. T3 names its server per thread and its session permissions allow all of that server's tools again."""
-    filters = json.loads((source.parent / 'mcp-tool-filters/filters.json').read_bytes())
-    hidden = {}
-    for server, keys in HIDDEN_TOOLS.items():
-        lists = [filters.get(key) for key in keys]
-        if any(not isinstance(names, list) or any(not isinstance(name, str) for name in names) for names in lists):
-            raise ValueError(f'OpenCode tool filter needs lists of tool names in filters.json: {", ".join(keys)}')
-        hidden[server] = sorted({_tool(name) for names in lists for name in names})
+    hidden = _hidden_tools(source.parent / 'mcp-tool-filters/filters.json')
     plugin = (source / 'tool-filter.js.in').read_text(encoding='utf-8')
     if plugin.count('__DOTFILES_HIDDEN_TOOLS__') != 1:
         raise ValueError('OpenCode tool filter plugin must contain one hidden tool list')
