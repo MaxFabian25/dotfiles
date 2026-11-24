@@ -4,8 +4,8 @@ Apply this branch when a Chicago citation concerns a website, blog, social-media
 or personal communication.
 
 Classify the source before choosing fields. For private content, apply [Private
-sources](#private-sources). Record applicable permission limits. Do not turn a private exchange
-into a public source by citing it.
+sources](#private-sources), record applicable permission limits, and keep private exchanges
+classified as private rather than presenting them as public sources.
 
 ## Source types
 
@@ -32,7 +32,7 @@ supply a URL for content that is not publicly available.
 | Blog, forum, or public social media post | Prefer text or a note. Begin a blog bibliography entry with the author of the post. Begin an electronic mailing list or forum entry with the correspondent. Social media posts, comments, and replies normally remain in text or notes. | A social media reference list entry may support repeated text citations. Cite comments and replies in text through the original post when possible. |
 | Unpublished interview | Prefer text or a note. Include it in a bibliography only occasionally or when governing requirements call for an entry. | Usually cite in text as an unpublished interview or personal communication. Use a reference list entry only when governing requirements call for one. |
 | Published or broadcast interview | Treat it like an article or other item in a periodical. Cite it under the interviewee rather than the interviewer. For an interview consulted online, include the URL or database name and other relevant information. | Put the publication or posting year after the interviewee. Use the corresponding periodical, web, or multimedia reference list entry. |
-| Personal communication | Cite in text or a note. Do not add a bibliography entry by default. | Cite in text with the person, *personal communication* or a more specific term, and the date when needed. Do not add a reference list entry by default. |
+| Personal communication | Cite in text or a note, omitting a bibliography entry by default. | Cite in text with the person, *personal communication* or a more specific term, and the date when needed, omitting a reference list entry by default. |
 
 Choose the fields for the source type, then apply the selected system's name order, date position,
 punctuation, short-title, and locator rules.
@@ -65,8 +65,8 @@ punctuation, short-title, and locator rules.
   original wording of the subject or thread. Add the list or forum, host site, date, and URL.
 - For a public social media post, record the name, handle, platform, date, and URL.
   Add the time and zone when they identify the cited post.
-- Preserve the platform name used when the content was posted. Do not silently rename a historical
-  platform to its current brand.
+- Preserve the platform name used when the content was posted rather than silently renaming a
+  historical platform to its current brand.
 - Quote only enough post text to identify the source and support the use. Treat quoted wording,
   spelling, punctuation, symbols, and emoji as [quoted text](quotations.md).
 - Describe a series of photos, video, repost, reply, or thread when that information affects

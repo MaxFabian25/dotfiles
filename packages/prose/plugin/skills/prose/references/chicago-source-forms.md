@@ -89,9 +89,9 @@ unsigned reviews, use the hosting periodical. Preserve explicit source attributi
 - Use Arabic numerals for numbered source divisions even when the source uses words or Roman
   numerals. Preserve Roman numerals for pages that are actually numbered that way, such as front
   matter.
-- Give the first and last number in a closed range. Do not replace the last number with *f.* or
-  *ff.*. Use *ff.* only when the end cannot be stated usefully, and use *passim* only for scattered
-  references within a stated range.
+- Give both the first and last number in a closed range rather than replacing the last number with
+  *f.* or *ff.*. Use *ff.* only when the end cannot be stated usefully, and use *passim* only for
+  scattered references within a stated range.
 - Give a bare book page number without *p.* or *pp.* when it clearly denotes a page, adding a label
   when another number would make the locator ambiguous.
 - Label chapters, sections, books, notes, appendices, figures, tables, maps, plates, lines, folios,

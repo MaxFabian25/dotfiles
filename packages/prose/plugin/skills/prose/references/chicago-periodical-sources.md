@@ -16,8 +16,8 @@ no-author, and locator mechanics.
 
 ### General periodical forms
 
-- Put an article title in quotation marks and the periodical title in italics. Do not insert *in*
-  between them.
+- Put an article title in quotation marks followed directly by the italic periodical title without
+  *in* between them.
 - Treat a periodical with accessible volume data as a journal. When no volume or issue can be
   found, use magazine form.
 - For an online article, apply [Link selection and
@@ -25,9 +25,10 @@ no-author, and locator mechanics.
   when governing instructions require it.
 - Record instalments separately unless one combined entry makes their relationship clearer.
   Cite the version actually consulted when an article appears in more than one publication.
-- Treat a translated or edited article like other contributor-bearing works. Do not create a
-  separate bibliography entry merely for an abstract. Identify an online supplement through the
-  parent article unless it is an independently published dataset or media work.
+- Treat a translated or edited article like other contributor-bearing works. Cite an abstract only
+  in text or a note rather than giving it its own bibliography entry, and identify an online
+  supplement through the parent article unless it is an independently published dataset or media
+  work.
 
 ### Journals, ahead-of-print items, and preprints
 
@@ -44,8 +45,8 @@ no-author, and locator mechanics.
   whether final publication details now exist. Recheck every quotation and locator against the final
   version.
 - For a preprint, replace journal issue data with the preprint designation, server, posted date,
-  and stable identifier. Do not describe an accepted journal proof as a preprint merely because a
-  publisher does.
+  and stable identifier, reserving the *preprint* label for preprints rather than accepted journal
+  proofs even when a publisher labels a proof that way.
 - Distinguish a special issue, which uses the journal's ordinary numbering, from a separately
   numbered supplement. Record the issue or supplement editor and title when the whole unit or its
   theme matters.

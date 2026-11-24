@@ -39,19 +39,14 @@ and bibliography policy before drafting.
 - Before shortening a non-English title, verify that omitted words do not govern retained words.
 - Get language-qualified review when that dependency is uncertain.
 
-## Commentary and quotations in notes
+## Commentary, quotations, and multiple citations in notes
 
-- When a note supports main-text material and adds commentary, put the source first.
-- Separate that citation from commentary with a full stop.
+- When a note supports main-text material and adds commentary, put the source first and separate
+  that citation from commentary with a full stop.
 - For a quotation inside a note, put its source after the quotation's terminal punctuation without
   wrapping the whole source in parentheses.
-
-## Several citations in one note
-
-- Group citations under one marker when they share a location.
-- Separate grouped citations with semicolons.
-- Order grouped citations by the material they support.
-- Make every citation-to-claim relationship unambiguous.
+- Group citations that share a location under one marker, separated with semicolons and ordered by
+  the material they support so every citation-to-claim relationship remains unambiguous.
 
 ## Footnotes versus endnotes
 

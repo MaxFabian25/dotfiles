@@ -32,10 +32,11 @@ no-author, and locator mechanics.
 - For a chapter or other contribution, put the part title before *in* and the book title.
   Quote a contribution title, but italicise a part that is itself a book-length work.
 - Keep the specific page reference in the full note or author-date text citation rather than adding
-  a chapter's inclusive pages to a bibliography or reference list merely to complete a template.
+  a chapter's inclusive pages, ordinary specific book pages, or total page counts to a bibliography
+  or reference list.
 - When several contributions from one multiauthor book are cited in notes and bibliography, a
-  bibliography may cross-refer from the parts to a full book entry. Do not use those component
-  cross-references in author-date. List and cite the collection instead.
+  bibliography may cross-refer from the parts to a full book entry; in author-date, list and cite
+  the collection instead rather than using component cross-references.
 - For an untitled introduction, foreword, preface, or afterword, record the part description and
   author. Also record the book title and author plus any relevant editor or translator.
 - In a note for published correspondence, identify sender, recipient, communication date, the
@@ -70,15 +71,15 @@ no-author, and locator mechanics.
 
 ## Facts of publication
 
-- For a book published in or after 1900, record the publisher and year. Do not add a publication
+- For a book published in or after 1900, record the publisher and year, omitting the publication
   city by default.
 - For a book published before 1900, normally record place and year. Add the publisher only when it
   is useful, and separate the place from that publisher with a colon.
 - Use the publisher's name at the time of publication. Omit a leading *The*, corporate suffixes,
   and generic company wording that does not help identify the publisher. Retain *Press* when its
   omission would misidentify the organisation, including a university press.
-- Preserve a publisher's meaningful punctuation and its source-language wording. Do not translate
-  a non-English publisher name.
+- Preserve a publisher's meaningful punctuation and its original source-language wording without
+  translating a non-English publisher name.
 - For an independently issued work without an imprint, use a published-by-author statement. Omit
   a retail platform that only distributed the work.
 - Prefer the identifiable imprint. Include a parent academic institution or joint imprint when
@@ -90,11 +91,6 @@ no-author, and locator mechanics.
   copyright year.
 - For a book with no date, an estimated date, or forthcoming publication, apply [Undated and
   forthcoming works](chicago-source-forms.md#undated-and-forthcoming-works).
-
-## Book-specific locating information
-
-- In a bibliography or author-date reference, omit ordinary references to specific book pages and
-  total page counts.
 
 ## Electronic books
 

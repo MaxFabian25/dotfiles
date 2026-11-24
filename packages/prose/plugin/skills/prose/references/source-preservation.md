@@ -4,22 +4,23 @@ Preserve source content in quotations, official names, source titles, locators, 
 The selected [quotations](quotations.md), [source-text](source-text.md), or multilingual module
 governs its additional treatment.
 
-Reproduce wording accurately under the applicable quotation or citation convention.
-Repair transfer damage against the original source. Transfer damage includes mojibake and any
-non-breaking space, soft hyphen, or zero-width character that the original source does not contain.
-LaTeX `~` and spacing required by a governing number, locale, or quotation convention are authored
-spacing, not transfer damage.
+## Fidelity, overrides, and citation formatting
 
-Preserve source identity, lexical content, official spelling, and terminology defined or designated
-by the source. When the user overrides fidelity to a source, such as by asking for a changed
-quotation, comply in the documents they name and keep raw records such as transcripts verbatim
-unless they name those too. Name any clash with a style selected later among the departures from
-that style. In a quotation, preserve capitalisation and punctuation except for a change that the
-applicable quotation convention permits. Mark the change where that convention requires a mark. In
-a citation or reference list entry, let the citation style control element order, title
-capitalisation, punctuation, and italics. Let that style also control permitted omissions and
-required additions. Treat that rendering as citation formatting rather than a change to source
-metadata.
+- Reproduce wording accurately under the applicable quotation or citation convention. Repair
+  transfer damage against the original source. Transfer damage includes mojibake and any
+  non-breaking space, soft hyphen, or zero-width character that the original source does not
+  contain. LaTeX `~` and spacing required by a governing number, locale, or quotation convention
+  are authored spacing, not transfer damage.
+- Preserve source identity, lexical content, official spelling, and terminology defined or
+  designated by the source. When the user overrides fidelity to a source, such as by asking for a
+  changed quotation, comply in the documents they name and keep raw records such as transcripts
+  verbatim unless they name those too. Name any clash with a style selected later among the
+  departures from that style.
+- In a quotation, preserve capitalisation and punctuation except for a change that the applicable
+  quotation convention permits, and mark the change where that convention requires a mark.
+- In a citation or reference list entry, let the citation style control element order, title
+  capitalisation, punctuation, italics, permitted omissions, and required additions. Treat that
+  rendering as citation formatting rather than a change to source metadata.
 
 ## Languages other than English
 

@@ -20,20 +20,20 @@ attribution.
 
 - Classify each designation before editing it. An official product, feature, company, API, or
   project name identifies a specific entity. A generic term identifies a class or concept. A
-  trademark is governed by its owner's usage rules. Do not replace a source-defined designation
-  with a house-style or word-list preference.
+  trademark is governed by its owner's usage rules. Keep every source-defined designation intact
+  rather than replacing it with a house-style or word-list preference.
 - Preserve an official name's spelling, capitalisation, punctuation, and word order. Use the full
-  name unless the owning authority permits a shorter form or an exact interface label requires one.
-  After establishing the entity, use a generic term only when it remains unambiguous. Do not invent
-  a shortened name.
+  name unless the owning authority permits a shorter form or an exact interface label requires one,
+  keeping the full name whenever no shorter form is permitted. After establishing the entity, use a
+  generic term only when it remains unambiguous.
 - Apply the owning authority's article treatment. If it gives none, decide from the complete noun
   phrase. Normally omit *the* before a bare product name. Use the grammatically required article
-  when the name modifies a common noun. Do not transfer one owner's tool, API, or product
-  convention to another owner.
+  when the name modifies a common noun. Keep each owner's tool, API, and product convention within
+  its own scope rather than transferring it to another owner.
 - Use product and feature names as nouns or modifiers. State actions with ordinary verbs.
 - Apply a trademark owner's marking and attribution requirements. Use a trademark as a modifier of
-  a generic noun, not as a noun or verb. Do not pluralise it, make it possessive, or alter its form
-  unless the owner expressly permits that use.
+  a generic noun (not as a noun or verb), keeping it singular, non-possessive, and unaltered unless
+  the owner expressly permits another use.
 - Preserve an exact code, interface, legal, product, or source token even when its form differs from
   the selected prose designation. Identify the literal and use the selected prose designation
   outside it.
@@ -71,7 +71,8 @@ short forms.
   from acronyms or initialisms. Retain full stops in personal initials and every form whose
   authority requires them. Preserve official and source forms.
 - Preserve governed case. In an expanded form, capitalise only words that normally require
-  capitals. Do not infer the expansion's case from its short form.
+  capitals, deriving the expansion's case from ordinary capitalisation rules rather than its short
+  form.
 - Apply the typography that the selected convention assigns to the expanded term. Abbreviated
   status alone does not require italics.
 - Determine whether readers pronounce the form as a word, letters, or the expanded term. Choose

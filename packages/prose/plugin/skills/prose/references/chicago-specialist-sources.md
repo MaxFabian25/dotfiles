@@ -15,7 +15,7 @@ This branch selects authority and metadata. It does not reproduce a discipline's
 - Use a repository's suggested citation only as metadata evidence. Verify it against the governing
   authority.
 - When no specialist authority can be verified, use only the selected Chicago citation system.
-- Mark the specialist form unverified. Do not claim specialist conformity.
+- Mark the specialist form unverified and limit any conformity claim to the selected Chicago system.
 
 ## Source types
 
@@ -39,7 +39,7 @@ The table identifies the required record. The governing authority controls the r
 - In notes and bibliography, normally cite a well-known dictionary or encyclopaedia in a note under
   the resource title rather than in the bibliography. List another reference work with full publication details, like a book.
 - For an alphabetically arranged work, cite the entry in quotation marks instead of a volume or
-  page. Add *under* before it when that aids clarity. Do not use *s.v.*
+  page, adding *under* before it when that aids clarity rather than using *s.v.*
 - Cite a substantial signed entry by its author, like a contribution to a multiauthor book. Such a
   citation may appear in the bibliography.
 - Record the entry title exactly as the source gives it.

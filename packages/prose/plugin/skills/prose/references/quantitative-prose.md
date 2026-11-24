@@ -13,7 +13,7 @@ Apply `AUTH-OSR-CODE-3` only to public communication of statistics, data, or wid
 
 - **Formula inclusion.** Include a formula only when it is new, uncommon, or essential to
   understanding or reproducing the analysis. Otherwise, name the standard method.
-- **Mathematical and unit symbols.** Define each non-standard symbol when first used. Keep its meaning unchanged within the document. Use standard quantity, unit, and mathematical symbols when they exist. Do not add a plural ending to a unit symbol. Add a full stop only when it ends the sentence.
+- **Mathematical and unit symbols.** Define each non-standard symbol when first used. Keep its meaning unchanged within the document. Use standard quantity, unit, and mathematical symbols when they exist, keeping every unit symbol unchanged in the plural and adding a full stop only when it ends the sentence.
 - **Operators and variables.** Apply the selected mathematical or document convention. Otherwise,
   italicise algebraic variables. Keep operators, numerals, punctuation, unit symbols, and
   non-variable abbreviations upright.
@@ -26,8 +26,8 @@ Apply `AUTH-OSR-CODE-3` only to public communication of statistics, data, or wid
   when an awkward line break or its complexity would obstruct reading. Use words when notation would make the sentence ambiguous,
   ungrammatical, or difficult to read.
 - **Mathematical symbols.** Use the host-supported character, entity, or mathematical rendering for each
-  symbol. Verify the rendered symbol and its accessible reading. Do not substitute a lookalike
-  keyboard character.
+  symbol rather than substituting a lookalike keyboard character, and verify the rendered symbol and
+  its accessible reading.
 - **Equation context.** Place each displayed equation in a sentence or introduce it with a complete sentence. Define its variables in nearby prose. Give a text explanation when notation alone does not convey its purpose.
 - **Formula punctuation.** Treat an inline or displayed formula as part of its sentence. Put sentence
   punctuation after the formula when the sentence requires it. Keep punctuation inside mathematical
@@ -72,10 +72,11 @@ Apply `AUTH-OSR-CODE-3` only to public communication of statistics, data, or wid
   [Number forms](number-forms.md#units-and-rates), unless a higher authority requires another form.
   Unit symbols or abbreviations may appear in tables and technical specifications.
 - **Unit names, symbols, and prefixes.** Follow the standard capitalisation and form of every unit
-  name, unit symbol, and abbreviation. Do not mix unit symbols and names. Join a prefix name to a
-  unit name and a prefix symbol to a unit symbol. Use only standard unit symbols and abbreviations.
-  When a spelled-out unit of measure forms a compound adjective, follow the selected language's
-  hyphenation rules.
+  name, unit symbol, and abbreviation, using either unit symbols or spelled-out unit names
+  consistently within an expression without mixing them. Join a prefix name to a unit name and a
+  prefix symbol to a unit symbol. Use only standard unit symbols and abbreviations. When a
+  spelled-out unit of measure forms a compound adjective, follow the selected language's hyphenation
+  rules.
 
 ## Terminology
 

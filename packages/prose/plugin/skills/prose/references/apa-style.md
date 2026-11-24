@@ -20,14 +20,16 @@ case only to authored English prose. For authored English, apply the [English ho
 including British spelling, which departs from the manual's American dictionary standard (Section
 6.11). Within the recorded APA scope, an APA rule controls over an English house choice on
 the same point, except where this module or [APA mechanics](apa-mechanics.md) states a house
-departure.
-For Danish prose, use the [Danish language and institutional adaptations](danish-core.md#apa-i-dansk-prosa).
-Apply the shared APA organisation and heading rules below within the selected scope. For numbers,
-dates, equations, English grammar, capitalisation, abbreviations, and sentence punctuation, apply
-[APA mechanics](apa-mechanics.md). For tables and figures, apply [APA tables and
-figures](apa-tables-and-figures.md). For in-text citations, reference entries, source forms, and
-generative AI, apply [APA citations and references](apa-citations-and-references.md) and [APA source
-forms and generative AI](apa-source-forms.md).
+departure. For Danish prose, use the [Danish language and institutional adaptations](danish-core.md#apa-i-dansk-prosa).
+
+Apply the organisation, heading, and quotation rules below within the selected scope, and open the
+sibling APA modules that match the task:
+
+- **Mechanics (numbers, dates, equations, grammar, capitalisation, abbreviations, punctuation):** [APA mechanics](apa-mechanics.md)
+- **Tables and figures:** [APA tables and figures](apa-tables-and-figures.md)
+- **In-text citations and reference entries:** [APA citations and references](apa-citations-and-references.md)
+- **Specific source forms and generative AI:** [APA source forms and generative AI](apa-source-forms.md)
+- **Bias-free language (APA Manual Chapter 5):** [Inclusive language](inclusive-language.md) for every mention of a personal or demographic characteristic
 
 ## Paper organisation and headings
 
@@ -61,9 +63,9 @@ Label several appendices with capital letters in the order of their first mentio
 as *Appendix A* and *Appendix B*, and call out each appendix in the text by its label. Put an
 appendix title on the line after its label, centred, bold, and in title case.
 
-Number footnotes consecutively with superscript Arabic numerals. Place each callout after any
-punctuation mark except a dash, which it precedes, with no space before it, and inside a closing
-parenthesis when it applies only to the parenthetical matter. Do not put a callout in a heading.
+Number footnotes consecutively with superscript Arabic numerals. Place each callout in body text
+rather than in a heading, after any punctuation mark except a dash (which it precedes), with no
+space before it, and inside a closing parenthesis when it applies only to the parenthetical matter.
 Refer to an earlier note as *see Footnote 3*.
 
 In APA title case (English prose only; Danish headings and titles follow
@@ -93,19 +95,15 @@ final punctuation, with no full stop after it. For a source known only through a
 [Secondary sources](apa-citations-and-references.md#secondary-sources).
 
 Mark an omission within a quotation with three spaced full stops or the ellipsis character, with a
-space before and after it, and use four full stops for a break between sentences. Do not put an
-ellipsis at the start or end of a quotation unless the source has one. Show added emphasis in italics
-and insert `[emphasis added]`, in roman type, immediately after the italicised words. Keep citations that appear
-inside quoted text, and give those works reference entries only when you also cite them directly.
+space before and after it, and use four full stops for a break between sentences, reserving an
+ellipsis at the start or end of a quotation for when the source itself has one. Show added emphasis
+in italics and insert `[emphasis added]`, in roman type, immediately after the italicised words.
+Keep citations that appear inside quoted text, and give those works reference entries only when you
+also cite them directly.
 
 When a quotation exceeds the copyright holder's limit for use without permission, obtain any
 permission needed and give a copyright attribution in a footnote to the quoted text instead of the
 author–date citation. APA Manual Sections 8.25–8.35 and 12.14–12.18 supply the quotation basis.
-
-## Bias-free language
-
-Apply [Inclusive language](inclusive-language.md) to every mention of a personal or demographic
-characteristic. APA Manual Chapter 5 supplies the bias-free language basis.
 
 ## Unlisted conventions
 

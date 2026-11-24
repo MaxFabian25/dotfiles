@@ -2,7 +2,9 @@
 
 Apply this branch when choosing, defining, translating, or verifying a technical or professional
 designation in the subject fields below. A mention of technical terminology in another claim does
-not select this branch. Keep each term within its authority's subject field and scope.
+not select this branch. Keep each term within its authority's subject field and scope. For *code
+span*, use [Literal formatting](technical-and-code-prose.md#literal-formatting); for *comment*, use
+[Code comments](technical-formats-and-code-samples.md#code-comments).
 
 ## Evaluation and assurance
 
@@ -34,10 +36,5 @@ Claim media sanitization only when the applicable NIST process was performed.
 
 The ISO/IEC verbal forms govern ISO and IEC documents. Outside that scope, apply [Requirement
 language](instructional-prose.md#requirement-language) to *may* and *can*.
-
-## Code-adjacent terminology
-
-For *code span*, use [Literal formatting](technical-and-code-prose.md#literal-formatting). For
-*comment*, use [Code comments](technical-formats-and-code-samples.md#code-comments).
 
 Complete this branch when every selected term matches the authority, subject field, concept, and stated scope.

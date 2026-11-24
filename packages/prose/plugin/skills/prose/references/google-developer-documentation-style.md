@@ -85,7 +85,6 @@ selection](terminology-selection.md). Keep source, conventional, and descriptive
 - Keep the voice direct, conversational, friendly, and respectful. Centre the developer's task,
   not the author's personality.
 - Use straight quotation marks and apostrophes in original prose.
-- Unlike Google, apply the [technical-prose contraction rule](technical-and-code-prose.md#contractions).
 
 ## Headings, titles, and procedures
 
@@ -95,7 +94,7 @@ selection](terminology-selection.md). Keep source, conventional, and descriptive
 - Use a noun phrase that does not start with an *-ing* verb for a conceptual or non-task-based
   heading.
 - Begin a section heading with *Optional:* when the section is not required for all readers or
-  scenarios. Do not put *(optional)* after the heading.
+  scenarios, rather than placing *(optional)* after the heading.
 - Write unnumbered section headings rather than numbering headings to show a sequence of sections,
   preserving numbered divisions only where a governing document format requires them.
 - Write headings as unlinked text.
@@ -110,9 +109,9 @@ selection](terminology-selection.md). Keep source, conventional, and descriptive
 - In non-reference content, use only the command arguments required to complete the task in the
   recommended way.
 - Link to the command reference for the complete list of arguments.
-- Provide a click-to-copy command example that requires no editing after copying, except for
-  replacing placeholders. Avoid optional arguments, mutually exclusive arguments, and repeated
-  arguments in click-to-copy examples.
+- Provide a click-to-copy command example that runs without editing after copying (except for
+  replacing placeholders), keeping it to required, single-choice arguments rather than optional,
+  mutually exclusive, or repeated arguments.
 - Use uppercase characters with underscore delimiters for placeholder text; this replaces the
   italics placeholder default in [Placeholders](technical-and-code-prose.md#placeholders) within
   Google developer documentation. If that form is a poor fit for the context, use another clear
@@ -124,8 +123,8 @@ selection](terminology-selection.md). Keep source, conventional, and descriptive
 - Explain a placeholder the first time it appears. After a command with multiple placeholders,
   list them in their order of appearance. Introduce the list with *Replace the following:*.
 - Distinguish placeholders in sample code and commands from placeholders in example output. Tell
-  readers to replace only placeholders in sample code and commands. A placeholder in example
-  output represents a value that varies. Do not instruct readers to set it.
+  readers to replace only placeholders in sample code and commands, describing any placeholder in
+  example output as a value that varies rather than an input to set.
 - After example output, explain its placeholders in their order of appearance. Introduce the list
   with *This output includes the following values:*.
 
@@ -136,8 +135,8 @@ selection](terminology-selection.md). Keep source, conventional, and descriptive
   needed for success in the main flow. Keep continuations of the preceding text, including expected
   results, in the main flow.
 - Keep alternative paths and risks outside a *Note*.
-- Use a *Success* notice only in dynamic or interactive content. Report a successful action or
-  error-free status with it. Do not use it on an ordinary static page.
+- Reserve a *Success* notice for dynamic or interactive content to report a successful action or
+  error-free status, leaving ordinary static pages without one.
 - Apply [Warnings and cautions](instructional-prose.md#warnings-and-cautions) to *Caution* and
   *Warning* notices.
   Route an actual visible status message to [interface copy](interface-copy.md).
