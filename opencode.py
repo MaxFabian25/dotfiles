@@ -21,6 +21,8 @@ from sync_sources import Builder, BuildError, child
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 # Pstack's agent definitions that OpenCode subagents run, as the projection holds them, without their frontmatter.
 PSTACK_AGENTS = ('poteto-agent', 'comment-sicko')
+# The filters.json lists whose tools the tool-filter plugin removes, by the MCP server that serves them.
+HIDDEN_TOOLS = {'t3-code': ('t3_browser_tools', 't3_device_tools'), 'cua-driver': ('cua_browser_tools',)}
 
 
 @dataclass(frozen=True)
@@ -136,8 +138,8 @@ def plan(setup: Setup, roots: DeviceRoots, platform: Platform, *, adopted: bool 
         excluded = filters['cua_browser_tools']
         if not isinstance(excluded, list) or any(not isinstance(name, str) for name in excluded):
             raise ValueError('OpenCode cua-driver exclusions must be a list of tool names')
-        permissions.extend({'action': 'cua-driver_' + re.sub('[^a-zA-Z0-9_-]', '_', name),
-                            'resource': '*', 'effect': 'deny'} for name in excluded)
+        permissions.extend({'action': 'cua-driver_' + _tool(name), 'resource': '*', 'effect': 'deny'}
+                           for name in excluded)
     fields[('permissions',)] = permissions
     configuration = JsonConfiguration('opencode', destination.parent / 'opencode.json', fields)
     configurations: tuple[Configuration, ...] = (configuration,)
@@ -179,6 +181,8 @@ def plan(setup: Setup, roots: DeviceRoots, platform: Platform, *, adopted: bool 
     if mentions.is_file():
         configurations += (FileConfiguration('opencode-skill-mentions-plugin',
                                              destination.parent / 'plugins/skill-mentions.js', mentions.read_bytes()),)
+    if (source.parent / 'tool-filter.js.in').is_file():
+        configurations += (_tool_filter(source.parent, destination.parent),)
     agents = _agents(source.parent.parent / 'pstack/models.md', destination)
     if agents and 'pstack' not in {package.name for package in packages}:
         raise ValueError('OpenCode pstack seats need the pstack package exported to OpenCode')
@@ -227,6 +231,28 @@ def _guards(source: Path, config: Path) -> tuple[Configuration, ...]:
     return (FileConfiguration('opencode-hook-adapter', adapter,
                               (source.parent / 'antigravity/hook_adapter.py').read_bytes()),
             FileConfiguration('opencode-guards-plugin', config / 'plugins/guards.js', plugin.encode()))
+
+
+def _tool(name: str) -> str:
+    """An MCP tool's name as OpenCode writes it after its server's name and `_`."""
+    return re.sub('[^a-zA-Z0-9_-]', '_', name)
+
+
+def _tool_filter(source: Path, config: Path) -> FileConfiguration:
+    """The plugin that removes the tools filters.json hides from the model's tool list, by the MCP server that serves
+    them. T3 names its server per thread and its session permissions allow all of that server's tools again."""
+    filters = json.loads((source.parent / 'mcp-tool-filters/filters.json').read_bytes())
+    hidden = {}
+    for server, keys in HIDDEN_TOOLS.items():
+        lists = [filters.get(key) for key in keys]
+        if any(not isinstance(names, list) or any(not isinstance(name, str) for name in names) for names in lists):
+            raise ValueError(f'OpenCode tool filter needs lists of tool names in filters.json: {", ".join(keys)}')
+        hidden[server] = sorted({_tool(name) for names in lists for name in names})
+    plugin = (source / 'tool-filter.js.in').read_text(encoding='utf-8')
+    if plugin.count('__DOTFILES_HIDDEN_TOOLS__') != 1:
+        raise ValueError('OpenCode tool filter plugin must contain one hidden tool list')
+    return FileConfiguration('opencode-tool-filter-plugin', config / 'plugins/tool-filter.js',
+                             plugin.replace('__DOTFILES_HIDDEN_TOOLS__', json.dumps(hidden, sort_keys=True)).encode())
 
 
 def _agents(models: Path, destination: Path) -> dict[tuple[str, ...], object]:
