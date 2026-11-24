@@ -123,8 +123,23 @@ def rewritten(data: bytes, syntax: str, wrapper: str, to_wrapper: bool) -> bytes
         del server['env'][DRIVER_BIN]
     if syntax == 'json':
         # Claude Code writes the file as JSON.stringify(config, null, 2) does, so only the changed lines differ.
-        return (json.dumps(document, indent=2, ensure_ascii=False) + ('\n' if text.endswith('\n') else '')).encode()
-    return tomlkit.dumps(document).encode()
+        # backslashreplace writes a lone surrogate, such as half of a cut emoji, as the \udXXX escape it writes.
+        return (json.dumps(document, indent=2, ensure_ascii=False)
+                + ('\n' if text.endswith('\n') else '')).encode('utf-8', 'backslashreplace')
+    after = tomlkit.dumps(document).encode()
+    # tomlkit puts a new env table in the wrong place for some valid layouts, such as dotted keys or a server whose
+    # [mcp_servers.cua-driver.tools.*] tables follow other tables, so the result is read back before it is written.
+    old, new = tomllib.loads(text), tomllib.loads(after.decode('utf-8'))
+    read = old['mcp_servers'][SERVER]
+    environment = dict(read.get('env', {}))
+    if to_wrapper:
+        environment[DRIVER_BIN], command = read['command'], wrapper
+    else:
+        command = environment.pop(DRIVER_BIN)
+    old['mcp_servers'][SERVER] = {**read, 'command': command, 'env': environment}
+    if old != new:
+        raise Left('rewriting it would change more than its command and CUA_DRIVER_BIN, so it stays as it is')
+    return after
 
 
 @contextmanager

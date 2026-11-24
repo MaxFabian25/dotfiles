@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import tomllib
 from types import SimpleNamespace
 import unittest
@@ -31,8 +32,9 @@ HOSTS = {
 def claude_json(command, environment):
     document = {'numStartups': 3, 'projects': {'/home/u': {'hasTrustDialogAccepted': True}},
                 'mcpServers': {'cua-driver': {'type': 'stdio', 'command': command, 'args': ['mcp'], 'env': environment}},
-                'pluginUsage': {'pstack': 2}}
-    return json.dumps(document, indent=2) + '\n'
+                'pluginUsage': {'pstack': 2}, 'lastPrompt': 'Gør det – ✓'}
+    # Claude Code writes characters outside ASCII as they are, not as escapes.
+    return json.dumps(document, indent=2, ensure_ascii=False) + '\n'
 
 
 def codex_toml(command, environment):
@@ -181,6 +183,7 @@ class PullPointsMcpServersTest(unittest.TestCase):
         shapes = {'another command': {'command': '/opt/driver/run', 'args': ['mcp']},
                   'more arguments': {'command': self.driver, 'args': ['mcp', '--verbose']},
                   'a URL': {'type': 'http', 'url': 'http://127.0.0.1:9/mcp'},
+                  'another transport': {'type': 'sse', 'command': self.driver, 'args': ['mcp']},
                   'a driver of its own': {'command': self.driver, 'args': ['mcp'],
                                           'env': {'CUA_DRIVER_BIN': '/opt/cua-driver'}}}
         for name, server in shapes.items():
@@ -208,6 +211,83 @@ class PullPointsMcpServersTest(unittest.TestCase):
         status, out, _ = self.pull()
         self.assertEqual(status, 0)
         self.assertEqual(out, 'MCP server pointed at cua-driver-defaults: cua-driver in ~/.claude.json\n')
+
+    def test_a_lock_given_back_while_the_pull_waits_lets_it_point_the_server(self):
+        lock = Path(f'{self.claude}.lock')
+        lock.mkdir()
+        release = threading.Timer(0.5, lock.rmdir)
+        release.start()
+        self.addCleanup(release.cancel)
+        status, out, err = self.pull()
+        self.assertEqual((status, err), (0, ''))
+        self.assertIn('MCP server pointed at cua-driver-defaults: cua-driver in ~/.claude.json\n', out)
+        self.assertEqual(self.servers()[0]['command'], self.wrapper)
+        self.assertFalse(lock.exists())
+
+    def test_a_lock_that_changes_hands_under_the_pull_leaves_the_file_and_no_lock(self):
+        lock, read = Path(f'{self.claude}.lock'), cua_mcp.contents
+
+        def contents(path):
+            if lock.is_dir():    # a Claude process took the lock over as abandoned and refreshed it
+                os.utime(lock, ns=(0, 0))
+            return read(path)
+
+        with patch.object(cua_mcp, 'contents', contents):
+            status, out, err = self.pull()
+        self.assertEqual(status, 1)
+        self.assertEqual(err, 'MCP server left as it is: cua-driver in ~/.claude.json: Claude Code took its lock back '
+                              'before the write, so the next pull tries again\n')
+        self.assertEqual(self.claude.read_bytes(), self.originals[0])
+        self.assertFalse(lock.exists())
+        self.assertEqual(self.servers()[1]['command'], self.wrapper)
+
+    def test_a_linked_claude_json_is_locked_beside_the_link_and_stays_a_link(self):
+        target = self.home / 'state/claude.json'
+        target.parent.mkdir()
+        self.claude.rename(target)
+        self.claude.symlink_to(target)
+        # Claude Code 2.1.331 takes its lock beside the path it opens, which is the link.
+        lock = Path(f'{self.claude}.lock')
+        lock.mkdir()
+        with patch.object(cua_mcp, 'LOCK_PAUSE', 0):
+            self.assertEqual(self.pull()[0], 1)
+        self.assertEqual(target.read_bytes(), self.originals[0])
+        lock.rmdir()
+        self.assertEqual(self.pull()[0], 0)
+        self.assertTrue(self.claude.is_symlink())
+        self.assertEqual(self.servers()[0]['command'], self.wrapper)
+        self.assertEqual([path.exists() for path in (lock, target.with_name('claude.json.lock'))], [False, False])
+
+    def test_a_lone_surrogate_escape_comes_back_as_claude_code_wrote_it(self):
+        # JSON.stringify writes half of a cut emoji as an escape, which Python reads as a lone surrogate.
+        self.claude.write_text(self.claude.read_text().replace('Gør det – ✓', r'Gør det \ud83d'))
+        original = self.claude.read_bytes()
+        self.assertEqual(self.pull()[0], 0)
+        self.assertEqual(self.servers()[0]['command'], self.wrapper)
+        self.switch(False)
+        self.assertEqual(self.pull()[0], 0)
+        self.assertEqual(self.claude.read_bytes(), original)
+
+    def test_a_codex_layout_the_rewrite_would_change_more_in_is_left_as_it_is(self):
+        # tomlkit 0.15.2 adds the env table to these valid layouts in the wrong place: CUA_DRIVER_BIN is lost, or
+        # args moves under env, so that Codex would run the server without its mcp argument.
+        layouts = {
+            'no env and a later tools table': '[mcp_servers.cua-driver]\ncommand = "{0}"\nargs = ["mcp"]\n\n'
+                                              '[mcp_servers.rea]\ncommand = "npx"\n\n'
+                                              '[mcp_servers.cua-driver.tools.click]\napproval_mode = "approve"\n',
+            'dotted keys under mcp_servers': '[mcp_servers]\ncua-driver.command = "{0}"\ncua-driver.args = ["mcp"]\n',
+            'top-level dotted keys': 'mcp_servers.cua-driver.command = "{0}"\nmcp_servers.cua-driver.args = ["mcp"]\n',
+        }
+        for name, layout in layouts.items():
+            with self.subTest(layout=name):
+                self.machine('wsl')
+                self.codex.write_text(layout.format(self.driver))
+                status, out, err = self.pull()
+                self.assertEqual(status, 1)
+                self.assertEqual(err, 'MCP server left as it is: cua-driver in ~/.codex/config.toml: rewriting it '
+                                      'would change more than its command and CUA_DRIVER_BIN, so it stays as it is\n')
+                self.assertEqual(self.codex.read_text(), layout.format(self.driver))
+                self.assertEqual(self.servers()[0]['command'], self.wrapper)
 
     def test_a_claude_write_just_before_the_lock_is_kept(self):
         taken = cua_mcp.claude_lock
