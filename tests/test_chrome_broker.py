@@ -528,8 +528,9 @@ class InteractionTest(BrokerRig):
 
 
 class HandOverTest(BrokerRig):
-    """hand-over on a fake OAuth flow: the source page's Authorize link answers 302 to a callback on another host
-    with a code. Each context gets its own cookie on that host first, so the server sees which context called back."""
+    """hand-over and catch on a fake OAuth flow: the source page's Authorize link answers 302 to a callback on another
+    host with a code. Each context gets its own cookie on that host first, so the server sees which context called
+    back, if any."""
 
     @classmethod
     def setUpClass(cls):
@@ -543,16 +544,29 @@ class HandOverTest(BrokerRig):
         self.ok('nav', source, f'{self.site}/authorize')
         return source, target
 
-    def start_hand_over(self, source, target, wait):
-        handing = subprocess.Popen(['node', str(BROKER), 'hand-over', source, target, self.callback, '--wait', wait],
-                                   env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                                   encoding='utf-8')
-        self.addCleanup(handing.kill)
+    def start_watching(self, source, *command):
+        """Starts COMMAND, a hand-over or catch on SOURCE, in the background and waits until SOURCE is watched."""
+        watching = subprocess.Popen(['node', str(BROKER), *command], env=self.env, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, text=True, encoding='utf-8')
+        self.addCleanup(watching.kill)
         deadline = time.monotonic() + 10
         while 'watching' not in self.ok('status', source) and time.monotonic() < deadline:
             time.sleep(0.1)
         self.assertEqual(self.ok('status', source)['watching'], f'localhost:{self.server.server_address[1]}')
-        return handing
+        return watching
+
+    def start_hand_over(self, source, target, wait):
+        return self.start_watching(source, 'hand-over', source, target, self.callback, '--wait', wait)
+
+    def start_catch(self, source, file, wait):
+        return self.start_watching(source, 'catch', source, self.callback, str(file), '--wait', wait)
+
+    def assertNothingShown(self, *texts):
+        journal = subprocess.run(['journalctl', '--user', '-u', self.unit, '--no-pager'], capture_output=True,
+                                 text=True).stdout
+        for text in [*texts, journal]:
+            for secret in (OAUTH_CODE, OAUTH_STATE, f'{self.callback}?'):
+                self.assertNotIn(secret, text)
 
     def test_the_redirect_loads_in_the_target_only_and_is_never_shown(self):
         source, target = self.pages()
@@ -569,11 +583,7 @@ class HandOverTest(BrokerRig):
                                                  ('status', source), ('read', source), ('status',))]
         # The callback page shows its own path and query, which the read must hide.
         self.assertIn('Connected\n\n/callback/?[hidden held hand-over', json.loads(later[1].stdout)['text'])
-        journal = subprocess.run(['journalctl', '--user', '-u', self.unit, '--no-pager'], capture_output=True,
-                                 text=True).stdout
-        for text in [out, err, journal, *(result.stdout + result.stderr for result in later)]:
-            for secret in (OAUTH_CODE, OAUTH_STATE, f'{self.callback}?'):
-                self.assertNotIn(secret, text)
+        self.assertNothingShown(out, err, *(result.stdout + result.stderr for result in later))
         self.ok('dispose', target['context'])
         self.ok('close', source)
 
@@ -604,6 +614,74 @@ class HandOverTest(BrokerRig):
                 refused = self.broker('hand-over', *args)
                 self.assertEqual(refused.returncode, 1)
                 self.assertIn(message, refused.stderr)
+        file = str(self.scratch / 'never-written')
+        for args, message in (((page, self.callback), 'needs SOURCE URL-PREFIX FILE'),
+                              ((page, self.callback, 'caught-here'), 'absolute path'),
+                              ((page, self.callback, str(self.scratch / 'no-folder/caught')), 'does not exist'),
+                              (('p999', self.callback, file), 'not a page this broker opened'),
+                              ((page, 'chatgpt.com/', file), 'http or https URL'),
+                              ((page, self.callback, file, '--wait', '0'), 'whole seconds')):
+            with self.subTest(args=args):
+                refused = self.broker('catch', *args)
+                self.assertEqual(refused.returncode, 1)
+                self.assertIn(message, refused.stderr)
+        self.assertFalse(Path(file).exists())
+
+    def test_catch_writes_the_redirect_to_a_new_private_file_and_loads_it_in_no_page(self):
+        source, target = self.pages()
+        before = sorted(self.chrome.page_urls())
+        file = self.scratch / 'caught-url'
+        catching = self.start_catch(source, file, '30')
+        self.ok('click', source, 'text=Authorize')
+        out, err = catching.communicate(timeout=60)
+        self.assertEqual(catching.returncode, 0, err)
+        self.assertEqual(json.loads(out),
+                         {'caught': True, 'host': f'localhost:{self.server.server_address[1]}', 'file': str(file)})
+        self.assertEqual(file.read_text(), f'{self.callback}?{CALLBACK_QUERY}')
+        self.assertEqual(stat.S_IMODE(file.stat().st_mode), 0o600)
+        self.assertEqual(CALLBACKS, [])
+        self.assertEqual(sorted(self.chrome.page_urls()), before)
+        self.assertEqual(self.ok('status', source)['url'], f'{self.site}/authorize')
+        later = [self.broker(*args) for args in (('status', source), ('read', source), ('status',))]
+        self.assertNothingShown(out, err, *(result.stdout + result.stderr for result in later))
+        self.ok('dispose', target['context'])
+        self.ok('close', source)
+
+    def test_catch_refuses_a_file_that_exists_before_or_appears_while_it_waits(self):
+        source, target = self.pages()
+        existing = self.scratch / 'existing'
+        existing.write_text('kept')
+        refused = self.broker('catch', source, self.callback, str(existing))
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn('already exists', refused.stderr)
+        self.assertNotIn('watching', self.ok('status', source))
+
+        late = self.scratch / 'late'
+        catching = self.start_catch(source, late, '30')
+        late.write_text('kept')
+        self.ok('click', source, 'text=Authorize')
+        out, err = catching.communicate(timeout=60)
+        self.assertEqual(catching.returncode, 1)
+        self.assertEqual(out, '')
+        self.assertIn('could not be written (EEXIST)', err)
+        self.assertEqual((existing.read_text(), late.read_text()), ('kept', 'kept'))
+        self.assertEqual(CALLBACKS, [])
+        self.assertNothingShown(out, err)
+        self.ok('dispose', target['context'])
+        self.ok('close', source)
+
+    def test_catch_writes_no_file_when_no_redirect_comes(self):
+        source, target = self.pages()
+        file = self.scratch / 'not-caught'
+        catching = self.start_catch(source, file, '2')
+        out, err = catching.communicate(timeout=30)
+        self.assertEqual(catching.returncode, 1)
+        self.assertEqual(out, '')
+        self.assertIn('within 2 s; nothing was written', err)
+        self.assertFalse(file.exists())
+        self.assertNotIn('watching', self.ok('status', source))
+        self.ok('dispose', target['context'])
+        self.ok('close', source)
 
 
 class DropTest(BrokerRig):
