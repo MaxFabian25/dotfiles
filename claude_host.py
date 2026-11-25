@@ -212,8 +212,13 @@ class ClaudeState:
         marketplaces_path = roots.claude_home / 'plugins/known_marketplaces.json'
         marketplaces = read_json(marketplaces_path, {Surface.MARKETPLACE}, {})
 
-        user = [plugin for plugin in inventory if plugin.get('scope') == 'user']
-        scoped = len(inventory) - len(user)
+        # Claude Code ships its own plugins in the `builtin` marketplace, listed as user installs without an
+        # installPath since 2.1.332. No description names them, so they are a note.
+        bundled = [plugin for plugin in inventory if plugin['id'].endswith('@builtin')]
+        if bundled:
+            seen.note(NoteKind.UNMODELED, 'builtin plugins', f'{len(bundled)} plugins bundled with Claude Code')
+        user = [plugin for plugin in inventory if plugin.get('scope') == 'user' and plugin not in bundled]
+        scoped = len(inventory) - len(user) - len(bundled)
         if scoped:
             seen.note(NoteKind.DEVICE_LOCAL, 'project installs', f'{scoped} project-scoped installs')
         offered = {plugin['id'] for plugin in inventory} | {plugin['pluginId'] for plugin in available}

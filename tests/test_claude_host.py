@@ -525,6 +525,20 @@ class ObserveTest(unittest.TestCase):
                          hs.PluginValue(False, hs.Pinned(OLD)))
         self.assertNotIn(key(S.SKILL, 'interfaces@interfaces:better-interface'), observation.facts)
 
+    def test_plugins_bundled_with_claude_code_are_a_note_not_installs(self):
+        # Claude Code 2.1.332 lists its own plugins as user installs under the `builtin` marketplace, without an
+        # installPath, which stopped the pull on 2026-11-25.
+        with Device() as device:
+            device.inventory += [{'id': 'cc-plugin-privacy@builtin', 'version': 'unknown', 'scope': 'user', 'enabled': True},
+                                 {'id': 'cc-plugin-you-should-know@builtin', 'version': 'unknown', 'scope': 'user',
+                                  'enabled': False, 'hasUserConfig': True}]
+            observation = device.state().observe(hs.Request())
+        self.assertFalse([k for k in observation.facts if k.subject.endswith('@builtin')])
+        self.assertEqual(observation.unknown, ())
+        notes = [(n.kind.value, n.subject, n.detail) for n in observation.notes]
+        self.assertIn(('unmodeled', 'builtin plugins', '2 plugins bundled with Claude Code'), notes)
+        self.assertIn(('device-local', 'project installs', '1 project-scoped installs'), notes)
+
     def test_a_native_install_without_a_recorded_commit_is_unknown(self):
         with Device() as device:
             device.git_marketplace()
