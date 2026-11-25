@@ -244,7 +244,7 @@ class ProfilePluginsTest(unittest.TestCase):
             operation.files = Files(home.roots.home / 'backup')
             operation.owner = SimpleNamespace(preflight=lambda prepared: None, apply=release, accepted=kit.accepted)
             operation.prepared = SimpleNamespace(artifacts=('kit',))
-            for step in ('_marketplaces', '_runtime', '_catalogs', '_plugins', '_skills'):
+            for step in ('_marketplaces', '_runtime', '_catalogs', '_plugins', '_skills', '_hooks'):
                 setattr(operation, step, lambda: None)
             operation.run()
             self.assertIn('Released.', (kit.target / 'skills/publish/SKILL.md').read_text())

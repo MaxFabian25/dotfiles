@@ -166,6 +166,37 @@ class FileSafetyTest(unittest.TestCase):
         self.assertEqual(rows, [{'name': 'kit:kit', 'enabled': False},
                                 {'path': str(root / 'agents/skills/invocation-kit/SKILL.md'), 'enabled': True}])
 
+    def test_codex_trust_in_hooks_the_description_keeps_untrusted_is_taken_back(self):
+        import tomllib
+        from host_state import Approved, FactKey, Host, Surface
+        from sync_files import Files
+        from sync_hosts import Apply
+        # Omarchy's config on 2026-11-25: the plugin's hook trusted though its entry keeps Codex hooks off.
+        original = ('model = "x"\n\n'
+                    '[hooks.state."kit@personal:hooks/hooks.json:post_tool_use:0:0"]\n'
+                    'trusted_hash = "sha256:aa"\ntrusted_content_hash = "sha256:bb"\n\n'
+                    '[hooks.state."kit@personal:hooks/hooks.json:stop:0:0"]\n'
+                    'enabled = false\ntrusted_hash = "sha256:cc"\n\n'
+                    '[hooks.state."kit-two@personal:hooks/hooks.json:stop:0:0"]\ntrusted_hash = "sha256:dd"\n\n'
+                    '[hooks.state."/home/user/.codex/hooks.json:post_tool_use:0:0"]\ntrusted_hash = "sha256:ee"\n')
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'config.toml').write_text(original)
+            operation = object.__new__(Apply)
+            operation.roots = SimpleNamespace(codex_home=root)
+            operation.files = Files(root / 'backups')
+            operation.current = SimpleNamespace(changes=[
+                SimpleNamespace(key=FactKey(Host.CODEX, Surface.HOOK, 'kit@personal'), expected=None),
+                SimpleNamespace(key=FactKey(Host.CODEX, Surface.HOOK, 'kit-two@personal'), expected=Approved(1))])
+            operation._hooks()
+            config = tomllib.loads((root / 'config.toml').read_text())
+            backup = next((root / 'backups').glob('*-config.toml')).read_text()
+        self.assertEqual(config, {'model': 'x', 'hooks': {'state': {
+            'kit@personal:hooks/hooks.json:stop:0:0': {'enabled': False},
+            'kit-two@personal:hooks/hooks.json:stop:0:0': {'trusted_hash': 'sha256:dd'},
+            '/home/user/.codex/hooks.json:post_tool_use:0:0': {'trusted_hash': 'sha256:ee'}}}})
+        self.assertEqual(backup, original)
+
     def test_concurrent_edit_is_not_overwritten(self):
         from sync_files import ConcurrentEdit, Files
         with tempfile.TemporaryDirectory() as temp:
