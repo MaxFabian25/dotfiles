@@ -32,6 +32,8 @@ const CALL_MS = 30_000;
 const LOAD_MS = 30_000;
 const ELEMENT_MS = 10_000;
 const START_MS = 120_000;
+const HAND_OVER_S = 300;
+const HAND_OVER_MAX_S = 900;
 const USAGE = `usage: node chrome-broker.mjs start | stop | status [PAGE] | COMMAND ... [--who TASK]
   --who TASK                     the task, as named in its windows-desktop claim (or CHROME_BROKER_WHO); start
                                  and open exit 3 while a claim runs that another task, or a nameless caller, lacks
@@ -53,6 +55,13 @@ const USAGE = `usage: node chrome-broker.mjs start | stop | status [PAGE] | COMM
   click PAGE SELECTOR | type PAGE SELECTOR TEXT [--enter] | key PAGE KEY
                                  a real mouse click at the element's centre, plain text typed, or one key
                                  (Enter, Tab, Escape, Backspace, Space or an arrow)
+  hand-over SOURCE TARGET URL-PREFIX [--wait SECONDS]
+                                 stop the first request on SOURCE whose URL starts with URL-PREFIX, such as an
+                                 OAuth redirect that carries a one-time code, and load it in TARGET instead, which
+                                 may be in another context; prints only the host and whether TARGET loaded, and
+                                 hides that URL and its query values in every later reply; fails after SECONDS
+                                 (default ${HAND_OVER_S}, at most ${HAND_OVER_MAX_S}). Run it in the background, and press the button
+                                 that sends the redirect once status SOURCE shows "watching"
 Held values carry a secret from one page to another without showing it:
   store NAME < value             hold a value given on standard input, never as an argument
   read-field PAGE SELECTOR NAME  hold a field's value; prints its length
@@ -208,7 +217,11 @@ function connectDevTools(portFile, onClose) {
 		});
 		return done;
 	};
-	return { opened, call, once, listen: (listener) => listeners.add(listener), close: () => socket.close() };
+	const listen = (listener) => {
+		listeners.add(listener);
+		return () => listeners.delete(listener);
+	};
+	return { opened, call, once, listen, close: () => socket.close() };
 }
 
 // ---- The broker ---------------------------------------------------------------------------------------------------
@@ -230,6 +243,8 @@ class Broker {
 		this.pages = new Map();
 		this.contexts = new Map();
 		this.held = new Map();
+		// The URLs hand-over moved and their query values, hidden in every reply like held values but never typed.
+		this.caught = new Map();
 		this.counter = 0;
 	}
 
@@ -509,7 +524,77 @@ class Broker {
 		if (id === undefined) return this.summary();
 		const page = this.page(id);
 		const facts = await this.evaluate(page, '({ url: location.href, visibility: document.visibilityState })');
-		return { page: id, context: page.context, ...facts };
+		return { page: id, context: page.context, ...facts, ...(page.watching && { watching: page.watching }) };
+	}
+
+	// Hides URL, its query and each query value of 8 characters or more, raw and decoded, in every later reply.
+	hideCaught(url) {
+		const query = url.split('#')[0].split('?')[1] ?? '';
+		const values = query.split('&').map((pair) => pair.slice(pair.indexOf('=') + 1));
+		const decoded = values.map((value) => {
+			try {
+				return decodeURIComponent(value.replace(/\+/g, ' '));
+			} catch {
+				return value;
+			}
+		});
+		for (const form of [url, query, ...values, ...decoded])
+			if (form.length >= 8) this.caught.set(`hand-over ${this.caught.size + 1}`, form);
+	}
+
+	// Stops the first request on SOURCE whose URL starts with PREFIX and loads that URL in TARGET. The URL goes
+	// nowhere else but this.caught, which hides it. Every other matching request on SOURCE while it waits is stopped
+	// too, so none reaches PREFIX's site from SOURCE.
+	async handOver(sourceId, targetId, prefix, wait) {
+		if (prefix === undefined) throw new Failure('hand-over needs SOURCE TARGET URL-PREFIX');
+		const source = this.page(sourceId);
+		const target = this.page(targetId);
+		if (source === target) throw new Failure('hand-over needs two different pages');
+		if (source.watching) throw new Failure(`${sourceId} is already watched by another hand-over`);
+		let host;
+		try {
+			const parsed = new URL(prefix);
+			if (parsed.protocol === 'https:' || parsed.protocol === 'http:') host = parsed.host;
+		} catch {}
+		if (!host) throw new Failure('URL-PREFIX must be an http or https URL, such as https://example.com/callback/');
+		const seconds = wait === undefined ? HAND_OVER_S : Number(wait);
+		if (!Number.isInteger(seconds) || seconds < 1 || seconds > HAND_OVER_MAX_S)
+			throw new Failure(`--wait takes whole seconds from 1 to ${HAND_OVER_MAX_S}`);
+		let caught = null;
+		let arrive;
+		const arrived = new Promise((resolve) => (arrive = resolve));
+		const unlisten = this.devtools.listen(({ method, params, sessionId }) => {
+			if (method !== 'Fetch.requestPaused' || sessionId !== source.sessionId) return;
+			const { requestId, request } = params;
+			if (!request.url.startsWith(prefix)) {
+				this.call('Fetch.continueRequest', { requestId }, sessionId).catch(() => {});
+				return;
+			}
+			this.call('Fetch.failRequest', { requestId, errorReason: 'Aborted' }, sessionId).catch(() => {});
+			if (caught === null) {
+				caught = request.url;
+				this.hideCaught(caught);
+				arrive();
+			}
+		});
+		let timer;
+		source.watching = host;
+		try {
+			const urlPattern = `${prefix.replace(/[\\*?]/g, '\\$&')}*`;
+			await this.call('Fetch.enable', { patterns: [{ urlPattern, requestStage: 'Request' }] }, source.sessionId);
+			await Promise.race([arrived, new Promise((resolve) => (timer = setTimeout(resolve, seconds * 1000)))]);
+		} finally {
+			clearTimeout(timer);
+			await this.call('Fetch.disable', {}, source.sessionId).catch(() => {});
+			unlisten();
+			delete source.watching;
+		}
+		if (caught === null) throw new Failure(`no request to ${host} left ${sourceId} within ${seconds} s; nothing was handed over`);
+		try {
+			return { handedOver: true, host, loaded: await this.navigate(target, caught) };
+		} catch (error) {
+			throw new Failure(`${sourceId}'s request to ${host} was stopped, but ${targetId} could not load it: ${error.message}`);
+		}
 	}
 
 	async close(id) {
@@ -548,6 +633,7 @@ class Broker {
 			eval: ['--frame=', '--hold='],
 			type: ['--enter'],
 			'type-held': ['--enter'],
+			'hand-over': ['--wait='],
 		}[command] ?? [];
 		const flags = new Map();
 		const args = [];
@@ -579,6 +665,8 @@ class Broker {
 				return this.click(args[0], args[1]);
 			case 'type':
 				return this.type(args[0], args[1], args[2], flags.has('--enter'));
+			case 'hand-over':
+				return this.handOver(args[0], args[1], args[2], flags.get('--wait'));
 			case 'key':
 				await this.press(this.page(args[0]), args[1]);
 				return { pressed: args[1] };
@@ -637,7 +725,8 @@ async function serve(argv) {
 			}
 			res.on('error', () => {});
 			res.writeHead(status, { 'content-type': 'application/json' });
-			res.end(hideHeld(JSON.stringify(hide(reply, broker.held)), broker.held));
+			const hidden = new Map([...broker.held, ...broker.caught]);
+			res.end(hideHeld(JSON.stringify(hide(reply, hidden)), hidden));
 			if (reply.result?.stopped) server.close(() => process.exit(0));
 		});
 	});
