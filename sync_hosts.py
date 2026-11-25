@@ -63,6 +63,7 @@ class Apply:
                 print(f'Sync: the tools the mise config pins did not install: {error}', file=sys.stderr, flush=True)
         self._plugins()
         self._skills()
+        self._hooks()
         # Planned again, because the steps above can replace the accepted ~/.codex copy the homes mirror.
         mirrors, _, _ = profile_plugins.inspect(self.setup, self.roots,
                                                 self.setup.account_homes.get(self.device.device_list, ()), self.owner.accepted)
@@ -358,6 +359,24 @@ class Apply:
                         overrides[name] = 'user-invocable-only' if mode == SkillMode.EXPLICIT else mode.value
                 self.files.json(self.roots.claude_home / 'settings.json', change)
 
+    def _hooks(self):
+        """Takes back Codex's trust in the hooks of each plugin whose hooks the description keeps untrusted. A hook's
+        other switches, such as `enabled = false`, stay. Granting trust is the user's, so a missing approval is an
+        attention row instead, and nothing here adds one."""
+        unwanted = [d.key.subject for d in self.current.changes if d.key is not None and d.key.host == Host.CODEX
+                    and d.key.surface == Surface.HOOK and d.expected is None]
+        if not unwanted:
+            return
+
+        def change(data):
+            state = data.get('hooks', {}).get('state', {})
+            for key in [key for key in state if any(key.startswith(f'{plugin}:') for plugin in unwanted)]:
+                for field in ('trusted_hash', 'trusted_content_hash'):
+                    state[key].pop(field, None)
+                if not state[key]:
+                    del state[key]
+        self.files.toml(self.roots.codex_home / 'config.toml', change)
+
     def _every_skill_off(self, names):
         """An off row for each name the check gave a plugin's `:*` fact, and every other row of that name switched off.
         Each new row is a [[skills.config]] table added to the others, which stay as they are."""
@@ -395,7 +414,7 @@ class Apply:
 
 
 class Rehearsal(Apply):
-    """The pull's plugin and skill switches, run on this device's real settings with nothing written and no native
+    """The pull's plugin and skill switches and hook trust it takes back, run on this device's real settings with nothing written and no native
     command run. They come after the build in a pull, so without this a crash in one first shows once the release is
     pushed. Marketplaces, catalogs and installed files are not rehearsed here."""
 
@@ -409,6 +428,7 @@ class Rehearsal(Apply):
     def run(self):
         self._plugins()
         self._skills()
+        self._hooks()
 
 
 def _behind(wanted: PluginValue | None, installed: PluginValue) -> bool:

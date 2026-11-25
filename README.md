@@ -34,7 +34,8 @@ uv run --locked python sync.py --public ./setup --private ../dotfiles-private/se
 
 The default is check-only. Exit codes distinguish no drift, managed changes, attention, and incomplete
 reads. Unknown installations and local edits are not permission to overwrite their files. Hook approval
-is a separate native application decision, not something this tool grants.
+is a separate native application decision, not something this tool grants. An apply does take back Codex's
+trust in the hooks of a plugin whose entry keeps them untrusted, and leaves the hooks' other settings.
 
 An explicitly reviewed local plan can be applied with `--apply`. Backups and ownership receipts
 are device-local. A successful repeated apply must leave content and receipt timestamps unchanged.
