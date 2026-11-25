@@ -625,9 +625,9 @@ class HandOverTest(BrokerRig):
         plain.write_text('')
         for args, message in (((page, self.callback), 'needs SOURCE URL-PREFIX FILE'),
                               ((page, self.callback, 'caught-here'), 'absolute path'),
-                              ((page, self.callback, str(self.scratch / 'no-folder/caught')), 'is not a folder'),
-                              ((page, self.callback, str(plain / 'caught')), 'is not a folder'),
-                              ((page, self.callback, str(dangling)), 'already exists'),
+                              ((page, self.callback, str(self.scratch / 'no-folder/caught')), '(ENOENT)'),
+                              ((page, self.callback, str(plain / 'caught')), '(ENOTDIR)'),
+                              ((page, self.callback, str(dangling)), '(EEXIST)'),
                               ((page, self.callback, file, 'rest-of-name'), 'quote a FILE'),
                               (('p999', self.callback, file), 'not a page this broker opened'),
                               ((page, 'chatgpt.com/', file), 'http or https URL'),
@@ -636,7 +636,10 @@ class HandOverTest(BrokerRig):
                 refused = self.broker('catch', *args)
                 self.assertEqual(refused.returncode, 1)
                 self.assertIn(message, refused.stderr)
+        # catch makes FILE before it checks the page, the prefix and the wait, so each refusal must remove it again.
         self.assertFalse(Path(file).exists())
+        self.assertFalse(dangling.exists())
+        self.assertTrue(dangling.is_symlink())
 
     def test_catch_writes_the_redirect_to_a_new_private_file_and_loads_it_in_no_page(self):
         source, target = self.pages()
@@ -646,8 +649,7 @@ class HandOverTest(BrokerRig):
         self.ok('click', source, 'text=Authorize')
         out, err = catching.communicate(timeout=60)
         self.assertEqual(catching.returncode, 0, err)
-        self.assertEqual(json.loads(out),
-                         {'caught': True, 'host': f'localhost:{self.server.server_address[1]}', 'file': str(file)})
+        self.assertEqual(json.loads(out), {'caught': True, 'host': f'localhost:{self.server.server_address[1]}'})
         self.assertEqual(file.read_text(), f'{self.callback}?{CALLBACK_QUERY}')
         self.assertEqual(stat.S_IMODE(file.stat().st_mode), 0o600)
         self.assertEqual(CALLBACKS, [])
@@ -687,33 +689,23 @@ class HandOverTest(BrokerRig):
         self.ok('dispose', target['context'])
         self.ok('close', source)
 
-    def test_catch_refuses_a_file_that_exists_before_or_appears_while_it_waits(self):
+    def test_catch_refuses_a_file_that_exists_and_leaves_it_as_it_was(self):
         source, target = self.pages()
         existing = self.scratch / 'existing'
         existing.write_text('kept')
         refused = self.broker('catch', source, self.callback, str(existing))
         self.assertEqual(refused.returncode, 1)
-        self.assertIn('already exists', refused.stderr)
+        self.assertIn("can't be made as a new file (EEXIST)", refused.stderr)
+        self.assertEqual(existing.read_text(), 'kept')
         self.assertNotIn('watching', self.ok('status', source))
-
-        late = self.scratch / 'late'
-        catching = self.start_catch(source, late, '30')
-        late.write_text('kept')
-        self.ok('click', source, 'text=Authorize')
-        out, err = catching.communicate(timeout=60)
-        self.assertEqual(catching.returncode, 1)
-        self.assertEqual(out, '')
-        self.assertIn('could not be written (EEXIST)', err)
-        self.assertEqual((existing.read_text(), late.read_text()), ('kept', 'kept'))
-        self.assertEqual(CALLBACKS, [])
-        self.assertNothingShown(out, err)
         self.ok('dispose', target['context'])
         self.ok('close', source)
 
-    def test_catch_writes_no_file_when_no_redirect_comes(self):
+    def test_catch_holds_an_empty_private_file_while_it_watches_and_removes_it_when_no_redirect_comes(self):
         source, target = self.pages()
         file = self.scratch / 'not-caught'
         catching = self.start_catch(source, file, '2')
+        self.assertEqual((file.read_text(), stat.S_IMODE(file.stat().st_mode)), ('', 0o600))
         out, err = catching.communicate(timeout=30)
         self.assertEqual(catching.returncode, 1)
         self.assertEqual(out, '')

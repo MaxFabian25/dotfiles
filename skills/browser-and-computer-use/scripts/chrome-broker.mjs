@@ -26,16 +26,15 @@ import {
 	closeSync,
 	existsSync,
 	fchmodSync,
-	lstatSync,
+	fstatSync,
 	openSync,
 	readFileSync,
-	statSync,
 	unlinkSync,
 	writeFileSync,
 } from 'node:fs';
 import http from 'node:http';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT = fileURLToPath(import.meta.url);
@@ -76,7 +75,8 @@ const USAGE = `usage: node chrome-broker.mjs start | stop | status [PAGE] | COMM
                                  status SOURCE shows "watching"
   catch SOURCE URL-PREFIX FILE [--wait SECONDS]
                                  stop that request as hand-over does, write its URL to FILE, a new file with mode
-                                 0600 at an absolute path, and load it in no page; prints only the host and FILE
+                                 0600 at an absolute path that catch makes before it watches, and load it in no
+                                 page; prints only the host, and refuses a folder that can't keep mode 0600
 Held values carry a secret from one page to another without showing it:
   store NAME < value             hold a value given on standard input, never as an argument
   read-field PAGE SELECTOR NAME  hold a field's value; prints its length
@@ -604,28 +604,33 @@ class Broker {
 		const watch = { host, ready: false };
 		source.watch = watch;
 		let timer;
-		let ended = false;
+		let refused = null;
 		try {
 			const urlPattern = `${watched.replace(/[\\*?]/g, '\\$&')}*`;
 			await this.call('Fetch.enable', { patterns: [{ urlPattern, requestStage: 'Request' }] }, source.sessionId);
 			// status shows "watching", the signal to press the button that sends the redirect, only from here.
 			watch.ready = true;
 			await Promise.race([arrived, new Promise((resolve) => (timer = setTimeout(resolve, seconds * 1000)))]);
-		} finally {
-			clearTimeout(timer);
-			closed = true;
-			watch.ready = false;
-			ended = await this.call('Fetch.disable', {}, source.sessionId).then(
-				() => true,
-				() => false,
-			);
-			unlisten();
-			// A page whose watch Chrome didn't confirm ended may still hold requests back, so it stays reserved.
-			if (ended) delete source.watch;
+		} catch (error) {
+			refused = error;
 		}
+		clearTimeout(timer);
+		closed = true;
+		watch.ready = false;
+		const ended = await this.call('Fetch.disable', {}, source.sessionId).then(
+			() => true,
+			() => false,
+		);
+		unlisten();
+		// A page whose watch Chrome didn't confirm ended may still hold requests back, so it stays reserved.
+		if (ended) delete source.watch;
 		const results = await Promise.all(stops);
 		if (!ended)
-			throw new Failure(`Chrome did not confirm that the watch on ${sourceId} ended; close that page; ${nothing}`);
+			throw new Failure(
+				`Chrome did not confirm that the watch on ${sourceId} ended; close that page` +
+					`${refused ? ` (the watch itself failed: ${refused.message})` : ''}; ${nothing}`,
+			);
+		if (refused) throw refused;
 		const unconfirmed = results.find((result) => result.error || result.late);
 		if (unconfirmed)
 			throw new Failure(
@@ -652,41 +657,46 @@ class Broker {
 
 	// Writes the redirect stopRedirect caught on SOURCE to FILE, a new file with mode 0600, and loads it in no page.
 	// The broker writes FILE itself, so the URL never travels in a reply, and FILE must be absolute because the
-	// broker runs in another folder than its caller.
+	// broker runs in another folder than its caller. The reply leaves FILE out, since the reply filter can mask a
+	// path; the caller already knows it.
 	async catchRedirect(sourceId, prefix, file, wait) {
 		if (file === undefined) throw new Failure('catch needs SOURCE URL-PREFIX FILE');
 		if (!isAbsolute(file)) throw new Failure('FILE must be an absolute path, because the broker runs in another folder');
-		if (!statSync(dirname(file), { throwIfNoEntry: false })?.isDirectory())
-			throw new Failure(`${dirname(file)} is not a folder`);
-		// lstat also finds a link that points nowhere, which the exclusive open below would refuse only after the catch.
-		if (lstatSync(file, { throwIfNoEntry: false }))
-			throw new Failure(`${file} already exists; catch writes only a new file`);
-		const { url, host } = await this.stopRedirect(sourceId, prefix, wait, 'nothing was written');
+		// FILE is made and its mode checked before the watch starts, so no redirect is taken for a file that can't
+		// hold it privately. O_EXCL refuses anything already at the path, a link that points nowhere included.
 		let fd;
 		try {
-			// O_EXCL refuses a file or link that appeared while catch waited.
 			fd = openSync(file, 'wx', 0o600);
-			// A umask such as 0477 would leave the new file unreadable even to its owner.
-			fchmodSync(fd, 0o600);
-			writeFileSync(fd, url);
-			closeSync(fd);
 		} catch (error) {
-			let left = '';
-			if (fd !== undefined) {
+			throw new Failure(`${file} can't be made as a new file (${error.code ?? error.message}); catch writes only a new file`);
+		}
+		try {
+			// A umask such as 0477 narrows the mode at creation, and a Windows drive under WSL may not keep it at all.
+			fchmodSync(fd, 0o600);
+			const mode = fstatSync(fd).mode & 0o777;
+			if (mode !== 0o600)
+				throw new Failure(`${file} has mode ${mode.toString(8)}, not 600, as on a Windows drive; use a Linux folder`);
+			const { url, host } = await this.stopRedirect(sourceId, prefix, wait, 'nothing was written');
+			try {
+				writeFileSync(fd, url);
+				closeSync(fd);
+				fd = undefined;
+			} catch (error) {
+				throw new Failure(`${sourceId}'s request to ${host} was stopped, but ${file} could not be written (${error.code ?? error.message})`);
+			}
+			return { caught: true, host };
+		} catch (error) {
+			if (fd !== undefined)
 				try {
 					closeSync(fd);
 				} catch {}
-				try {
-					unlinkSync(file);
-				} catch (unlinkError) {
-					left = `, and the partial file could not be removed (${unlinkError.code ?? unlinkError.message})`;
-				}
+			try {
+				unlinkSync(file);
+			} catch (unlinkError) {
+				error.message += `, and ${file} could not be removed (${unlinkError.code ?? unlinkError.message})`;
 			}
-			throw new Failure(
-				`${sourceId}'s request to ${host} was stopped, but ${file} could not be written (${error.code ?? error.message})${left}`,
-			);
+			throw error;
 		}
-		return { caught: true, host, file };
 	}
 
 	async close(id) {
