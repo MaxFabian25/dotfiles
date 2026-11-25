@@ -36,6 +36,12 @@ PLAIN_VALUE = 'correct horse battery staple'
 KEY_GROUP = 'A3-ABC123-XYZ789'
 MASK_REFUSAL = 'this is a mask; read the item with `op read` or press Reveal first'
 FAKE_PASSWORD = 'Fake pass phrase for 616 #7'
+# A one-time code shaped like GitHub's, 20 hex characters, which no general hiding rule catches.
+OAUTH_CODE = '7c1e9a40b5d23f6e8a17'
+OAUTH_STATE = 'state-for-callback-81'
+CALLBACK_QUERY = f'code={OAUTH_CODE}&state={OAUTH_STATE}'
+# The cookie each request to /callback/ carried, which names the context it came from.
+CALLBACKS = []
 PASSWORD_PAGE = """<!doctype html><title>Password</title><form method="post" action="/session">
 <label>Password <input id="password" name="password" type="password"></label><button type="submit">Sign in</button></form>"""
 
@@ -52,6 +58,7 @@ PAGES = {
 <p>Plain text stays.</p>
 <label>Typed <input id="typed"></label>""",
     '/plain': '<!doctype html><title>Plain</title><p>Nothing secret here.</p>',
+    '/authorize': '<!doctype html><title>Authorize</title><a href="/grant">Authorize</a>',
     '/login': """<!doctype html><title>Sign in</title><form method="post" action="/password">
 <label>Email <input id="email" name="email"></label><button id="next" type="submit">Continue</button></form>""",
     '/counter': """<!doctype html><title>Counter</title><p>Frames <span id="frames">0</span></p>
@@ -123,6 +130,15 @@ class Pages(BaseHTTPRequestHandler):
             return self.answer(f'<!doctype html><p>Inner {self.path.split("?")[1]} {HEX64}</p>')
         if path == '/whoami':
             return self.answer(f'<!doctype html><p>Cookies: {self.headers.get("cookie") or "none"}</p>')
+        if path == '/mark':
+            return self.answer('<!doctype html><p>Marked</p>', cookie=self.path.split('?')[1])
+        if path == '/grant':
+            self.send_response(302)
+            self.send_header('location', f'http://localhost:{self.server.server_address[1]}/callback/?{CALLBACK_QUERY}')
+            return self.end_headers()
+        if path == '/callback/':
+            CALLBACKS.append(self.headers.get('cookie') or 'none')
+            return self.answer(f'<!doctype html><p>Connected</p><p>{self.path}</p>')
         body = PAGES.get(path)
         self.answer(body or 'not found', status=200 if body else 404)
 
@@ -509,6 +525,85 @@ class InteractionTest(BrokerRig):
         refused = self.broker('read', page, '--frame', 'no-such-frame')
         self.assertIn('no frame of', refused.stderr)
         self.ok('close', page)
+
+
+class HandOverTest(BrokerRig):
+    """hand-over on a fake OAuth flow: the source page's Authorize link answers 302 to a callback on another host
+    with a code. Each context gets its own cookie on that host first, so the server sees which context called back."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.callback = f'http://localhost:{cls.server.server_address[1]}/callback/'
+
+    def pages(self):
+        CALLBACKS.clear()
+        source = self.ok('open', f'http://localhost:{self.server.server_address[1]}/mark?who=source')['page']
+        target = self.ok('open', f'http://localhost:{self.server.server_address[1]}/mark?who=target', '--new-context')
+        self.ok('nav', source, f'{self.site}/authorize')
+        return source, target
+
+    def start_hand_over(self, source, target, wait):
+        handing = subprocess.Popen(['node', str(BROKER), 'hand-over', source, target, self.callback, '--wait', wait],
+                                   env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                   encoding='utf-8')
+        self.addCleanup(handing.kill)
+        deadline = time.monotonic() + 10
+        while 'watching' not in self.ok('status', source) and time.monotonic() < deadline:
+            time.sleep(0.1)
+        self.assertEqual(self.ok('status', source)['watching'], f'localhost:{self.server.server_address[1]}')
+        return handing
+
+    def test_the_redirect_loads_in_the_target_only_and_is_never_shown(self):
+        source, target = self.pages()
+        handing = self.start_hand_over(source, target['page'], '30')
+        self.ok('click', source, 'text=Authorize')
+        out, err = handing.communicate(timeout=60)
+        self.assertEqual(handing.returncode, 0, err)
+        self.assertEqual(json.loads(out),
+                         {'handedOver': True, 'host': f'localhost:{self.server.server_address[1]}', 'loaded': True})
+        self.assertEqual(CALLBACKS, ['who=target'])
+        self.assertNotIn('watching', self.ok('status', source))
+
+        later = [self.broker(*args) for args in (('status', target['page']), ('read', target['page']),
+                                                 ('status', source), ('read', source), ('status',))]
+        # The callback page shows its own path and query, which the read must hide.
+        self.assertIn('Connected\n\n/callback/?[hidden held hand-over', json.loads(later[1].stdout)['text'])
+        journal = subprocess.run(['journalctl', '--user', '-u', self.unit, '--no-pager'], capture_output=True,
+                                 text=True).stdout
+        for text in [out, err, journal, *(result.stdout + result.stderr for result in later)]:
+            for secret in (OAUTH_CODE, OAUTH_STATE, f'{self.callback}?'):
+                self.assertNotIn(secret, text)
+        self.ok('dispose', target['context'])
+        self.ok('close', source)
+
+    def test_no_redirect_fails_after_the_wait_and_the_source_is_let_go(self):
+        source, target = self.pages()
+        handing = self.start_hand_over(source, target['page'], '2')
+        out, err = handing.communicate(timeout=30)
+        self.assertEqual(handing.returncode, 1)
+        self.assertEqual(out, '')
+        self.assertIn('within 2 s; nothing was handed over', err)
+        self.assertNotIn('watching', self.ok('status', source))
+        self.ok('click', source, 'text=Authorize')
+        deadline = time.monotonic() + 10
+        while not CALLBACKS and time.monotonic() < deadline:
+            time.sleep(0.1)
+        self.assertEqual(CALLBACKS, ['who=source'])
+        self.ok('dispose', target['context'])
+        self.ok('close', source)
+
+    def test_bad_arguments_are_refused(self):
+        page = self.open_page('/plain')
+        for args, message in (((page, page, self.callback), 'two different pages'),
+                              ((page, 'p999', self.callback), 'not a page this broker opened'),
+                              ((page, self.open_page('/plain'), 'chatgpt.com/'), 'http or https URL'),
+                              ((page, self.open_page('/plain'), self.callback, '--wait', '0'), 'whole seconds'),
+                              ((page, self.open_page('/plain'), self.callback, '--wait', '901'), 'whole seconds')):
+            with self.subTest(args=args):
+                refused = self.broker('hand-over', *args)
+                self.assertEqual(refused.returncode, 1)
+                self.assertIn(message, refused.stderr)
 
 
 class DropTest(BrokerRig):
