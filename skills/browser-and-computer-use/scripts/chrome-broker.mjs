@@ -21,7 +21,17 @@
 // another claims folder, as the tests do.
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, closeSync, existsSync, fchmodSync, openSync, readFileSync, unlinkSync, writeSync } from 'node:fs';
+import {
+	chmodSync,
+	closeSync,
+	existsSync,
+	lstatSync,
+	openSync,
+	readFileSync,
+	statSync,
+	unlinkSync,
+	writeFileSync,
+} from 'node:fs';
 import http from 'node:http';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
@@ -532,7 +542,8 @@ class Broker {
 
 	// Hides URL, its query and each query value of 8 characters or more, raw and decoded, in every later reply.
 	hideCaught(url) {
-		const query = url.split('#')[0].split('?')[1] ?? '';
+		// A query may hold further question marks, so it runs from the first one to the fragment.
+		const query = url.split('#')[0].split('?').slice(1).join('?');
 		const values = query.split('&').map((pair) => pair.slice(pair.indexOf('=') + 1));
 		const decoded = values.map((value) => {
 			try {
@@ -551,36 +562,51 @@ class Broker {
 	async stopRedirect(sourceId, prefix, wait, nothing) {
 		const source = this.page(sourceId);
 		if (source.watching) throw new Failure(`${sourceId} is already watched by another hand-over or catch`);
-		let host;
+		let parsed;
 		try {
-			const parsed = new URL(prefix);
-			if (parsed.protocol === 'https:' || parsed.protocol === 'http:') host = parsed.host;
+			parsed = new URL(prefix);
 		} catch {}
-		if (!host) throw new Failure('URL-PREFIX must be an http or https URL, such as https://example.com/callback/');
+		if (parsed?.protocol !== 'https:' && parsed?.protocol !== 'http:')
+			throw new Failure('URL-PREFIX must be an http or https URL, such as https://example.com/callback/');
+		// Chrome reports request URLs in this normal form, such as a lower-case host without its default port.
+		const { host, href: watched } = parsed;
 		const seconds = wait === undefined ? HAND_OVER_S : Number(wait);
 		if (!Number.isInteger(seconds) || seconds < 1 || seconds > HAND_OVER_MAX_S)
 			throw new Failure(`--wait takes whole seconds from 1 to ${HAND_OVER_MAX_S}`);
 		let caught = null;
+		let unstopped = null;
+		let first = true;
 		let arrive;
 		const arrived = new Promise((resolve) => (arrive = resolve));
 		const unlisten = this.devtools.listen(({ method, params, sessionId }) => {
 			if (method !== 'Fetch.requestPaused' || sessionId !== source.sessionId) return;
 			const { requestId, request } = params;
-			if (!request.url.startsWith(prefix)) {
+			if (!request.url.startsWith(watched)) {
 				this.call('Fetch.continueRequest', { requestId }, sessionId).catch(() => {});
 				return;
 			}
-			this.call('Fetch.failRequest', { requestId, errorReason: 'Aborted' }, sessionId).catch(() => {});
-			if (caught === null) {
-				caught = request.url;
-				this.hideCaught(caught);
-				arrive();
-			}
+			this.hideCaught(request.url);
+			const decides = first;
+			first = false;
+			// The URL counts as caught only once Chrome confirms the request failed, so it never reached the site.
+			Promise.resolve()
+				.then(() => this.call('Fetch.failRequest', { requestId, errorReason: 'Aborted' }, sessionId))
+				.then(
+					() => {
+						if (decides) caught = request.url;
+					},
+					(error) => {
+						unstopped ??= error;
+					},
+				)
+				.finally(() => {
+					if (decides) arrive();
+				});
 		});
 		let timer;
 		source.watching = host;
 		try {
-			const urlPattern = `${prefix.replace(/[\\*?]/g, '\\$&')}*`;
+			const urlPattern = `${watched.replace(/[\\*?]/g, '\\$&')}*`;
 			await this.call('Fetch.enable', { patterns: [{ urlPattern, requestStage: 'Request' }] }, source.sessionId);
 			await Promise.race([arrived, new Promise((resolve) => (timer = setTimeout(resolve, seconds * 1000)))]);
 		} finally {
@@ -589,6 +615,8 @@ class Broker {
 			unlisten();
 			delete source.watching;
 		}
+		if (unstopped !== null)
+			throw new Failure(`Chrome did not confirm that ${sourceId}'s request to ${host} was stopped (${unstopped.message}); ${nothing}`);
 		if (caught === null) throw new Failure(`no request to ${host} left ${sourceId} within ${seconds} s; ${nothing}`);
 		return { url: caught, host };
 	}
@@ -596,8 +624,9 @@ class Broker {
 	// Loads the redirect stopRedirect caught on SOURCE in TARGET, which may be in another context.
 	async handOver(sourceId, targetId, prefix, wait) {
 		if (prefix === undefined) throw new Failure('hand-over needs SOURCE TARGET URL-PREFIX');
+		const source = this.page(sourceId);
 		const target = this.page(targetId);
-		if (this.page(sourceId) === target) throw new Failure('hand-over needs two different pages');
+		if (source === target) throw new Failure('hand-over needs two different pages');
 		const { url, host } = await this.stopRedirect(sourceId, prefix, wait, 'nothing was handed over');
 		try {
 			return { handedOver: true, host, loaded: await this.navigate(target, url) };
@@ -612,20 +641,28 @@ class Broker {
 	async catchRedirect(sourceId, prefix, file, wait) {
 		if (file === undefined) throw new Failure('catch needs SOURCE URL-PREFIX FILE');
 		if (!isAbsolute(file)) throw new Failure('FILE must be an absolute path, because the broker runs in another folder');
-		if (existsSync(file)) throw new Failure(`${file} already exists; catch writes only a new file`);
-		if (!existsSync(dirname(file))) throw new Failure(`${dirname(file)} does not exist`);
+		if (!statSync(dirname(file), { throwIfNoEntry: false })?.isDirectory())
+			throw new Failure(`${dirname(file)} is not a folder`);
+		// lstat also finds a link that points nowhere, which the exclusive open below would refuse only after the catch.
+		if (lstatSync(file, { throwIfNoEntry: false }))
+			throw new Failure(`${file} already exists; catch writes only a new file`);
 		const { url, host } = await this.stopRedirect(sourceId, prefix, wait, 'nothing was written');
 		let fd;
 		try {
 			// O_EXCL refuses a file or link that appeared while catch waited.
 			fd = openSync(file, 'wx', 0o600);
-			fchmodSync(fd, 0o600);
-			writeSync(fd, url);
+			writeFileSync(fd, url);
+			closeSync(fd);
 		} catch (error) {
-			if (fd !== undefined) unlinkSync(file);
+			if (fd !== undefined) {
+				try {
+					closeSync(fd);
+				} catch {}
+				try {
+					unlinkSync(file);
+				} catch {}
+			}
 			throw new Failure(`${sourceId}'s request to ${host} was stopped, but ${file} could not be written (${error.code ?? error.message})`);
-		} finally {
-			if (fd !== undefined) closeSync(fd);
 		}
 		return { caught: true, host, file };
 	}

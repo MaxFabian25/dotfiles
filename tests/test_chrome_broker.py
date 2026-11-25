@@ -563,8 +563,9 @@ class HandOverTest(BrokerRig):
 
     def assertNothingShown(self, *texts):
         journal = subprocess.run(['journalctl', '--user', '-u', self.unit, '--no-pager'], capture_output=True,
-                                 text=True).stdout
-        for text in [*texts, journal]:
+                                 text=True)
+        self.assertEqual(journal.returncode, 0, journal.stderr)
+        for text in [*texts, journal.stdout]:
             for secret in (OAUTH_CODE, OAUTH_STATE, f'{self.callback}?'):
                 self.assertNotIn(secret, text)
 
@@ -615,9 +616,15 @@ class HandOverTest(BrokerRig):
                 self.assertEqual(refused.returncode, 1)
                 self.assertIn(message, refused.stderr)
         file = str(self.scratch / 'never-written')
+        dangling = self.scratch / 'dangling'
+        dangling.symlink_to(self.scratch / 'nowhere')
+        plain = self.scratch / 'plain-file'
+        plain.write_text('')
         for args, message in (((page, self.callback), 'needs SOURCE URL-PREFIX FILE'),
                               ((page, self.callback, 'caught-here'), 'absolute path'),
-                              ((page, self.callback, str(self.scratch / 'no-folder/caught')), 'does not exist'),
+                              ((page, self.callback, str(self.scratch / 'no-folder/caught')), 'is not a folder'),
+                              ((page, self.callback, str(plain / 'caught')), 'is not a folder'),
+                              ((page, self.callback, str(dangling)), 'already exists'),
                               (('p999', self.callback, file), 'not a page this broker opened'),
                               ((page, 'chatgpt.com/', file), 'http or https URL'),
                               ((page, self.callback, file, '--wait', '0'), 'whole seconds')):
@@ -642,8 +649,24 @@ class HandOverTest(BrokerRig):
         self.assertEqual(CALLBACKS, [])
         self.assertEqual(sorted(self.chrome.page_urls()), before)
         self.assertEqual(self.ok('status', source)['url'], f'{self.site}/authorize')
-        later = [self.broker(*args) for args in (('status', source), ('read', source), ('status',))]
+        later = [self.broker(*args) for args in (('status', source), ('read', source), ('status',),
+                                                 ('eval', source, json.dumps(OAUTH_CODE)))]
+        # A page that showed the code later would have it hidden, because catch registered it as hand-over does.
+        self.assertIn('[hidden held hand-over', json.loads(later[-1].stdout)['value'])
         self.assertNothingShown(out, err, *(result.stdout + result.stderr for result in later))
+        self.ok('dispose', target['context'])
+        self.ok('close', source)
+
+    def test_catch_matches_a_prefix_spelled_other_than_chrome_reports_it(self):
+        source, target = self.pages()
+        file = self.scratch / 'caught-upper'
+        prefix = self.callback.replace('localhost', 'LOCALHOST')
+        catching = self.start_watching(source, 'catch', source, prefix, str(file), '--wait', '30')
+        self.ok('click', source, 'text=Authorize')
+        out, err = catching.communicate(timeout=60)
+        self.assertEqual(catching.returncode, 0, err)
+        self.assertEqual(file.read_text(), f'{self.callback}?{CALLBACK_QUERY}')
+        self.assertEqual(CALLBACKS, [])
         self.ok('dispose', target['context'])
         self.ok('close', source)
 
