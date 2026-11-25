@@ -11,12 +11,19 @@
 // connection, the broker answers "disconnected" and never reconnects by itself, since each connection raises a new
 // prompt on the user's screen; `start` reconnects.
 //
+// The Windows desktop is shared between agent tasks, which take the `windows-desktop` claim with the dotfiles'
+// claims.py before driving it. `start` and `open` raise windows over whatever another task shows, so they refuse
+// while a claim runs that the caller does not hold. The caller names itself with --who or CHROME_BROKER_WHO, as it
+// named itself to claims.py.
+//
 // It finds Windows Chrome's DevToolsActivePort file under Windows' LOCALAPPDATA. CHROME_BROKER_PORT_FILE names
-// another one, CHROME_BROKER_SOCKET another socket and CHROME_BROKER_UNIT another unit name, as the tests do.
+// another one, CHROME_BROKER_SOCKET another socket, CHROME_BROKER_UNIT another unit name and CHROME_BROKER_CLAIMS
+// another claims folder, as the tests do.
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
 import http from 'node:http';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -25,7 +32,9 @@ const CALL_MS = 30_000;
 const LOAD_MS = 30_000;
 const ELEMENT_MS = 10_000;
 const START_MS = 120_000;
-const USAGE = `usage: node chrome-broker.mjs start | stop | status [PAGE] | COMMAND ...
+const USAGE = `usage: node chrome-broker.mjs start | stop | status [PAGE] | COMMAND ... [--who TASK]
+  --who TASK                     the task, as named in its windows-desktop claim (or CHROME_BROKER_WHO); start
+                                 and open exit 3 while a claim runs that another task, or a nameless caller, lacks
   start                          start the broker as a systemd user unit, or report the running one
   stop                           close the broker's pages and contexts, then its connection
   status [PAGE]                  the connection and the broker's pages, or one page's URL and visibility
@@ -60,6 +69,26 @@ const socketPath = () =>
 	process.env.CHROME_BROKER_SOCKET ||
 	join(process.env.XDG_RUNTIME_DIR || `/run/user/${process.getuid()}`, 'chrome-broker.sock');
 const unitName = () => process.env.CHROME_BROKER_UNIT || 'chrome-broker';
+const claimFile = () =>
+	join(process.env.CHROME_BROKER_CLAIMS || join(homedir(), '.local/state/dotfiles/claims'), 'windows-desktop.json');
+
+// Why WHO may not raise windows now, or null. A claim file that is unreadable or past its `until` holds nothing, as
+// in claims.py.
+function claimRefusal(who) {
+	let claim;
+	try {
+		claim = JSON.parse(readFileSync(claimFile(), 'utf8'));
+		if (!(new Date(claim.until) > new Date()) || typeof claim.who !== 'string') return null;
+	} catch {
+		return null;
+	}
+	if (claim.who === who) return null;
+	const until = new Date(claim.until).toTimeString().slice(0, 5);
+	const holder = `windows-desktop is claimed by ${claim.who} until ${until}${claim.note ? `: ${claim.note}` : ''}`;
+	return who
+		? `${holder}. Wait until it is released, or agree with that task`
+		: `${holder}. Pass --who with the name your own claim uses, or wait until it is released`;
+}
 
 function windowsPortFile() {
 	const local = execFileSync('cmd.exe', ['/d', '/c', 'echo %LOCALAPPDATA%'], {
@@ -691,15 +720,26 @@ async function start() {
 	return reply;
 }
 
-async function main(argv) {
-	const [command] = argv;
+async function main(given) {
+	const [command] = given;
 	if (!command || command === '--help' || command === '-h') {
 		console.log(USAGE);
 		return command ? 0 : 2;
 	}
 	if (command === 'serve') {
-		await serve(argv.slice(1));
+		await serve(given.slice(1));
 		return null;
+	}
+	const at = given.indexOf('--who');
+	if (at !== -1 && !given[at + 1]) throw new Failure('--who needs the task name');
+	const who = at === -1 ? process.env.CHROME_BROKER_WHO : given[at + 1];
+	const argv = at === -1 ? given : given.toSpliced(at, 2);
+	if (command === 'start' || command === 'open') {
+		const refusal = claimRefusal(who);
+		if (refusal) {
+			console.error(refusal);
+			return 3;
+		}
 	}
 	let stdin;
 	if (command === 'store') {
