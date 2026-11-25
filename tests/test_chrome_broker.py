@@ -133,8 +133,10 @@ class Pages(BaseHTTPRequestHandler):
         if path == '/mark':
             return self.answer('<!doctype html><p>Marked</p>', cookie=self.path.split('?')[1])
         if path == '/grant':
+            code = parse_qs(self.path.partition('?')[2]).get('code', [OAUTH_CODE])[0]
             self.send_response(302)
-            self.send_header('location', f'http://localhost:{self.server.server_address[1]}/callback/?{CALLBACK_QUERY}')
+            self.send_header('location', f'http://localhost:{self.server.server_address[1]}/callback/?'
+                                         f'code={code}&state={OAUTH_STATE}')
             return self.end_headers()
         if path == '/callback/':
             CALLBACKS.append(self.headers.get('cookie') or 'none')
@@ -565,6 +567,7 @@ class HandOverTest(BrokerRig):
         journal = subprocess.run(['journalctl', '--user', '-u', self.unit, '--no-pager'], capture_output=True,
                                  text=True)
         self.assertEqual(journal.returncode, 0, journal.stderr)
+        self.assertNotIn('-- No entries --', journal.stdout)
         for text in [*texts, journal.stdout]:
             for secret in (OAUTH_CODE, OAUTH_STATE, f'{self.callback}?'):
                 self.assertNotIn(secret, text)
@@ -625,6 +628,7 @@ class HandOverTest(BrokerRig):
                               ((page, self.callback, str(self.scratch / 'no-folder/caught')), 'is not a folder'),
                               ((page, self.callback, str(plain / 'caught')), 'is not a folder'),
                               ((page, self.callback, str(dangling)), 'already exists'),
+                              ((page, self.callback, file, 'rest-of-name'), 'quote a FILE'),
                               (('p999', self.callback, file), 'not a page this broker opened'),
                               ((page, 'chatgpt.com/', file), 'http or https URL'),
                               ((page, self.callback, file, '--wait', '0'), 'whole seconds')):
@@ -649,11 +653,24 @@ class HandOverTest(BrokerRig):
         self.assertEqual(CALLBACKS, [])
         self.assertEqual(sorted(self.chrome.page_urls()), before)
         self.assertEqual(self.ok('status', source)['url'], f'{self.site}/authorize')
-        later = [self.broker(*args) for args in (('status', source), ('read', source), ('status',),
-                                                 ('eval', source, json.dumps(OAUTH_CODE)))]
-        # A page that showed the code later would have it hidden, because catch registered it as hand-over does.
-        self.assertIn('[hidden held hand-over', json.loads(later[-1].stdout)['value'])
+        later = [self.broker(*args) for args in (('status', source), ('read', source), ('status',))]
         self.assertNothingShown(out, err, *(result.stdout + result.stderr for result in later))
+        self.ok('dispose', target['context'])
+        self.ok('close', source)
+
+    def test_catch_hides_the_code_it_caught_in_later_replies(self):
+        # A code no other test sends, so only this catch can have registered it.
+        code = 'catch-own-code-4b7e'
+        source, target = self.pages()
+        file = self.scratch / 'caught-own'
+        catching = self.start_catch(source, file, '30')
+        self.ok('eval', source, f"(location.href = '/grant?code={code}', true)")
+        _, err = catching.communicate(timeout=60)
+        self.assertEqual(catching.returncode, 0, err)
+        self.assertIn(f'code={code}&', file.read_text())
+        shown = self.ok('eval', source, json.dumps(code))['value']
+        self.assertNotIn(code, shown)
+        self.assertIn('[hidden held hand-over', shown)
         self.ok('dispose', target['context'])
         self.ok('close', source)
 
@@ -663,7 +680,7 @@ class HandOverTest(BrokerRig):
         prefix = self.callback.replace('localhost', 'LOCALHOST')
         catching = self.start_watching(source, 'catch', source, prefix, str(file), '--wait', '30')
         self.ok('click', source, 'text=Authorize')
-        out, err = catching.communicate(timeout=60)
+        _, err = catching.communicate(timeout=60)
         self.assertEqual(catching.returncode, 0, err)
         self.assertEqual(file.read_text(), f'{self.callback}?{CALLBACK_QUERY}')
         self.assertEqual(CALLBACKS, [])
