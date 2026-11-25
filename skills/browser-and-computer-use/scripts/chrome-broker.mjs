@@ -52,13 +52,13 @@ const USAGE = `usage: node chrome-broker.mjs start | stop | status [PAGE] | COMM
   status [PAGE]                  the connection and the broker's pages, or one page's URL and visibility
   open URL [--new-context | --context CONTEXT]
                                  a page in a window of its own, in the user's profile, a new cookie-less context
-                                 or one the broker opened; prints its page ID, context ID and "visible" or "hidden"
+                                 or one the broker opened; prints its page ID, context ID and visibility. The page
+                                 acts as focused and keeps drawing while other windows cover Chrome or it is
+                                 minimised, so it takes typing without being brought to the front
   nav PAGE URL | activate PAGE | close PAGE | dispose CONTEXT
                                  dispose closes a cookie-less context and every page in it
-  read PAGE [--fresh] [--frame URL-PART]
-                                 the text, and each input with its value's length only; --fresh, for a
-                                 time-sensitive value such as a one-time code, is refused while the page is hidden,
-                                 because Chrome stops rendering hidden pages
+  read PAGE [--frame URL-PART]
+                                 the text, and each input with its value's length only
   eval PAGE EXPRESSION [--frame URL-PART | --hold NAME]
                                  the expression's value, awaited; --frame runs it in each frame whose URL holds
                                  URL-PART; --hold keeps the value as NAME and prints its length
@@ -495,12 +495,21 @@ class Broker {
 			newWindow: true,
 			...(browserContextId && { browserContextId }),
 		});
-		const { sessionId } = await this.call('Target.attachToTarget', { targetId, flatten: true });
+		let sessionId;
+		try {
+			({ sessionId } = await this.call('Target.attachToTarget', { targetId, flatten: true }));
+			await this.call('Page.enable', {}, sessionId);
+			// The page acts as focused and keeps drawing while its window is covered or minimised, so focus-dependent
+			// sign-in fields take typing and timers run without bringing Chrome to the front. A page without it would
+			// be hidden there, so a page whose setup failed is closed rather than handed out.
+			await this.call('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId);
+			await this.call('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sessionId);
+		} catch (error) {
+			await this.call('Target.closeTarget', { targetId }).catch(() => {});
+			throw error;
+		}
 		const id = `p${++this.counter}`;
-		const page = { targetId, sessionId, context, frames: new Set() };
-		this.pages.set(id, page);
-		await this.call('Page.enable', {}, sessionId);
-		await this.call('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sessionId);
+		this.pages.set(id, { targetId, sessionId, context, frames: new Set() });
 		return { page: id, context, ...(await this.nav(id, url)) };
 	}
 
@@ -512,18 +521,13 @@ class Broker {
 		return { ...facts, loaded };
 	}
 
-	async read(id, fresh, frame) {
+	async read(id, frame) {
 		const facts = await this.evaluate(this.page(id), PAGE_FACTS);
-		if (facts.visibility === 'hidden' && fresh)
-			throw new Failure(
-				`${id} is hidden, and Chrome stops rendering hidden pages, so a fresh read could show a stopped countdown or an unrendered page; bring its window to the front and read again`,
-			);
-		const note = facts.visibility === 'hidden' && { note: 'this page is hidden, and Chrome stops rendering hidden pages' };
 		if (frame !== undefined) {
 			const frames = (await this.inFrames(id, frame, PAGE_FACTS)).map(({ value, ...where }) => ({ ...where, ...value }));
-			return { page: id, ...note, visibility: facts.visibility, frames };
+			return { page: id, visibility: facts.visibility, frames };
 		}
-		return { page: id, ...note, ...facts };
+		return { page: id, ...facts };
 	}
 
 	async evalCommand(id, expression, frame, hold) {
@@ -731,7 +735,7 @@ class Broker {
 		const [command, ...rest] = argv;
 		const known = {
 			open: ['--new-context', '--context='],
-			read: ['--fresh', '--frame='],
+			read: ['--frame='],
 			eval: ['--frame=', '--hold='],
 			type: ['--enter'],
 			'type-held': ['--enter'],
@@ -761,7 +765,7 @@ class Broker {
 				await this.call('Target.activateTarget', { targetId: this.page(args[0]).targetId });
 				return { activated: args[0] };
 			case 'read':
-				return this.read(args[0], flags.has('--fresh'), flags.get('--frame'));
+				return this.read(args[0], flags.get('--frame'));
 			case 'eval':
 				return this.evalCommand(args[0], args[1], flags.get('--frame'), flags.get('--hold'));
 			case 'click':
