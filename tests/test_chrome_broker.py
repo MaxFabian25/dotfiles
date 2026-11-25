@@ -61,8 +61,11 @@ PAGES = {
     '/authorize': '<!doctype html><title>Authorize</title><a href="/grant">Authorize</a>',
     '/login': """<!doctype html><title>Sign in</title><form method="post" action="/password">
 <label>Email <input id="email" name="email"></label><button id="next" type="submit">Continue</button></form>""",
-    '/counter': """<!doctype html><title>Counter</title><p>Frames <span id="frames">0</span></p>
-<script>let frames = 0; (function tick() { document.getElementById('frames').textContent = ++frames;
+    # A field that, like some sign-in forms, takes typing only after a focus event, beside a frame counter.
+    '/focus-field': """<!doctype html><title>Focus field</title><p>Frames <span id="frames">0</span></p>
+<input id="field" readonly>
+<script>const field = document.getElementById('field'); field.addEventListener('focus', () => field.readOnly = false);
+let frames = 0; (function tick() { document.getElementById('frames').textContent = ++frames;
 requestAnimationFrame(tick); })();</script>""",
 }
 
@@ -419,44 +422,32 @@ class HeldTest(BrokerRig):
         self.assertNotIn('"argument"', self.broker('held').stdout)
 
 
-class HiddenPageTest(BrokerRig):
+class CoveredPageTest(BrokerRig):
+    """Headless Chrome takes visibility and focus from a page only when its window is minimised, so the test does that.
+
+    A page outside the broker then turns hidden, loses focus and draws no frames; a broker page keeps all three.
+    """
+
     def set_window(self, url, state):
         subprocess.run(['node', '--input-type=module', '-e', WINDOW_STATE, str(self.chrome.port), url, state],
                        check=True, timeout=30)
 
-    def wait_for(self, page, visibility):
-        deadline = time.monotonic() + 10
-        while self.ok('status', page)['visibility'] != visibility and time.monotonic() < deadline:
-            time.sleep(0.2)
-        self.assertEqual(self.ok('status', page)['visibility'], visibility)
-
     def frames(self, page):
         return int(re.search(r'Frames (\d+)', self.ok('read', page)['text']).group(1))
 
-    def test_a_hidden_page_is_reported_and_refuses_fresh_reads(self):
-        url = f'{self.site}/counter?case=hidden'
-        opened = self.ok('open', url)
-        page = opened['page']
-        self.assertEqual(opened['visibility'], 'visible')
+    def test_a_minimised_page_stays_visible_keeps_drawing_has_focus_and_takes_typing(self):
+        url = f'{self.site}/focus-field?case=minimised'
+        page = self.ok('open', url)['page']
+        self.set_window(url, 'minimized')
+        time.sleep(1)  # Chrome hides a page without focus emulation well within this
         first = self.frames(page)
         time.sleep(1)
         self.assertGreater(self.frames(page), first)
         self.assertEqual(self.ok('status', page)['visibility'], 'visible')
-        self.assertNotIn('note', self.ok('read', page, '--fresh'))
-
-        self.set_window(url, 'minimized')
-        self.wait_for(page, 'hidden')
-        refused = self.broker('read', page, '--fresh')
-        self.assertNotEqual(refused.returncode, 0)
-        self.assertIn(f'{page} is hidden', refused.stderr)
-        self.assertIn('Chrome stops rendering hidden pages', refused.stderr)
-        plain = self.ok('read', page)
-        self.assertEqual(plain['visibility'], 'hidden')
-        self.assertIn('this page is hidden', plain['note'])
-
-        self.set_window(url, 'normal')
-        self.wait_for(page, 'visible')
-        self.assertEqual(self.ok('read', page, '--fresh')['visibility'], 'visible')
+        self.assertIs(self.ok('eval', page, 'document.hasFocus()')['value'], True)
+        self.ok('type', page, '#field', 'typed while minimised')
+        self.assertEqual(self.ok('eval', page, "document.getElementById('field').value")['value'], 'typed while minimised')
+        self.ok('close', page)
 
 
 class ReplayTest(BrokerRig):
