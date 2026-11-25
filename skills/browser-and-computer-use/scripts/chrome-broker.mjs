@@ -21,10 +21,20 @@
 // another claims folder, as the tests do.
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
+import {
+	chmodSync,
+	closeSync,
+	existsSync,
+	fchmodSync,
+	fstatSync,
+	openSync,
+	readFileSync,
+	unlinkSync,
+	writeFileSync,
+} from 'node:fs';
 import http from 'node:http';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT = fileURLToPath(import.meta.url);
@@ -59,9 +69,14 @@ const USAGE = `usage: node chrome-broker.mjs start | stop | status [PAGE] | COMM
                                  stop the first request on SOURCE whose URL starts with URL-PREFIX, such as an
                                  OAuth redirect that carries a one-time code, and load it in TARGET instead, which
                                  may be in another context; prints only the host and whether TARGET loaded, and
-                                 hides that URL and its query values in every later reply; fails after SECONDS
-                                 (default ${HAND_OVER_S}, at most ${HAND_OVER_MAX_S}). Run it in the background, and press the button
-                                 that sends the redirect once status SOURCE shows "watching"
+                                 hides that URL and each query value of 8 or more characters in every later reply;
+                                 fails after SECONDS (default ${HAND_OVER_S}, at most ${HAND_OVER_MAX_S}), or when Chrome doesn't confirm a
+                                 stop. Run it in the background, and press the button that sends the redirect once
+                                 status SOURCE shows "watching"
+  catch SOURCE URL-PREFIX FILE [--wait SECONDS]
+                                 stop that request as hand-over does, write its URL to FILE, a new file with mode
+                                 0600 at an absolute path that catch makes before it watches, and load it in no
+                                 page; prints only the host, and refuses a folder that can't keep mode 0600
 Held values carry a secret from one page to another without showing it:
   store NAME < value             hold a value given on standard input, never as an argument
   read-field PAGE SELECTOR NAME  hold a field's value; prints its length
@@ -524,12 +539,13 @@ class Broker {
 		if (id === undefined) return this.summary();
 		const page = this.page(id);
 		const facts = await this.evaluate(page, '({ url: location.href, visibility: document.visibilityState })');
-		return { page: id, context: page.context, ...facts, ...(page.watching && { watching: page.watching }) };
+		return { page: id, context: page.context, ...facts, ...(page.watch?.ready && { watching: page.watch.host }) };
 	}
 
 	// Hides URL, its query and each query value of 8 characters or more, raw and decoded, in every later reply.
 	hideCaught(url) {
-		const query = url.split('#')[0].split('?')[1] ?? '';
+		// A query may hold further question marks, so it runs from the first one to the fragment.
+		const query = url.split('#')[0].split('?').slice(1).join('?');
 		const values = query.split('&').map((pair) => pair.slice(pair.indexOf('=') + 1));
 		const decoded = values.map((value) => {
 			try {
@@ -542,58 +558,144 @@ class Broker {
 			if (form.length >= 8) this.caught.set(`hand-over ${this.caught.size + 1}`, form);
 	}
 
-	// Stops the first request on SOURCE whose URL starts with PREFIX and loads that URL in TARGET. The URL goes
-	// nowhere else but this.caught, which hides it. Every other matching request on SOURCE while it waits is stopped
-	// too, so none reaches PREFIX's site from SOURCE.
-	async handOver(sourceId, targetId, prefix, wait) {
-		if (prefix === undefined) throw new Failure('hand-over needs SOURCE TARGET URL-PREFIX');
+	// Stops the first request on SOURCE whose URL starts with PREFIX and returns that URL and PREFIX's host. Every
+	// other matching request on SOURCE while it waits is stopped too, so none reaches PREFIX's site from SOURCE. The
+	// URL goes nowhere but this.caught, which hides it, and the caller. NOTHING names what was not done on a failure.
+	async stopRedirect(sourceId, prefix, wait, nothing) {
 		const source = this.page(sourceId);
-		const target = this.page(targetId);
-		if (source === target) throw new Failure('hand-over needs two different pages');
-		if (source.watching) throw new Failure(`${sourceId} is already watched by another hand-over`);
-		let host;
+		if (source.watch) throw new Failure(`${sourceId} is already watched by another hand-over or catch`);
+		let parsed;
 		try {
-			const parsed = new URL(prefix);
-			if (parsed.protocol === 'https:' || parsed.protocol === 'http:') host = parsed.host;
+			parsed = new URL(prefix);
 		} catch {}
-		if (!host) throw new Failure('URL-PREFIX must be an http or https URL, such as https://example.com/callback/');
+		if (parsed?.protocol !== 'https:' && parsed?.protocol !== 'http:')
+			throw new Failure('URL-PREFIX must be an http or https URL, such as https://example.com/callback/');
+		// Chrome reports request URLs in this normal form, such as a lower-case host without its default port.
+		const { host, href: watched } = parsed;
 		const seconds = wait === undefined ? HAND_OVER_S : Number(wait);
 		if (!Number.isInteger(seconds) || seconds < 1 || seconds > HAND_OVER_MAX_S)
 			throw new Failure(`--wait takes whole seconds from 1 to ${HAND_OVER_MAX_S}`);
-		let caught = null;
+		// One entry per matching request, in the order Chrome paused them. Each settles once Chrome answers its stop, and
+		// the result is read only after the watch has ended and every entry has settled, so no stop is still open.
+		const stops = [];
+		let closed = false;
 		let arrive;
 		const arrived = new Promise((resolve) => (arrive = resolve));
 		const unlisten = this.devtools.listen(({ method, params, sessionId }) => {
 			if (method !== 'Fetch.requestPaused' || sessionId !== source.sessionId) return;
 			const { requestId, request } = params;
-			if (!request.url.startsWith(prefix)) {
+			if (!request.url.startsWith(watched)) {
 				this.call('Fetch.continueRequest', { requestId }, sessionId).catch(() => {});
 				return;
 			}
-			this.call('Fetch.failRequest', { requestId, errorReason: 'Aborted' }, sessionId).catch(() => {});
-			if (caught === null) {
-				caught = request.url;
-				this.hideCaught(caught);
-				arrive();
-			}
+			this.hideCaught(request.url);
+			// A request that pauses once the watch is closing may be let through by the disable, so it fails the watch.
+			const late = closed;
+			stops.push(
+				Promise.resolve()
+					.then(() => this.call('Fetch.failRequest', { requestId, errorReason: 'Aborted' }, sessionId))
+					.then(
+						() => ({ url: request.url, late }),
+						(error) => ({ error }),
+					),
+			);
+			arrive();
 		});
+		const watch = { host, ready: false };
+		source.watch = watch;
 		let timer;
-		source.watching = host;
+		let refused = null;
 		try {
-			const urlPattern = `${prefix.replace(/[\\*?]/g, '\\$&')}*`;
+			const urlPattern = `${watched.replace(/[\\*?]/g, '\\$&')}*`;
 			await this.call('Fetch.enable', { patterns: [{ urlPattern, requestStage: 'Request' }] }, source.sessionId);
+			// status shows "watching", the signal to press the button that sends the redirect, only from here.
+			watch.ready = true;
 			await Promise.race([arrived, new Promise((resolve) => (timer = setTimeout(resolve, seconds * 1000)))]);
-		} finally {
-			clearTimeout(timer);
-			await this.call('Fetch.disable', {}, source.sessionId).catch(() => {});
-			unlisten();
-			delete source.watching;
+		} catch (error) {
+			refused = error;
 		}
-		if (caught === null) throw new Failure(`no request to ${host} left ${sourceId} within ${seconds} s; nothing was handed over`);
+		clearTimeout(timer);
+		closed = true;
+		watch.ready = false;
+		const ended = await this.call('Fetch.disable', {}, source.sessionId).then(
+			() => true,
+			() => false,
+		);
+		unlisten();
+		// A page whose watch Chrome didn't confirm ended may still hold requests back, so it stays reserved.
+		if (ended) delete source.watch;
+		const results = await Promise.all(stops);
+		if (!ended)
+			throw new Failure(
+				`Chrome did not confirm that the watch on ${sourceId} ended; close that page` +
+					`${refused ? ` (the watch itself failed: ${refused.message})` : ''}; ${nothing}`,
+			);
+		if (refused) throw refused;
+		const unconfirmed = results.find((result) => result.error || result.late);
+		if (unconfirmed)
+			throw new Failure(
+				`Chrome did not confirm that every request from ${sourceId} to ${host} was stopped` +
+					`${unconfirmed.error ? ` (${unconfirmed.error.message})` : ', because one came as the watch ended'}; ${nothing}`,
+			);
+		if (results.length === 0) throw new Failure(`no request to ${host} left ${sourceId} within ${seconds} s; ${nothing}`);
+		return { url: results[0].url, host };
+	}
+
+	// Loads the redirect stopRedirect caught on SOURCE in TARGET, which may be in another context.
+	async handOver(sourceId, targetId, prefix, wait) {
+		if (prefix === undefined) throw new Failure('hand-over needs SOURCE TARGET URL-PREFIX');
+		const source = this.page(sourceId);
+		const target = this.page(targetId);
+		if (source === target) throw new Failure('hand-over needs two different pages');
+		const { url, host } = await this.stopRedirect(sourceId, prefix, wait, 'nothing was handed over');
 		try {
-			return { handedOver: true, host, loaded: await this.navigate(target, caught) };
+			return { handedOver: true, host, loaded: await this.navigate(target, url) };
 		} catch (error) {
 			throw new Failure(`${sourceId}'s request to ${host} was stopped, but ${targetId} could not load it: ${error.message}`);
+		}
+	}
+
+	// Writes the redirect stopRedirect caught on SOURCE to FILE, a new file with mode 0600, and loads it in no page.
+	// The broker writes FILE itself, so the URL never travels in a reply, and FILE must be absolute because the
+	// broker runs in another folder than its caller. The reply leaves FILE out, since the reply filter can mask a
+	// path; the caller already knows it.
+	async catchRedirect(sourceId, prefix, file, wait) {
+		if (file === undefined) throw new Failure('catch needs SOURCE URL-PREFIX FILE');
+		if (!isAbsolute(file)) throw new Failure('FILE must be an absolute path, because the broker runs in another folder');
+		// FILE is made and its mode checked before the watch starts, so no redirect is taken for a file that can't
+		// hold it privately. O_EXCL refuses anything already at the path, a link that points nowhere included.
+		let fd;
+		try {
+			fd = openSync(file, 'wx', 0o600);
+		} catch (error) {
+			throw new Failure(`${file} can't be made as a new file (${error.code ?? error.message}); catch writes only a new file`);
+		}
+		try {
+			// A umask such as 0477 narrows the mode at creation, and a Windows drive under WSL may not keep it at all.
+			fchmodSync(fd, 0o600);
+			const mode = fstatSync(fd).mode & 0o777;
+			if (mode !== 0o600)
+				throw new Failure(`${file} has mode ${mode.toString(8)}, not 600, as on a Windows drive; use a Linux folder`);
+			const { url, host } = await this.stopRedirect(sourceId, prefix, wait, 'nothing was written');
+			try {
+				writeFileSync(fd, url);
+				closeSync(fd);
+				fd = undefined;
+			} catch (error) {
+				throw new Failure(`${sourceId}'s request to ${host} was stopped, but ${file} could not be written (${error.code ?? error.message})`);
+			}
+			return { caught: true, host };
+		} catch (error) {
+			if (fd !== undefined)
+				try {
+					closeSync(fd);
+				} catch {}
+			try {
+				unlinkSync(file);
+			} catch (unlinkError) {
+				error.message += `, and ${file} could not be removed (${unlinkError.code ?? unlinkError.message})`;
+			}
+			throw error;
 		}
 	}
 
@@ -634,6 +736,7 @@ class Broker {
 			type: ['--enter'],
 			'type-held': ['--enter'],
 			'hand-over': ['--wait='],
+			catch: ['--wait='],
 		}[command] ?? [];
 		const flags = new Map();
 		const args = [];
@@ -667,6 +770,9 @@ class Broker {
 				return this.type(args[0], args[1], args[2], flags.has('--enter'));
 			case 'hand-over':
 				return this.handOver(args[0], args[1], args[2], flags.get('--wait'));
+			case 'catch':
+				if (args.length > 3) throw new Failure('catch takes SOURCE URL-PREFIX FILE; quote a FILE that holds spaces');
+				return this.catchRedirect(args[0], args[1], args[2], flags.get('--wait'));
 			case 'key':
 				await this.press(this.page(args[0]), args[1]);
 				return { pressed: args[1] };
