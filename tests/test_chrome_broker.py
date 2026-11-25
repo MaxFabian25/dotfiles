@@ -11,6 +11,7 @@ import shutil
 import signal
 import stat
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -20,6 +21,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
 from urllib.request import urlopen
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import claims  # noqa: E402
 
 BROKER = Path(__file__).resolve().parents[1] / 'skills/browser-and-computer-use/scripts/chrome-broker.mjs'
 CHROME = shutil.which('google-chrome') or shutil.which('google-chrome-stable')
@@ -186,8 +190,10 @@ class BrokerRig(unittest.TestCase):
         cls.site = f'http://127.0.0.1:{cls.server.server_address[1]}'
         cls.unit = f'chrome-broker-test-{uuid.uuid4().hex[:8]}'
         cls.socket = cls.scratch / 'broker.sock'
+        # An empty claims folder, so a real windows-desktop claim on this machine refuses no start here.
         cls.env = {**os.environ, 'CHROME_BROKER_SOCKET': str(cls.socket), 'CHROME_BROKER_UNIT': cls.unit,
-                   'CHROME_BROKER_PORT_FILE': str(cls.scratch / 'profile/DevToolsActivePort')}
+                   'CHROME_BROKER_PORT_FILE': str(cls.scratch / 'profile/DevToolsActivePort'),
+                   'CHROME_BROKER_CLAIMS': str(cls.scratch / 'claims')}
         cls.addClassCleanup(cls.stop_broker)
         started = cls.broker('start')
         if started.returncode != 0:
@@ -552,6 +558,62 @@ class UsageTest(unittest.TestCase):
                                 encoding='utf-8', timeout=30)
         self.assertEqual(result.returncode, 1)
         self.assertIn('no broker is running', result.stderr)
+
+
+@unittest.skipUnless(shutil.which('node'), 'node is not installed')
+class ClaimTest(unittest.TestCase):
+    """start and open read the windows-desktop claim before any broker is reached. With no broker running, a
+    refused command exits 3 and names the holder; an allowed one goes on to "no broker is running"."""
+
+    def setUp(self):
+        self.claims = Path(tempfile.mkdtemp(prefix='cb-claims.'))
+        self.addCleanup(shutil.rmtree, self.claims, ignore_errors=True)
+        self.env = {**os.environ, 'CHROME_BROKER_SOCKET': str(self.claims / 'none.sock'),
+                    'CHROME_BROKER_CLAIMS': str(self.claims), 'CHROME_BROKER_PORT_FILE': str(self.claims / 'none')}
+        self.env.pop('CHROME_BROKER_WHO', None)
+
+    def claim(self, who, hours=1):
+        """A claim as claims.py writes it; negative hours make one that has already ended."""
+        claims.take(self.claims, 'windows-desktop', who, 'codex cloud checkout test', hours)
+
+    def broker(self, *args, **env):
+        return subprocess.run(['node', str(BROKER), *args], env={**self.env, **env}, capture_output=True, text=True,
+                              encoding='utf-8', timeout=30)
+
+    def assertRefused(self, result):
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertIn('windows-desktop is claimed by other-task until', result.stderr)
+        self.assertIn('codex cloud checkout test', result.stderr)
+
+    def assertAllowed(self, result):
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertRegex(result.stderr, r'no broker is running|no DevToolsActivePort')
+
+    def test_another_tasks_claim_refuses_open_and_start(self):
+        self.claim('other-task')
+        self.assertRefused(self.broker('open', 'https://example.org', '--who', 'this-task'))
+        self.assertRefused(self.broker('start', '--who', 'this-task'))
+        self.assertRefused(self.broker('open', 'https://example.org', CHROME_BROKER_WHO='this-task'))
+
+    def test_a_caller_without_a_name_is_refused_while_a_claim_runs(self):
+        self.claim('other-task')
+        refused = self.broker('open', 'https://example.org')
+        self.assertRefused(refused)
+        self.assertIn('Pass --who', refused.stderr)
+
+    def test_the_holder_itself_and_no_claim_are_let_through(self):
+        self.assertAllowed(self.broker('open', 'https://example.org'))
+        self.claim('this-task')
+        self.assertAllowed(self.broker('open', 'https://example.org', '--who', 'this-task'))
+        self.assertAllowed(self.broker('start', CHROME_BROKER_WHO='this-task'))
+
+    def test_an_expired_claim_refuses_nothing(self):
+        self.claim('other-task', hours=-1)
+        self.assertAllowed(self.broker('open', 'https://example.org', '--who', 'this-task'))
+
+    def test_other_commands_are_not_held_back(self):
+        self.claim('other-task')
+        self.assertAllowed(self.broker('status', '--who', 'this-task'))
 
 
 if __name__ == '__main__':

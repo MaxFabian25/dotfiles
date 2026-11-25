@@ -2,7 +2,7 @@ public = true
 
 [source]
 local = "skills/browser-and-computer-use"
-tree = "sha256:632e52bbaa0659cfd7af7c28ddb910eac1df3befaede85cbcb66b034717618d1"
+tree = "sha256:fa18c4325b65bf2070b206c7225085b946c314158e1847d1d2aa9ece7fe9083c"
 
 [place]
 agents = true
