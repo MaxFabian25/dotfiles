@@ -85,6 +85,37 @@ expose_spawn_agent_model_overrides = true # managed
         self.assertEqual(patch_fields(None, fields, 'npmrc'), b'min-release-age=3\n')
         self.assertEqual(patch_fields(b'fund=false', fields, 'npmrc'), b'fund=false\nmin-release-age=3\n')
 
+    def test_bun_fields_go_to_every_global_config_bun_can_read(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'public/config/bun/bunfig.toml'
+            source.parent.mkdir(parents=True)
+            source.write_text('[install]\nminimumReleaseAge = 259200\nminimumReleaseAgeExcludes = ["@scope/name"]\n')
+            home = root / 'home'
+            roots = DeviceRoots(home, home / '.codex', home / '.claude', home / '.agents', root / 'engine')
+            fields = {('install', 'minimumReleaseAge'): 259200,
+                      ('install', 'minimumReleaseAgeExcludes'): ['@scope/name']}
+            for platform, folders in ((Platform.LINUX, [home, home / '.config']),
+                                      (Platform.MACOS, [home, home / '.config']), (Platform.WINDOWS, [home])):
+                found = desired(root / 'public', None, roots, platform)
+                self.assertEqual([(item.destination, item.fields) for item in found],
+                                 [(folder / '.bunfig.toml', fields) for folder in folders])
+                self.assertEqual(len({item.name for item in found}), len(folders))
+            source.write_text('# nothing yet\n')
+            with self.assertRaisesRegex(ValueError, 'bun configuration'):
+                desired(root / 'public', None, roots, Platform.LINUX)
+
+    def test_bun_patch_keeps_a_hand_copy_and_adds_a_list(self):
+        before = b'[install]\n# Three days in seconds.\nminimumReleaseAge = 259200\n'
+        fields = {('install', 'minimumReleaseAge'): 259200, ('install', 'minimumReleaseAgeExcludes'): ['@scope/name']}
+        after = patch_fields(before, fields)
+        self.assertTrue(after.startswith(before))
+        self.assertEqual(tomllib.loads(after.decode()),
+                         {'install': {'minimumReleaseAge': 259200, 'minimumReleaseAgeExcludes': ['@scope/name']}})
+        self.assertEqual(patch_fields(after, fields), after)
+        self.assertEqual(read_fields(after, fields)[('install', 'minimumReleaseAgeExcludes')],
+                         {'present': True, 'value': ['@scope/name']})
+
     def test_json_patch_keeps_other_keys_and_unchanged_bytes(self):
         fields = {('executablePath',): '/opt/google/chrome/chrome'}
         self.assertEqual(patch_fields(None, fields, 'json'), b'{\n  "executablePath": "/opt/google/chrome/chrome"\n}\n')

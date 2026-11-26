@@ -1929,6 +1929,25 @@ class InstallationTest(unittest.TestCase):
         npm = next(item for item in desired(self.public, None, self.roots, Platform.LINUX) if item.name == 'npm-user')
         self.assertEqual(npm.fields, {('min-release-age',): '3', ('fund',): 'false'})
 
+    def test_bun_fields_reach_both_global_paths_and_keep_a_hand_copy(self):
+        source = self.public / 'config/bun/bunfig.toml'
+        source.parent.mkdir(parents=True)
+        source.write_text('[install]\nminimumReleaseAge = 259200\nminimumReleaseAgeExcludes = ["@scope/name"]\n')
+        managed = {'minimumReleaseAge': 259200, 'minimumReleaseAgeExcludes': ['@scope/name']}
+        live = self.roots.home / '.bunfig.toml'
+        live.write_text('[install]\n# kept\nminimumReleaseAge = 259200\nregistry = "https://registry.example.invalid/"\n')
+        self.assert_check_blocks()
+        live.write_text(live.read_text() + 'minimumReleaseAgeExcludes = ["@scope/name"]\n')
+        self.assertEqual(self.run_apply().exit_code, 0)
+        self.assertIn('# kept', live.read_text())
+        self.assertEqual(tomllib.loads(live.read_text())['install'],
+                         managed | {'registry': 'https://registry.example.invalid/'})
+        second = self.roots.home / '.config/.bunfig.toml'
+        self.assertEqual(tomllib.loads(second.read_text()), {'install': managed})
+        self.assertEqual(plan(self.setup, self.device).exit_code, 0)
+        second.write_text('[install]\nminimumReleaseAge = 0\n')
+        self.assertEqual(plan(self.setup, self.device).exit_code, 2)
+
     def chrome_candidates(self, *installed):
         candidates = [self.root / 'chrome-a', self.root / 'chrome-b']
         for name in installed:
