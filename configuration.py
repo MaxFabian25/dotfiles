@@ -72,6 +72,13 @@ def desired(public: Path | None, private: Path | None, roots: DeviceRoots, platf
             raise ValueError('Public npm configuration must contain only top-level string, integer or boolean keys')
         result.append(NpmrcConfiguration('npm-user', roots.home / '.npmrc',
                                          {(key,): _npmrc_value(value) for key, value in source.items()}))
+    bun = public / 'config/bun/bunfig.toml' if public else None
+    if bun and bun.is_file():
+        fields = _leaf_fields(tomllib.loads(bun.read_text(encoding='utf-8')), ())
+        if not fields:
+            raise ValueError('Public bun configuration must name at least one key')
+        result.extend(TomlConfiguration(name, folder / '.bunfig.toml', fields)
+                      for name, folder in _bun_folders(roots.home, platform))
     chrome = public / 'config/agent-browser/chrome.toml' if public else None
     if chrome and chrome.is_file():
         result.append(_agent_browser(tomllib.loads(chrome.read_text(encoding='utf-8')), roots, platform, environ))
@@ -121,6 +128,15 @@ def cua_defaults(roots: DeviceRoots, command: str, environment: dict) -> str:
         return command
     environment['CUA_DRIVER_BIN'] = command
     return str(wrapper)
+
+
+def _bun_folders(home: Path, platform: Platform) -> tuple[tuple[str, Path], ...]:
+    """bun reads $XDG_CONFIG_HOME/.bunfig.toml alone when that variable is set, and ~/.bunfig.toml otherwise. A
+    session can set the variable where the pull's own shell does not, so the folder comes from the platform's
+    default and never from the pull's environment."""
+    if platform == Platform.WINDOWS:
+        return (('bun-user', home),)
+    return (('bun-user', home), ('bun-user-xdg', home / '.config'))
 
 
 def _leaf_fields(table: dict, prefix: tuple[str, ...]) -> dict[tuple[str, ...], object]:
