@@ -32,6 +32,10 @@ On 11 November 2026 its window returned no tree, a background pixel click worked
 
 On 12 November 2026 three scrolls sent while another window was in front reached that window, and text typed again after a lagging screenshot landed twice.
 
+## The broker's own "Allow remote debugging?" prompt
+
+On 24 November 2026 the user said "Just use cua-driver to click allow, no?" and later "I thought I had already established that in scenarios like that, we use computer use to click the allow button", after agents had asked them to press the prompt their own broker start raised. From 24 to 26 November agents pressed it by UIA token with `cua-driver.exe`. On 26 November one prompt's tree answered only after a 6-second budget, and by the click Chrome had closed the connection, so a second `start` was needed; another prompt's tree answered within a 90-second budget, and that click connected.
+
 ## Standing exception for `e-conomic-ledger-read`
 
 On 14 November 2026 the user approved opening or attaching to their own Chrome profile for read-only `e-conomic-ledger-read` searches without asking first, provided the agent states that it did so in the same message.
