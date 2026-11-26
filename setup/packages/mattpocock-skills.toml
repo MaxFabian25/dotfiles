@@ -4,7 +4,7 @@ note = "Upstream's exported skills, except setup-matt-pocock-skills and diagnosi
 [source]
 build = "generic"
 repository = "https://github.com/mattpocock/skills.git"
-commit = "d65391149dbb5fe76478e76fa8d5122b2aa5a70e"
+commit = "6f7f7831a625f040a8e06a0e7954826b87ce775a"
 manifest = ".claude-plugin/plugin.json"
 packaging = 6
 display_name = "Matt Pocock skills"
