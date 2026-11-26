@@ -68,7 +68,11 @@ PAGES = {
 let frames = 0; (function tick() { document.getElementById('frames').textContent = ++frames;
 requestAnimationFrame(tick); })();</script>""",
     '/download-link': '<!doctype html><title>Download</title><a id="get" href="/download">Get the file</a>',
+    # Its own inline script records whether an init script had already run in this document.
+    '/init-order': '<!doctype html><title>Order</title><script>window.pageSaw = window.initRuns ?? 0</script>',
 }
+# Counts its runs in each document, so a test can tell that it ran once per document and before the page's script.
+INIT_SCRIPT = 'window.initRuns = (window.initRuns ?? 0) + 1;\n'
 DOWNLOAD_NAME = 'broker-test.pem'
 DOWNLOAD_BODY = 'a harmless test file\n'
 
@@ -758,6 +762,51 @@ class DownloadTest(BrokerRig):
                 self.assertEqual(refused.returncode, 1)
                 self.assertIn(message, refused.stderr)
         self.ok('dispose', context)
+
+
+class InitScriptTest(BrokerRig):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.script = cls.scratch / 'init.js'
+        cls.script.write_text(INIT_SCRIPT, encoding='utf-8')
+
+    def runs(self, page):
+        """What the page's own script saw of the init script, and how often it ran in this document."""
+        return self.ok('eval', page, '[window.pageSaw ?? null, window.initRuns ?? 0]')['value']
+
+    def test_the_script_runs_before_the_pages_own_after_each_navigation_and_in_later_pages_of_the_context(self):
+        # A path relative to the caller's folder, which the broker's own folder is not.
+        opened = subprocess.run(['node', str(BROKER), 'open', f'{self.site}/init-order', '--new-context',
+                                 '--init-script', 'init.js'], env=self.env, capture_output=True, text=True,
+                                encoding='utf-8', timeout=60, cwd=self.scratch)
+        self.assertEqual(opened.returncode, 0, opened.stderr)
+        first = json.loads(opened.stdout)
+        self.assertEqual(self.runs(first['page']), [1, 1])
+        self.ok('nav', first['page'], f'{self.site}/init-order')
+        self.assertEqual(self.runs(first['page']), [1, 1])
+        later = self.ok('open', f'{self.site}/init-order', '--context', first['context'])
+        self.assertEqual(self.runs(later['page']), [1, 1])
+        # Neither another context nor the user's profile gets it.
+        other = self.ok('open', f'{self.site}/init-order', '--new-context')
+        own = self.ok('open', f'{self.site}/init-order')
+        for page in (other['page'], own['page']):
+            self.assertEqual(self.runs(page), [0, 0])
+        self.ok('close', own['page'])
+        self.ok('dispose', other['context'])
+        self.ok('dispose', first['context'])
+
+    def test_the_users_profile_and_an_unreadable_file_are_refused(self):
+        status = self.ok('status')
+        before = (status['pages'], status['contexts'], sorted(self.chrome.page_urls()))
+        for args, message in (((), "user's profile"), (('--new-context',), 'cannot read the init script')):
+            with self.subTest(args=args):
+                script = str(self.script) if not args else str(self.scratch / 'missing.js')
+                refused = self.broker('open', f'{self.site}/init-order', *args, '--init-script', script)
+                self.assertEqual(refused.returncode, 1)
+                self.assertIn(message, refused.stderr)
+        status = self.ok('status')
+        self.assertEqual((status['pages'], status['contexts'], sorted(self.chrome.page_urls())), before)
 
 
 class DropTest(BrokerRig):

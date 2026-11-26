@@ -35,7 +35,7 @@ import {
 } from 'node:fs';
 import http from 'node:http';
 import { homedir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT = fileURLToPath(import.meta.url);
@@ -51,11 +51,13 @@ const USAGE = `usage: node chrome-broker.mjs start | stop | status [PAGE] | COMM
   start                          start the broker as a systemd user unit, or report the running one
   stop                           close the broker's pages and contexts, then its connection
   status [PAGE]                  the connection and the broker's pages, or one page's URL and visibility
-  open URL [--new-context | --context CONTEXT]
+  open URL [--new-context | --context CONTEXT] [--init-script FILE]
                                  a page in a window of its own, in the user's profile, a new cookie-less context
                                  or one the broker opened; prints its page ID, context ID and visibility. The page
                                  acts as focused and keeps drawing while other windows cover Chrome or it is
-                                 minimised, so it takes typing without being brought to the front
+                                 minimised, so it takes typing without being brought to the front. --init-script
+                                 runs FILE in every document of the page before the page's own scripts, and in
+                                 every page opened later in that context; the user's profile is refused
   nav PAGE URL | activate PAGE | close PAGE | dispose CONTEXT
                                  dispose closes a cookie-less context and every page in it
   download-dir CONTEXT FOLDER    save the downloads of a cookie-less context the broker opened in FOLDER, under the
@@ -263,6 +265,8 @@ class Broker {
 		this.devtools = null;
 		this.pages = new Map();
 		this.contexts = new Map();
+		// The scripts open --init-script gave each context, added to every page opened in it from then on.
+		this.initScripts = new Map();
 		this.held = new Map();
 		// The URLs hand-over moved and their query values, hidden in every reply like held values but never typed.
 		this.caught = new Map();
@@ -282,6 +286,7 @@ class Broker {
 				this.error ??= 'Chrome closed the DevTools connection; run start to connect again';
 				this.pages.clear();
 				this.contexts.clear();
+				this.initScripts.clear();
 			});
 		} catch (error) {
 			this.state = 'disconnected';
@@ -482,8 +487,18 @@ class Broker {
 		return loaded;
 	}
 
-	async open(url, newContext, inContext) {
+	async open(url, newContext, inContext, initScript) {
 		if (!url) throw new Failure('open needs a URL');
+		let source;
+		if (initScript !== undefined) {
+			if (!newContext && inContext === undefined)
+				throw new Failure("--init-script takes --new-context or --context; it would run in every page of the user's profile");
+			try {
+				source = readFileSync(initScript, 'utf8');
+			} catch (error) {
+				throw new Failure(`cannot read the init script ${initScript}: ${error.code ?? error.message}`);
+			}
+		}
 		let context = 'default';
 		let browserContextId;
 		if (inContext !== undefined) {
@@ -510,6 +525,11 @@ class Broker {
 			// be hidden there, so a page whose setup failed is closed rather than handed out.
 			await this.call('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId);
 			await this.call('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sessionId);
+			// Each script runs in every document the page loads from its first navigation on, before the page's own
+			// scripts, which a later eval can't do for a document that hasn't loaded yet.
+			const scripts = [...(this.initScripts.get(context) ?? []), ...(source === undefined ? [] : [source])];
+			for (const script of scripts) await this.call('Page.addScriptToEvaluateOnNewDocument', { source: script }, sessionId);
+			if (source !== undefined) this.initScripts.set(context, scripts);
 		} catch (error) {
 			await this.call('Target.closeTarget', { targetId }).catch(() => {});
 			throw error;
@@ -721,6 +741,7 @@ class Broker {
 		if (!browserContextId) throw new Failure(`${context ?? '(none)'} is not a context this broker opened`);
 		for (const [id, page] of this.pages) if (page.context === context) this.pages.delete(id);
 		this.contexts.delete(context);
+		this.initScripts.delete(context);
 		await this.call('Target.disposeBrowserContext', { browserContextId });
 		return { disposed: context };
 	}
@@ -760,7 +781,7 @@ class Broker {
 	async run(argv, stdin) {
 		const [command, ...rest] = argv;
 		const known = {
-			open: ['--new-context', '--context='],
+			open: ['--new-context', '--context=', '--init-script='],
 			read: ['--frame='],
 			eval: ['--frame=', '--hold='],
 			type: ['--enter'],
@@ -784,7 +805,7 @@ class Broker {
 				this.connect();
 				return this.summary();
 			case 'open':
-				return this.open(args[0], flags.has('--new-context'), flags.get('--context'));
+				return this.open(args[0], flags.has('--new-context'), flags.get('--context'), flags.get('--init-script'));
 			case 'nav':
 				return { page: args[0], ...(await this.nav(args[0], args[1])) };
 			case 'activate':
@@ -962,6 +983,9 @@ async function main(given) {
 	if (at !== -1 && !given[at + 1]) throw new Failure('--who needs the task name');
 	const who = at === -1 ? process.env.CHROME_BROKER_WHO : given[at + 1];
 	const argv = at === -1 ? given : given.toSpliced(at, 2);
+	// The broker runs in a folder of its own, so it reads the init script at the path as the caller meant it.
+	const script = command === 'open' ? argv.indexOf('--init-script') : -1;
+	if (script !== -1 && argv[script + 1]) argv[script + 1] = resolve(argv[script + 1]);
 	if (command === 'start' || command === 'open') {
 		const refusal = claimRefusal(who);
 		if (refusal) {
