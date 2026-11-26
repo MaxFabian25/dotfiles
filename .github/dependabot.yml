@@ -5,7 +5,7 @@ updates:
     schedule:
       interval: weekly
     cooldown:
-      default-days: 3
+      default-days: 1
   - package-ecosystem: uv
     directories:
       - /
@@ -13,10 +13,10 @@ updates:
     schedule:
       interval: weekly
     cooldown:
-      default-days: 3
+      default-days: 1
   - package-ecosystem: npm
     directory: /packages/prose
     schedule:
       interval: weekly
     cooldown:
-      default-days: 3
+      default-days: 1
