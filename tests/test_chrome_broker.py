@@ -67,7 +67,10 @@ PAGES = {
 <script>const field = document.getElementById('field'); field.addEventListener('focus', () => field.readOnly = false);
 let frames = 0; (function tick() { document.getElementById('frames').textContent = ++frames;
 requestAnimationFrame(tick); })();</script>""",
+    '/download-link': '<!doctype html><title>Download</title><a id="get" href="/download">Get the file</a>',
 }
+DOWNLOAD_NAME = 'broker-test.pem'
+DOWNLOAD_BODY = 'a harmless test file\n'
 
 # Sets the window state of the test Chrome's page at a URL, through a DevTools connection of the test's own.
 WINDOW_STATE = r"""
@@ -131,6 +134,12 @@ class Pages(BaseHTTPRequestHandler):
                                f'<iframe src="http://localhost:{port}/frame-inner?cross"></iframe>')
         if path == '/frame-inner':
             return self.answer(f'<!doctype html><p>Inner {self.path.split("?")[1]} {HEX64}</p>')
+        if path == '/download':
+            self.send_response(200)
+            self.send_header('content-type', 'application/octet-stream')
+            self.send_header('content-disposition', f'attachment; filename="{DOWNLOAD_NAME}"')
+            self.end_headers()
+            return self.wfile.write(DOWNLOAD_BODY.encode())
         if path == '/whoami':
             return self.answer(f'<!doctype html><p>Cookies: {self.headers.get("cookie") or "none"}</p>')
         if path == '/mark':
@@ -160,13 +169,20 @@ class Pages(BaseHTTPRequestHandler):
 
 
 class Chrome:
-    """A headless Chrome on its own profile, started and stopped by its own process ID."""
+    """A headless Chrome on its own profile, started and stopped by its own process ID. The profile's own downloads go
+    to its downloads folder, so none reaches the machine's Downloads folder."""
 
     def __init__(self, profile):
         self.profile = profile
+        self.downloads = profile / 'downloads'
         self.process = None
 
     def start(self):
+        preferences = self.profile / 'Default/Preferences'
+        if not preferences.exists():
+            preferences.parent.mkdir(parents=True)
+            preferences.write_text(json.dumps(
+                {'download': {'default_directory': str(self.downloads), 'prompt_for_download': False}}))
         port_file = self.profile / 'DevToolsActivePort'
         port_file.unlink(missing_ok=True)
         self.process = subprocess.Popen(
@@ -705,6 +721,43 @@ class HandOverTest(BrokerRig):
         self.assertNotIn('watching', self.ok('status', source))
         self.ok('dispose', target['context'])
         self.ok('close', source)
+
+
+class DownloadTest(BrokerRig):
+    def arrived(self, path):
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if path.exists() and path.read_text() == DOWNLOAD_BODY:
+                return True
+            time.sleep(0.2)
+        return False
+
+    def test_a_context_downloads_into_its_folder_and_the_profile_keeps_its_own(self):
+        folder = Path(tempfile.mkdtemp(dir=self.scratch))
+        opened = self.ok('open', f'{self.site}/download-link', '--new-context')
+        self.assertEqual(self.ok('download-dir', opened['context'], str(folder)),
+                         {'context': opened['context'], 'downloads': str(folder)})
+        self.ok('click', opened['page'], '#get')
+        self.assertTrue(self.arrived(folder / DOWNLOAD_NAME), sorted(path.name for path in folder.iterdir()))
+        own = self.ok('open', f'{self.site}/download-link')['page']
+        self.ok('click', own, '#get')
+        self.assertTrue(self.arrived(self.chrome.downloads / DOWNLOAD_NAME))
+        self.assertEqual([path.name for path in folder.iterdir()], [DOWNLOAD_NAME])
+        self.ok('close', own)
+        self.ok('dispose', opened['context'])
+
+    def test_the_users_profile_and_bad_folders_are_refused(self):
+        context = self.ok('open', f'{self.site}/plain', '--new-context')['context']
+        for args, message in ((('default', str(self.scratch)), 'whole profile'),
+                              (('c999', str(self.scratch)), 'not a context this broker opened'),
+                              ((context, 'relative/folder'), 'absolute path'),
+                              ((context, str(self.scratch / 'missing')), 'not an existing folder'),
+                              ((context,), 'needs CONTEXT FOLDER')):
+            with self.subTest(args=args):
+                refused = self.broker('download-dir', *args)
+                self.assertEqual(refused.returncode, 1)
+                self.assertIn(message, refused.stderr)
+        self.ok('dispose', context)
 
 
 class DropTest(BrokerRig):

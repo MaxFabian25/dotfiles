@@ -29,6 +29,7 @@ import {
 	fstatSync,
 	openSync,
 	readFileSync,
+	statSync,
 	unlinkSync,
 	writeFileSync,
 } from 'node:fs';
@@ -57,6 +58,11 @@ const USAGE = `usage: node chrome-broker.mjs start | stop | status [PAGE] | COMM
                                  minimised, so it takes typing without being brought to the front
   nav PAGE URL | activate PAGE | close PAGE | dispose CONTEXT
                                  dispose closes a cookie-less context and every page in it
+  download-dir CONTEXT FOLDER    save the downloads of a cookie-less context the broker opened in FOLDER, under the
+                                 name the site gives, for as long as the context lasts. FOLDER must exist, and for
+                                 Windows Chrome is a Windows path such as C:\\Users\\NAME\\AppData\\Local\\FOLDER
+                                 (wslpath -w gives it); keep it empty, since a file of the same name stops the
+                                 download. The user's profile is refused: Chrome would set it for every tab there
   read PAGE [--frame URL-PART]
                                  the text, and each input with its value's length only
   eval PAGE EXPRESSION [--frame URL-PART | --hold NAME]
@@ -719,6 +725,26 @@ class Broker {
 		return { disposed: context };
 	}
 
+	// Chrome holds the setting on the context and on the broker's DevTools session, so it ends when either ends and
+	// needs no reset. FOLDER must already exist, because Chrome would make a missing one with access of its own, and
+	// must take the form of Chrome's own system, because Windows Chrome reads /mnt/c/x as C:\mnt\c\x.
+	async downloadDir(context, folder) {
+		if (folder === undefined) throw new Failure('download-dir needs CONTEXT FOLDER');
+		if (context === 'default')
+			throw new Failure("download-dir takes only a context opened with --new-context; Chrome would set the user's whole profile");
+		const browserContextId = this.contexts.get(context);
+		if (!browserContextId) throw new Failure(`${context} is not a context this broker opened`);
+		const { userAgent } = await this.call('Browser.getVersion');
+		const windows = userAgent.includes('Windows');
+		if (windows && !/^[A-Za-z]:\\/.test(folder))
+			throw new Failure('FOLDER must be a Windows path such as C:\\Users\\NAME\\AppData\\Local\\FOLDER, since Chrome runs on Windows; wslpath -w gives it');
+		if (!windows && !isAbsolute(folder)) throw new Failure('FOLDER must be an absolute path');
+		const local = windows ? execFileSync('wslpath', ['-u', folder], { encoding: 'utf8' }).trim() : folder;
+		if (!statSync(local, { throwIfNoEntry: false })?.isDirectory()) throw new Failure(`${folder} is not an existing folder; make it first`);
+		await this.call('Browser.setDownloadBehavior', { behavior: 'allow', browserContextId, downloadPath: folder });
+		return { context, downloads: folder };
+	}
+
 	async shutDown() {
 		if (this.state === 'connected') {
 			for (const id of [...this.pages.keys()]) await this.close(id).catch(() => {});
@@ -799,6 +825,9 @@ class Broker {
 				return this.close(args[0]);
 			case 'dispose':
 				return this.dispose(args[0]);
+			case 'download-dir':
+				if (args.length > 2) throw new Failure('download-dir takes CONTEXT FOLDER; quote a FOLDER that holds spaces');
+				return this.downloadDir(args[0], args[1]);
 			case 'stop':
 				return this.shutDown();
 			default:
