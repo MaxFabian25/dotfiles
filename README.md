@@ -13,7 +13,7 @@ Linux, including WSL. Source review happens centrally. Each device reconciles a 
 | `skills/` | Owned portable skills |
 | `config/mise/config.toml` | Reviewed tool versions and the PATH entry that keeps the selected npm ahead of Node's own, without credentials or local environment settings |
 | `config/npm/npmrc.toml` | Reviewed top-level keys for each device's `~/.npmrc`. Other lines, such as registry credentials, stay local |
-| `config/bun/bunfig.toml` | Reviewed keys for each device's global bun config: a three-day minimum release age in seconds, with the `@ui-sdk` packages exempt by name because bun 1.4.5 matches no scope pattern. Each device sets only these keys in `~/.bunfig.toml`, and off Windows in `~/.config/.bunfig.toml` too, which bun reads instead when `XDG_CONFIG_HOME` is set |
+| `config/bun/bunfig.toml` | Reviewed keys for each device's global bun config: a one-day minimum release age in seconds, with the `@ui-sdk` packages exempt by name because bun 1.4.5 matches no scope pattern. Each device sets only these keys in `~/.bunfig.toml`, and off Windows in `~/.config/.bunfig.toml` too, which bun reads instead when `XDG_CONFIG_HOME` is set |
 | `config/agent-browser/chrome.toml` | Google Chrome's install paths for each platform. Each device sets only `executablePath` in `~/.agent-browser/config.json` to an installed one, never Chrome for Testing, and a device without Google Chrome blocks its pull |
 | `config/apt/packages.txt` | Ubuntu packages for Linux and WSL, installed by hand |
 | `*.py` | Build, inspect, reconcile, and delivery tools |
@@ -236,7 +236,7 @@ schedule or authorise publishing private content.
 ## Dependency updates
 
 [Dependabot](.github/dependabot.yml) checks GitHub Actions and both uv projects, at the repository root
-and in `packages/prose`, weekly. Version-update PRs wait until a release is three days old. Dependabot
+and in `packages/prose`, weekly. Version-update PRs wait until a release is one day old. Dependabot
 security updates use a separate repository setting and bypass that wait and the weekly schedule.
 The normal PR checks and merge controls apply. Dependabot does not update setup source pins or mise tool pins.
 
