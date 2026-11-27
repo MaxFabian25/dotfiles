@@ -10,6 +10,7 @@ from description_toml import load
 from device import Device
 from device_sync import apply, plan
 from drift import render, to_json
+from portable import refuse_linked_agent_homes
 import sync_ending
 
 
@@ -35,6 +36,7 @@ def main(argv=None):
 
 def run(args):
     try:
+        refuse_linked_agent_homes()
         setup = load(Roots.resolve(args.public, args.private))
         device = Device.current()
         installed = device.roots.installed_engine()
@@ -68,6 +70,8 @@ def run(args):
             expected = f', plus {len(current.expected)} this device is expected to have' if current.expected else ''
             print(f'Managed changes: {len(current.changes)}; blocking issues: {len(current.blocked)}; '
                   f'unmanaged differences left untouched: {len(current.unmanaged)}{expected}.')
+        if args.candidate and not current.blocked:
+            return 0
         return current.exit_code
     except (DescriptionError, RuntimeError, ValueError, OSError, subprocess.SubprocessError) as error:
         print(f'Sync stopped: {error}', file=sys.stderr)

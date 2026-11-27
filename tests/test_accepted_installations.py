@@ -1799,6 +1799,21 @@ class InstallationTest(unittest.TestCase):
         self.assertEqual(plan(self.setup, self.device).exit_code, 2)
         self.assertTrue(loose.is_symlink())
 
+    def test_linked_working_copy_under_shadow_home_env_hints_env_unset(self):
+        real_cfg = self.root / 'canonical-config.toml'
+        real_cfg.write_text('model = "x"\n', encoding='utf-8')
+        shadow = self.root / 'shadow-codex'
+        shadow.mkdir()
+        link = shadow / 'config.toml'
+        link.symlink_to(real_cfg)
+        with unittest.mock.patch.dict(os.environ, {'CODEX_HOME': str(shadow)}, clear=False):
+            with self.assertRaisesRegex(ConcurrentEdit, r'env -u CODEX_HOME -u CLAUDE_CONFIG_DIR'):
+                accepted_installations.image(link)
+        with unittest.mock.patch.dict(os.environ, {'CODEX_HOME': str(self.root / 'other')}, clear=False):
+            with self.assertRaises(ConcurrentEdit) as caught:
+                accepted_installations.image(link)
+            self.assertNotIn('env -u', str(caught.exception))
+
     def test_approval_only_plan_is_not_success_and_does_not_write(self):
         self.run_apply()
         package = self.setup.packages['kit']

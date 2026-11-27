@@ -42,6 +42,8 @@ When failures cluster on one side at the same step of code the harness supplies,
 
 After the first pilot run of each setup, read what its model actually received and compare the setups: first-request tokens, instruction files, skills, connectors, tools, app entrypoint, version and permission mode. Launch settings show only what you asked for. A difference the plan doesn't name is a harness fault. A search for a phrase from the user's rules counts only on a record type shown to hold instruction text, so first run it on a record known to contain that phrase.
 
+When comparing a change to the user's own everyday setup rather than a bare vendor baseline, keep the setup's active hooks and startup instructions enabled on both sides and confirm their registration in the first pilot receipt. Start with prompts drawn from the user's real tasks before synthetic benchmarks, so a difference shows up on work they actually run.
+
 A pass counts only when its record shows the route its setup is named for, such as the extension's own tool calls in a browser-extension setup, because a setup can fall back to another route, such as a cloud browser, and still pass. Before the brief goes in, give the setup's tool one trivial task that only it can do, such as reading the title of a tab open in the user's own browser, and save that output with the run.
 
 This step is done when every pilot failure has a cause taken from its record, none of those causes is the harness, every pass's record shows its setup's route, and no setup loaded anything the plan doesn't name, the user's own rules files included. Run the comparison again before publishing any result several times off the baseline.

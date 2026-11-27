@@ -14,7 +14,10 @@ CLAUDE_ALIASES = {"opus", "sonnet", "haiku", "fable"}
 # as `opencode models` listed it on 24 November 2026.
 OPENCODE_CLAUDE_MODELS = {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5-5", "haiku": "claude-haiku-5-5",
                           "fable": "claude-fable-5-2"}
-HARNESSES = {"codex", "claude-code", "opencode"}
+# The Gemini models and thought levels Antigravity exposes in T3 Code's catalog.
+ANTIGRAVITY_MODELS = {"gemini-4-neon", "gemini-pro-orchestrator-neon"}
+ANTIGRAVITY_EFFORTS = {"low", "medium", "high", "xhigh"}
+HARNESSES = {"codex", "claude-code", "opencode", "antigravity"}
 
 
 def model_entries(data):
@@ -52,13 +55,22 @@ def cli_command(name, *args):
 def model_target(section: str, model: str) -> tuple[str, str]:
     """The harness whose catalog names the model, and its name there. OpenCode's own seats name Claude aliases."""
     default = "claude-code" if section == "opencode" else section
-    harness = "codex" if model.startswith("codex:") else "claude-code" if model.startswith("claude:") else default
+    if model.startswith("codex:"):
+        harness = "codex"
+    elif model.startswith("claude:"):
+        harness = "claude-code"
+    elif model.startswith("antigravity:"):
+        harness = "antigravity"
+    else:
+        harness = default
     return harness, model.split(":", 1)[-1]
 
 
 def opencode_model(model: str, effort: str) -> str:
     """The OpenCode model reference that runs an opencode seat, with the effort as its variant."""
     harness, slug = model_target("opencode", model)
+    if harness == "antigravity":
+        raise ValueError(f"OpenCode has no Antigravity provider for {model}@{effort}")
     if harness == "codex":
         return f"openai-api/{slug}#{effort}"
     return f"anthropic-api/{OPENCODE_CLAUDE_MODELS[slug]}#{effort}"
@@ -87,6 +99,10 @@ def validate_models(home, data, *, codex_home=None):
         if model in {"inherit-parent", "auto"}:
             continue
         harness, slug = model_target(section, model)
+        if harness == "antigravity":
+            if slug not in ANTIGRAVITY_MODELS or effort not in ANTIGRAVITY_EFFORTS:
+                raise ValueError(f"Unavailable Antigravity model or effort for {section}/{role}: {model}@{effort}")
+            continue
         cli_command("codex" if harness == "codex" else "claude")
         if harness == "codex" and (slug not in models or effort not in models[slug]):
             raise ValueError(f"Unavailable Codex model or effort for {section}/{role}: {model}@{effort}")

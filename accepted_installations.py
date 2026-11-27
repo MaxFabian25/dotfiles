@@ -7,6 +7,7 @@ from enum import Enum
 from functools import partial
 import hashlib
 import json
+import os
 import antigravity
 import opencode
 from pathlib import Path, PurePosixPath
@@ -63,6 +64,14 @@ def _linked(path):
     return path.is_symlink() or (hasattr(path, 'is_junction') and path.is_junction())
 
 
+def _shadow_home_hint(path: Path) -> str:
+    overrides = [name for name in ('CODEX_HOME', 'CLAUDE_CONFIG_DIR')
+                 if os.environ.get(name) and path.is_relative_to(Path(os.environ[name]).expanduser())]
+    if not overrides:
+        return ''
+    return ' (rerun with `env -u CODEX_HOME -u CLAUDE_CONFIG_DIR` for the canonical home)'
+
+
 def image(path: Path, fields=None, syntax='toml'):
     """Raw path, entry-kind and byte evidence. Portable lock normalization is not ownership evidence.
 
@@ -70,7 +79,7 @@ def image(path: Path, fields=None, syntax='toml'):
     as tree_digest does. A link or special file there is still refused.
     """
     if _linked(path):
-        raise ConcurrentEdit(f'Refusing a linked working copy: {path}')
+        raise ConcurrentEdit(f'Refusing a linked working copy: {path}{_shadow_home_hint(path)}')
     if fields is not None:
         if path.exists() and not path.is_file():
             raise ConcurrentEdit(f'Managed {syntax} path is not a file: {path}')

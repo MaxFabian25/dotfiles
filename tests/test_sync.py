@@ -1029,6 +1029,29 @@ class SyncMainTest(unittest.TestCase):
         self.assertRegex(stderr.getvalue(),
                          rf'^Sync stopped: {re.escape(said)} \(exit 128 from git .+ rev-parse --verify main\^{{commit}}\)\n$')
 
+    def test_a_linked_shadow_agent_home_stops_the_sync_with_an_actionable_message(self):
+        import os
+        from unittest import mock
+        import sync
+        for variable, config in (('CODEX_HOME', 'config.toml'), ('CLAUDE_CONFIG_DIR', 'settings.json')):
+            with self.subTest(variable=variable), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                real = root / 'real' / config
+                real.parent.mkdir()
+                real.write_text('')
+                shadow = root / 'shadow'
+                shadow.mkdir()
+                try:
+                    (shadow / config).symlink_to(real)
+                except OSError as error:
+                    self.skipTest(f'symlinks unavailable: {error}')
+                with mock.patch.dict(os.environ, {variable: str(shadow)}), \
+                        mock.patch('sync.load', side_effect=AssertionError('should stop before loading')), \
+                        redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as stderr:
+                    self.assertEqual(sync.main(['--check']), 3)
+                self.assertIn('is a linked shadow profile', stderr.getvalue())
+                self.assertIn('env -u CODEX_HOME -u CLAUDE_CONFIG_DIR', stderr.getvalue())
+
 
 if __name__ == '__main__':
     unittest.main()
