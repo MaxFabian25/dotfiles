@@ -180,6 +180,11 @@ find = '''description: TypeScript best practices. Use when reading or editing an
 replace = '''description: TypeScript best practices. Use when writing, editing, or reviewing .ts or .tsx code.'''
 
 [[codex.replace]]
+path = 'skills/typescript-best-practices/SKILL.md'
+find = '''| Schemas before guards | Before hand-writing a property-by-property type guard, use the repository's runtime schema library and infer the type from the schema, such as `z.infer`. |'''
+replace = '''| Schemas before guards | Before hand-writing a property-by-property type guard, use the repository's runtime schema library and infer the type from the schema. In Effect 4 repositories, prefer Effect `Schema` (`Schema.Struct`, `Schema.brand`, `Schema.TaggedError`, `Schema.TaggedUnion`, `Data.TaggedEnum`) with `{ onExcessProperty: "error" }` at strict boundaries instead of Zod or throwing parsers. |'''
+
+[[codex.replace]]
 path = 'agents/codex/poteto-agent.toml'
 find = '''If more than one file matches, use the copy whose `.codex-plugin/plugin.json` has the highest `version`.'''
 replace = '''If more than one file matches, use the copy whose `.codex-plugin/plugin.json` has the highest `version`; if multiple version folders share the same manifest `version`, pick the folder Codex loads: the one whose folder name sorts last in Codex's version order (for dotfiles-managed folders, the latest `notes.<UTC time>`).'''
