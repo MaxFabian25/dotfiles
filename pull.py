@@ -12,7 +12,7 @@ import time
 import traceback
 
 from mise_tools import install as install_tools, state_folder
-from portable import GIT, WINDOWS, exclusive_lock, lock_holder, native_cli_environment, run_tree
+from portable import GIT, WINDOWS, exclusive_lock, lock_holder, native_cli_environment, refuse_linked_agent_homes, run_tree
 from sync_ending import run_sync
 
 GIT_TIMEOUT = 180
@@ -158,6 +158,7 @@ def pull_lock(path, patience):
 
 
 def run(args):
+    refuse_linked_agent_homes()
     root = args.root.resolve()
     private = args.private.resolve() if args.private else None
     state = state_folder(Path.home())

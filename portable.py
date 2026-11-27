@@ -102,6 +102,22 @@ def claude_home(home=None):
     return _configured('CLAUDE_CONFIG_DIR', home) or _home(home) / '.claude'
 
 
+def refuse_linked_agent_homes():
+    """Fail closed when CODEX_HOME or CLAUDE_CONFIG_DIR names a shadow profile whose managed config is a symlink."""
+    for variable, config in (('CODEX_HOME', 'config.toml'), ('CLAUDE_CONFIG_DIR', 'settings.json')):
+        value = os.environ.get(variable)
+        if not value:
+            continue
+        root = Path(value).expanduser()
+        target = root / config
+        if root.is_symlink() or target.is_symlink():
+            linked = target if target.is_symlink() else root
+            raise RuntimeError(
+                f'{variable}={root} is a linked shadow profile ({linked} is a symlink); '
+                'rerun with `env -u CODEX_HOME -u CLAUDE_CONFIG_DIR` to target the canonical device home'
+            )
+
+
 def agents_home(home=None):
     return _home(home) / '.agents'
 
