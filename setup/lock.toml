@@ -1,8 +1,8 @@
 # Generated from the setup description and verified package builds. Do not edit.
 
 [agent-tool-study]
-intent = "sha256:c12186a865e8b4065dc3383e5252f1ad515f0a5d0b53eb0f631619b841d1ac48"
-placements = { agents = "sha256:a68536af2ef1f45a4ddaab87fff2857e21fd2be5e69fc82e7bdf758182fbe54d", claude = "sha256:a68536af2ef1f45a4ddaab87fff2857e21fd2be5e69fc82e7bdf758182fbe54d" }
+intent = "sha256:a1977d1be585976998961efcffe9d2085c032fd5ce132f001c82305da6e9db2d"
+placements = { agents = "sha256:3f2171cf754e2797bc54f6936e8e78a161eedbacc114eef4e0a97ac6019b555d", claude = "sha256:3f2171cf754e2797bc54f6936e8e78a161eedbacc114eef4e0a97ac6019b555d" }
 
 [browser-and-computer-use]
 intent = "sha256:7aac023ed016eeb002dc7c415e58c3ea34d277b485591f96c9539dfd7fb4ec63"
@@ -91,8 +91,8 @@ codex = { version = "0.1.0+upstream.ced39776fdf8.codex1", tree = "sha256:dd58dba
 claude = { version = "0.1.0+codex-aligned.f6c9d03c5fcf", tree = "sha256:7f6768983aa85ee443f728165e7065076ccb34b10e442535e68f7380419730fc" }
 
 [planted-error-checks]
-intent = "sha256:339f6dfb0fbabf0735fdecb6349beb49267a06f76fa424da1f2cd41637ec180b"
-placements = { agents = "sha256:cdaf6d226cc51d17e54c549ce7838582e7994f5d4077b802fc7c74c4523b9df3", claude = "sha256:cdaf6d226cc51d17e54c549ce7838582e7994f5d4077b802fc7c74c4523b9df3" }
+intent = "sha256:a4ce192c374738e95113c49b8b3b383de1aa70109ddb2122cbdd1c5081978279"
+placements = { agents = "sha256:0a53b837dd336c980464dbd3d4b73115a36217b10a2e5024a765eb09ef2bcd31", claude = "sha256:0a53b837dd336c980464dbd3d4b73115a36217b10a2e5024a765eb09ef2bcd31" }
 
 [powerpoint-com-wsl]
 intent = "sha256:63d3344d31dd28f6fdb04a37e9eadea11966fe3d6bbf476322b3b34c83511771"

@@ -674,6 +674,26 @@ class CrashedPullTest(unittest.TestCase):
                     self.assertRaises(type(interrupt)):
                 pull.main()
 
+    def test_a_linked_shadow_agent_home_stops_the_pull_before_locking(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            real = root / 'real/config.toml'
+            real.parent.mkdir()
+            real.write_text('')
+            shadow = root / 'shadow'
+            shadow.mkdir()
+            try:
+                (shadow / 'config.toml').symlink_to(real)
+            except OSError as error:
+                self.skipTest(f'symlinks unavailable: {error}')
+            with patch.dict(os.environ, {'CODEX_HOME': str(shadow)}), \
+                    patch.object(sys, 'argv', ['pull.py', '--wait', '0']), \
+                    patch('pull.pull_lock', side_effect=AssertionError('should stop before locking')), \
+                    redirect_stderr(io.StringIO()) as errors:
+                self.assertEqual(pull.main(), 3)
+        self.assertIn('is a linked shadow profile', errors.getvalue())
+        self.assertIn('env -u CODEX_HOME -u CLAUDE_CONFIG_DIR', errors.getvalue())
+
 
 if __name__ == '__main__':
     unittest.main()

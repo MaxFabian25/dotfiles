@@ -10,6 +10,7 @@ from description_toml import load
 from device import Device
 from device_sync import apply, plan
 from drift import render, to_json
+from portable import refuse_linked_agent_homes
 import sync_ending
 
 
@@ -35,6 +36,7 @@ def main(argv=None):
 
 def run(args):
     try:
+        refuse_linked_agent_homes()
         setup = load(Roots.resolve(args.public, args.private))
         device = Device.current()
         installed = device.roots.installed_engine()

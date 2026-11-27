@@ -42,7 +42,9 @@ blind to it.
    everything. A check that judges live input, such as a hook that denies, a monitor or a scorer,
    passes a clean copy its author made too easily, so take its clean side from outside your own
    work: a replay over real history, the fixes its own deny message recommends, a reviewer's
-   near-misses, and correct outputs made by someone who never saw the check. Each wrong alarm on
+   near-misses, correct outputs made by someone who never saw the check, and—for checks on model
+   prose—user-supplied text the model must preserve verbatim (such as proofreading, quoting, or
+   copy-editing). Each wrong alarm on
    that clean side is a clean copy that failed, so fix the check, and report the wrong alarms out of
    the clean cases beside the caught count.
 
