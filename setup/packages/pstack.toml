@@ -179,6 +179,16 @@ path = 'skills/typescript-best-practices/SKILL.md'
 find = '''description: TypeScript best practices. Use when reading or editing any .ts or .tsx file.'''
 replace = '''description: TypeScript best practices. Use when writing, editing, or reviewing .ts or .tsx code.'''
 
+[[codex.replace]]
+path = 'agents/codex/poteto-agent.toml'
+find = '''If more than one file matches, use the copy whose `.codex-plugin/plugin.json` has the highest `version`.'''
+replace = '''If more than one file matches, use the copy whose `.codex-plugin/plugin.json` has the highest `version`; if multiple version folders share the same manifest `version`, pick the folder Codex loads: the one whose folder name sorts last in Codex's version order (for dotfiles-managed folders, the latest `notes.<UTC time>`).'''
+
+[[codex.replace]]
+path = 'agents/poteto-agent.md'
+find = '''If more than one file matches, use the copy whose plugin manifest (`.claude-plugin/plugin.json` in Claude Code, `.codex-plugin/plugin.json` in Codex) has the highest `version`.'''
+replace = '''If more than one file matches, use the copy whose plugin manifest (`.claude-plugin/plugin.json` in Claude Code, `.codex-plugin/plugin.json` in Codex) has the highest `version`; if multiple folders share that `version`, pick the folder the host loads (for dotfiles-managed folders, the latest `notes.<UTC time>`).'''
+
 [codex.roles]
 from = "plugin"
 directory = "agents/codex"
