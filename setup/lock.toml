@@ -78,7 +78,7 @@ codex = { version = "1.3.2+upstream.6f7f7831a625.codex6.explicit.f642fe0e757dcb7
 claude = { version = "1.3.2+codex-aligned.7cf20ea0c65b", tree = "sha256:db9e38316da5d303c35c6713a7c983017e4d6be0e2db27cef2e1c879fab3ec46" }
 
 [narrow-react-prop-types]
-intent = "sha256:f4b3b628c8f44397403c96a748cc4ae7db20c19b8942414e462fdf3af717bfd2"
+intent = "sha256:59afaf2d57c4825fe8401817d2835a7d18b3960951646a87a6d7f94cecb01b93"
 codex = { version = "1.0.0+explicit.da565e0a24bf84d3", tree = "sha256:a30f0ecc10276aa9152ef07be677e08b555160c9846c1997a5b27d12dad65055" }
 claude = { version = "1.0.0+explicit.da565e0a24bf84d3", tree = "sha256:a30f0ecc10276aa9152ef07be677e08b555160c9846c1997a5b27d12dad65055" }
 
@@ -107,9 +107,9 @@ codex = { version = "0.3.46+dotfiles.20261127.explicit.30e4797db55bf66a", tree =
 claude = { version = "0.3.46+codex-aligned.d736ba881829", tree = "sha256:adb7de25f85ef490301dcda7a5709cf4de05062bc3be52a2aaf86c705e4b402c" }
 
 [pstack]
-intent = "sha256:d2a6c4b47c37f6eb1a9ab01f374f59a4c64576f207927eea430edac4db0c259a"
+intent = "sha256:f281fd65b8b9ec4102979fd4b48041c570678c99f7065876ea66f329c2e43457"
 codex = { version = "0.15.48+upstream.9e278fe4d4ec.codex3.explicit.8bdb558d7daf5a57", tree = "sha256:77fcbc59ab44ceb53f379f78a4a67b2c9b3c4929b88f3edc0c2c2c3aaef5031b" }
-claude = { version = "0.15.48+codex-aligned.6a6b9b6d07c0", tree = "sha256:578fac81aa30272c5809848804ada65f9cf005820e1e34795c8ab96965ef0eb5" }
+claude = { version = "0.15.48+codex-aligned.29bb8187236e", tree = "sha256:5e4db8f9ccbd5f32029bdef444dee079cae3cb87cbe40de0a3a24a1a31761a04" }
 roles = { "comment-sicko.toml" = "sha256:48e7d91b0420f7b04a8ea378a4bd01cc2233d6ca5b6569e444fed27490fabf0a", "poteto-agent.toml" = "sha256:7693b7e8153d0e9f33b9b81a4491a0211d98cdf316b36af09eb861a4cd0a5688" }
 
 [show-me]
