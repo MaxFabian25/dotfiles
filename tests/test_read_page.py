@@ -1069,6 +1069,41 @@ class PollTest(unittest.TestCase):
         self.assertIn('Another page.', second)
         self.assertNotIn('Compare the plans.', second)
 
+    @on_linux
+    def test_hyprland_never_closes_window_showing_different_site(self):
+        """F6: a user Chrome window captured during open() is moved to the active workspace, never closed."""
+        desktop = mock.MagicMock()
+        desktop.env = RUNTIME
+        desktop.open.return_value = (0x20, 7)
+        desktop.wait_for_address.return_value = 'https://mail.example.org/inbox'
+        desktop.why = ''
+        desktop.note = ''
+        with FakeClock(), \
+                mock.patch.object(read_page.sys, 'argv', ['read_page', 'https://ft.com/content/1']), \
+                mock.patch.object(read_page.Hyprland, 'find', return_value=desktop), \
+                mock.patch.object(read_page, 'daemon', return_value=(mock.Mock(poll=lambda: None), '/tmp/s', '/tmp/d')), \
+                mock.patch.object(read_page, 'stop_daemon'), \
+                mock.patch.object(read_page, 'Driver') as driver, \
+                mock.patch.object(read_page, 'chrome', return_value=7), \
+                mock.patch.object(read_page, 'command_line', return_value='/usr/bin/google-chrome'), \
+                contextlib.redirect_stderr(io.StringIO()) as said:
+            driver.return_value.uia = False
+            driver.return_value.tree.return_value = {'tree_markdown': LINUX_TREE}
+            driver.return_value.windows.return_value = {0x20: 'Inbox - Google Chrome'}
+            status = read_page.main()
+        self.assertEqual(status, 3)
+        desktop.return_to_active.assert_called_once_with(7, 0x20)
+        desktop.close.assert_not_called()
+        self.assertIn('0x20', said.getvalue())
+        self.assertIn('moved it to the active workspace instead of closing it', said.getvalue())
+
+    def test_hyprland_return_to_active_moves_window_silently(self):
+        run = FakeHyprctl([[hypr_window('0x20', 7)]], answers={'-j': json.dumps({'id': 3})})
+        with mock.patch.object(read_page.subprocess, 'run', side_effect=run):
+            hyprland().return_to_active(7, 0x20)
+        dispatches = [argv for argv in run.calls if argv[1] == 'dispatch']
+        self.assertEqual(dispatches, [['hyprctl', 'dispatch', 'movetoworkspacesilent', '3,address:0x20']])
+
 
 if __name__ == '__main__':
     unittest.main()

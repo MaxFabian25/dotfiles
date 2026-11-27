@@ -307,6 +307,18 @@ class Hyprland:
             raise RuntimeError(f'window {window} is no longer Chrome {pid}\'s; ask the user to close it')
         self.hyprctl('dispatch', f'hl.dsp.window.close({{ window = "address:{client["address"]}" }})')
 
+    def return_to_active(self, pid, window):
+        """Move an unverified window off the hidden workspace onto the active workspace instead of closing it."""
+        client = self.windows().get(window)
+        if client is None or client['pid'] != pid:
+            return
+        output = self.hyprctl('activeworkspace', '-j')
+        try:
+            workspace_id = json.loads(output)['id']
+        except (ValueError, TypeError, KeyError):
+            raise RuntimeError(f'hyprctl activeworkspace: {output.strip()[-300:]}') from None
+        self.hyprctl('dispatch', 'movetoworkspacesilent', f'{workspace_id},address:{client["address"]}')
+
 
 def daemon(command, desktop):
     """Start a cua-driver daemon of its own with the desktop's environment and return (process, socket, folder).
@@ -565,6 +577,7 @@ def main():
             signal.signal(getattr(signal, name), lambda number, frame: sys.exit(128 + number))
     driver = Driver(args.cua, f'read-page-{secrets.token_hex(3)}')
     desktop = serve = pid = window = None
+    window_owned = False
     skipped = empty = False
     try:
         if not driver.uia:
@@ -589,14 +602,16 @@ def main():
             if desktop is not None:
                 # Linux ignores the Return key in the background too. The next window opens before the last one
                 # closes, so that a Chrome this run started stays running until the end.
-                previous, (window, opened) = window, desktop.open(args.profile, url)
+                previous, previous_owned = window, window_owned
+                window, opened = desktop.open(args.profile, url)
+                window_owned = False
                 if pid is None:
                     pid = opened  # this run started Chrome
                 if opened != pid or NOT_OWN.search(command_line(opened, args.cua)):
                     desktop.close(opened, window)
-                    window = previous
+                    window, window_owned = previous, previous_owned
                     raise RuntimeError(f"the window opened in Chrome {opened}, not in the user's own Chrome")
-                if previous is not None:
+                if previous is not None and previous_owned:
                     desktop.close(pid, previous)
             elif window is None:
                 window = open_window(driver, pid, args.profile, url)
@@ -612,6 +627,8 @@ def main():
                 shown = desktop.wait_for_address(driver, pid, window, deadline)
                 data = {}
                 if shown:
+                    if isinstance(shown, str) and same_site(url, shown):
+                        window_owned = True
                     data = settled_tree(driver, pid, window, deadline)
                     shown = desktop.wait_for_address(driver, pid, window, deadline)
             else:
@@ -623,9 +640,18 @@ def main():
                 return 4
             if not same_site(url, shown):
                 why = f' ({desktop.why})' if desktop is not None and not shown else ''
+                if desktop is not None and shown and not window_owned:
+                    unowned = window
+                    window = None
+                    desktop.return_to_active(pid, unowned)
+                    print(f'Stopped on {url}: window {hex(unowned)} showed {shown}, not '
+                          f'the requested site; moved it to the active workspace instead of closing it.',
+                          file=sys.stderr)
+                    return 3
                 print(f'Skipped {url}: the window shows {shown or "no address"}{why}.', file=sys.stderr)
                 skipped = True
                 continue
+            window_owned = True
             if args.expand:
                 questions = collapsed_questions(data.get('tree_markdown', ''))
                 if questions:
