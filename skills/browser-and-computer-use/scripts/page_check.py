@@ -2,10 +2,12 @@
 """Check a web page's layout at set widths with agent-browser, in a session of its own.
 
 At each width it reports the page's scrollWidth against the viewport, elements that stick out past the viewport
-outside a scrolling container, the containers that scroll sideways, visible text below --min-text pixels, and
-elements matching --nowrap that wrap onto a second line. With --pdf it also prints the page to PDF, counts its
-pages, and draws a contact sheet of them; with --shots it saves a full-page screenshot per width. It closes its
-session when done. Exit status 1 means a problem was found, 3 that agent-browser failed.
+outside a scrolling container, sideways scrollers that lack keyboard focusability (`tabindex`) or sit inside a
+focusable `role="region"` wrapper instead of being focusable themselves, the containers that scroll sideways,
+visible text below --min-text pixels, and elements matching --nowrap that wrap onto a second line. With --pdf it
+also prints the page to PDF, counts its pages, and draws a contact sheet of them; with --shots it saves a
+full-page screenshot per width. It closes its session when done. Exit status 1 means a problem was found, 3 that
+agent-browser failed.
 
 Look at the contact sheet or one screenshot per revision instead of many separate captures.
 """
@@ -51,7 +53,17 @@ MEASURE = r'''
     if (el.getClientRects().length > 1 || el.getBoundingClientRect().height > line * 1.5)
       wrapped.push(el.textContent.trim().slice(0, 40));
   }
+  const unfocusableScrollers = scrollers
+    .filter(s => !s.hasAttribute('tabindex') || s.tabIndex < 0)
+    .map(s => `${name(s)} ${s.scrollWidth}/${s.clientWidth}`);
+  const regionWrapsScroller = [...document.querySelectorAll('[role="region"]')]
+    .filter(r => r.tabIndex >= 0 && !scrollers.includes(r) && scrollers.some(s => r.contains(s)))
+    .map(r => {
+      const child = scrollers.find(s => r.contains(s));
+      return `${name(r)} wraps ${name(child)}`;
+    });
   return {innerWidth: vw, scrollWidth: doc.scrollWidth, height: doc.scrollHeight, wide, smallCount, small, wrapped,
+          unfocusableScrollers, regionWrapsScroller,
           scrollers: scrollers.map(s => `${name(s)} ${s.scrollWidth}/${s.clientWidth}`)};
 })()
 '''
@@ -148,6 +160,10 @@ def main():
                 issues.append(f"{m['smallCount']} text elements below {args.min_text:g} px, such as "
                               + '; '.join(m.get('small', [])))
             issues += [f'wraps: {w}' for w in m.get('wrapped', [])]
+            issues += [f'scroller not keyboard-focusable (missing tabindex): {s}'
+                       for s in m.get('unfocusableScrollers', [])]
+            issues += [f'focusable region wraps descendant scroller: {r}'
+                       for r in m.get('regionWrapsScroller', [])]
             problems += len(issues)
             print(f"{width} px: scrollWidth {m.get('scrollWidth')}, height {m.get('height')} px, "
                   f"{'no problems' if not issues else str(len(issues)) + ' problems'}")
