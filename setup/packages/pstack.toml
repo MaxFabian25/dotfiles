@@ -141,7 +141,7 @@ tool_notes = "exempt"
 
 [codex]
 install = [{ via = "personal", enabled = true }]
-adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "1de6049845e4c27684fdfb439b6551a47523483a", adapted = "cb409649b936aca6386914db90990a7067aa0495", harness = "skills/poteto-mode/references/harnesses.md" }
+adaptation = { repository = "https://github.com/MaxFabian25/pstack-harness-adaptations.git", base = "1de6049845e4c27684fdfb439b6551a47523483a", adapted = "c6abaaec590ef28bf9849ce2372f91c2dc8e6e4f", harness = "skills/poteto-mode/references/harnesses.md" }
 
 # Text changes that name a skill outside pstack sit here, because other users of the adaptation lack those skills:
 # two of the three ideas the user chose from Matt Pocock's skills on 2026-11-15 (hard bugs built to the owned
