@@ -93,6 +93,29 @@ class PstackRuntimeTests(unittest.TestCase):
         self.assertEqual(runtime.opencode_model('opus', 'high'), 'anthropic-api/claude-opus-5-5#high')
         self.assertEqual(runtime.opencode_model('claude:fable', 'high'), 'anthropic-api/claude-fable-5-2#high')
         self.assertEqual(runtime.opencode_model('codex:gpt-6.2-astra', 'xhigh'), 'openai-api/gpt-6.2-astra#xhigh')
+        with self.assertRaisesRegex(ValueError, 'Antigravity provider'):
+            runtime.opencode_model('antigravity:gemini-4-neon', 'high')
+
+    def test_antigravity_seats_and_section_are_validated(self):
+        with tempfile.TemporaryDirectory() as folder:
+            codex_home = Path(folder)
+            pages = [{'data': [{'model': 'gpt-6.2-sol',
+                               'supportedReasoningEfforts': [{'reasoningEffort': 'xhigh'}]}], 'nextCursor': None}]
+            value = (b'## claude-code\narena runners: opus@high, antigravity:gemini-4-neon@high\n'
+                     b'## codex\narena runners: gpt-6.2-sol@xhigh, antigravity:gemini-4-neon@high\n'
+                     b'## opencode\narena runners: opus@high, antigravity:gemini-4-neon@high\n'
+                     b'## antigravity\nbug-fix: gemini-4-neon@high\n'
+                     b'arena runners: gemini-4-neon@high, claude:opus@high, codex:gpt-6.2-sol@xhigh\n')
+            with patch.object(runtime.portable, "claude_cli", return_value="claude"), \
+                    patch.object(runtime.portable, "codex_cli", return_value="codex"), \
+                    patch.object(runtime.subprocess, 'Popen', side_effect=lambda *a, **kw: self.native_process(pages)):
+                self.assertEqual(runtime.validate_models(codex_home, value, codex_home=codex_home), 10)
+                with self.assertRaisesRegex(ValueError, "Unavailable Antigravity model or effort for claude-code/arena runners"):
+                    runtime.validate_models(codex_home, value.replace(b'antigravity:gemini-4-neon@high', b'antigravity:gemini-4-neon@max', 1),
+                                            codex_home=codex_home)
+                with self.assertRaisesRegex(ValueError, "Unavailable Antigravity model or effort for antigravity/bug-fix"):
+                    runtime.validate_models(codex_home, value.replace(b'bug-fix: gemini-4-neon@high', b'bug-fix: gemini-3-pro@high'),
+                                            codex_home=codex_home)
 
     def test_rejects_model_or_effort_missing_from_native_catalog(self):
         with tempfile.TemporaryDirectory() as folder:

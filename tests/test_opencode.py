@@ -392,7 +392,8 @@ class OpenCodeTests(unittest.TestCase):
             plan = opencode.plan(setup, home.roots, Platform.LINUX)
             self.assertFalse(any(path[0] == 'agents' for path in plan.configurations[0].fields))
             home.write(models, models.read_text() + '## opencode\nbug-fix: opus@high\njudgment and prose: opus@xhigh\n'
-                       'arena runners: opus@high, codex:gpt-6.2-sol@xhigh\nrecall readers: inherit-parent@low\n')
+                       'arena runners: opus@high, codex:gpt-6.2-sol@xhigh, antigravity:gemini-4-neon@high\n'
+                       'recall readers: inherit-parent@low\n## antigravity\nbug-fix: gemini-4-neon@high\n')
             plan = opencode.plan(setup, home.roots, Platform.LINUX)
             fields = plan.configurations[0].fields
             agents_path = (plan.destination / 'agents').as_posix()
