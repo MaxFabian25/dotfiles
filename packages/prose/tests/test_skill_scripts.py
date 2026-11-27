@@ -302,6 +302,25 @@ class ScanTests(unittest.TestCase):
     def test_multi_backtick_inline_code_is_skipped(self) -> None:
         self.assertEqual(self.checks("Use ``a — b and/or c`` here.\n"), [])
 
+    def test_unmatched_inline_backtick_is_flagged_and_valid_spans_pass(self) -> None:
+        self.assertIn(
+            "unmatched-backtick",
+            self.checks(
+                "First capture at `aa0ad2220978a23663b7ca2eb34ab5b959c90d76).\n"
+            ),
+        )
+        self.assertIn(
+            "unmatched-backtick",
+            self.checks("Første kontrol ved `abc123).\n", ".md", "--lang", "da"),
+        )
+        self.assertEqual(
+            self.checks("Use `foo\nbar` across lines and escape \\` once.\n"), []
+        )
+        self.assertEqual(
+            self.checks("First capture at `aa0ad222).\n", ".md", "--only", "unslop"),
+            [],
+        )
+
     def test_markdown_emphasis_does_not_hide_series_or_break_openers(self) -> None:
         for text in (
             "We bought *apples*, *pears* and *plums*.\n",
