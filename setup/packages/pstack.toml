@@ -174,6 +174,11 @@ path = 'skills/reframe/SKILL.md'
 find = '''Teach the expert words for what the operator is building, borrow words from neighboring fields that solved the same problem, then rewrite their description with them. Use for /reframe.'''
 replace = '''Use when the user asks what an unfamiliar problem is called, how experts frame it, or which terms to search for. Check examples across fields and rewrite their description with the terms that fit.'''
 
+[[codex.replace]]
+path = 'skills/typescript-best-practices/SKILL.md'
+find = '''description: TypeScript best practices. Use when reading or editing any .ts or .tsx file.'''
+replace = '''description: TypeScript best practices. Use when writing, editing, or reviewing .ts or .tsx code.'''
+
 [codex.roles]
 from = "plugin"
 directory = "agents/codex"
