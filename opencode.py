@@ -306,6 +306,8 @@ def _agents(models: Path, destination: Path) -> dict[tuple[str, ...], object]:
         if section != 'opencode' or model in {'auto', 'inherit-parent'}:
             continue
         target = model_target(section, model)
+        if target[0] == 'antigravity':
+            continue
         seats.setdefault('pstack-' + _id(target[1] + '-' + effort), (opencode_model(model, effort), []))[1].append(role)
         if target == ('claude-code', 'opus'):
             opus.append(effort)
