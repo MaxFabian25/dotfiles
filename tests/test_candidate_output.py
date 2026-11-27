@@ -38,7 +38,7 @@ class CandidateOutputTest(unittest.TestCase):
 
     def test_it_prints_the_rows_and_the_summary_a_person_reads(self):
         code, output, error = self.candidate()
-        self.assertEqual((code, error), (1, ''))
+        self.assertEqual((code, error), (0, ''))
         self.assertEqual(output, 'rows\nManaged changes: 2; blocking issues: 0; unmanaged differences left untouched: 1.\n')
 
     def test_a_blocked_plan_counts_its_blockers_and_exits_2(self):
