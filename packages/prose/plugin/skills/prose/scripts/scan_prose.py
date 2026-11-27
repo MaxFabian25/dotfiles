@@ -930,12 +930,31 @@ def _frontmatter_end(raw_lines: list[str]) -> int:
     return 0
 
 
+INLINE_CODE = re.compile(r"(?<!\\)(`+)(?!`)(.+?)(?<!`)\1(?!`)")
+UNMATCHED_BACKTICK = re.compile(r"(?<!\\)`+")
+
+
 def _strip_emphasis(text: str) -> str:
     text = re.sub(r"\*\*(\S(?:.*?\S)?)\*\*", r"\1", text)
     text = re.sub(r"__(\S(?:.*?\S)?)__", r"\1", text)
     text = re.sub(r"(?<!\*)\*(\S(?:[^*]*?\S)?)\*(?!\*)", r"\1", text)
     text = re.sub(r"(?<![\w_])_(\S(?:[^_]*?\S)?)_(?![\w_])", r"\1", text)
     return text
+
+
+def unmatched_backtick(block: Block) -> list[tuple[int, str]]:
+    cleaned = INLINE_CODE.sub("code", block.text)
+    return [
+        (match.start(), match.group(0))
+        for match in UNMATCHED_BACKTICK.finditer(cleaned)
+    ]
+
+
+def _clean_inline(text: str) -> str:
+    text = INLINE_CODE.sub("code", text)
+    text = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"https?://\S+", "link", text)
+    return _strip_emphasis(text)
 
 
 def text_blocks(source: str) -> list[Block]:
@@ -945,7 +964,7 @@ def text_blocks(source: str) -> list[Block]:
 
     def flush() -> None:
         nonlocal lines
-        text = _strip_emphasis(" ".join(lines).strip())
+        text = _clean_inline(" ".join(lines).strip())
         if text:
             blocks.append(Block(text, kind, start))
         lines = []
@@ -961,9 +980,7 @@ def text_blocks(source: str) -> list[Block]:
             continue
         if fenced:
             continue
-        line = re.sub(r"(`+)(?!`)(.+?)(?<!`)\1(?!`)", "code", unquoted)
-        line = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", line)
-        line = re.sub(r"https?://\S+", "link", line).rstrip()
+        line = unquoted.rstrip()
         if not line.strip():
             flush()
             continue
@@ -976,13 +993,13 @@ def text_blocks(source: str) -> list[Block]:
             continue
         if line.lstrip().startswith("|"):
             flush()
-            row = line.strip()
+            row = INLINE_CODE.sub("code", line).strip()
             if row.startswith("|"):
                 row = row[1:]
             if row.endswith("|") and not row.endswith(r"\|"):
                 row = row[:-1]
             for raw_cell in re.split(r"(?<!\\)\|", row):
-                cell = _strip_emphasis(raw_cell.replace(r"\|", "|").strip())
+                cell = _clean_inline(raw_cell.replace(r"\|", "|").strip())
                 if cell and not re.fullmatch(r":?-{2,}:?", cell):
                     blocks.append(Block(cell, "cell", number))
             continue
@@ -1148,6 +1165,16 @@ def scan(
                     check.message,
                     match.start(),
                     match.group(0),
+                )
+        if "house" in groups:
+            for start, text in unmatched_backtick(block):
+                add(
+                    block,
+                    "house",
+                    "unmatched-backtick",
+                    "close or escape the unmatched backtick",
+                    start,
+                    text,
                 )
         if lang == "en" and "house" in groups:
             for start, text in range_unit(block):

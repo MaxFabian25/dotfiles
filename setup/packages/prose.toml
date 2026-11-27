@@ -2,7 +2,7 @@ public = true
 
 [source]
 local = "packages/prose/plugin"
-tree = "sha256:b3ecf73b8c842580ce2542160a4f7c8634ef12c8705f97a535ddae722607f640"
+tree = "sha256:c871181512d127e4e8b7b67470b66273feea25a3b41a4d8a7d0cf1b4997ce782"
 
 [skills]
 explicit = ["prose-maintainer"]
