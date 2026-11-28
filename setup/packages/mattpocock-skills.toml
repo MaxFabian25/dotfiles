@@ -4,7 +4,7 @@ note = "Upstream's exported skills, except setup-matt-pocock-skills and diagnosi
 [source]
 build = "generic"
 repository = "https://github.com/mattpocock/skills.git"
-commit = "6f7f7831a625f040a8e06a0e7954826b87ce775a"
+commit = "bbadaa631c37af594e5a05c9cefacd9956136b18"
 manifest = ".claude-plugin/plugin.json"
 packaging = 6
 display_name = "Matt Pocock skills"
@@ -75,3 +75,8 @@ replace = '''If the user doesn't specify a session, default to the current one.
 
 [claude]
 install = [{ via = "codex-aligned", enabled = true }]
+
+[[codex.replace]]
+path = 'skills/engineering/to-tickets/SKILL.md'
+find = "The parent issue's title followed by its reference on the tracker."
+replace = "If the source was an existing issue, give its title followed by its tracker reference (for example, Payment retries #42). Otherwise omit the Parent section."
