@@ -53,7 +53,7 @@ intent = "sha256:ed9b4e1ffc6e9c36aa9009416a911d273642e54ad35496eb2d504618bf05aa4
 placements = { claude = "sha256:22be6347ed411af38c82124e9147d3fa2f4ebe692f4f41fec34eb85dd04f7a3f" }
 
 [impeccable]
-intent = "sha256:d69e2ee21b8cdf4c605a4cbe0dbbecd55840f0e580d0d964ae12c7b395ac713b"
+intent = "sha256:4bfddd3bb51e95d43c558cb091e2d91c74c84808a6e88b01f6de969a7967eb83"
 codex = { version = "4.11.1", tree = "sha256:130d185b8beb7f2152d6572e7ba241d47699cf9f197d474c0441979877ff390e" }
 claude = { version = "4.11.1", tree = "sha256:130d185b8beb7f2152d6572e7ba241d47699cf9f197d474c0441979877ff390e" }
 hooks = 3
