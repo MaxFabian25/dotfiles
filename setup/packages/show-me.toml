@@ -5,7 +5,7 @@ note = "Disabled in both hosts on 2026-11-28: replaced by the owned visual plugi
 repo = "skills"
 
 [skills]
-explicit = ["show-me"]
+on = ["show-me"]
 
 [codex]
 install = [{ via = "skills", enabled = false }]
