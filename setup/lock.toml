@@ -21,9 +21,9 @@ placements = { claude = "sha256:3eeebddff685b9ac62063a0dd93f698473c60ba93d8c0051
 intent = "sha256:31768ccdb8852caff58d0db5329109e7ed2d4f292e9a3024df2bad725c82f7f8"
 
 [cursor-team-kit]
-intent = "sha256:e3b5121a6213b6d34ebd2bd2a4515e9e0ced3d2562b9067699248de6222ea1ae"
+intent = "sha256:0a16c3c5e4002b951e37665b340372c043a197889d7c01e4563c4a762d019379"
 codex = { version = "1.2.0+upstream.e5136d82418d.codex3.explicit.6d4bbbf5673734d3", tree = "sha256:e65410946547854f002ff8c72d340a85940451427cad4496f7301245face46fa" }
-claude = { version = "1.2.0+codex-aligned.b4b807aefb65", tree = "sha256:69212fe85d8641efe21d82026a29656eb836041ac01300d458a7329626d7d2e6" }
+claude = { version = "1.2.0+codex-aligned.239154d9b095", tree = "sha256:50a9b74febef3ada6f54aead502bd09b02b75879a1857fd61ce97bbfcbea5063" }
 
 [design-control-loop]
 intent = "sha256:d4a9e18040e2bc7bbe7af3f7e04dc226a5446ebb41227a23a37564b6a7239ff5"
@@ -113,12 +113,17 @@ claude = { version = "0.15.48+codex-aligned.9fe26501ee27", tree = "sha256:31bddf
 roles = { "comment-sicko.toml" = "sha256:48e7d91b0420f7b04a8ea378a4bd01cc2233d6ca5b6569e444fed27490fabf0a", "poteto-agent.toml" = "sha256:7693b7e8153d0e9f33b9b81a4491a0211d98cdf316b36af09eb861a4cd0a5688" }
 
 [show-me]
-intent = "sha256:1fd7d03f149e1dcbdf3c87df9d7b455995855f97808cc9cd6f9f81a3b94f14bf"
+intent = "sha256:f490d0a9d31ade9f7b0ce47abf22ca761a9c3498a16987f49f8b718c319bb22e"
 codex = { version = "1.0.1+explicit.a21a8fdc98c563e8", tree = "sha256:6bff0e682b6dba411017bc5b589e6d406d1e281000d1a8bcaff76a9db49c8259" }
 claude = { version = "1.0.1+explicit.a21a8fdc98c563e8", tree = "sha256:6bff0e682b6dba411017bc5b589e6d406d1e281000d1a8bcaff76a9db49c8259" }
 
 [sp-global]
 intent = "sha256:a790837f0cdd9bd11db9b1424f983eacd31ff011aef97854dff0b40310f708ca"
+
+[visual]
+intent = "sha256:122b7dff320ead1d5d594dbea657c21f82e9ba13a328f95277beaeeb0e6d3c46"
+codex = { version = "0.1.0+dotfiles.20261128", tree = "sha256:97bddcd5b1ddaab57b2de6c7d0e71376cdad4f6a717b2e8c58f26b7676af3e3e" }
+claude = { version = "0.1.0+codex-aligned.77dc426c08c4", tree = "sha256:9bec217a49590b40ec7849d4036d7aad8585d9d042929e1dd54b6fcb0dfea73b" }
 
 [visual-pr]
 intent = "sha256:bc36e3684cb0337c1a1f0527dcea7df32cbe1e5eb4aaef0a2bcabe91e9eda06d"

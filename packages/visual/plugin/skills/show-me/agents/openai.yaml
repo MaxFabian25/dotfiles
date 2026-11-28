@@ -1,0 +1,6 @@
+interface:
+  display_name: "Show Me"
+  short_description: "Explain code, systems, and data with diagrams or interactive HTML"
+  default_prompt: "Use $show-me to explain this visually."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,39 @@
+{
+  "name": "visual",
+  "version": "0.1.0+dotfiles.20261128",
+  "description": "Owned visual explanation and pull-request walkthrough plugin with Geist typography, WCAG-audited OKLCH themes, interactive HTML components, and structural quality checks.",
+  "author": {
+    "name": "MaxFabian25",
+    "url": "https://github.com/MaxFabian25"
+  },
+  "repository": "https://github.com/MaxFabian25/dotfiles",
+  "keywords": [
+    "visual",
+    "diagrams",
+    "show-me",
+    "pull-request",
+    "code-review",
+    "explainers",
+    "html",
+    "geist"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Visual",
+    "shortDescription": "Build interactive diagrams, explainers, and PR walkthroughs",
+    "longDescription": "Explain code, systems, data, and pull requests with concise diagrams, Geist-styled interactive HTML visuals, and clean GitHub PR descriptions.",
+    "developerName": "MaxFabian25",
+    "websiteURL": "https://github.com/MaxFabian25/dotfiles/tree/main/packages/visual",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Show me how this works visually.",
+      "Build an interactive walkthrough for this pull request.",
+      "Write a visual GitHub description for this pull request."
+    ]
+  }
+}
