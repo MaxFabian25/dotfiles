@@ -181,35 +181,17 @@ replace = '''description: TypeScript best practices. Use when writing, editing, 
 
 [[codex.replace]]
 path = 'skills/typescript-best-practices/SKILL.md'
-find = '''| Discriminated unions | Model variants with a `kind` literal discriminant so impossible states can't be represented. No optional-field bags. |
-| Branded types | Brand primitives with `& { readonly __brand: "X" }` so they can't be mixed up. Validate once at the boundary. A brand comes from a verifying type guard (`input is AgentId`), never from `as`. |'''
-replace = '''| Discriminated unions | Model variants with a literal discriminant (`_tag` via `Schema.TaggedStruct`, `Schema.TaggedUnion`, or `Data.TaggedEnum` in Effect 4 repositories; `kind` elsewhere) so impossible states can't be represented. No optional-field bags. |
-| Branded types | Brand primitives so they can't be mixed up and validate once at the boundary. In Effect 4 repositories, use `Schema.brand`; elsewhere, use `& { readonly __brand: "X" }` with a verifying type guard (`input is AgentId`), never `as`. |'''
+find = '''Apply the **type-system-discipline** principle skill first.'''
+replace = '''> In Effect 4 repositories, `effect-stack` and installed `node_modules/effect/AGENTS.md` supersede this skill; apply this skill to non-Effect TypeScript only.
 
-[[codex.replace]]
-path = 'skills/typescript-best-practices/SKILL.md'
-find = '''| Schemas before guards | Before hand-writing a property-by-property type guard, use the repository's runtime schema library and infer the type from the schema, such as `z.infer`. |'''
-replace = '''| Schemas before guards | Before hand-writing a property-by-property type guard, use the repository's runtime schema library and infer the type from the schema. In Effect 4 repositories, prefer Effect `Schema` (`Schema.Struct`, `Schema.brand`, `Schema.TaggedError`, `Schema.TaggedUnion`, `Data.TaggedEnum`) with `{ onExcessProperty: "error" }` at strict boundaries instead of Zod or throwing parsers. |'''
-
-[[codex.replace]]
-path = 'skills/typescript-best-practices/SKILL.md'
-find = '''| Narrowing hierarchy | Discriminant switch > `in` operator > `typeof`/`instanceof` > user-defined type guard > `as`. |
-| Type guards | Must verify the claim. A lying guard is worse than `as` because the bug hides behind a name that says it's safe. Name them `isX` or `hasX`. |
-| Exhaustiveness | Inline `const _exhaustive: never = x;` in default arms so the compiler errors when a new variant is added. |
-| `satisfies` over `as` | Validates the value without widening literal types. |
-| Boundary validation | Parse where data crosses in, into a named domain type. `Record<string, unknown>` (however spelled) stops at that parse. Trust types inside. See the **boundary-discipline** principle skill. |'''
-replace = '''| Narrowing hierarchy | Discriminant dispatch (`Match.value` / `$match` / `Predicate.isTagged` in Effect 4; `switch` elsewhere) > `in` operator > `typeof`/`instanceof` > user-defined type guard > `as`. |
-| Type guards | Must verify the claim. A lying guard is worse than `as` because the bug hides behind a name that says it's safe. Name them `isX` or `hasX`. |
-| Exhaustiveness | Use `Match.tagsExhaustive` or `$match` on `_tag` unions in Effect 4 (do not `switch` on `_tag`); elsewhere, inline `const _exhaustive: never = x;` in default arms so the compiler errors on new variants. |
-| `satisfies` over `as` | Validates the value without widening literal types. |
-| Boundary validation | Parse where data crosses in, into a named domain type. `Record<string, unknown>` (however spelled) stops at that parse. In Effect 4, decode with `Schema` (`{ onExcessProperty: "error" }` at strict boundaries, `Schema.fromJsonString` for JSON instead of `try/catch`). Trust types inside. See the **boundary-discipline** principle skill. |'''
+Apply the **type-system-discipline** principle skill first.'''
 
 [[codex.replace]]
 path = 'skills/typescript-best-practices/references/patterns.md'
 find = '''Code examples for each rule in `SKILL.md`. The underlying principles are language-agnostic. See the **type-system-discipline** and **boundary-discipline** principle skills.'''
-replace = '''Code examples for each rule in `SKILL.md`. The underlying principles are language-agnostic. See the **type-system-discipline** and **boundary-discipline** principle skills.
+replace = '''> In Effect 4 repositories, `effect-stack` and installed `node_modules/effect/AGENTS.md` supersede this skill; apply this skill to non-Effect TypeScript only.
 
-> **Effect 4 repositories:** Use `_tag` (`Schema.TaggedStruct`, `Schema.TaggedUnion`, `Data.TaggedEnum`) instead of `kind`, `Schema.brand` instead of manual `__brand` guards, `Match.value` / `Match.tagsExhaustive` / `$match` instead of `switch` on `_tag`, `Schema` with `{ onExcessProperty: "error" }` instead of Zod or `ignoreUnknownFields`, `DateTime` instead of `Date`, and `Schema.fromJsonString` instead of `try/catch` inside Effect code.'''
+Code examples for each rule in `SKILL.md`. The underlying principles are language-agnostic. See the **type-system-discipline** and **boundary-discipline** principle skills.'''
 
 [[codex.replace]]
 path = 'agents/codex/poteto-agent.toml'
