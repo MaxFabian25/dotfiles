@@ -35,6 +35,7 @@ url = "https://github.com/cursor/plugins/tree/main/cursor-team-kit"
 
 [skills]
 off = [
+  "pr-review-canvas",
   "run-smoke-tests",
   "weekly-review",
   "what-did-i-get-done",
@@ -51,7 +52,6 @@ explicit = [
   "loop-on-ci",
   "make-pr-easy-to-review",
   "new-branch-and-pr",
-  "pr-review-canvas",
   "review-and-ship",
   "thermo-nuclear-code-quality-review",
   "verify-this",

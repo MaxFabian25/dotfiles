@@ -1,0 +1,15 @@
+public = true
+note = "Owned visual explanation and PR walkthrough plugin replacing humanlayer/show-me, humanlayer/visual-pr, and cursor-team-kit/pr-review-canvas (user decision 2026-11-28). show-me is model-invocable; visual-pr is explicit-only."
+
+[source]
+local = "packages/visual/plugin"
+tree = "sha256:97bddcd5b1ddaab57b2de6c7d0e71376cdad4f6a717b2e8c58f26b7676af3e3e"
+
+[skills]
+explicit = ["visual-pr"]
+
+[codex]
+install = [{ via = "personal", enabled = true }]
+
+[claude]
+install = [{ via = "codex-aligned", enabled = true }]

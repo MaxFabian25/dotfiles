@@ -1,4 +1,5 @@
 public = true
+note = "Disabled in both hosts: replaced by the owned visual plugin (packages/visual/plugin/skills/visual-pr). Pin kept for provenance."
 
 [source]
 repo = "skills"
